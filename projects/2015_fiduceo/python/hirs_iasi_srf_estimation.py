@@ -652,6 +652,7 @@ class IASI_HIRS_analyser:
 #        tb_all = [self.get_tb_channels("NOAA18")[:, :, :12].reshape(-1,
 #                    12)]
         #for g in self.graniter:
+        self.graniter = self.iasi.find_granules()
         for g in itertools.islice(self.graniter, *self.lut_slice_test):
             self.gran = self.iasi.read(g)
             tb_all.append(self.get_tb_channels("NOAA18")[:, :,
@@ -668,6 +669,8 @@ class IASI_HIRS_analyser:
         """
 
         allrad = []
+        # make sure to reset this iterator
+        self.graniter = self.iasi.find_granules()
         for g in itertools.islice(self.graniter, *self.lut_slice_test):
             self.gran = self.iasi.read(g)
             radiances = self.get_tb_channels(sat)[:, :, :12].reshape(-1, 12)
@@ -730,14 +733,14 @@ class IASI_HIRS_analyser:
         (f_histperbin, a_histperbin) = matplotlib.pyplot.subplots(2, 2)
         (N, b, _) = a_tothist[0].hist(stats["N"], numpy.arange(101.0))
         a_tothist[0].set_ylim(0, N[1:].max())
-        a_tothist[0].text(0.8, 0.8, "{:d} ({:.1%}) hit empty bins".format(
+        a_tothist[0].text(0.8, 0.8, "{:,} ({:.1%}) hit empty bins".format(
                         (stats["N"]==0).sum(), (stats["N"]==0).sum()/stats.size),
                   horizontalalignment="center",
                   verticalalignment="center",
                   transform=a_tothist[0].transAxes)
         a_tothist[0].set_xlabel("No. of IASI spectra in bin")
-        a_tothist[0].set_ylabel("Count")
-        a_tothist[0].set_title("LUT bin contents")
+        a_tothist[0].set_ylabel("No. hits")
+        a_tothist[0].set_title("No. IASI spectra per HIRS lookup (total {:,})".format(stats.size))
         hasmean = stats["N"] >= 1
         hasstd = stats["N"] >= 5
         biases = numpy.zeros(dtype="f4",
@@ -783,15 +786,18 @@ class IASI_HIRS_analyser:
                 stds[i, k] = delta.std()
                 a_histperbin.flat[k].hist(delta, 50,
                     histtype="step", cumulative=False,
-                    stacked=False, normed=True, label=field)
+                    stacked=False,
+                    normed=True,
+                    label=field)
         for (k, subset) in enumerate(hpb_subsets):
             if not subset.any():
                 continue
-            a_histperbin.flat[k].set_title("{:d}-{:d} per bin".format(
+            a_histperbin.flat[k].set_title("{:d}-{:,} per bin (tot. {:,})".format(
                     stats["N"][subset].min(),
-                    stats["N"][subset].max()))
+                    stats["N"][subset].max(),
+                    subset.sum()))
             a_histperbin.flat[k].set_xlabel(r"$\Delta$ BT [K]")
-            a_histperbin.flat[k].set_ylabel("Freq.")
+            a_histperbin.flat[k].set_ylabel("PD")
             a_histperbin.flat[k].set_xlim(-10, 10)
             a_histperbin.flat[k].grid()
             if k == 1:
@@ -804,8 +810,9 @@ class IASI_HIRS_analyser:
         a_tothist[2].set_xlim(-8, 8)
         for k in {0, 1}:
             a_tothist[k+1].set_xlabel(r"$\Delta$ BT [K]")
-            a_tothist[k+1].set_ylabel("Freq.")
-            a_tothist[k+1].set_title("LUT performance test NOAA-18")
+            a_tothist[k+1].set_ylabel("Density")
+            a_tothist[k+1].set_title("HIRS LUT estimate - reference, "
+                                     "normalised (NOAA-18)")
             a_errperbin[k].set_xlabel("No. spectra in bin")
             a_errperbin[k].set_ylabel("$\Delta$ BT [K]")
         #a1[1].set_xlim(200, 300)
@@ -814,9 +821,13 @@ class IASI_HIRS_analyser:
                 "-".join([str(b.size) for b in self.lut.bins])))
             f.tight_layout(rect=[0, 0, 0.83, 0.97])
         pyatmlab.graphics.print_or_show(f_tothist, False,
-            "lut_{:s}_test_hists_{:s}.".format(sat, self.lut.compact_summary()))
+            "lut_{:s}_test_hists_{:s}.".format(sat, 
+                self.lut.compact_summary().replace(".", "_")))
         pyatmlab.graphics.print_or_show(f_histperbin, False,
-            "lut_{:s}_test_histperbin_{:s}.".format(sat, self.lut.compact_summary()))
+            "lut_{:s}_test_histperbin_{:s}.".format(sat,
+                self.lut.compact_summary().replace(".", "_")))
+        matplotlib.pyplot.close(f_tothist)
+        matplotlib.pyplot.close(f_histperbin)
 #        pyatmlab.graphics.print_or_show(f_errperbin, False,
 #            "lut_{:s}_test_errperbin_{:s}.".format(sat, self.lut.compact_summary()))
         return (biases, stds)
@@ -827,11 +838,14 @@ class IASI_HIRS_analyser:
         subname = ("large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,"
                    "ch7,ch8,ch9,ch10,ch11,ch12_{npc:d}_{fact:.1f}")
         D = {}
-        npc = 4
-        for fact in (1.0, 2.0, 4.0):
-            p = pathlib.Path(basedir) / (subname.format(npc=npc, fact=fact))
-            self.lut_load(str(p))
-            D[tuple(b.size for b in self.lut.bins)] = self.lut_visualise_stats_unseen_data(sat=sat)
+        for npc in (3, 4):
+            for fact in (1.0, 2.0, 4.0, 8.0):
+                p = pathlib.Path(basedir) / (subname.format(npc=npc, fact=fact))
+                try:
+                    self.lut_load(str(p))
+                except FileNotFoundError:
+                    continue
+                D[tuple(b.size for b in self.lut.bins)] = self.lut_visualise_stats_unseen_data(sat=sat)
         (f1, a1) = matplotlib.pyplot.subplots(2, 2)
         (f2, a2) = matplotlib.pyplot.subplots(2, 2)
         sk = sorted(D.keys())
@@ -849,13 +863,13 @@ class IASI_HIRS_analyser:
             for (a, ymin, ymax) in ((a1, -2, 2), (a2, -5, 5)):
                 a.flat[k].set_xticks(x)
                 a.flat[k].set_xticklabels([str(s) for s in sk],
-                                          rotation=10,
+                                          rotation=25,
                                           size="x-small")
                 a.flat[k].set_title("{:s} per bin".format(subtitlabs[k]))
                 #a.flat[k].set_title("Subset {:d} (FIXME)".format(k+1))
                 a.flat[k].set_xlabel("Bins")
                 a.flat[k].set_ylabel("Mean/std diff. [K]")
-                a.flat[k].set_xlim(-0.5, 2.5)
+                a.flat[k].set_xlim(x[0]-0.5, x[-1]+0.5)
                 a.flat[k].grid(axis="y")
                 a.flat[k].set_ylim(ymin, ymax)
                 if k == 1:
@@ -863,10 +877,11 @@ class IASI_HIRS_analyser:
                             bbox_to_anchor=(1.6, -1.4),
                             ncol=1, fancybox=True, shadow=True)
         for (f, lb) in zip((f1, f2), ("ch1-7", "ch8-12")):
-            f.suptitle("Binning config. effects on LUT performance")
+            f.suptitle("Mean and s.d. of $\Delta K$ for different binnings")
             f.tight_layout(rect=[0, 0, 0.85, 0.97])
             pyatmlab.graphics.print_or_show(f, False,
                 "lut_{:s}_test_perf_all_{:s}.".format(sat, lb))
+            matplotlib.pyplot.close(f)
  
 
 def main():
@@ -882,8 +897,11 @@ def main():
 #        (counts, stats) = vis.lut_get_stats_unseen_data()
 #        vis.plot_lut_radiance_delta_all_iasi()
 #        vis.build_lookup_table(sat="NOAA18", pca=True, x=8)
+#        vis.build_lookup_table(sat="NOAA18", pca=True, x=8, npc=3)
 #        vis.build_lookup_table(sat="NOAA18", pca=True, x=4.0)
+#        vis.build_lookup_table(sat="NOAA18", pca=True, x=4.0, npc=3)
 #        vis.build_lookup_table(sat="NOAA18", pca=True, x=2.0)
+#        vis.build_lookup_table(sat="NOAA18", pca=True, x=2.0, npc=3)
 #        vis.build_lookup_table(sat="NOAA18", pca=True, x=1.0)
 #        vis.build_lookup_table(sat="NOAA18", pca=True, x=1.0, npc=3)
 #        vis.build_lookup_table("NOAA18", N=40)
