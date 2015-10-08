@@ -1,5 +1,6 @@
 #!/usr/bin/env python3.5
 
+import sys
 import os
 import re
 import datetime
@@ -13,6 +14,7 @@ if __name__ == "__main__":
                  "%(lineno)s: %(message)s"),
         level=logging.DEBUG)
 import pathlib
+import argparse
 
 import numpy
 import numpy.lib.recfunctions
@@ -152,18 +154,20 @@ class IASI_HIRS_analyser:
                 specrad_freq, self.iasi.frequency)
         return Tb
 
-    def get_tb_channels(self, sat, channels=slice(None)):
+    def get_tb_channels(self, sat, channels=range(1, 13)):
         """Get brightness temperature for channels
         """
-        chan_nos = (numpy.arange(19) + 1)[channels]
+        #chan_nos = (numpy.arange(19) + 1)[channels]
 #        specrad_wn = self.gran["spectral_radiance"]
 #        specrad_f = pyatmlab.physics.specrad_wavenumber2frequency(
 #                            specrad_wn)
         specrad_f = self.get_y(unit="specrad_freq")
         Tb_chans = numpy.zeros(dtype=numpy.float32,
-                               shape=specrad_f.shape[0:2] + (chan_nos.size,))
-        for (i, srf) in enumerate(self.srfs[sat]):
-            logging.debug("Calculating channel Tb {:s}-{:d}".format(sat, i+1))
+                               shape=specrad_f.shape[0:2] + (len(channels),))
+        for (i, c) in enumerate(channels):
+            srf = self.srfs[sat][c-1]
+        #for (i, srf) in enumerate(self.srfs[sat]):
+            logging.debug("Calculating channel Tb {:s}-{:d}".format(sat, c))
             #srfobj = pyatmlab.physics.SRF(freq, weight)
             L = srf.integrate_radiances(self.iasi.frequency, specrad_f)
 
@@ -259,44 +263,60 @@ class IASI_HIRS_analyser:
 #                        print("{:>4d} {:>5.1f}/{:>5.1f}/{:>5.1f} {:>5.2f} "
 #                              "{:>5.2f}".format(*z))
                 
-    def _get_next_y_for_lut(self, g, sat):
-        """Helper for build_lookup_table_*
+    def _get_next_y_for_lut(self, g, sat, channels=range(1, 13)):
+        """Helper for get_lookup_table_*
         """
         self.gran = self.iasi.read(g)
         y = self.get_y("specrad_freq")
         y = y.view(dtype=[("specrad_freq", y.dtype, y.shape[2])])
-        tb = self.get_tb_channels(sat)
-        tbv = tb.view([("ch{:d}".format(i+1), tb.dtype)
-                 for i in range(tb.shape[-1])]).squeeze()
+        tb = self.get_tb_channels(sat, channels)
+        tbv = tb.view([("ch{:d}".format(c), tb.dtype)
+                 for c in channels]).squeeze()
         return numpy.lib.recfunctions.merge_arrays(
             (tbv, y), flatten=True, usemask=False, asrecarray=False)
 
 
-    def build_lookup_table_pca(self, sat, npc=4, x=2.0):
-        # First read all, then construct PCA, so that all go into PCA.
-        # Hopefully I have enough memory for that, or I need to implement
-        # incremental PCA.
-        y = None
-        for g in itertools.islice(self.graniter, *self.lut_slice_build):
-            if y is None:
-                y = self._get_next_y_for_lut(g, sat)
-            else:
-                y = numpy.hstack([y, self._get_next_y_for_lut(g, sat)])
-        #y = numpy.vstack(y_all)
-        logging.info("Constructing PCA-based lookup table")
-        db = pyatmlab.db.LargeFullLookupTable.fromData(y,
-            dict(PCA=dict(
-                npc=npc,
-                scale=x,
-                valid_range=(100, 400),
-                fields=["ch{:d}".format(i+1) for i in
-                            range(12)])),
-                use_pca=True)
+    def get_lookup_table_pca(self, sat, npc=4, x=2.0, channels=range(1,
+                             13), make_new=True):
+        axdata = dict(PCA=dict(
+                      npc=npc,
+                      scale=x,
+                      valid_range=(100, 400),
+                      fields=["ch{:d}".format(c) for c in channels]))
+        try:
+            db = pyatmlab.db.LargeFullLookupTable.fromDir(axdata)
+        except FileNotFoundError: # create new
+            if not make_new:
+                raise
+            # First read all, then construct PCA, so that all go into PCA.
+            # Hopefully I have enough memory for that, or I need to implement
+            # incremental PCA.
+            logging.info("Found no LUT, creating new")
+            y = None
+            for g in itertools.islice(self.graniter, *self.lut_slice_build):
+                if y is None:
+                    y = self._get_next_y_for_lut(g, sat, channels)
+                else:
+                    y = numpy.hstack([y, self._get_next_y_for_lut(g, sat, channels)])
+            #y = numpy.vstack(y_all)
+            logging.info("Constructing PCA-based lookup table")
+            db = pyatmlab.db.LargeFullLookupTable.fromData(y,
+                dict(PCA=dict(
+                    npc=npc,
+                    scale=x,
+                    valid_range=(100, 400),
+                    fields=["ch{:d}".format(c) for c in channels])),
+                    use_pca=True)
+        return db
 
-    def build_lookup_table_linear(self, sat, x=30):
+    def get_lookup_table_linear(self, sat, x=30, channels={2, 5, 8, 9,
+                                11}, make_new=True):
+        if not make_new:
+            raise NotImplementedError("linear LUT always made new")
+        db = None
         for g in itertools.islice(self.graniter, *self.lut_slice_build):
             logging.info("Adding to lookup table: {!s}".format(g))
-            y = self._get_next_y_for_lut(g, sat)
+            y = self._get_next_y_for_lut(g, sat, channels)
             if db is None: # first time
                 logging.info("Constructing lookup table")
                 db = pyatmlab.db.LargeFullLookupTable.fromData(y,
@@ -305,13 +325,15 @@ class IASI_HIRS_analyser:
                                  tb[..., i].max()*1.05),
                           mode="linear",
                           nsteps=x)
-                        for i in {2, 5, 8, 9, 11}},
+                        for i in channels},
                         use_pca=False)
             else:
                 logging.info("Extending lookup table")
                 db.addData(y)
+        return db
 
-    def build_lookup_table(self, sat, pca=False, x=30, npc=2.0):
+    def get_lookup_table(self, sat, pca=False, x=30, npc=2,
+                         channels=range(1, 13), make_new=True):
         """
         :param sat: Satellite, i.e. "NOAA18"
         :param bool pca: Use pca or not.
@@ -323,12 +345,15 @@ class IASI_HIRS_analyser:
         """
         # construct single ndarray with both tb and radiances, for binning
         # purposes
-        logging.info("Constructing data")
         db = None
         if pca:
-            self.build_lookup_table_pca(sat, x=x, npc=npc)
+            self.lut = self.get_lookup_table_pca(sat, x=x, npc=npc,
+                                        channels=channels,
+                                        make_new=make_new)
         else:
-            self.build_lookup_table_linear(sat, x=x)
+            self.lut = self.get_lookup_table_linear(sat, x=x,
+                                        channels=channels,
+                                        make_new=make_new)
 #        out = "/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/test/test_{:%Y%m%d-%H%M%S}.dat".format(datetime.datetime.now())
 #        logging.info("Storing lookup table to {:s}".format(out))
 #        db.toFile(out)
@@ -654,7 +679,7 @@ class IASI_HIRS_analyser:
         #for g in self.graniter:
         self.graniter = self.iasi.find_granules()
         for g in itertools.islice(self.graniter, *self.lut_slice_test):
-            self.gran = self.iasi.read(g)
+            self.gran = self.iasi.read(g, CLEAR_CACHE=True)
             tb_all.append(self.get_tb_channels("NOAA18")[:, :,
                         :12].reshape(-1, 12))
         tb_all = numpy.vstack(tb_all).view(
@@ -669,14 +694,15 @@ class IASI_HIRS_analyser:
         """
 
         allrad = []
+        chans = [int(x[2:]) for x in self.lut.fields]
         # make sure to reset this iterator
         self.graniter = self.iasi.find_granules()
         for g in itertools.islice(self.graniter, *self.lut_slice_test):
-            self.gran = self.iasi.read(g)
-            radiances = self.get_tb_channels(sat)[:, :, :12].reshape(-1, 12)
+            self.gran = self.iasi.read(g, CLEAR_CACHE=True)
+            radiances = self.get_tb_channels(sat, chans).reshape(-1, len(chans))
             radiances = numpy.ascontiguousarray(radiances)
-            radiances = radiances.view([("ch{:d}".format(i+1), radiances[0].dtype)
-                                    for i in range(12)])
+            radiances = radiances.view([(fld, radiances[0].dtype)
+                                    for fld in self.lut.fields])
             allrad.append(radiances)
         radiances = numpy.vstack(allrad)
         count = []
@@ -686,7 +712,7 @@ class IASI_HIRS_analyser:
                    ("y_mean", radiances.dtype),
                    ("y_std", radiances.dtype),
                    ("y_ptp", radiances.dtype)])
-        logging.info("Processing {:d} spectra".format(radiances.size))
+        logging.info("Using LUT to find IASI for {:,} HIRS spectra".format(radiances.size))
         bar = progressbar.ProgressBar(maxval=radiances.size,
                 widgets=[progressbar.Bar("=", "[", "]"), " ",
                          progressbar.Percentage()])
@@ -696,6 +722,9 @@ class IASI_HIRS_analyser:
             try:
                 cont = self.lut.lookup(dat)
             except KeyError:
+                n = 0
+            except EOFError as v:
+                logging.error("Could not read from LUT: {!s}".format(v))
                 n = 0
             else:
                 n = cont.size
@@ -714,6 +743,9 @@ class IASI_HIRS_analyser:
         return (radiances, numpy.array(count), stats)
 
     def lut_visualise_stats_unseen_data(self, sat="NOAA18"):
+        # Supposes that LUT is already loaded, and thus containing most of
+        # the required meta-information.
+
         # FIXME: temporary workaround for development speed
         # reload by removing tmpfile if lut_get_stats_unseen_data changes
         tmp = "/work/scratch/gholl/rad_count_stats_{:s}.dat".format(self.lut.compact_summary())
@@ -730,7 +762,8 @@ class IASI_HIRS_analyser:
         hpb_bnd = [0, 10, 50, 100, stats["N"].max()+1]
         hpb_subsets = [(stats["N"]>hpb_bnd[i]) & (stats["N"]<=hpb_bnd[i+1])
                                 for i in range(4)]
-        (f_histperbin, a_histperbin) = matplotlib.pyplot.subplots(2, 2)
+        (f_deltahistperbin, a_deltahistperbin) = matplotlib.pyplot.subplots(2, 2)
+        (f_bthistperbin, a_bthistperbin) = matplotlib.pyplot.subplots(2, 2)
         (N, b, _) = a_tothist[0].hist(stats["N"], numpy.arange(101.0))
         a_tothist[0].set_ylim(0, N[1:].max())
         a_tothist[0].text(0.8, 0.8, "{:,} ({:.1%}) hit empty bins".format(
@@ -784,24 +817,33 @@ class IASI_HIRS_analyser:
 #                      dm=delta.mean(), ds=delta.std()))
                 biases[i, k] = delta.mean()
                 stds[i, k] = delta.std()
-                a_histperbin.flat[k].hist(delta, 50,
+                a_deltahistperbin.flat[k].hist(delta, 50,
                     histtype="step", cumulative=False,
                     stacked=False,
                     normed=True,
                     label=field)
+                a_bthistperbin.flat[k].hist(stats["y_mean"][field][subset], 50,
+                    histtype="step", cumulative=False,
+                    stacked=False, normed=True,
+                    label=field)
         for (k, subset) in enumerate(hpb_subsets):
             if not subset.any():
                 continue
-            a_histperbin.flat[k].set_title("{:d}-{:,} per bin (tot. {:,})".format(
+            a_deltahistperbin.flat[k].set_xlabel(r"$\Delta$ BT [K]")
+            a_bthistperbin.flat[k].set_xlabel(r"BT [K]")
+            a_deltahistperbin.flat[k].set_xlim(-10, 10)
+            a_bthistperbin.flat[k].set_xlim(200, 300)
+            a_deltahistperbin.flat[k].grid()
+            a_bthistperbin.flat[k].grid()
+            for a in (a_deltahistperbin, a_bthistperbin):
+                a.flat[k].set_title("{:d}-{:,} per bin (tot. {:,})".format(
                     stats["N"][subset].min(),
                     stats["N"][subset].max(),
                     subset.sum()))
-            a_histperbin.flat[k].set_xlabel(r"$\Delta$ BT [K]")
-            a_histperbin.flat[k].set_ylabel("PD")
-            a_histperbin.flat[k].set_xlim(-10, 10)
-            a_histperbin.flat[k].grid()
-            if k == 1:
-                a_histperbin.flat[k].legend(loc="lower right",
+                a.flat[k].set_ylabel("PD")
+                a.flat[k].grid()
+                if k == 1:
+                    a.flat[k].legend(loc="lower right",
                         bbox_to_anchor=(1.6, -1.4),
                         ncol=1, fancybox=True, shadow=True)
         a_tothist[1].legend(loc="upper right", bbox_to_anchor=(1.3, 1.4))
@@ -816,78 +858,113 @@ class IASI_HIRS_analyser:
             a_errperbin[k].set_xlabel("No. spectra in bin")
             a_errperbin[k].set_ylabel("$\Delta$ BT [K]")
         #a1[1].set_xlim(200, 300)
-        for f in {f_tothist, f_errperbin, f_histperbin}:
+        for f in {f_tothist, f_errperbin, f_deltahistperbin, f_bthistperbin}:
             f.suptitle("LUT PCA performance, bins {:s}".format(
                 "-".join([str(b.size) for b in self.lut.bins])))
             f.tight_layout(rect=[0, 0, 0.83, 0.97])
         pyatmlab.graphics.print_or_show(f_tothist, False,
             "lut_{:s}_test_hists_{:s}.".format(sat, 
                 self.lut.compact_summary().replace(".", "_")))
-        pyatmlab.graphics.print_or_show(f_histperbin, False,
-            "lut_{:s}_test_histperbin_{:s}.".format(sat,
+        pyatmlab.graphics.print_or_show(f_deltahistperbin, False,
+            "lut_{:s}_test_deltahistperbin_{:s}.".format(sat,
                 self.lut.compact_summary().replace(".", "_")))
-        matplotlib.pyplot.close(f_tothist)
-        matplotlib.pyplot.close(f_histperbin)
+        pyatmlab.graphics.print_or_show(f_bthistperbin, False,
+            "lut_{:s}_test_bthistperbin_{:s}.".format(sat,
+                self.lut.compact_summary().replace(".", "_")))
+        for f in {f_tothist, f_errperbin, f_deltahistperbin, f_bthistperbin}:
+            matplotlib.pyplot.close(f)
 #        pyatmlab.graphics.print_or_show(f_errperbin, False,
 #            "lut_{:s}_test_errperbin_{:s}.".format(sat, self.lut.compact_summary()))
         return (biases, stds)
         
 
     def lut_visualise_multi(self, sat="NOAA18"):
-        basedir = pyatmlab.config.conf["main"]["lookup_table_dir"]
-        subname = ("large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,"
-                   "ch7,ch8,ch9,ch10,ch11,ch12_{npc:d}_{fact:.1f}")
-        D = {}
-        for npc in (3, 4):
-            for fact in (1.0, 2.0, 4.0, 8.0):
-                p = pathlib.Path(basedir) / (subname.format(npc=npc, fact=fact))
-                try:
-                    self.lut_load(str(p))
-                except FileNotFoundError:
-                    continue
-                D[tuple(b.size for b in self.lut.bins)] = self.lut_visualise_stats_unseen_data(sat=sat)
-        (f1, a1) = matplotlib.pyplot.subplots(2, 2)
-        (f2, a2) = matplotlib.pyplot.subplots(2, 2)
-        sk = sorted(D.keys())
-        stats = numpy.concatenate([numpy.dstack(D[x])[..., numpy.newaxis] for x in sk], 3)
-        x = numpy.arange(len(sk))
-        subtitlabs = ("<10", "11-50", "51-100", ">100")
-        for k in range(a1.size):
-            for c in range(stats.shape[0]):
-                a = a1 if c<7 else a2
-                a.flat[k].errorbar(x, stats[c, k, 0, :],
-                     yerr=stats[c, k, 1, :],
-                     marker="^",
-                     linestyle="None",
-                     label="ch{:d}".format(c+1))
-            for (a, ymin, ymax) in ((a1, -2, 2), (a2, -5, 5)):
-                a.flat[k].set_xticks(x)
-                a.flat[k].set_xticklabels([str(s) for s in sk],
-                                          rotation=25,
-                                          size="x-small")
-                a.flat[k].set_title("{:s} per bin".format(subtitlabs[k]))
-                #a.flat[k].set_title("Subset {:d} (FIXME)".format(k+1))
-                a.flat[k].set_xlabel("Bins")
-                a.flat[k].set_ylabel("Mean/std diff. [K]")
-                a.flat[k].set_xlim(x[0]-0.5, x[-1]+0.5)
-                a.flat[k].grid(axis="y")
-                a.flat[k].set_ylim(ymin, ymax)
-                if k == 1:
-                    a.flat[k].legend(loc="lower right",
-                            bbox_to_anchor=(1.6, -1.4),
-                            ncol=1, fancybox=True, shadow=True)
-        for (f, lb) in zip((f1, f2), ("ch1-7", "ch8-12")):
-            f.suptitle("Mean and s.d. of $\Delta K$ for different binnings")
-            f.tight_layout(rect=[0, 0, 0.85, 0.97])
-            pyatmlab.graphics.print_or_show(f, False,
-                "lut_{:s}_test_perf_all_{:s}.".format(sat, lb))
-            matplotlib.pyplot.close(f)
- 
+#        basedir = pyatmlab.config.conf["main"]["lookup_table_dir"]
+#        subname = ("large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,"
+#                   "ch7,ch8,ch9,ch10,ch11,ch12_{npc:d}_{fact:.1f}")
+        for channels in {range(1, 13), # all thermal
+                         range(1, 8), # all CO₂
+                         range(1, 7), # almost all CO₂
+                         range(4, 8), # subset of CO₂
+                         range(11, 13), # only H₂O
+                         range(8, 11), # O₃ and window
+                         range(8, 13), # all non-CO₂
+                        }:
+            D = {}
+            for npc in ([i for i in (3, 4) if i < len(channels)] or
+                        [len(channels)]):
+                for fact in (1.0, 2.0, 4.0, 8.0):
+                    logging.info("Considering LUT with npc={:d}, "
+                                "fact={:.1f}, ch={!s}".format(npc, fact, list(channels)))
+    #                p = pathlib.Path(basedir) / (subname.format(npc=npc, fact=fact))
+                    try:
+                        self.get_lookup_table(sat="NOAA18", pca=True, x=fact,
+                            npc=npc, channels=channels, make_new=False)
+                    except FileNotfoundError:
+                        logging.error("Does not exist yet, skipping")
+                        continue
+                    D[tuple(b.size for b in self.lut.bins)] = self.lut_visualise_stats_unseen_data(sat=sat)
+            (f1, a1) = matplotlib.pyplot.subplots(2, 2)
+            (f2, a2) = matplotlib.pyplot.subplots(2, 2)
+            sk = sorted(D.keys())
+            stats = numpy.concatenate([numpy.dstack(D[x])[..., numpy.newaxis] for x in sk], 3)
+            x = numpy.arange(len(sk))
+            subtitlabs = ("<10", "11-50", "51-100", ">100")
+            for k in range(a1.size):
+                for c in range(stats.shape[0]):
+                    a = a1 if channels[c] in range(1, 8) else a2
+                    a.flat[k].errorbar(x, stats[c, k, 0, :],
+                         yerr=stats[c, k, 1, :],
+                         marker="^",
+                         linestyle="None",
+                         label=channels[c])#"ch{:d}".format(c+1))
+                for (a, ymin, ymax) in ((a1, -2, 2), (a2, -5, 5)):
+                    a.flat[k].set_xticks(x)
+                    a.flat[k].set_xticklabels([str(s) for s in sk],
+                                              rotation=25,
+                                              size="x-small")
+                    a.flat[k].set_title("{:s} per bin".format(subtitlabs[k]))
+                    #a.flat[k].set_title("Subset {:d} (FIXME)".format(k+1))
+                    a.flat[k].set_xlabel("Bins")
+                    a.flat[k].set_ylabel("Mean/std diff. [K]")
+                    a.flat[k].set_xlim(x[0]-0.5, x[-1]+0.5)
+                    a.flat[k].grid(axis="y")
+                    a.flat[k].set_ylim(ymin, ymax)
+                    if k == 1:
+                        a.flat[k].legend(loc="lower right",
+                                bbox_to_anchor=(1.6, -1.4),
+                                ncol=1, fancybox=True, shadow=True)
+            for (f, lb) in zip((f1, f2), ("ch1-7", "ch8-12")):
+                f.suptitle("Mean and s.d. of $\Delta K$ for different binnings")
+                f.tight_layout(rect=[0, 0, 0.85, 0.97])
+                pyatmlab.graphics.print_or_show(f, False,
+                    "lut_{:s}_{!s}_test_perf_all_{:s}.".format(sat, 
+                        ",".join(str(x) for x in channels), lb))
+                matplotlib.pyplot.close(f)
+     
 
 def main():
     print(numexpr.set_num_threads(8))
+    parser = argparse.ArgumentParser("Experiment with HIRS SRF estimation")
+    parser.add_argument("--makelut", action="store_true", default=False)
+    parser.add_argument("--pca", action="store_true", default=False)
+    parser.add_argument("--sat", action="store", default="NOAA18")
+    parser.add_argument("--factor", action="store", type=float)
+    parser.add_argument("--npc", action="store", type=int)
+    parser.add_argument("--channels", action="store", type=int,
+                        default=list(range(1, 13)), nargs="+")
+    p = parser.parse_args()
+    print(p)
+
     with numpy.errstate(all="raise"):
         vis = IASI_HIRS_analyser()
+
+        if p.makelut:
+            print("Making LUT only")
+            vis.get_lookup_table(sat=p.sat, pca=p.pca, x=p.factor,
+                                 npc=p.npc, channels=p.channels)
+            return
+            
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_8.0")
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_4.0")
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_2.0")
@@ -896,15 +973,15 @@ def main():
         vis.lut_visualise_multi()
 #        (counts, stats) = vis.lut_get_stats_unseen_data()
 #        vis.plot_lut_radiance_delta_all_iasi()
-#        vis.build_lookup_table(sat="NOAA18", pca=True, x=8)
-#        vis.build_lookup_table(sat="NOAA18", pca=True, x=8, npc=3)
-#        vis.build_lookup_table(sat="NOAA18", pca=True, x=4.0)
-#        vis.build_lookup_table(sat="NOAA18", pca=True, x=4.0, npc=3)
-#        vis.build_lookup_table(sat="NOAA18", pca=True, x=2.0)
-#        vis.build_lookup_table(sat="NOAA18", pca=True, x=2.0, npc=3)
-#        vis.build_lookup_table(sat="NOAA18", pca=True, x=1.0)
-#        vis.build_lookup_table(sat="NOAA18", pca=True, x=1.0, npc=3)
-#        vis.build_lookup_table("NOAA18", N=40)
+#        vis.get_lookup_table(sat="NOAA18", pca=True, x=8)
+#        vis.get_lookup_table(sat="NOAA18", pca=True, x=8, npc=3)
+#        vis.get_lookup_table(sat="NOAA18", pca=True, x=4.0)
+#        vis.get_lookup_table(sat="NOAA18", pca=True, x=4.0, npc=3)
+#        vis.get_lookup_table(sat="NOAA18", pca=True, x=2.0)
+#        vis.get_lookup_table(sat="NOAA18", pca=True, x=2.0, npc=3)
+#        vis.get_lookup_table(sat="NOAA18", pca=True, x=1.0)
+#        vis.get_lookup_table(sat="NOAA18", pca=True, x=1.0, npc=3)
+#        vis.get_lookup_table("NOAA18", N=40)
 #        vis.estimate_optimal_channel_binning("NOAA18", 5, 10)
 #        vis.estimate_pca_density("NOAA18", all_n=range(2, 5),
 #            bin_scales=[0.5, 2, 4, 6, 8])
