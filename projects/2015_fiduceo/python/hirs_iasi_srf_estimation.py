@@ -817,7 +817,8 @@ class IASI_HIRS_analyser:
 #                      dm=delta.mean(), ds=delta.std()))
                 biases[i, k] = delta.mean()
                 stds[i, k] = delta.std()
-                a_deltahistperbin.flat[k].hist(delta, 50,
+                a_deltahistperbin.flat[k].hist(delta,
+                    numpy.linspace(*scipy.stats.scoreatpercentile(delta, [1, 99]), 50),
                     histtype="step", cumulative=False,
                     stacked=False,
                     normed=True,
@@ -831,17 +832,21 @@ class IASI_HIRS_analyser:
                 continue
             a_deltahistperbin.flat[k].set_xlabel(r"$\Delta$ BT [K]")
             a_bthistperbin.flat[k].set_xlabel(r"BT [K]")
-            a_deltahistperbin.flat[k].set_xlim(-10, 10)
+            #a_deltahistperbin.flat[k].set_xlim(-10, 10)
+            ex = numpy.vstack([scipy.stats.scoreatpercentile(
+                    stats["y_mean"][x][subset] - stats["x"][x][subset], [5, 95])
+                        for x in stats["y_mean"].dtype.names])
+            a_deltahistperbin.flat[k].set_xlim(-abs(ex).max(), abs(ex).max())
             a_bthistperbin.flat[k].set_xlim(200, 300)
-            a_deltahistperbin.flat[k].grid()
-            a_bthistperbin.flat[k].grid()
+            a_deltahistperbin.flat[k].grid(axis="x")
+            a_bthistperbin.flat[k].grid(axis="both")
             for a in (a_deltahistperbin, a_bthistperbin):
                 a.flat[k].set_title("{:d}-{:,} per bin (tot. {:,})".format(
                     stats["N"][subset].min(),
                     stats["N"][subset].max(),
                     subset.sum()))
                 a.flat[k].set_ylabel("PD")
-                a.flat[k].grid()
+                #a.flat[k].grid()
                 if k == 1:
                     a.flat[k].legend(loc="lower right",
                         bbox_to_anchor=(1.6, -1.4),
