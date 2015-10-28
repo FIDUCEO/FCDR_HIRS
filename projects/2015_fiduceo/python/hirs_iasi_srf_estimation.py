@@ -37,7 +37,7 @@ import pyatmlab.graphics
 import pyatmlab.stats
 import pyatmlab.db
 
-from pyatmlab.constants import micro, centi, tera
+from pyatmlab.constants import micro, centi, tera, nano
 
 class IASI_HIRS_analyser:
     colors = ("brown orange magenta burlywood tomato indigo "
@@ -948,6 +948,73 @@ class IASI_HIRS_analyser:
                 matplotlib.pyplot.close(f)
      
 
+    def calc_bt_srf_shift(self, satellite, channel, shift):
+        """Calculate BT under SRF shifts
+
+        Per satellite, channel, and shift.
+
+        Expects that self.gran is already set.
+
+        :param str satellite: Satellite, i.e., NOAA18
+        :param int channel: Channel, i.e., 11
+        :param ndarray shift: Shift in Hz.
+        """
+
+        y = self.get_y("specrad_freq")
+
+        srf_nom = self.srfs[satellite][channel-1] # index 0 -> channel 1 etc.
+        L_nom = srf_nom.integrate_radiances(self.iasi.frequency, y)
+        bt_nom = srf_nom.channel_radiance2bt(L_nom)
+
+        yo = numpy.zeros(shape=bt_nom.shape + shift.shape)
+
+        for (i, sh) in enumerate(numpy.atleast_1d(shift).flat):
+            srf_new = srf_nom.shift(sh)
+            L_new = srf_new.integrate_radiances(self.iasi.frequency, y)
+            bt_new = srf_new.channel_radiance2bt(L_new)
+            yo.reshape(*yo.shape[:2], -1)[:, :, i] = bt_new
+
+        return yo
+       
+    def plot_bt_srf_shift(self, satellite, channel):
+        """Plot BT changes due to SRF shifts
+
+        :param str satellite: Satellite, i.e., NOAA18
+        :param int channel: Channel, i.e., 11
+        """
+
+        if self.gran is None:
+            self.gran = self.iasi.read(next(self.graniter))
+        
+        dx = numpy.linspace(-1.5e11, 1.5e11, 7)
+        # diff in um for human-readability
+        d_um = (pyatmlab.physics.frequency2wavelength(
+                    self.srfs[satellite][channel-1].centroid()) 
+              - pyatmlab.physics.frequency2wavelength(
+                    self.srfs[satellite][channel-1].centroid()-dx))
+        sh = self.calc_bt_srf_shift(satellite, channel, dx)
+        nsh = sh[:, :, sh.shape[2]//2]
+        dsh = sh - nsh[:, :, numpy.newaxis]
+        btbins = numpy.linspace(nsh[nsh>0].min(), nsh.max(), 50)
+        ptiles = numpy.array([5, 25, 50, 75, 90])
+
+        scores = numpy.zeros(shape=(btbins.size, ptiles.size, dsh.shape[2]))
+        (f, a) = matplotlib.pyplot.subplots()
+        for i in range(dsh.shape[2]):
+            btbinned = pyatmlab.stats.bin(nsh.ravel(), dsh[:, :, i].ravel(), btbins)
+            scores[:, :, i] = numpy.vstack([scipy.stats.scoreatpercentile(b, ptiles) for b in btbinned])
+
+            for k in range(ptiles.size):
+                a.plot(btbins, scores[:, k, i], color=self.colors[i],
+                       ls=(":", "--", "-", "--", ":")[k],
+                       label="shift {:3d} nm".format(int(d_um[i]//nano)) if k==2 else None)
+        a.set_title("Effect of HIRS SRF shift, {:s} ch. {:d}".format(satellite, channel))
+        a.legend(loc="upper left")
+        a.set_xlabel("BT [K]")
+        a.set_ylabel(r"\Delta BT [K]")
+        pyatmlab.graphics.print_or_show(f, False,
+            "srf_shift_direct_estimate_HIRS_{:s}-{:d}.".format(satellite, channel))
+
 def main():
     print(numexpr.set_num_threads(8))
     parser = argparse.ArgumentParser("Experiment with HIRS SRF estimation")
@@ -970,12 +1037,14 @@ def main():
                                  npc=p.npc, channels=p.channels)
             return
             
+        for i in range(1, 13):
+            vis.plot_bt_srf_shift("NOAA18", i)
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_8.0")
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_4.0")
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_2.0")
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_1.0")
 #        vis.lut_visualise_stats_unseen_data()
-        vis.lut_visualise_multi()
+#        vis.lut_visualise_multi()
 #        (counts, stats) = vis.lut_get_stats_unseen_data()
 #        vis.plot_lut_radiance_delta_all_iasi()
 #        vis.get_lookup_table(sat="NOAA18", pca=True, x=8)
