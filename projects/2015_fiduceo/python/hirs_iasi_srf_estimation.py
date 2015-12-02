@@ -28,6 +28,7 @@ import matplotlib.pyplot
 
 import progressbar
 import numexpr
+import mpl_toolkits.basemap
 
 import pyatmlab.datasets.tovs
 import pyatmlab.io
@@ -201,6 +202,25 @@ class IASI_HIRS_analyser:
             logging.info("{:d}/{:d} channel combination {!s}: {:.3%} {:d}/{:d}/{:d}".format(
                   k, tot, combi, frac, lowest, med, highest))
 
+    def get_pca_channels(self, sat, channels=slice(12), ret_y=False):
+        bt = self.get_tb_channels(sat)
+        bt2d = bt.reshape(-1, bt.shape[2])
+        bt2d = bt2d[:, channels]
+        btok = (bt2d>0).all(1)
+
+        logging.info("Calculating PCA")
+        pca = matplotlib.mlab.PCA(bt2d[btok, :])
+        Ys = numpy.ma.zeros(shape=bt2d.shape, dtype="f4")
+        Ys.mask = numpy.zeros_like(Ys, dtype="bool")
+        Ys.mask[~btok] = True
+        Ys[btok, :] = pca.Y
+        Y = Ys.reshape(bt.shape)
+
+        if ret_y:
+            return (pca, Y)
+        else:
+            return pca
+
     def estimate_pca_density(self, sat="NOAA18", all_n=[5], bin_scales=[1],
             channels=slice(12), nbusy=4):
         """How efficient is PCA binning?
@@ -216,13 +236,8 @@ class IASI_HIRS_analyser:
             explained by each PC.
         """
 
-        bt = self.get_tb_channels(sat)
-        bt2d = bt.reshape(-1, bt.shape[2])
-        bt2d = bt2d[:, channels]
-        bt2d = bt2d[(bt2d>0).all(1), :]
+        pca = self.get_pca_channels(sat, channels)
 
-        logging.info("Calculating PCA")
-        pca = matplotlib.mlab.PCA(bt2d)
         for bin_scale in bin_scales:
             nbins = numpy.ceil(pca.fracs*100*bin_scale)
             bins = [numpy.linspace(pca.Y[:, i].min(), pca.Y[:, i].max(), max(p, 2))
@@ -1015,6 +1030,147 @@ class IASI_HIRS_analyser:
         pyatmlab.graphics.print_or_show(f, False,
             "srf_shift_direct_estimate_HIRS_{:s}-{:d}.".format(satellite, channel))
 
+
+    def _prepare_map(self):
+        f = matplotlib.pyplot.figure(figsize=(12, 8))
+        a = f.add_subplot(1, 1, 1)
+        m = mpl_toolkits.basemap.Basemap(projection="cea",
+                llcrnrlat=self.gran["lat"].min()-30,
+                llcrnrlon=self.gran["lon"].min()-30,
+                urcrnrlat=self.gran["lat"].max()+30,
+                urcrnrlon=self.gran["lon"].max()+30,
+                resolution="c")
+#        m = mpl_toolkits.basemap.Basemap(projection="moll", lon_0=0,
+#                resolution="c", ax=a)
+        m.drawcoastlines()
+        m.drawmeridians(numpy.arange(-180, 180, 30))
+        m.drawparallels(numpy.arange(-90, 90, 30))
+        return (f, a, m)
+
+    def find_matching_hirs_granule(self, h, satname):
+        dt1 = self.gran["time"].min().astype(datetime.datetime)
+        dt2 = self.gran["time"].max().astype(datetime.datetime)
+        return next(h.find_granules(dt1, dt2, satname=satname.lower()))
+
+    def read_matching_hirs_granule(self, h, satname):
+        return h.read(self.find_matching_hirs_granule(h, satname.lower()))
+
+    _bt_simul = None
+    def map_with_hirs(self, h, satname, c, cmap="viridis"):
+        """Plot map with simulated and real HIRS
+
+        Needs hirs object, locates closest granule.
+        """
+
+        hg = self.read_matching_hirs_granule(h, satname)
+        (f, a, m) = self._prepare_map()
+
+        if self._bt_simul is None:
+            bt_simul = self.get_tb_channels(satname)
+            self._bt_simul = bt_simul
+        else:
+            bt_simul = self._bt_simul
+
+        # channel data for iasi-simulated
+        pcs = m.pcolor(self.gran["lon"], self.gran["lat"],
+                       bt_simul[:, :, c-1], latlon=True, cmap=cmap)
+
+        # channel data for actually measured
+        # workaround for http://stackoverflow.com/q/12317155/974555
+        safeline = (hg["lon"].data>0).all(1)
+        # workaround for numpy/numpy#6723
+        X = hg["bt"]
+        X._fill_value = X._fill_value.flat[0]
+        pcr = m.pcolor(hg["lon"][safeline, :], hg["lat"][safeline, :],
+                       X[safeline, :, c-1], latlon=True, cmap=cmap)
+
+        lo = X[safeline, :, c-1].min()
+        hi = X[safeline, :, c+1].max()
+        pcs.set_clim(lo, hi)
+        pcr.set_clim(lo, hi)
+
+        cb = f.colorbar(pcs)
+        cb.set_label("BT ch. {:d} [K]".format(c))
+
+        dt1 = self.gran["time"].min().astype(datetime.datetime)
+        dt2 = self.gran["time"].max().astype(datetime.datetime)
+        a.set_title("{satname:s} hirs-{ch:d}, iasi-simulated or real\n"
+                     "{dt1:%y-%m-%d %h:%m} -- {dt2:%H:%M}".format(
+                        satname=satname, ch=c, dt1=dt1, dt2=dt2))
+        pyatmlab.graphics.print_or_show(f, False,
+            "map_BTHIRS_real_simul_ch{:d}_{:%Y%m%d%H%M%S}.".format(c,dt1))
+
+    def map_with_hirs_pca(self, h, satname, cmap="viridis"):
+
+        dt1 = self.gran["time"].min().astype(datetime.datetime)
+        dt2 = self.gran["time"].max().astype(datetime.datetime)
+        hg = self.read_matching_hirs_granule(h, satname)
+        X = hg["bt"][:, :, :12]
+        hbt_val = X.reshape(-1, 12)
+        allgood = ~hbt_val.mask.any(1)
+        hbt_val = hbt_val[allgood]
+        hm_pca = matplotlib.mlab.PCA(hbt_val)
+        hm_pca_Yf = numpy.ma.zeros(shape=(X.shape[0]*X.shape[1], X.shape[2]),
+                        dtype="f4")
+        hm_pca_Yf.mask = numpy.zeros_like(hm_pca_Yf, dtype="bool")
+        # if at least one channel is masked, mask all PCA
+        hm_pca_Yf.mask[~allgood] = True
+        hm_pca_Yf[allgood] = hm_pca.Y
+        hm_pca_Y = hm_pca_Yf.reshape(X.shape[0], X.shape[1], 12)
+
+
+        (hs_pca, hs_pca_Y) = self.get_pca_channels(satname, slice(12),
+                                                   ret_y=True)
+
+        # Compare weight matrices
+        (f, a) = matplotlib.pyplot.subplots(1)
+        c = a.pcolor(hm_pca.Wt, cmap="viridis")
+        cb = f.colorbar(c)
+        cb.set_label("Weight")
+        a.set_title("PCA weight matrix HIRS measured {:%Y-%m-%d %H:%M:%S}".format(dt1))
+        pyatmlab.graphics.print_or_show(f, False,
+            "PCA_weight_HIRS_measured_{:%Y%m%d%H%M%S}.".format(dt1))
+
+        (f, a) = matplotlib.pyplot.subplots(1)
+        c = a.pcolor(hs_pca.Wt, cmap="viridis")
+        cb = f.colorbar(c)
+        cb.set_label("Weight")
+        a.set_title("PCA weight matrix IASI-simulated HIRS {:%Y-%m-%d %H:%M:%S}".format(dt1))
+        pyatmlab.graphics.print_or_show(f, False,
+            "PCA_weight_HIRS_IASI_simul_{:%Y%m%d%H%M%S}.".format(dt1))
+
+        (f, a) = matplotlib.pyplot.subplots(1)
+        c = a.pcolor(hm_pca.Wt-hs_pca.Wt, cmap="BrBG")
+        cb = f.colorbar(c)
+        cb.set_label("Weight")
+        a.set_title("PCA weight matrix IASI-meas-simulated HIRS {:%Y-%m-%d %H:%M:%S}".format(dt1))
+        pyatmlab.graphics.print_or_show(f, False,
+            "PCA_weight_HIRS_IASI_delta_meas_simul_{:%Y%m%d%H%M%S}.".format(dt1))
+        
+        for i in range(12):
+            (f, a, m) = self._prepare_map()
+        
+        for i in range(12):
+            (f, a, m) = self._prepare_map()
+
+            pcs = m.pcolor(self.gran["lon"], self.gran["lat"],
+                           hs_pca_Y[:, :, i], latlon=True, cmap=cmap)
+
+            # workaround for http://stackoverflow.com/q/12317155/974555
+            safeline = (hg["lon"].data>0).all(1)
+            pcs = m.pcolor(hg["lon"][safeline, :], hg["lat"][safeline, :],
+                           hm_pca_Y[safeline, :, i], latlon=True, cmap=cmap)
+
+            cb = f.colorbar(pcs)
+            cb.set_label("Score PC {:d}".format(i+1))
+
+
+            a.set_title("{satname:s} HIRS PC {pc:d}, iasi-simulated or real PC scores\n"
+                         "{dt1:%Y-%m-%d %H:%M} -- {dt2:%H:%M}".format(
+                            satname=satname, pc=i, dt1=dt1, dt2=dt2))
+            pyatmlab.graphics.print_or_show(f, False,
+                "map_BTHIRS_real_simul_pc{:d}_{:%Y%m%d%H%M%S}.".format(i+1,dt1))
+
 def main():
     print(numexpr.set_num_threads(8))
     parser = argparse.ArgumentParser("Experiment with HIRS SRF estimation")
@@ -1030,15 +1186,21 @@ def main():
 
     with numpy.errstate(all="raise"):
         vis = IASI_HIRS_analyser()
+        h = pyatmlab.datasets.tovs.HIRS3()
 
         if p.makelut:
             print("Making LUT only")
             vis.get_lookup_table(sat=p.sat, pca=p.pca, x=p.factor,
                                  npc=p.npc, channels=p.channels)
             return
+
+        if vis.gran is None:
+            vis.gran = vis.iasi.read(next(vis.graniter))
             
+        vis.map_with_hirs_pca(h, "NOAA16")
         for i in range(1, 13):
             vis.plot_bt_srf_shift("NOAA18", i)
+            vis.map_with_hirs(h, "NOAA16", i)
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_8.0")
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_4.0")
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_2.0")
