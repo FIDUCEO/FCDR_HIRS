@@ -39,6 +39,7 @@ import pyatmlab.stats
 import pyatmlab.db
 
 from pyatmlab.constants import micro, centi, tera, nano
+from pyatmlab import ureg
 
 class IASI_HIRS_analyser:
     colors = ("brown orange magenta burlywood tomato indigo "
@@ -50,18 +51,23 @@ class IASI_HIRS_analyser:
                pyatmlab.datasets.tovs.HIRS4.satellites)
     allsats = {re.sub(r"0(\d)", r"\1", sat).upper() for sat in allsats}
 
-    x = dict(converter=dict(
-                wavelength=pyatmlab.physics.frequency2wavelength,
-                wavenumber=pyatmlab.physics.frequency2wavenumber,
-                frequency=lambda x: x),
-             factor=dict(
-                wavelength=micro,
-                wavenumber=centi,
-                frequency=tera),
-             label=dict(
-                wavelength="Wavelength [µm]",
-                wavenumber="Wave number [cm^-1]",
-                frequency="Frequency [THz]"))
+    x = dict(#converter=dict(
+#                wavelength=pyatmlab.physics.frequency2wavelength,
+#                wavenumber=pyatmlab.physics.frequency2wavenumber,
+#                frequency=lambda x: x),
+#             factor=dict(
+#                wavelength=micro,
+#                wavenumber=centi,
+#                frequency=tera),
+            unit=dict(
+                wavelength=ureg.micrometer,
+                wavenumber=1/ureg.centimeter,
+                frequency=ureg.terahertz),
+#             label=dict(
+#                wavelength="Wavelength [µm]",
+#                wavenumber="Wave number [cm^-1]",
+#                frequency="Frequency [THz]"))
+            )
                 
     _iasi = None
     @property
@@ -374,7 +380,7 @@ class IASI_HIRS_analyser:
 #        db.toFile(out)
 
     def plot_full_spectrum_with_all_channels(self, sat,
-            y_unit="Tb"):
+            y_unit="Tb", x_quantity="frequency"):
 #        Tb_chans = self.get_tb_for_channels(hirs_srf)
 
         (y, y_label) = self.get_y(y_unit, return_label=True)
@@ -383,11 +389,13 @@ class IASI_HIRS_analyser:
 
         # Plot spectrum
         #a.plot(iasi.frequency, specrad_freq[i1, i2, :])
+        x = getattr(self.iasi, x_quantity).to(self.x["unit"][x_quantity])
+        #x = self.iasi.frequency.to(x_unit, "sp")
         for c in self.choice:
-            a.plot(self.iasi.frequency, y[c[0], c[1], :])
+            a.plot(x, y[c[0], c[1], :])
         #a.plot(iasi.wavelength, Tb[i1, i2, :])
         a.set_ylabel(y_label)
-        a.set_xlabel("Frequency [Hz]")
+        a.set_xlabel("{:s} [{:~}]".format(x_quantity, x.units))
         a.set_title("Some arbitrary IASI spectra with nominal {sat} HIRS"
                         " SRFs".format(sat=sat))
 
@@ -395,12 +403,17 @@ class IASI_HIRS_analyser:
         a2 = a.twinx()
         for (i, srf) in enumerate(self.srfs[sat]):
             #wl = pyatmlab.physics.frequency2wavelength(srf.f)
-            a2.plot(srf.f, 0.8 * srf.W/srf.W.max(), color="black")
+            x = getattr(srf, x_quantity).to(self.x["unit"][x_quantity])
+            a2.plot(x, 0.8 * srf.W/srf.W.max(), color="black")
             nomfreq = srf.centroid()
+            nomfreq_x = nomfreq.to(self.x["unit"][x_quantity], "sp")
             #nomfreq = pyatmlab.physics.frequency2wavelength(srf.centroid())
             #nomfreq = freq[numpy.argmax(srf.W)]
             #nomfreq = wl[numpy.argmax(weight)]
-            a2.text(nomfreq, 0.9, "{:d}".format(i+1))
+
+            # Seems that matplotlib.text.Text.get_unitless_position fails
+            # when I keep the unit there
+            a2.text(nomfreq_x.m, 0.9, "{:d}".format(i+1))
 
         a2.set_ylim(0, 1)
 
@@ -408,7 +421,7 @@ class IASI_HIRS_analyser:
 #              align="center")
 
         pyatmlab.graphics.print_or_show(f, False,
-            "iasi_with_hirs_srf_{:s}_{:s}.".format(sat, y_unit))
+            "iasi_with_hirs_srf_{:s}_{:s}_{:s}.".format(sat, x_quantity, y_unit))
 
     def plot_srf_all_sats(self, x_quantity="wavelength", y_unit="TB"):
         """Plot part of the spectrum with channel SRF for all sats
@@ -431,31 +444,36 @@ class IASI_HIRS_analyser:
 #                logging.info("Calculating channel radiances for {:s}".format(sat))
             Tb_chans[sat] = self.get_tb_channels(sat)
 
-        for i in range(19):
+        for i in range(12):
             ch = i + 1
             (f, a) = matplotlib.pyplot.subplots()
             #spectrum = y[self.choice[0], self.choice[1], :]
             spectra = [y[c[0], c[1], :] for c in self.choice]
             a.set_ylabel(y_label)
-            a.set_xlabel(self.x["label"][x_quantity])
+            #a.set_xlabel(self.x["label"][x_quantity])
+            a.set_xlabel("{:s} [{:~}]".format(x_quantity, self.x["unit"][x_quantity]))
+            #self.x["label"][x_quantity])
             a.set_title("A IASI spectrum with different HIRS SRF (ch."
                         "{:d})".format(ch))
             a.grid(axis="y", which="both")
             #a.set_ylim(200, 300)
             a2 = a.twinx()
-            (freq_lo, freq_hi) = (1e14, 0)
+            (freq_lo, freq_hi) = (100*ureg.THz, 0*ureg.Hz)
             # Plot SRFs for all channels
             for (color, (sat, srf)) in zip(self.colors, self.srfs.items()):
 #                (freq, weight) = srf[i]
-                x = self.x["converter"][x_quantity](srf[i].f)
-                a2.plot(x/self.x["factor"][x_quantity],
+                #x = self.x["converter"][x_quantity](srf[i].f)
+                x = srf[i].frequency.to(self.x["unit"][x_quantity], "sp")
+                #a2.plot(x/self.x["factor"][x_quantity],
+                a2.plot(x,
                         srf[i].W/srf[i].W.max(),
                         label=sat[0] + "-" + sat[-2:].lstrip("SA"),
                         color=color)
-                freq_lo = min(freq_lo, srf[i].f.min())
-                freq_hi = max(freq_hi, srf[i].f.max())
+                freq_lo = min(freq_lo, srf[i].frequency.min())
+                freq_hi = max(freq_hi, srf[i].frequency.max())
                 a.plot(
-                    self.x["converter"][x_quantity](numpy.atleast_1d(srf[i].centroid()))/self.x["factor"][x_quantity],
+                    #self.x["converter"][x_quantity](numpy.atleast_1d(srf[i].centroid()))/self.x["factor"][x_quantity],
+                    numpy.atleast_1d(srf[i].centroid().to(self.x["unit"][x_quantity], "sp")),
                     numpy.atleast_2d(
                         [Tb_chans[sat][c[0], c[1], i] for c in self.choice]),
                        markerfacecolor=color,
@@ -465,12 +483,15 @@ class IASI_HIRS_analyser:
                        zorder=10)
                 pyatmlab.io.write_data_to_files(
                     numpy.vstack(
-                        (x/self.x["factor"][x_quantity],
+                        (#x/self.x["factor"][x_quantity],
+                         x.to(self.x["unit"][x_quantity], "sp"),
                          srf[i].W/srf[i].W.max())).T,
                     "SRF_{:s}_ch{:d}_{:s}".format(sat, ch, x_quantity))
             # Plot IASI spectra
             for spectrum in spectra:
-                a.plot(self.x["converter"][x_quantity](self.iasi.frequency)/self.x["factor"][x_quantity], spectrum,
+                a.plot(#self.x["converter"][x_quantity](self.iasi.frequency)/self.x["factor"][x_quantity],
+                       self.iasi.frequency.to(self.x["unit"][x_quantity], "sp"),
+                       spectrum,
                        linewidth=1.0, zorder=5)
             freq_lo = max(freq_lo, self.iasi.frequency.min())
             freq_hi = min(freq_hi, self.iasi.frequency.max())
@@ -487,14 +508,16 @@ class IASI_HIRS_analyser:
 #            a.set_ylim(y_in_view.min(), y_in_view.max())
             a.set_ylim(min([yv.min() for yv in y_in_view]),
                        max([yv.max() for yv in y_in_view]))
-            x_lo = self.x["converter"][x_quantity](freq_lo)/self.x["factor"][x_quantity]
-            x_hi = self.x["converter"][x_quantity](freq_hi)/self.x["factor"][x_quantity]
+            #x_lo = self.x["converter"][x_quantity](freq_lo)/self.x["factor"][x_quantity]
+            x_lo = freq_lo.to(self.x["unit"][x_quantity], "sp")
+            #x_hi = self.x["converter"][x_quantity](freq_hi)/self.x["factor"][x_quantity]
+            x_hi = freq_hi.to(self.x["unit"][x_quantity], "sp")
             #wl_lo = pyatmlab.physics.frequency2wavelength(freq_lo)
             #wl_hi = pyatmlab.physics.frequency2wavelength(freq_hi)
             #a.set_xlim(wl_lo/micro, wl_hi/micro)
             #a2.set_xlim(wl_lo/micro, wl_hi/micro)
-            a.set_xlim(min(x_lo, x_hi), max(x_lo, x_hi))
-            a2.set_xlim(min(x_lo, x_hi), max(x_lo, x_hi))
+            a.set_xlim(min(x_lo, x_hi).m, max(x_lo, x_hi).m)
+            a2.set_xlim(min(x_lo, x_hi).m, max(x_lo, x_hi).m)
             pyatmlab.graphics.print_or_show(f, False,
                     "iasi_with_hirs_srfs_ch{:d}_{:s}_{:s}.".format(
                         ch, x_quantity, y_unit))
@@ -1197,10 +1220,10 @@ def main():
         if vis.gran is None:
             vis.gran = vis.iasi.read(next(vis.graniter))
             
-        vis.map_with_hirs_pca(h, "NOAA16")
-        for i in range(1, 13):
-            vis.plot_bt_srf_shift("NOAA18", i)
-            vis.map_with_hirs(h, "NOAA16", i)
+#        vis.map_with_hirs_pca(h, "NOAA16")
+#        for i in range(1, 13):
+#            vis.plot_bt_srf_shift("NOAA18", i)
+#            vis.map_with_hirs(h, "NOAA16", i)
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_8.0")
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_4.0")
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_2.0")
@@ -1221,10 +1244,11 @@ def main():
 #        vis.estimate_optimal_channel_binning("NOAA18", 5, 10)
 #        vis.estimate_pca_density("NOAA18", all_n=range(2, 5),
 #            bin_scales=[0.5, 2, 4, 6, 8])
-#        for unit in {"Tb", "specrad_freq"}:
-#            vis.plot_full_spectrum_with_all_channels("NOAA18",
-#                y_unit=unit)
-#            vis.plot_srf_all_sats(y_unit=unit)
+        for unit in {"Tb", "specrad_freq"}:
+            for x in {"frequency", "wavelength"}:
+                vis.plot_full_spectrum_with_all_channels("NOAA18",
+                    y_unit=unit, x_quantity=x)
+            vis.plot_srf_all_sats(y_unit=unit)
 #        for h in vis.allsats:
 #            try:
 #                #vis.plot_Te_vs_T(h)
