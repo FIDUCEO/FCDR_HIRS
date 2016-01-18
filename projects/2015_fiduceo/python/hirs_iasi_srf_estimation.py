@@ -21,7 +21,7 @@ import numpy.lib.recfunctions
 import scipy.stats
 
 import matplotlib
-if not os.getenv("DISPLAY"): # None or empty string
+if __name__ == "__main__":
     matplotlib.use("Agg")
     
 import matplotlib.pyplot
@@ -29,6 +29,7 @@ import matplotlib.pyplot
 import progressbar
 import numexpr
 import mpl_toolkits.basemap
+import sklearn.cross_decomposition
 
 import pyatmlab.datasets.tovs
 import pyatmlab.io
@@ -41,248 +42,9 @@ import pyatmlab.db
 from pyatmlab.constants import micro, centi, tera, nano
 from pyatmlab import ureg
 
-class IASI_HIRS_analyser:
-    colors = ("brown orange magenta burlywood tomato indigo "
-              "moccasin cyan teal khaki tan steelblue "
-              "olive gold darkorchid pink midnightblue "
-              "crimson orchid olive chocolate sienna").split()
-    allsats = (pyatmlab.datasets.tovs.HIRS2.satellites |
-               pyatmlab.datasets.tovs.HIRS3.satellites |
-               pyatmlab.datasets.tovs.HIRS4.satellites)
-    allsats = {re.sub(r"0(\d)", r"\1", sat).upper() for sat in allsats}
-
-    x = dict(#converter=dict(
-#                wavelength=pyatmlab.physics.frequency2wavelength,
-#                wavenumber=pyatmlab.physics.frequency2wavenumber,
-#                frequency=lambda x: x),
-#             factor=dict(
-#                wavelength=micro,
-#                wavenumber=centi,
-#                frequency=tera),
-            unit=dict(
-                wavelength=ureg.micrometer,
-                wavenumber=1/ureg.centimeter,
-                frequency=ureg.terahertz),
-#             label=dict(
-#                wavelength="Wavelength [µm]",
-#                wavenumber="Wave number [cm^-1]",
-#                frequency="Frequency [THz]"))
-            )
-                
-    _iasi = None
-    @property
-    def iasi(self):
-        if self._iasi is None:
-            self._iasi = pyatmlab.datasets.tovs.IASI(name="iasi")
-        return self._iasi
-
-    @iasi.setter
-    def iasi(self, value):
-        self._iasi = value
-
-    _graniter = None
-    @property
-    def graniter(self):
-        if self._graniter is None:
-            self._graniter = self.iasi.find_granules()
-        return self._graniter
-
-    @graniter.setter
-    def graniter(self, value):
-        self._graniter = value
-
-    _gran = None
-    @property
-    def gran(self):
-#        if self._gran is None:
-#            self._gran = self.iasi.read(next(self.graniter))
-        return self._gran
-
-    @gran.setter
-    def gran(self, value):
-        self._gran = value
-
-    def __init__(self):
-        logging.info("Finding and reading IASI")
-        #self.iasi = pyatmlab.datasets.tovs.IASI(name="iasi")
-        #self.graniter = self.iasi.find_granules()
-        #self.gran = self.iasi.read(next(self.graniter))
-        self.choice = [(38, 47), (37, 29), (100, 51), (52, 11)]
-
-        hconf = pyatmlab.config.conf["hirs"]
-        srfs = {}
-        for sat in self.allsats:
-            try:
-                (hirs_centres, hirs_srf) = pyatmlab.io.read_arts_srf(
-                    hconf["srf_backend_f"].format(sat=sat),
-                    hconf["srf_backend_response"].format(sat=sat))
-            except FileNotFoundError as msg:
-                logging.error("Skipping {:s}: {!s}".format(
-                              sat, msg))
-            else:
-                srfs[sat] = [pyatmlab.physics.SRF(f, w) for (f, w) in hirs_srf]
-        self.srfs = srfs
-#        for coor in self.choice:
-#            logging.info("Considering {coor!s}: Latitude {lat:.1f}°, "
-#                "Longitude {lon:.1f}°, Time {time!s}, SZA {sza!s})".format(
-#                coor=coor, lat=self.gran["lat"][coor[0], coor[1]],
-#                lon=self.gran["lon"][coor[0], coor[1]],
-#                time=self.gran["time"][coor[0], coor[1]].astype(datetime.datetime),
-#                sza=self.gran["solar_zenith_angle"][coor[0], coor[1]]))
-
-    def get_y(self, unit, return_label=False):
-        """Get measurement in desired unit
-        """
-        specrad_wavenum = self.gran["spectral_radiance"]
-        if unit.lower() in {"tb", "bt"}:
-            y = self.get_tb_spectrum()
-            y_label = "Brightness temperature [K]"
-        elif unit == "specrad_freq":
-            y = pyatmlab.physics.specrad_wavenumber2frequency(specrad_wavenum)
-            y_label = "Spectral radiance [W m^-2 sr^-1 Hz^-1]"
-        elif unit == "specrad_wavenum":
-            y = specrad_wavenum
-            y_label = "Spectral radiance [W m^-2 sr^-1 m]"
-        else:
-            raise ValueError("Unknown unit: {:s}".format(unit))
-        return (y, y_label) if return_label else y
-
-    def get_tb_spectrum(self):
-        """Calculate spectrum of brightness temperatures
-        """
-        specrad_freq = self.get_y(unit="specrad_freq")
-#        specrad_wavenum = self.gran["spectral_radiance"]
-#        specrad_freq = pyatmlab.physics.specrad_wavenumber2frequency(
-#                            specrad_wavenum)
-
-        with numpy.errstate(divide="warn", invalid="warn"):
-            logging.debug("...converting radiances to BTs...")
-            Tb = pyatmlab.physics.specrad_frequency_to_planck_bt(
-                specrad_freq, self.iasi.frequency)
-        return Tb
-
-    def get_tb_channels(self, sat, channels=range(1, 13)):
-        """Get brightness temperature for channels
-        """
-        #chan_nos = (numpy.arange(19) + 1)[channels]
-#        specrad_wn = self.gran["spectral_radiance"]
-#        specrad_f = pyatmlab.physics.specrad_wavenumber2frequency(
-#                            specrad_wn)
-        specrad_f = self.get_y(unit="specrad_freq")
-        Tb_chans = numpy.zeros(dtype=numpy.float32,
-                               shape=specrad_f.shape[0:2] + (len(channels),))
-        for (i, c) in enumerate(channels):
-            srf = self.srfs[sat][c-1]
-        #for (i, srf) in enumerate(self.srfs[sat]):
-            logging.debug("Calculating channel Tb {:s}-{:d}".format(sat, c))
-            #srfobj = pyatmlab.physics.SRF(freq, weight)
-            L = srf.integrate_radiances(self.iasi.frequency, specrad_f)
-
-            Tb_chans[:, :, i] = srf.channel_radiance2bt(L)
-        return Tb_chans
-
-
-    def estimate_optimal_channel_binning(self, sat="NOAA18", N=5, p=20):
-        """What HIRS channel combi optimises variability?
-
-        :param sat: Satellite to use
-        :param N: Number of channels in lookup table
-        :param p: Number of bins per channel
-
-        Note that as this method aims to choose an optimal combination of
-        channels using rectangular binning (no channel differences), it
-        does not use PCA.  For that, see estimate_pca_density.
-        """
-        bt = self.get_tb_channels(sat)
-        btflat = [bt[..., i].ravel() for i in range(bt.shape[-1])]
-        bins = [scipy.stats.scoreatpercentile(b[b>0], numpy.linspace(0, 100, p))
-                    for b in btflat]
-        #bins = numpy.linspace(170, 310, 20)
-        chans = range(12) # thermal channels only
-        tot = int(scipy.misc.comb(12, N))
-        logging.info("Studying {:d} combinations".format(tot))
-        for (k, combi) in enumerate(itertools.combinations(chans, N)):
-            bnd =  pyatmlab.stats.bin_nd([btflat[i] for i in combi], 
-                                         [bins[i] for i in combi])
-            (frac, lowest, med, highest) = self._calc_bin_stats(bnd)
-            logging.info("{:d}/{:d} channel combination {!s}: {:.3%} {:d}/{:d}/{:d}".format(
-                  k, tot, combi, frac, lowest, med, highest))
-
-    def get_pca_channels(self, sat, channels=slice(12), ret_y=False):
-        bt = self.get_tb_channels(sat)
-        bt2d = bt.reshape(-1, bt.shape[2])
-        bt2d = bt2d[:, channels]
-        btok = (bt2d>0).all(1)
-
-        logging.info("Calculating PCA")
-        pca = matplotlib.mlab.PCA(bt2d[btok, :])
-        Ys = numpy.ma.zeros(shape=bt2d.shape, dtype="f4")
-        Ys.mask = numpy.zeros_like(Ys, dtype="bool")
-        Ys.mask[~btok] = True
-        Ys[btok, :] = pca.Y
-        Y = Ys.reshape(bt.shape)
-
-        if ret_y:
-            return (pca, Y)
-        else:
-            return pca
-
-    def estimate_pca_density(self, sat="NOAA18", all_n=[5], bin_scales=[1],
-            channels=slice(12), nbusy=4):
-        """How efficient is PCA binning?
-
-        Investigates how sparse a PCA-based binning lookup table is.
-        This first calculates PCA 
-
-        :param sat: Satellite to use
-        :param all_n: Number of PCs to use in lookup table.
-            May be an array, will loop through all.
-        :param bin_scale: Scaling factor for number of bins per PC.
-            Number of bins is proportional to the fraction of variability
-            explained by each PC.
-        """
-
-        pca = self.get_pca_channels(sat, channels)
-
-        for bin_scale in bin_scales:
-            nbins = numpy.ceil(pca.fracs*100*bin_scale)
-            bins = [numpy.linspace(pca.Y[:, i].min(), pca.Y[:, i].max(), max(p, 2))
-                for (i, p) in enumerate(nbins)]
-            for n in all_n:
-                logging.info("Binning, scale={:.1f}, n={:d}".format(
-                    bin_scale, n))
-                bnd = pyatmlab.stats.bin_nd(
-                    [pca.Y[:, i] for i in range(n)],
-                    bins[:n])
-                (no, frac, lowest, med, highest) = self._calc_bin_stats(bnd)
-                logging.info("PCA {:d} comp., {:s} bins/comp: {:.3%} {:d}/{:d}/{:d}".format(
-                      n, "/".join(["{:d}".format(x) for x in bnd.shape]),
-                      frac, lowest, med, highest))
-                nos = numpy.argsort(no)
-                busiest_bins = bnd.ravel()[nos[-nbusy:]].tolist()
-                logging.info("Ranges in {nbusy:d} busiest bins:".format(
-                                nbusy=nbusy))
-                print("{:>4s} {:>5s}/{:>5s}/{:>5s} {:>5s} {:>5s}".format(
-                      "Ch.", "min", "mean", "max", "PTP", "STD"))
-                for i in range(bt2d.shape[1]):
-                    for b in busiest_bins:
-                        print("{:>4d} {:>5.1f}/{:>5.1f}/{:>5.1f} {:>5.2f} "
-                              "{:>5.2f}".format(i+1,
-                                bt2d[b, i].min(),
-                                bt2d[b, i].mean(),
-                                bt2d[b, i].max(),
-                                bt2d[b, i].ptp(),
-                                bt2d[b, i].std()))
-                del bnd
-                del no
-                del nos
-
-
-#                    for z in zip(range(1, cont.shape[1]+1), cont.min(0),
-#                                 cont.mean(0), cont.max(0),
-#                                 cont.ptp(0), cont.std(0)):
-#                        print("{:>4d} {:>5.1f}/{:>5.1f}/{:>5.1f} {:>5.2f} "
-#                              "{:>5.2f}".format(*z))
+class LUTAnalysis:
+    """Helper class centralising all LUT-related approaches
+    """
                 
     def _get_next_y_for_lut(self, g, sat, channels=range(1, 13)):
         """Helper for get_lookup_table_*
@@ -378,229 +140,6 @@ class IASI_HIRS_analyser:
 #        out = "/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/test/test_{:%Y%m%d-%H%M%S}.dat".format(datetime.datetime.now())
 #        logging.info("Storing lookup table to {:s}".format(out))
 #        db.toFile(out)
-
-    def plot_full_spectrum_with_all_channels(self, sat,
-            y_unit="Tb", x_quantity="frequency"):
-#        Tb_chans = self.get_tb_for_channels(hirs_srf)
-
-        (y, y_label) = self.get_y(y_unit, return_label=True)
-        logging.info("Visualising")
-        (f, a) = matplotlib.pyplot.subplots()
-
-        # Plot spectrum
-        #a.plot(iasi.frequency, specrad_freq[i1, i2, :])
-        x = getattr(self.iasi, x_quantity).to(self.x["unit"][x_quantity])
-        #x = self.iasi.frequency.to(x_unit, "sp")
-        for c in self.choice:
-            a.plot(x, y[c[0], c[1], :])
-        #a.plot(iasi.wavelength, Tb[i1, i2, :])
-        a.set_ylabel(y_label)
-        a.set_xlabel("{:s} [{:~}]".format(x_quantity, x.units))
-        a.set_title("Some arbitrary IASI spectra with nominal {sat} HIRS"
-                        " SRFs".format(sat=sat))
-
-        # Plot channels
-        a2 = a.twinx()
-        for (i, srf) in enumerate(self.srfs[sat]):
-            #wl = pyatmlab.physics.frequency2wavelength(srf.f)
-            x = getattr(srf, x_quantity).to(self.x["unit"][x_quantity])
-            a2.plot(x, 0.8 * srf.W/srf.W.max(), color="black")
-            nomfreq = srf.centroid()
-            nomfreq_x = nomfreq.to(self.x["unit"][x_quantity], "sp")
-            #nomfreq = pyatmlab.physics.frequency2wavelength(srf.centroid())
-            #nomfreq = freq[numpy.argmax(srf.W)]
-            #nomfreq = wl[numpy.argmax(weight)]
-
-            # Seems that matplotlib.text.Text.get_unitless_position fails
-            # when I keep the unit there
-            a2.text(nomfreq_x.m, 0.9, "{:d}".format(i+1))
-
-        a2.set_ylim(0, 1)
-
-#        a.bar(hirs_centres, Tb_chans[self.choice[0], self.choice[1], :], width=2e11, color="red", edgecolor="black",
-#              align="center")
-
-        pyatmlab.graphics.print_or_show(f, False,
-            "iasi_with_hirs_srf_{:s}_{:s}_{:s}.".format(sat, x_quantity, y_unit))
-
-    def plot_srf_all_sats(self, x_quantity="wavelength", y_unit="TB"):
-        """Plot part of the spectrum with channel SRF for all sats
-        """
-
-        #hirs_srf = {}
-
-        (y, y_label) = self.get_y(y_unit, return_label=True)
-        Tb_chans = {}
-        for (sat, srf) in self.srfs.items():
-            #sat = re.sub(r"0(\d)", r"\1", sat)
-            #sat = sat.upper()
-#            try:
-#                (_, hirs_srf[sat]) = pyatmlab.io.read_arts_srf(
-#                    pyatmlab.config.conf["hirs"]["srf_backend_f"].format(sat=sat),
-#                    pyatmlab.config.conf["hirs"]["srf_backend_response"].format(sat=sat))
-#            except FileNotFoundError as err:
-#                logging.error("Skipped {!s}: {!s}".format(sat, err))
-#            else:
-#                logging.info("Calculating channel radiances for {:s}".format(sat))
-            Tb_chans[sat] = self.get_tb_channels(sat)
-
-        for i in range(12):
-            ch = i + 1
-            (f, a) = matplotlib.pyplot.subplots()
-            #spectrum = y[self.choice[0], self.choice[1], :]
-            spectra = [y[c[0], c[1], :] for c in self.choice]
-            a.set_ylabel(y_label)
-            #a.set_xlabel(self.x["label"][x_quantity])
-            a.set_xlabel("{:s} [{:~}]".format(x_quantity, self.x["unit"][x_quantity]))
-            #self.x["label"][x_quantity])
-            a.set_title("A IASI spectrum with different HIRS SRF (ch."
-                        "{:d})".format(ch))
-            a.grid(axis="y", which="both")
-            #a.set_ylim(200, 300)
-            a2 = a.twinx()
-            (freq_lo, freq_hi) = (100*ureg.THz, 0*ureg.Hz)
-            # Plot SRFs for all channels
-            for (color, (sat, srf)) in zip(self.colors, self.srfs.items()):
-#                (freq, weight) = srf[i]
-                #x = self.x["converter"][x_quantity](srf[i].f)
-                x = srf[i].frequency.to(self.x["unit"][x_quantity], "sp")
-                #a2.plot(x/self.x["factor"][x_quantity],
-                a2.plot(x,
-                        srf[i].W/srf[i].W.max(),
-                        label=sat[0] + "-" + sat[-2:].lstrip("SA"),
-                        color=color)
-                freq_lo = min(freq_lo, srf[i].frequency.min())
-                freq_hi = max(freq_hi, srf[i].frequency.max())
-                a.plot(
-                    #self.x["converter"][x_quantity](numpy.atleast_1d(srf[i].centroid()))/self.x["factor"][x_quantity],
-                    numpy.atleast_1d(srf[i].centroid().to(self.x["unit"][x_quantity], "sp")),
-                    numpy.atleast_2d(
-                        [Tb_chans[sat][c[0], c[1], i] for c in self.choice]),
-                       markerfacecolor=color,
-                       markeredgecolor="black",
-                       marker="o", alpha=0.5,
-                       markersize=10, linewidth=1.5,
-                       zorder=10)
-                pyatmlab.io.write_data_to_files(
-                    numpy.vstack(
-                        (#x/self.x["factor"][x_quantity],
-                         x.to(self.x["unit"][x_quantity], "sp"),
-                         srf[i].W/srf[i].W.max())).T,
-                    "SRF_{:s}_ch{:d}_{:s}".format(sat, ch, x_quantity))
-            # Plot IASI spectra
-            for spectrum in spectra:
-                a.plot(#self.x["converter"][x_quantity](self.iasi.frequency)/self.x["factor"][x_quantity],
-                       self.iasi.frequency.to(self.x["unit"][x_quantity], "sp"),
-                       spectrum,
-                       linewidth=1.0, zorder=5)
-            freq_lo = max(freq_lo, self.iasi.frequency.min())
-            freq_hi = min(freq_hi, self.iasi.frequency.max())
-            box = a.get_position()
-            for ax in (a, a2):
-                ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-#            a.set_ylim(0, 1)
-            a2.legend(loc='center left', bbox_to_anchor=(1.1, 0.5))
-#            y_in_view = spectrum[(self.iasi.frequency>freq_lo) &
-#                                 (self.iasi.frequency<freq_hi)]
-            y_in_view = [spectrum[(self.iasi.frequency>freq_lo) &
-                                  (self.iasi.frequency<freq_hi)]
-                         for spectrum in spectra]
-#            a.set_ylim(y_in_view.min(), y_in_view.max())
-            a.set_ylim(min([yv.min() for yv in y_in_view]),
-                       max([yv.max() for yv in y_in_view]))
-            #x_lo = self.x["converter"][x_quantity](freq_lo)/self.x["factor"][x_quantity]
-            x_lo = freq_lo.to(self.x["unit"][x_quantity], "sp")
-            #x_hi = self.x["converter"][x_quantity](freq_hi)/self.x["factor"][x_quantity]
-            x_hi = freq_hi.to(self.x["unit"][x_quantity], "sp")
-            #wl_lo = pyatmlab.physics.frequency2wavelength(freq_lo)
-            #wl_hi = pyatmlab.physics.frequency2wavelength(freq_hi)
-            #a.set_xlim(wl_lo/micro, wl_hi/micro)
-            #a2.set_xlim(wl_lo/micro, wl_hi/micro)
-            a.set_xlim(min(x_lo, x_hi).m, max(x_lo, x_hi).m)
-            a2.set_xlim(min(x_lo, x_hi).m, max(x_lo, x_hi).m)
-            pyatmlab.graphics.print_or_show(f, False,
-                    "iasi_with_hirs_srfs_ch{:d}_{:s}_{:s}.".format(
-                        ch, x_quantity, y_unit))
-
-    def plot_Te_vs_T(self, sat):
-        """Plot T_e as a function of T
-
-        Based on Weinreb (1981), plot T_e as a function of T.  For
-        details, see pyatmlab.physics.estimate_effective_temperature.
-        """
-        hconf = pyatmlab.config.conf["hirs"]
-        (hirs_centres, hirs_srf) = pyatmlab.io.read_arts_srf(
-            hconf["srf_backend_f"].format(sat=sat),
-            hconf["srf_backend_response"].format(sat=sat))
-
-        T = numpy.linspace(150, 330, 1000)
-        (fig, a) = matplotlib.pyplot.subplots()
-        for (i, (color, f_c, (f, W))) in enumerate(
-                zip(self.colors, hirs_centres, hirs_srf)):
-            Te = pyatmlab.physics.estimate_effective_temperature(
-                    f[numpy.newaxis, :], W, f_c, T[:, numpy.newaxis])
-            wl_um = pyatmlab.physics.frequency2wavelength(f_c)/micro
-            a.plot(T, (Te-T), color=color,
-                   label="ch. {:d} ({:.2f} µm)".format(i+1, wl_um))
-            if (Te-T).max() > 0.1 and i!=18:
-                print("Max diff ch. {:d} ({:.3f} µm) on {:s}: {:.4f}K".format(
-                      i+1, wl_um, sat, (Te-T).max()))
-        a.set_xlabel("BT [K]")
-        a.set_ylabel("BT deviation Te-T [K]")
-        a.set_title("BT deviation without correction, {:s}".format(sat))
-        box = a.get_position()
-        a.set_position([box.x0, box.y0, box.width * 0.7, box.height])
-        a.legend(loc='center left', bbox_to_anchor=(1.01, 0.5))
-        pyatmlab.graphics.print_or_show(fig, False,
-                "BT_Te_corrections_{:s}.".format(sat))
-
-    def plot_channel_BT_deviation(self, sat):
-        """Plot BT deviation for mono-/polychromatic Planck
-        """
-
-#        hconf = pyatmlab.config.conf["hirs"]
-#        (centres, srfs) = pyatmlab.io.read_arts_srf(
-#            hconf["srf_backend_f"].format(sat=sat),
-#            hconf["srf_backend_response"].format(sat=sat))
-#        srfs = [pyatmlab.physics.SRF(f, w) for (f, w) in srfs]
-
-        (fig, a) = matplotlib.pyplot.subplots(2, sharex=True)
-        for (i, color, srf) in zip(range(20), self.colors, self.srfs[sat]):
-            T = numpy.linspace(srf.T_lookup_table.min(),
-                               srf.T_lookup_table.max(),
-                               5*srf.T_lookup_table.size)
-            L = srf.blackbody_radiance(T)
-            freq = srf.centroid()
-            wl_um = pyatmlab.physics.frequency2wavelength(freq)/micro
-            lab = "ch. {:d} ({:.2f} µm)".format(i+1, wl_um)
-            a[0].plot(T[::20], (srf.channel_radiance2bt(L)-T)[::20],
-                      color=color, label=lab)
-            a[1].plot(T,
-                      pyatmlab.physics.specrad_frequency_to_planck_bt(L, freq)-T,
-                      color=color, label=lab)
-        a[0].set_title("Deviation with lookup table")
-        a[1].set_title("Deviation with monochromatic approximation")
-        a[1].set_xlabel("Temperature [K]")
-        a[1].legend(loc='center left', bbox_to_anchor=(0.8, 1))
-        box = a[0].get_position()
-        for ax in a:
-            ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
-            ax.set_ylabel("Delta T [K]")
-        fig.subplots_adjust(hspace=0)
-        pyatmlab.graphics.print_or_show(fig, False,
-                "BT_channel_approximation_{:s}.".format(sat))
-
-    @staticmethod
-    def _calc_bin_stats(bnd):
-        # flattened count
-        no = numpy.array([b.size for b in bnd.ravel()])
-        #
-        frac = (no>0).sum() / no.size
-        #
-        lowest = no[no>0].min()
-        highest = no.max()
-        med = int(numpy.median(no[no>0]))
-        return (no, frac, lowest, med, highest)
 
     # Using the lookup table, calculate expected differences: taking a set of
     # 12 IASI-simulated NOAA-18, estimate IASI-simulated NOAA-17, -16, -15,
@@ -986,6 +525,508 @@ class IASI_HIRS_analyser:
                 matplotlib.pyplot.close(f)
      
 
+    def estimate_pca_density(self, sat="NOAA18", all_n=[5], bin_scales=[1],
+            channels=slice(12), nbusy=4):
+        """How efficient is PCA binning?
+
+        Investigates how sparse a PCA-based binning lookup table is.
+        This first calculates PCA 
+
+        :param sat: Satellite to use
+        :param all_n: Number of PCs to use in lookup table.
+            May be an array, will loop through all.
+        :param bin_scale: Scaling factor for number of bins per PC.
+            Number of bins is proportional to the fraction of variability
+            explained by each PC.
+        """
+
+        pca = self.get_pca_channels(sat, channels)
+
+        for bin_scale in bin_scales:
+            nbins = numpy.ceil(pca.fracs*100*bin_scale)
+            bins = [numpy.linspace(pca.Y[:, i].min(), pca.Y[:, i].max(), max(p, 2))
+                for (i, p) in enumerate(nbins)]
+            for n in all_n:
+                logging.info("Binning, scale={:.1f}, n={:d}".format(
+                    bin_scale, n))
+                bnd = pyatmlab.stats.bin_nd(
+                    [pca.Y[:, i] for i in range(n)],
+                    bins[:n])
+                (no, frac, lowest, med, highest) = self._calc_bin_stats(bnd)
+                logging.info("PCA {:d} comp., {:s} bins/comp: {:.3%} {:d}/{:d}/{:d}".format(
+                      n, "/".join(["{:d}".format(x) for x in bnd.shape]),
+                      frac, lowest, med, highest))
+                nos = numpy.argsort(no)
+                busiest_bins = bnd.ravel()[nos[-nbusy:]].tolist()
+                logging.info("Ranges in {nbusy:d} busiest bins:".format(
+                                nbusy=nbusy))
+                print("{:>4s} {:>5s}/{:>5s}/{:>5s} {:>5s} {:>5s}".format(
+                      "Ch.", "min", "mean", "max", "PTP", "STD"))
+                for i in range(bt2d.shape[1]):
+                    for b in busiest_bins:
+                        print("{:>4d} {:>5.1f}/{:>5.1f}/{:>5.1f} {:>5.2f} "
+                              "{:>5.2f}".format(i+1,
+                                bt2d[b, i].min(),
+                                bt2d[b, i].mean(),
+                                bt2d[b, i].max(),
+                                bt2d[b, i].ptp(),
+                                bt2d[b, i].std()))
+                del bnd
+                del no
+                del nos
+
+
+#                    for z in zip(range(1, cont.shape[1]+1), cont.min(0),
+#                                 cont.mean(0), cont.max(0),
+#                                 cont.ptp(0), cont.std(0)):
+#                        print("{:>4d} {:>5.1f}/{:>5.1f}/{:>5.1f} {:>5.2f} "
+#                              "{:>5.2f}".format(*z))
+
+    def estimate_optimal_channel_binning(self, sat="NOAA18", N=5, p=20):
+        """What HIRS channel combi optimises variability?
+
+        :param sat: Satellite to use
+        :param N: Number of channels in lookup table
+        :param p: Number of bins per channel
+
+        Note that as this method aims to choose an optimal combination of
+        channels using rectangular binning (no channel differences), it
+        does not use PCA.  For that, see estimate_pca_density.
+        """
+        bt = self.get_tb_channels(sat)
+        btflat = [bt[..., i].ravel() for i in range(bt.shape[-1])]
+        bins = [scipy.stats.scoreatpercentile(b[b>0], numpy.linspace(0, 100, p))
+                    for b in btflat]
+        #bins = numpy.linspace(170, 310, 20)
+        chans = range(12) # thermal channels only
+        tot = int(scipy.misc.comb(12, N))
+        logging.info("Studying {:d} combinations".format(tot))
+        for (k, combi) in enumerate(itertools.combinations(chans, N)):
+            bnd =  pyatmlab.stats.bin_nd([btflat[i] for i in combi], 
+                                         [bins[i] for i in combi])
+            (frac, lowest, med, highest) = self._calc_bin_stats(bnd)
+            logging.info("{:d}/{:d} channel combination {!s}: {:.3%} {:d}/{:d}/{:d}".format(
+                  k, tot, combi, frac, lowest, med, highest))
+
+
+    @staticmethod
+    def _calc_bin_stats(bnd):
+        # flattened count
+        no = numpy.array([b.size for b in bnd.ravel()])
+        #
+        frac = (no>0).sum() / no.size
+        #
+        lowest = no[no>0].min()
+        highest = no.max()
+        med = int(numpy.median(no[no>0]))
+        return (no, frac, lowest, med, highest)
+
+class IASI_HIRS_analyser(LUTAnalysis):
+    colors = ("brown orange magenta burlywood tomato indigo "
+              "moccasin cyan teal khaki tan steelblue "
+              "olive gold darkorchid pink midnightblue "
+              "crimson orchid olive chocolate sienna").split()
+    allsats = (pyatmlab.datasets.tovs.HIRS2.satellites |
+               pyatmlab.datasets.tovs.HIRS3.satellites |
+               pyatmlab.datasets.tovs.HIRS4.satellites)
+    allsats = {re.sub(r"0(\d)", r"\1", sat).upper() for sat in allsats}
+
+    x = dict(#converter=dict(
+#                wavelength=pyatmlab.physics.frequency2wavelength,
+#                wavenumber=pyatmlab.physics.frequency2wavenumber,
+#                frequency=lambda x: x),
+#             factor=dict(
+#                wavelength=micro,
+#                wavenumber=centi,
+#                frequency=tera),
+            unit=dict(
+                wavelength=ureg.micrometer,
+                wavenumber=1/ureg.centimeter,
+                frequency=ureg.terahertz),
+#             label=dict(
+#                wavelength="Wavelength [µm]",
+#                wavenumber="Wave number [cm^-1]",
+#                frequency="Frequency [THz]"))
+            )
+                
+    _iasi = None
+    @property
+    def iasi(self):
+        if self._iasi is None:
+            self._iasi = pyatmlab.datasets.tovs.IASI(name="iasi")
+        return self._iasi
+
+    @iasi.setter
+    def iasi(self, value):
+        self._iasi = value
+
+    _graniter = None
+    @property
+    def graniter(self):
+        if self._graniter is None:
+            self._graniter = self.iasi.find_granules()
+        return self._graniter
+
+    @graniter.setter
+    def graniter(self, value):
+        self._graniter = value
+
+    _gran = None
+    @property
+    def gran(self):
+#        if self._gran is None:
+#            self._gran = self.iasi.read(next(self.graniter))
+        return self._gran
+
+    @gran.setter
+    def gran(self, value):
+        self._gran = value
+
+    def __init__(self):
+        logging.info("Finding and reading IASI")
+        #self.iasi = pyatmlab.datasets.tovs.IASI(name="iasi")
+        #self.graniter = self.iasi.find_granules()
+        #self.gran = self.iasi.read(next(self.graniter))
+        self.choice = [(38, 47), (37, 29), (100, 51), (52, 11)]
+
+        hconf = pyatmlab.config.conf["hirs"]
+        srfs = {}
+        for sat in self.allsats:
+            try:
+                (hirs_centres, hirs_srf) = pyatmlab.io.read_arts_srf(
+                    hconf["srf_backend_f"].format(sat=sat),
+                    hconf["srf_backend_response"].format(sat=sat))
+            except FileNotFoundError as msg:
+                logging.error("Skipping {:s}: {!s}".format(
+                              sat, msg))
+            else:
+                srfs[sat] = [pyatmlab.physics.SRF(f, w) for (f, w) in hirs_srf]
+        self.srfs = srfs
+#        for coor in self.choice:
+#            logging.info("Considering {coor!s}: Latitude {lat:.1f}°, "
+#                "Longitude {lon:.1f}°, Time {time!s}, SZA {sza!s})".format(
+#                coor=coor, lat=self.gran["lat"][coor[0], coor[1]],
+#                lon=self.gran["lon"][coor[0], coor[1]],
+#                time=self.gran["time"][coor[0], coor[1]].astype(datetime.datetime),
+#                sza=self.gran["solar_zenith_angle"][coor[0], coor[1]]))
+
+    def get_y(self, unit, return_label=False):
+        """Get measurement in desired unit
+        """
+        specrad_wavenum = self.gran["spectral_radiance"]
+        if unit.lower() in {"tb", "bt"}:
+            y = self.get_tb_spectrum()
+            y_label = "Brightness temperature [K]"
+        elif unit == "specrad_freq":
+            y = pyatmlab.physics.specrad_wavenumber2frequency(specrad_wavenum)
+            y_label = "Spectral radiance [W m^-2 sr^-1 Hz^-1]"
+        elif unit == "specrad_wavenum":
+            y = specrad_wavenum
+            y_label = "Spectral radiance [W m^-2 sr^-1 m]"
+        else:
+            raise ValueError("Unknown unit: {:s}".format(unit))
+        return (y, y_label) if return_label else y
+
+    def get_tb_spectrum(self):
+        """Calculate spectrum of brightness temperatures
+        """
+        specrad_freq = self.get_y(unit="specrad_freq")
+#        specrad_wavenum = self.gran["spectral_radiance"]
+#        specrad_freq = pyatmlab.physics.specrad_wavenumber2frequency(
+#                            specrad_wavenum)
+
+        with numpy.errstate(divide="warn", invalid="warn"):
+            logging.debug("...converting radiances to BTs...")
+            Tb = pyatmlab.physics.specrad_frequency_to_planck_bt(
+                specrad_freq, self.iasi.frequency)
+        return Tb
+
+    def get_tb_channels(self, sat, channels=range(1, 13)):
+        """Get brightness temperature for channels
+        """
+        #chan_nos = (numpy.arange(19) + 1)[channels]
+#        specrad_wn = self.gran["spectral_radiance"]
+#        specrad_f = pyatmlab.physics.specrad_wavenumber2frequency(
+#                            specrad_wn)
+        specrad_f = self.get_y(unit="specrad_freq")
+        Tb_chans = numpy.zeros(dtype=numpy.float32,
+                               shape=specrad_f.shape[0:2] + (len(channels),))
+        for (i, c) in enumerate(channels):
+            srf = self.srfs[sat][c-1]
+        #for (i, srf) in enumerate(self.srfs[sat]):
+            logging.debug("Calculating channel Tb {:s}-{:d}".format(sat, c))
+            #srfobj = pyatmlab.physics.SRF(freq, weight)
+            L = srf.integrate_radiances(self.iasi.frequency, specrad_f)
+
+            Tb_chans[:, :, i] = srf.channel_radiance2bt(L)
+        return Tb_chans
+
+    def get_pca_channels(self, sat, channels=slice(12), ret_y=False):
+        bt = self.get_tb_channels(sat)
+        bt2d = bt.reshape(-1, bt.shape[2])
+        bt2d = bt2d[:, channels]
+        btok = (bt2d>0).all(1)
+
+        logging.info("Calculating PCA")
+        pca = matplotlib.mlab.PCA(bt2d[btok, :])
+        Ys = numpy.ma.zeros(shape=bt2d.shape, dtype="f4")
+        Ys.mask = numpy.zeros_like(Ys, dtype="bool")
+        Ys.mask[~btok] = True
+        Ys[btok, :] = pca.Y
+        Y = Ys.reshape(bt.shape)
+
+        if ret_y:
+            return (pca, Y)
+        else:
+            return pca
+
+    def plot_full_spectrum_with_all_channels(self, sat,
+            y_unit="Tb", x_quantity="frequency"):
+#        Tb_chans = self.get_tb_for_channels(hirs_srf)
+
+        (y, y_label) = self.get_y(y_unit, return_label=True)
+        logging.info("Visualising")
+        (f, a) = matplotlib.pyplot.subplots()
+
+        # Plot spectrum
+        #a.plot(iasi.frequency, specrad_freq[i1, i2, :])
+        x = getattr(self.iasi, x_quantity).to(self.x["unit"][x_quantity])
+        #x = self.iasi.frequency.to(x_unit, "sp")
+        for c in self.choice:
+            a.plot(x, y[c[0], c[1], :])
+        #a.plot(iasi.wavelength, Tb[i1, i2, :])
+        a.set_ylabel(y_label)
+        a.set_xlabel("{:s} [{:~}]".format(x_quantity, x.units))
+        a.set_title("Some arbitrary IASI spectra with nominal {sat} HIRS"
+                        " SRFs".format(sat=sat))
+
+        # Plot channels
+        a2 = a.twinx()
+        for (i, srf) in enumerate(self.srfs[sat]):
+            #wl = pyatmlab.physics.frequency2wavelength(srf.f)
+            x = getattr(srf, x_quantity).to(self.x["unit"][x_quantity])
+            a2.plot(x, 0.8 * srf.W/srf.W.max(), color="black")
+            nomfreq = srf.centroid()
+            nomfreq_x = nomfreq.to(self.x["unit"][x_quantity], "sp")
+            #nomfreq = pyatmlab.physics.frequency2wavelength(srf.centroid())
+            #nomfreq = freq[numpy.argmax(srf.W)]
+            #nomfreq = wl[numpy.argmax(weight)]
+
+            # Seems that matplotlib.text.Text.get_unitless_position fails
+            # when I keep the unit there
+            a2.text(nomfreq_x.m, 0.9, "{:d}".format(i+1))
+
+        a2.set_ylim(0, 1)
+
+#        a.bar(hirs_centres, Tb_chans[self.choice[0], self.choice[1], :], width=2e11, color="red", edgecolor="black",
+#              align="center")
+
+        pyatmlab.graphics.print_or_show(f, False,
+            "iasi_with_hirs_srf_{:s}_{:s}_{:s}.".format(sat, x_quantity, y_unit))
+
+    @staticmethod
+    def _norm_order(x, y):
+        """Make sure both are increasing
+        """
+
+        ii = numpy.argsort(x)
+        return (x[ii], y[ii])
+
+    def _plot_srfs(self, ch, sats, x_quantity="wavelength", ax=None):
+        """For channel `ch` on satellites `sats`, plot SRFs.
+
+        Use axes `ax`.
+        """
+
+        for (color, sat) in zip(self.colors, sats):
+            srf = self.srfs[sat][ch-1]
+            x = srf.frequency.to(self.x["unit"][x_quantity], "sp")
+            y = srf.W/srf.W.max()
+            (x, y) = self._norm_order(x, y)
+            ax.plot(x, y, label=sat, color=color)
+            pyatmlab.io.write_data_to_files(
+                numpy.vstack(
+                    (#x/self.x["factor"][x_quantity],
+                     x.to(self.x["unit"][x_quantity], "sp"),
+                     srf.W/srf.W.max())).T,
+                "SRF_{:s}_ch{:d}_{:s}".format(sat, ch, x_quantity))
+
+    def _plot_bts_for_chan(self, ch, sats, x_quantity="wavelength", ax=None):
+        """For channel `ch` on satellites `sats`, plot TBs.
+
+        """
+
+        raise NotImplementedError("Pending!")
+
+        # Pending a proper solution: WHAT radiances should I plot?
+
+        for (color, sat) in enumerate(sats):
+            srf = self.srfs[sat]
+            x = numpy.atleast_1d(srf[i].centroid().to(self.x["unit"][x_quantity], "sp")),
+            y = numpy.atleast_2d(
+                    [Tb_chans[sat][c[0], c[1], i] for c in self.choice]),
+            ax.plot(x, y,
+                   markerfacecolor=color,
+                   markeredgecolor="black",
+                   marker="o", alpha=0.5,
+                   markersize=10, linewidth=1.5,
+                   zorder=10)
+
+    def _plot_spectra(self, spectra, x_quantity, ax):
+        """Small helper plotting spectra into axis
+        """
+        for spectrum in spectra:
+            (x, y) = self._norm_order(
+                self.iasi.frequency.to(self.x["unit"][x_quantity], "sp"),
+                spectrum)
+            ax.plot(x, y,
+                    linewidth=0.1, zorder=5)
+
+    def _plot_srf_with_spectra(self, ch, sats, x_quantity,
+                               spectra, ax_spectrum, ax_srf):
+        """For channel `ch`, on satellites `sats`, plot SRFs with spectra.
+
+        Use axes `ax_spectrum` and ax_srf.
+        """
+
+        self._plot_srfs(ch, sats, x_quantity, ax=ax_srf)
+        #self._plot_bts_for_chan(ch, sats, x_quantity, ax)
+        self._plot_spectra(spectra, x_quantity, ax_spectrum)
+
+    
+    def _get_freq_range_for_ch(self, ch, sats):
+        """In the interest of plotting, get frequency range for channel.
+
+        Considers satellites `sats`
+        """
+
+        (freq_lo, freq_hi) = (100*ureg.THz, 0*ureg.Hz)
+
+        for sat in sats:
+            srf = self.srfs[sat]
+            subset = srf[ch-1].W>srf[ch-1].W.max()/100
+            freq_lo = min(freq_lo, srf[ch-1].frequency[subset].min())
+            freq_hi = max(freq_hi, srf[ch-1].frequency[subset].max())
+
+        freq_lo = max(freq_lo, self.iasi.frequency.min())
+        freq_hi = min(freq_hi, self.iasi.frequency.max())
+
+        return (freq_lo, freq_hi)
+
+    def plot_srf_all_sats(self, x_quantity="wavelength", y_unit="TB"):
+        """Plot part of the spectrum with channel SRF for all sats
+        """
+
+        #hirs_srf = {}
+
+        (y, y_label) = self.get_y(y_unit, return_label=True)
+#        Tb_chans = {}
+#        for (sat, srf) in self.srfs.items():
+#            Tb_chans[sat] = self.get_tb_channels(sat)
+
+        spectra = [y[c[0], c[1], :] for c in self.choice]
+        for i in range(12):
+            ch = i + 1
+            (f, a) = matplotlib.pyplot.subplots()
+            a.set_ylabel(y_label)
+            a.set_xlabel("{:s} [{:~}]".format(x_quantity, self.x["unit"][x_quantity]))
+            a.set_title("A IASI spectrum with different HIRS SRF (ch."
+                        "{:d})".format(ch))
+            a.grid(axis="y", which="both")
+            a2 = a.twinx()
+
+            self._plot_srf_with_spectra(ch, self.srfs.keys(),
+                spectra,
+                x_quantity, a, a2)
+
+            box = a.get_position()
+            for ax in (a, a2):
+                ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+
+            a2.legend(loc='center left', bbox_to_anchor=(1.1, 0.5))
+            y_in_view = [spectrum[(self.iasi.frequency>freq_lo) &
+                                  (self.iasi.frequency<freq_hi)]
+                         for spectrum in spectra]
+            a.set_ylim(min([yv.min() for yv in y_in_view]),
+                       max([yv.max() for yv in y_in_view]))
+            (freq_lo, freq_hi) = self._get_freq_range_for_ch(self, ch, self.srfs.keys())
+            x_lo = freq_lo.to(self.x["unit"][x_quantity], "sp")
+            x_hi = freq_hi.to(self.x["unit"][x_quantity], "sp")
+            a.set_xlim(min(x_lo, x_hi).m, max(x_lo, x_hi).m)
+            a2.set_xlim(min(x_lo, x_hi).m, max(x_lo, x_hi).m)
+            pyatmlab.graphics.print_or_show(f, False,
+                    "iasi_with_hirs_srfs_ch{:d}_{:s}_{:s}.".format(
+                        ch, x_quantity, y_unit))
+
+    def plot_Te_vs_T(self, sat):
+        """Plot T_e as a function of T
+
+        Based on Weinreb (1981), plot T_e as a function of T.  For
+        details, see pyatmlab.physics.estimate_effective_temperature.
+        """
+        hconf = pyatmlab.config.conf["hirs"]
+        (hirs_centres, hirs_srf) = pyatmlab.io.read_arts_srf(
+            hconf["srf_backend_f"].format(sat=sat),
+            hconf["srf_backend_response"].format(sat=sat))
+
+        T = numpy.linspace(150, 300, 1000)
+        (fig, a) = matplotlib.pyplot.subplots()
+        for (i, (color, f_c, (f, W))) in enumerate(
+                zip(self.colors, hirs_centres, hirs_srf)):
+            Te = pyatmlab.physics.estimate_effective_temperature(
+                    f[numpy.newaxis, :], W, f_c, T[:, numpy.newaxis])
+            wl_um = pyatmlab.physics.frequency2wavelength(f_c)/micro
+            a.plot(T, (Te-T), color=color,
+                   label="ch. {:d} ({:.2f} µm)".format(i+1, wl_um))
+            if (Te-T).max() > 0.1 and i!=18:
+                print("Max diff ch. {:d} ({:.3f} µm) on {:s}: {:.4f}K".format(
+                      i+1, wl_um, sat, (Te-T).max()))
+        a.set_xlabel("BT [K]")
+        a.set_ylabel("BT deviation Te-T [K]")
+        a.set_title("BT deviation without correction, {:s}".format(sat))
+        box = a.get_position()
+        a.set_position([box.x0, box.y0, box.width * 0.7, box.height])
+        a.legend(loc='center left', bbox_to_anchor=(1.01, 0.5))
+        pyatmlab.graphics.print_or_show(fig, False,
+                "BT_Te_corrections_{:s}.".format(sat))
+
+    def plot_channel_BT_deviation(self, sat):
+        """Plot BT deviation for mono-/polychromatic Planck
+        """
+
+#        hconf = pyatmlab.config.conf["hirs"]
+#        (centres, srfs) = pyatmlab.io.read_arts_srf(
+#            hconf["srf_backend_f"].format(sat=sat),
+#            hconf["srf_backend_response"].format(sat=sat))
+#        srfs = [pyatmlab.physics.SRF(f, w) for (f, w) in srfs]
+
+        (fig, a) = matplotlib.pyplot.subplots(2, sharex=True)
+        for (i, color, srf) in zip(range(20), self.colors, self.srfs[sat]):
+            T = numpy.linspace(srf.T_lookup_table.min(),
+                               srf.T_lookup_table.max(),
+                               5*srf.T_lookup_table.size)
+            L = srf.blackbody_radiance(T)
+            freq = srf.centroid()
+            wl_um = pyatmlab.physics.frequency2wavelength(freq)/micro
+            lab = "ch. {:d} ({:.2f} µm)".format(i+1, wl_um)
+            a[0].plot(T[::20], (srf.channel_radiance2bt(L)-T)[::20],
+                      color=color, label=lab)
+            a[1].plot(T,
+                      pyatmlab.physics.specrad_frequency_to_planck_bt(L, freq)-T,
+                      color=color, label=lab)
+        a[0].set_title("Deviation with lookup table")
+        a[1].set_title("Deviation with monochromatic approximation")
+        a[1].set_xlabel("Temperature [K]")
+        a[1].legend(loc='center left', bbox_to_anchor=(0.8, 1))
+        box = a[0].get_position()
+        for ax in a:
+            ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
+            ax.set_ylabel("Delta T [K]")
+        fig.subplots_adjust(hspace=0)
+        pyatmlab.graphics.print_or_show(fig, False,
+                "BT_channel_approximation_{:s}.".format(sat))
+
+
     def calc_bt_srf_shift(self, satellite, channel, shift):
         """Calculate BT under SRF shifts
 
@@ -1194,6 +1235,161 @@ class IASI_HIRS_analyser:
             pyatmlab.graphics.print_or_show(f, False,
                 "map_BTHIRS_real_simul_pc{:d}_{:%Y%m%d%H%M%S}.".format(i+1,dt1))
 
+    
+    def pls2_prediction_test_pair(self, sat_ref, sat_targ, tb_ref, tb_targ):
+        """Use PLS to test prediction between pair of satellites, nominal SRFs
+
+        Employs PLS (Partial Least Squares or Projection to Latent
+        Structures) to predict N channels on target satellite from N
+        channels on reference satellite, using nominal SRFs.
+
+        :param str sat_ref: Reference satellite
+        :param str sat_targ: Target satellite
+        :param ndarray tb_ref:
+        :param ndarray tb_targ:
+        :returns: Differences between test and reference.
+
+        TODO:
+            - Wold et al. (2001) propose jack-knifing to estimate
+              confidence intervals.  As I understand it, an extension of
+              cross-validation by using N subsets of the training data to
+              make N predictions.  I'm not sure if I understand it.  Needs
+              study and implementation.
+            - It appears results are much better when I disable scaling.
+              They should not be, I don't understand.  Investigate.
+            - It appears I'm not getting any overfitting no matter how
+              large I make n_components.  Odd.
+            - Cross-validation should be incorporated within the fitting
+              procedure, but I don't think sklearn implements this.
+              This would set apart some of the training data to
+              iteratively independently test convergence and stop
+              increasing the no. of components when overfitting occurs.
+            - Until that is implemented, need to choose n_components smartly
+        """
+
+        # for some reason I don't understand, results are much better with
+        # scaling switched off
+        pls2 = sklearn.cross_decomposition.PLSRegression(n_components=9, scale=False)
+        
+        # Divide in training and testing.  Normally there should be
+        # validation as well, but I'm not actually using the validation
+        # data at the moment to stop overfitting.
+
+        Xtr = tb_ref[::2, :]
+        Ytr = tb_targ[::2, :]
+        Xv = tb_ref[1::2, :]
+        Yv = tb_targ[1::2, :]
+
+        pls2.fit(Xtr, Ytr)
+        return pls2.predict(Xv) - Yv
+
+
+    def plot_srfs_in_subplots(self, sat_ref, sat_targ,
+                                   x_quantity="wavelength",
+                                   y_unit="Tb"):
+        # Plot SRFs for all
+        (f, ax_all) = matplotlib.pyplot.subplots(3, 4, figsize=(12, 9))
+        y = self.get_y(y_unit)
+        spectra = y.reshape(-1, self.iasi.frequency.size)[::1000, :]
+        for (i, a_spec) in enumerate(ax_all.ravel()):
+            a_srf = a_spec.twinx()
+            self._plot_srf_with_spectra(i+1, {sat_ref, sat_targ},
+                x_quantity, spectra, a_spec, a_srf)
+            (freq_lo, freq_hi) = self._get_freq_range_for_ch(i+1, {sat_ref, sat_targ})
+            x_lo = freq_lo.to(self.x["unit"][x_quantity], "sp")
+            x_hi = freq_hi.to(self.x["unit"][x_quantity], "sp")
+            for a in {a_srf, a_spec}:
+                a.set_xlim(min((x_lo.m, x_hi.m)),
+                           max((x_lo.m, x_hi.m)))
+            if i%4 == 0:
+                a_spec.set_ylabel("BT [K]")
+            else:
+                a_spec.set_yticks([])
+            if i%4 != 3:
+                a_srf.set_yticks([])
+            if i == 1:
+                a_srf.legend(loc="center",
+                             bbox_to_anchor=(-0.14, 0.8))
+
+            a_spec.set_xlabel("{:s} [{:~}]".format(x_quantity, self.x["unit"][x_quantity]))
+            #a_spec.set_xticks(numpy.linspace(*a.get_xlim(), 3).round(2))
+            a_spec.set_xticks([a.get_xlim()[0].round(2),
+                               ((self.srfs[sat_ref][i].centroid() +
+                                self.srfs[sat_targ][i].centroid())/2).to(
+                                    self.x["unit"][x_quantity], "sp").m.round(2),
+                               a.get_xlim()[1].round(2)])
+            a_spec.set_ylim([200, 300])
+#            else:
+#                a_spec.set_xticks([])
+            a_spec.set_title("Ch. {:d}".format(i+1))
+        f.suptitle("Channel positions {:s} and {:s}".format(sat_ref, sat_targ))
+        f.tight_layout()
+        f.subplots_adjust(top=0.92)
+
+        pyatmlab.graphics.print_or_show(f, False,
+                "iasi_with_hirs_srfs_all_Tb_{sat_ref:s}_{sat_targ:s}.".format(
+                    sat_ref=sat_ref, sat_targ=sat_targ))
+
+    @staticmethod
+    def _plot_dtb_hist(dtb, ax_all):
+        for i in range(12):
+            a = ax_all[0 if i<7 else 1]
+            a.hist(dtb[:, i], 100, histtype="step",
+                   normed=True, label="Ch. {:d}".format(i+1))
+        for a in ax_all:
+            a.set_xlabel(r"$\Delta$BT [K]")
+            a.set_ylabel("Density [1/K]")
+            a.legend(ncol=2)
+
+    def plot_hist_expected_Tdiff(self, sat_ref, sat_targ, tb_ref, tb_targ):
+        (f, ax_all) = matplotlib.pyplot.subplots(2, 1)
+        dtb = tb_targ - tb_ref
+        self._plot_dtb_hist(dtb, ax_all)
+        f.suptitle(r"Expected $\Delta$BT {:s} - {:s} (FIRST LOOK)".format(sat_targ, sat_ref))
+        pyatmlab.graphics.print_or_show(f, False,
+            "expected_Tdiff_{:s}-{:s}.".format(sat_targ, sat_ref))
+
+    def plot_hist_pls_perf(self, sat_ref, sat_targ, tb_ref, tb_targ):
+        """Plot histograms of PLS performance per channel
+        """
+        (f, ax_all) = matplotlib.pyplot.subplots(2, 1)
+        dtb = self.pls2_prediction_test_pair(sat_ref, sat_targ, tb_ref, tb_targ)
+        self._plot_dtb_hist(dtb, ax_all)
+        f.suptitle(r"PLS performance $\Delta$BT, predicting {:s} from {:s} (FIRST LOOK)".format(sat_targ, sat_ref))
+        pyatmlab.graphics.print_or_show(f, False,
+            "PLS_performance_Tdiff_{:s}-{:s}.".format(sat_targ, sat_ref))
+
+    def visualise_pls2_diagnostics(self, sat_ref, sat_targ,
+                                   x_quantity="wavelength",
+                                   y_unit="Tb"):
+        """Visualise some PLS2 diagnostics
+
+        Should show:
+            - SRFs for channels with underlying spectrum
+            - Expected differences between channels for satellite pair
+            - (Later) actual differences between channels for satellite
+              pair
+            - Statistics of PLS2 approximation between channels for
+              satellite pair
+        """
+
+        # Commented out just to get to the rest more quickly…
+        
+#        self.plot_srfs_in_subplots(sat_ref, sat_targ,
+#            x_quantity, y_unit)
+
+        tb_ref = self.get_tb_channels(sat_ref)
+        tb_targ = self.get_tb_channels(sat_targ)
+        tb_ref = tb_ref.reshape(-1, 12)
+        tb_targ = tb_targ.reshape(-1, 12)
+        valid = (tb_ref>0).all(1) & (tb_targ>0).all(1)
+        tb_ref = tb_ref[valid, :]
+        tb_targ = tb_targ[valid, :]
+
+        self.plot_hist_expected_Tdiff(sat_ref, sat_targ, tb_ref, tb_targ)
+        self.plot_hist_pls_perf(sat_ref, sat_targ, tb_ref, tb_targ)
+        
+
 def main():
     print(numexpr.set_num_threads(8))
     parser = argparse.ArgumentParser("Experiment with HIRS SRF estimation")
@@ -1220,6 +1416,7 @@ def main():
         if vis.gran is None:
             vis.gran = vis.iasi.read(next(vis.graniter))
             
+        vis.visualise_pls2_diagnostics("NOAA19", "NOAA18")
 #        vis.map_with_hirs_pca(h, "NOAA16")
 #        for i in range(1, 13):
 #            vis.plot_bt_srf_shift("NOAA18", i)
@@ -1244,11 +1441,11 @@ def main():
 #        vis.estimate_optimal_channel_binning("NOAA18", 5, 10)
 #        vis.estimate_pca_density("NOAA18", all_n=range(2, 5),
 #            bin_scales=[0.5, 2, 4, 6, 8])
-        for unit in {"Tb", "specrad_freq"}:
-            for x in {"frequency", "wavelength"}:
-                vis.plot_full_spectrum_with_all_channels("NOAA18",
-                    y_unit=unit, x_quantity=x)
-            vis.plot_srf_all_sats(y_unit=unit)
+#        for unit in {"Tb", "specrad_freq"}:
+#            for x in {"frequency", "wavelength"}:
+#                vis.plot_full_spectrum_with_all_channels("NOAA18",
+#                    y_unit=unit, x_quantity=x)
+#            vis.plot_srf_all_sats(y_unit=unit)
 #        for h in vis.allsats:
 #            try:
 #                #vis.plot_Te_vs_T(h)
