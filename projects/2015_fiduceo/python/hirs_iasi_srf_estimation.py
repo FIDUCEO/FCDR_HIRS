@@ -32,6 +32,8 @@ import numexpr
 import mpl_toolkits.basemap
 import sklearn.cross_decomposition
 
+import typhon.plots
+
 import pyatmlab.datasets.tovs
 import pyatmlab.io
 import pyatmlab.config
@@ -42,6 +44,9 @@ import pyatmlab.db
 
 from pyatmlab.constants import micro, centi, tera, nano
 from pyatmlab import ureg
+
+unit_specrad_wn = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
+unit_specrad_freq = ureg.W / (ureg.m**2 * ureg.sr * ureg.Hz)
 
 class LUTAnalysis:
     """Helper class centralising all LUT-related approaches
@@ -627,6 +632,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
               "moccasin cyan teal khaki tan steelblue "
               "olive gold darkorchid pink midnightblue "
               "crimson orchid olive chocolate sienna").split()
+    styles = ("solid", "dashed", "dash_dot", "dotted")
+    markers = "os^p*hv<>"
+
     allsats = (pyatmlab.datasets.tovs.HIRS2.satellites |
                pyatmlab.datasets.tovs.HIRS3.satellites |
                pyatmlab.datasets.tovs.HIRS4.satellites)
@@ -683,12 +691,15 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def gran(self, value):
         self._gran = value
 
-    def __init__(self):
-        logging.info("Finding and reading IASI")
-        #self.iasi = pyatmlab.datasets.tovs.IASI(name="iasi")
-        #self.graniter = self.iasi.find_granules()
-        #self.gran = self.iasi.read(next(self.graniter))
-        self.choice = [(38, 47), (37, 29), (100, 51), (52, 11)]
+    def __init__(self, mode="Viju"):
+        #logging.info("Finding and reading IASI")
+        if mode == "iasinc":
+            self.iasi = pyatmlab.datasets.tovs.IASINC(name="iasinc")
+            self.choice = [(38, 47), (37, 29), (100, 51), (52, 11)]
+            #self.gran = self.iasi.read(next(self.graniter))
+        elif mode == "iasisub":
+            self.iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
+        self.graniter = self.iasi.find_granules()
 
         hconf = pyatmlab.config.conf["hirs"]
         srfs = {}
@@ -726,7 +737,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             y_label = "Spectral radiance [W m^-2 sr^-1 m]"
         else:
             raise ValueError("Unknown unit: {:s}".format(unit))
-        return (y, y_label) if return_label else y
+        return (y[..., :8461], y_label) if return_label else y[..., :8461]
 
     def get_tb_spectrum(self):
         """Calculate spectrum of brightness temperatures
@@ -1111,7 +1122,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
         if self.gran is None:
             self.gran = self.iasi.read(next(self.graniter))
         
-        dx = numpy.linspace(-30, 30, 7) * ureg.nm
+        dx = numpy.linspace(-100, 100, 201) * ureg.nm
+        #dx = numpy.linspace(-30, 30, 7) * ureg.nm
+        #dx = dx_many[70:140:10]
         # diff in um for human-readability
 #        d_um = (pyatmlab.physics.frequency2wavelength(
 #                    self.srfs[satellite][channel-1].centroid()) 
@@ -1125,27 +1138,15 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         scores = numpy.zeros(shape=(btbins.size, ptiles.size, dsh.shape[2]))
         (f, a) = matplotlib.pyplot.subplots()
-        for i in range(dsh.shape[2]):
-            btbinned = pyatmlab.stats.bin(nsh.ravel(), dsh[:, :, i].ravel(), btbins)
-            scores[:, :, i] = numpy.vstack([scipy.stats.scoreatpercentile(b, ptiles) for b in btbinned])
+        for (i, ii) in enumerate(range(70, 131, 10)):
+            q = dx[ii].to(ureg.nm, "sp")
+            q = int(q.m)*q.u
+            typhon.plots.plot_distribution_as_percentiles(a, nsh.ravel(),
+                dsh[:, :, ii].ravel(), bins=btbins, color=self.colors[i],
+                label="{:+3~}".format(q),
+                ptile_to_legend=True if i==0 else False)
 
-            for k in range(ptiles.size):
-                q = dx[i].to(ureg.nm, "sp")
-                q = int(q.m)*q.u
-                label = None
-                if k == 2 and i == 0:
-                    label="{:+3~} (median)".format(q)
-                elif k<2 and i == 0:
-                    label="{:+3~} (p-{:d}/{:d})".format(q,
-                        ptiles[k], ptiles[-k-1])
-                elif k == 2:
-                    label="{:+3~}".format(q)
-                else:
-                    label=None
-                a.plot(btbins, scores[:, k, i], color=self.colors[i],
-                       ls=(":", "--", "-", "--", ":")[k],
-                       label=label)
-        a.set_title("Effect of HIRS SRF shift, {:s} ch. {:d}".format(satellite, channel))
+        a.set_title("Radiance change distribution per radiance for shifted SRF, HIRS, {:s} ch. {:d}".format(satellite, channel))
         box = a.get_position()
         a.set_position([box.x0, box.y0, box.width * 0.7, box.height])
         a.legend(loc="center left",ncol=1,bbox_to_anchor=(1,0.5))
@@ -1153,8 +1154,18 @@ class IASI_HIRS_analyser(LUTAnalysis):
         a.set_ylabel(r"$\Delta$ BT [K]")
         a.grid(axis="both")
         pyatmlab.graphics.print_or_show(f, False,
-            "srf_shift_direct_estimate_HIRS_{:s}-{:d}.".format(satellite, channel))
+            "srf_shifted_dbt_dist_per_radiance_HIRS_{:s}-{:d}.".format(satellite, channel))
 
+        (f, a) = matplotlib.pyplot.subplots()
+        typhon.plots.plot_distribution_as_percentiles(a,
+            numpy.tile(dx, (dsh.shape[0], dsh.shape[1], 1)).ravel(), dsh.ravel(),
+            nbins=50, color="black", label="shift")
+        a.set_title("Radiance change distribution per HIRS SRF shift, {:s} ch.  {:d}".format(satellite, channel))
+        a.set_xlabel(r"shift [nm]")
+        a.set_ylabel(r"$\Delta$ BT [K]")
+        a.grid(axis="both")
+        pyatmlab.graphics.print_or_show(f, False,
+            "srf_shifted_dbt_dist_per_shift_HIRS_{:s}-{:d}.".format(satellite, channel))
 
     def _prepare_map(self):
         f = matplotlib.pyplot.figure(figsize=(12, 8))
@@ -1518,6 +1529,207 @@ class IASI_HIRS_analyser(LUTAnalysis):
         self.plot_hist_pls_perf(sat_ref, sat_targ, tb_ref, tb_targ)
         
 
+    M1 = M2 = None
+    def _prepare_args_calc_srf_estimate(self, sat, ch, shift, db):
+        """Helper for calc_srf_estimate_rmse and others
+        
+        See documentation for self.calc_srf_estimate_rmse.
+        """
+        if not isinstance(self.iasi, pyatmlab.datasets.tovs.IASISub):
+            self.iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
+        if self.M1 is None:
+            self.M1 = self.iasi.read_period(start=datetime.datetime(2011, 1, 1), end=datetime.datetime(2011, 3, 30))
+        if self.M2 is None:
+            self.M2 = self.iasi.read_period(start=datetime.datetime(2012, 1, 1), end=datetime.datetime(2012, 3, 30))
+        M1 = self.M1
+        M2 = self.M2
+        y_master = pyatmlab.physics.specrad_wavenumber2frequency(
+            M1["spectral_radiance"][::5, 2, :8461] * unit_specrad_wn)
+        if db == "same":
+            y_spectral_db = y_master
+        elif db == "similar":
+            y_spectral_db = pyatmlab.physics.specrad_wavenumber2frequency(
+            M1["spectral_radiance"][2::5, 2, :8461] * unit_specrad_wn)
+        elif db == "different":
+            y_spectral_db = pyatmlab.physics.specrad_wavenumber2frequency(
+                M2["spectral_radiance"][::3, 1, :8461] * unit_specrad_wn)
+        else:
+            raise ValueError("Unrecognised option for db: {:s}".format(db))
+        srf_master = self.srfs[sat][ch-1]
+        freq = self.iasi.frequency
+        bt_master = srf_master.channel_radiance2bt(
+                srf_master.integrate_radiances(freq, y_master))
+        L_ref = srf_master.channel_radiance2bt(
+                    srf_master.integrate_radiances(freq, y_spectral_db))
+
+        srf_target = srf_master.shift(shift)
+        bt_target = srf_target.channel_radiance2bt(
+                srf_target.integrate_radiances(freq, y_master))
+
+        return (bt_master, bt_target, srf_master, y_spectral_db,
+                    freq, L_ref, y_master)
+
+
+    def calc_srf_estimate_rmse(self, sat, ch, shift,
+            db="different"):
+        """Calculate cost function for estimating SRF
+
+        Construct artificial HIRS measurements with a prescribed SRF
+        shift.  Estimate how well we can recover this SRF shift using
+        independent data: as a function of attempted SRF shift, calculate
+        the RMSE between estimated and reference radiances.  Hopefully,
+        the global minimum of this cost function will coincide with the
+        prescribed SRF shift.
+
+        Uses two sets of IASI data:
+
+        - Set 1 is used to calculate two sets of radiances (brightness
+          temperatures): the reference brightness temperature
+          corresponding to the nominal SRF for satellite `sat`, channel
+          `ch`; and a set of radiances when this SRF is shifted by
+          `shift`.  In the real world, this set will come from
+          collocations/matchups rather than from IASI data.
+
+        - Set 2 is used to simulate many pairs of radiances.  The
+          functionality for this is in
+          `:func:pyatmlab.math.calc_rmse_for_srf_shift`.  Assuming an SRF
+          shift, it simulates radiances for the nominal and a shifted SRF.
+          From this shift, it derives a model predicting shifted-SRF radiances
+          from nominal-SRF radiances.
+
+        The model derived from set 2 is then applied to predict
+        shifted-SRF radiances from the nominal-SRF radiances as calculated
+        from set 1.  The set-2-predicted-shifted-SRF-radiances are
+        compared to the set-1-directly-calculated-shifted-SRF-radiances,
+        the comparison described by the RMSE.  This process is repeated
+        for a set of shifts, resulting in a RMSE as a function of SRF
+        shift.
+
+        In the real world, set 1 would be from collocations and set 2
+        would be still from IASI.  One aspect to investigate is how much
+        the correctness of the SRF estimate relies on the similarity of
+        the climatology between set2 and set 1.
+
+        Arguments:
+
+            sat [str]: Name of satellite, such as NOAA19
+            ch [int]: Channel number
+            shift [pint Quantity]: Reference shift, such as 100*ureg.nm.
+            db [str]: Indicates whether how similar set2 should be to
+                set1.  Valid values are 'same' (identical set), 'similar'
+                (different set, but from same region in time and space),
+                or 'different' (different set).  Default is 'different'.
+
+        Returns:
+
+            (dx, dy) [(ndarray, ndarray)]: RMSE [K] as a function of
+                attempted SRF shift [nm].  Hopefully, this function will
+                have a global minimum corresponding to the actual shift.
+        """
+        (bt_master, bt_target, srf_master, y_spectral_db, f_spectra,
+            L_spectral_db, y_master) = self._prepare_args_calc_srf_estimate(
+                    sat, ch, shift, db)
+
+        dx = numpy.linspace(-100.0, 100.0, 51.0) * ureg.nm
+        dy = [pyatmlab.math.calc_rmse_for_srf_shift(q,
+                bt_master, bt_target, srf_master, y_spectral_db,
+                f_spectra, L_spectral_db, unit=ureg.um) for q in dx]
+        dy = numpy.array([d.m for d in dy])*dy[0].u
+        return (dx, dy)
+
+    def plot_errdist_per_srf_costfunc_localmin(self, 
+            sat, ch, shift_reference, db="different"):
+        """Investigate error dist. for SRF cost function local minima
+
+        For all local minima in the SRF shift recovery cost function,
+        visualise the error distribution.  Experience has shown that the
+        global minimum does not always recover the correct SRF.
+        """
+
+        (dx, dy) = self.calc_srf_estimate_rmse(sat, ch, shift_reference)
+        localmin = typhon.math.array.localmin(dy)
+        (f1, a1) = matplotlib.pyplot.subplots()
+        (f2, a2) = matplotlib.pyplot.subplots()
+        # although we don't need bt_target to prepare to call
+        # calc_bts_for_srf_shift, we still need it to compare its
+        # result to what we would like to see
+        (bt_master, bt_target, srf_master, y_spectral_db, f_spectra,
+            L_spectral_db, y_master) = self._prepare_args_calc_srf_estimate(
+                        sat, ch, shift_reference, db)
+        for shift_attempt in dx[localmin]:
+            bt_estimate = pyatmlab.math.calc_bts_for_srf_shift(shift_attempt,
+                bt_master, srf_master, y_spectral_db, f_spectra,
+                L_spectral_db, unit=ureg.um)
+
+            # bt_master: BTs according to unshifted SRF
+            # bt_target: BTs according to reference shifted SRF
+            # bt_estimate: BTs according to regression estimated shifted SRF
+            # bt_...: BTs according to attempted shifted SRF (non regression)
+
+            srf_shift_attempt = srf_master.shift(shift_attempt)
+            bt_shift_attempt = srf_shift_attempt.channel_radiance2bt(
+                srf_shift_attempt.integrate_radiances(self.iasi.frequency, y_master))
+
+            for (a, bt) in ((a1, bt_estimate), (a2, bt_shift_attempt)):
+                rmse = numpy.sqrt(((bt_target - bt)**2).mean())
+                a.hist((bt_target-bt), 100, histtype="step",
+                    label=r"{:+.3~} [RMSE={:.3~}]".format(
+                        shift_attempt.to(ureg.nm),
+                        rmse.to(ureg.K)))
+        
+        addendum =  "{sat:s}-{ch:d}, shift {shift_reference:+~}, db {db:s}".format(**vars())
+        a1.set_title("Err. dist at local RMSE minima for shift recovery\n" + addendum)
+        a2.set_title("Errors between BTs for estimated and reference SRF\n" + addendum)
+        a1.set_xlabel("Residual error for shift [K]")
+        a2.set_xlabel("BT error due to inaccurately estimated shift [K]")
+        for a in (a1, a2):
+            a.set_ylabel("Count")
+            a.legend()
+            a.grid(axis="both")
+        pyatmlab.graphics.print_or_show(f1, False,
+            "srf_estimate_errdist_per_localmin_{sat:s}_ch{ch:d}_{shift_reference:.0f}_{db:s}.".format(
+                sat=sat, ch=ch, shift_reference=shift_reference.m, db=db))
+        pyatmlab.graphics.print_or_show(f2, False,
+            "srf_misestimate_bt_propagation_{sat:s}_ch{ch:d}_{shift_reference:.0f}_{db:s}.".format(
+                sat=sat, ch=ch, shift_reference=shift_reference.m, db=db))
+        
+
+    def visualise_srf_estimate_rmse(self, sat, db="different"):
+        (f, ax_all) = matplotlib.pyplot.subplots(4, 3, figsize=(14, 9))
+        for i in range(12):
+            ch = i + 1
+            for (k, shift) in enumerate(numpy.array([-60.0, -30.0, 5.0, 40.0])*ureg.nm):
+                logging.info("Estimating {sat:s} ch, {ch:d}, shift "
+                             "{shift:+7.3~}".format(**vars()))
+                (dx, dy) = self.calc_srf_estimate_rmse(sat, ch, shift)
+                a = ax_all.ravel()[i]
+                p = a.plot(dx, dy) #color=self.colors[i%7],
+                               #linestyle="solid",
+                               #marker=self.markers[k])
+#                               label="ch. {:d}, {:+7.3~}".format(ch,shift))
+                localmin = typhon.math.array.localmin(dy)
+#                localmin = numpy.hstack((False, (dy[1:-1] < dy[0:-2]) & (dy[1:-1] < dy[2:]), False))
+                a.plot(dx[localmin], dy[localmin], marker='o', ls="None",
+                       color=p[0].get_color(), fillstyle="none",
+                       markersize=4)
+                a.plot(dx[dy.argmin()], dy[dy.argmin()], marker='o', ls="None",
+                       color=p[0].get_color(), fillstyle="full",
+                       markersize=6)
+                a.vlines(shift.m, 0, a.get_ylim()[1], linestyles="dashed",
+                       color=p[0].get_color())
+                a.set_title("Ch. {:d}".format(ch))
+        for a in ax_all.ravel():
+            a.set_xlabel("SRF shift [nm]")
+            a.set_ylabel(r"RMSE for estimate [$\Delta$ K]")
+            a.grid(axis="both")
+#            a.legend(ncol=2, loc="right", bbox_to_anchor=(1, 0.5))
+        f.suptitle("Cost function minimisation for recovering shifted {:s} SRF ({:s} db)".format(sat, db))
+        f.subplots_adjust(hspace=0.45, wspace=0.32)#, right=0.7)
+        pyatmlab.graphics.print_or_show(f, False,
+            "SRF_prediction_cost_function_{:s}_{:s}.".format(sat, db))
+
+
+
 def main():
     print(numexpr.set_num_threads(8))
     parser = argparse.ArgumentParser("Experiment with HIRS SRF estimation")
@@ -1533,6 +1745,8 @@ def main():
 
     with numpy.errstate(all="raise"):
         vis = IASI_HIRS_analyser()
+        if not isinstance(vis.iasi, pyatmlab.datasets.tovs.IASISub):
+            vis.iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
         h = pyatmlab.datasets.tovs.HIRS3()
 
         if p.makelut:
@@ -1541,8 +1755,10 @@ def main():
                                  npc=p.npc, channels=p.channels)
             return
 
-        if vis.gran is None:
-            vis.gran = vis.iasi.read(next(vis.graniter))
+#        if vis.gran is None:
+            #vis.gran = vis.iasi.read(next(vis.graniter))
+#            vis.gran = vis.iasi.read_period(next(vis.graniter))
+#            vis.gran = vis.iasi.read_period(start=datetime.datetime(2011, 1, 1), end=datetime.datetime(2011, 1, 30))
             
         N = 40
         col = 50
@@ -1561,10 +1777,17 @@ def main():
 #                -0.02*ureg.um, N=N, col=col)
 #        vis.plot_fragment_expected_Tdiff("NOAA19", "NOAA18",
 #                +0.02*ureg.um, N=N, col=col)
-        vis.visualise_pls2_diagnostics("NOAA19", "NOAA18")
+#        vis.visualise_pls2_diagnostics("NOAA19", "NOAA18")
+#        vis.M1 = vis.gran
+#        vis.visualise_srf_estimate_rmse("NOAA19")
+        for ch in (1, 6, 11, 12):
+            for shift in numpy.linspace(-80.0, 80.0, 9)*ureg.nm:
+                for db in ("same", "similar", "different"):
+                    vis.plot_errdist_per_srf_costfunc_localmin(
+                        "NOAA19", ch, shift, db=db)
 #        vis.map_with_hirs_pca(h, "NOAA16")
 #        for i in range(1, 13):
-#            vis.plot_bt_srf_shift("NOAA18", i)
+#            vis.plot_bt_srf_shift("NOAA19", i)
 #            vis.map_with_hirs(h, "NOAA16", i)
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_8.0")
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_4.0")
@@ -1586,11 +1809,11 @@ def main():
 #        vis.estimate_optimal_channel_binning("NOAA18", 5, 10)
 #        vis.estimate_pca_density("NOAA18", all_n=range(2, 5),
 #            bin_scales=[0.5, 2, 4, 6, 8])
-        for unit in {"Tb", "specrad_freq"}:
-            for x in {"frequency", "wavelength"}:
-                vis.plot_full_spectrum_with_all_channels("NOAA18",
-                    y_unit=unit, x_quantity=x, N=N, col=col)
-            vis.plot_srf_all_sats(y_unit=unit, N=N, col=col)
+#        for unit in {"Tb", "specrad_freq"}:
+#            for x in {"frequency", "wavelength"}:
+#                vis.plot_full_spectrum_with_all_channels("NOAA18",
+#                    y_unit=unit, x_quantity=x, N=N, col=col)
+#            vis.plot_srf_all_sats(y_unit=unit, N=N, col=col)
 #        for h in vis.allsats:
 #            try:
 #                #vis.plot_Te_vs_T(h)
