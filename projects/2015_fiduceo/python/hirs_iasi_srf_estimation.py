@@ -753,7 +753,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 specrad_freq, self.iasi.frequency)
         return Tb
 
-    def get_tb_channels(self, sat, channels=range(1, 13), srfshift=None):
+    @typhon.utils.cache.mutable_cache(maxsize=20)
+    def get_tb_channels(self, sat, channels=range(1, 13), srfshift=None,
+                        specrad_f=None):
         """Get brightness temperature for channels
         """
         #chan_nos = (numpy.arange(19) + 1)[channels]
@@ -762,9 +764,11 @@ class IASI_HIRS_analyser(LUTAnalysis):
 #                            specrad_wn)
         if srfshift is None:
             srfshift = {}
-        specrad_f = self.get_y(unit="specrad_freq")
+        if specrad_f is None:
+            specrad_f = self.get_y(unit="specrad_freq")
         Tb_chans = numpy.zeros(dtype=numpy.float32,
-                               shape=specrad_f.shape[0:2] + (len(channels),))
+                               shape=specrad_f.shape[:-1] +
+                               (len(channels),)) * ureg.K
         for (i, c) in enumerate(channels):
             srf = self.srfs[sat][c-1]
             if c in srfshift:
@@ -776,7 +780,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             #srfobj = pyatmlab.physics.SRF(freq, weight)
             L = srf.integrate_radiances(self.iasi.frequency, specrad_f)
 
-            Tb_chans[:, :, i] = srf.channel_radiance2bt(L)
+            Tb_chans[..., i] = srf.channel_radiance2bt(L)
         return Tb_chans
 
     def get_pca_channels(self, sat, channels=slice(12), ret_y=False):
@@ -1529,20 +1533,16 @@ class IASI_HIRS_analyser(LUTAnalysis):
         self.plot_hist_pls_perf(sat_ref, sat_targ, tb_ref, tb_targ)
         
 
-    M1 = M2 = None
-    def _prepare_args_calc_srf_estimate(self, sat, ch, shift, db):
+    @typhon.utils.cache.mutable_cache(maxsize=20)
+    def _prepare_args_calc_srf_estimate(self, sat, ch, shift, db,
+                ref="single"):
         """Helper for calc_srf_estimate_rmse and others
         
         See documentation for self.calc_srf_estimate_rmse.
         """
-        if not isinstance(self.iasi, pyatmlab.datasets.tovs.IASISub):
-            self.iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
-        if self.M1 is None:
-            self.M1 = self.iasi.read_period(start=datetime.datetime(2011, 1, 1), end=datetime.datetime(2011, 3, 30))
-        if self.M2 is None:
-            self.M2 = self.iasi.read_period(start=datetime.datetime(2012, 1, 1), end=datetime.datetime(2012, 3, 30))
-        M1 = self.M1
-        M2 = self.M2
+        iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
+        M1 = iasi.read_period(start=datetime.datetime(2011, 1, 1), end=datetime.datetime(2011, 1, 30))
+        M2 = iasi.read_period(start=datetime.datetime(2012, 1, 1), end=datetime.datetime(2012, 1, 30))
         y_master = pyatmlab.physics.specrad_wavenumber2frequency(
             M1["spectral_radiance"][::5, 2, :8461] * unit_specrad_wn)
         if db == "same":
@@ -1557,10 +1557,19 @@ class IASI_HIRS_analyser(LUTAnalysis):
             raise ValueError("Unrecognised option for db: {:s}".format(db))
         srf_master = self.srfs[sat][ch-1]
         freq = self.iasi.frequency
-        bt_master = srf_master.channel_radiance2bt(
-                srf_master.integrate_radiances(freq, y_master))
-        L_ref = srf_master.channel_radiance2bt(
-                    srf_master.integrate_radiances(freq, y_spectral_db))
+        
+        if ref == "all":
+            bt_master = self.get_tb_channels(sat, specrad_f=y_master)
+            L_ref = self.get_tb_channels(sat, specrad_f=y_spectral_db)
+        elif ref == "single":
+            bt_master = srf_master.channel_radiance2bt(
+                    srf_master.integrate_radiances(freq, y_master))
+
+            L_ref = srf_master.channel_radiance2bt(
+                        srf_master.integrate_radiances(freq, y_spectral_db))
+        else:
+            raise ValueError("invalid 'ref', expected 'all' or 'single', "
+                             "got '{:s}'".format(ref))
 
         srf_target = srf_master.shift(shift)
         bt_target = srf_target.channel_radiance2bt(
@@ -1570,8 +1579,15 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     freq, L_ref, y_master)
 
 
+    _regression_type = {
+        "single": (sklearn.linear_model.LinearRegression,
+                   {"fit_intercept": True}),
+        "all": (sklearn.cross_decomposition.PLSRegression,
+                {"n_components": 9, "scale": False})}
     def calc_srf_estimate_rmse(self, sat, ch, shift,
-            db="different"):
+            db="different", ref="single",
+            regression_type=None,
+            regression_args=None):
         """Calculate cost function for estimating SRF
 
         Construct artificial HIRS measurements with a prescribed SRF
@@ -1619,6 +1635,16 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 set1.  Valid values are 'same' (identical set), 'similar'
                 (different set, but from same region in time and space),
                 or 'different' (different set).  Default is 'different'.
+            ref [str]: Set to `'single'` if you only want to use a single
+                channel to estimate, or `'all'` if you want to use all.
+            regression_type [scikit-learn regression class]: Class to use for
+                regression.  By default, this is
+                sklearn.linear_model.LinearRegression when ref is single,
+                and sklearn.cross_decomposition.PLSRegression, when ref is
+                all.
+            regression_args [tuple]: Default arguments are stored in
+                self._regression_type.  See sklearn documentation for
+                other possibilities.
 
         Returns:
 
@@ -1628,17 +1654,23 @@ class IASI_HIRS_analyser(LUTAnalysis):
         """
         (bt_master, bt_target, srf_master, y_spectral_db, f_spectra,
             L_spectral_db, y_master) = self._prepare_args_calc_srf_estimate(
-                    sat, ch, shift, db)
+                    sat, ch, shift, db, ref=ref)
 
+        regression_type = regression_type or self._regression_type[ref][0]
+        regression_args = regression_args or self._regression_type[ref][1]
         dx = numpy.linspace(-100.0, 100.0, 51.0) * ureg.nm
         dy = [pyatmlab.math.calc_rmse_for_srf_shift(q,
                 bt_master, bt_target, srf_master, y_spectral_db,
-                f_spectra, L_spectral_db, unit=ureg.um) for q in dx]
+                f_spectra, L_spectral_db, ureg.um,
+                regression_type, regression_args) for q in dx]
         dy = numpy.array([d.m for d in dy])*dy[0].u
         return (dx, dy)
 
     def plot_errdist_per_srf_costfunc_localmin(self, 
-            sat, ch, shift_reference, db="different"):
+            sat, ch, shift_reference, db="different",
+            ref="single",
+            regression_type=None,
+            regression_args=None):
         """Investigate error dist. for SRF cost function local minima
 
         For all local minima in the SRF shift recovery cost function,
@@ -1646,7 +1678,10 @@ class IASI_HIRS_analyser(LUTAnalysis):
         global minimum does not always recover the correct SRF.
         """
 
-        (dx, dy) = self.calc_srf_estimate_rmse(sat, ch, shift_reference)
+        regression_type = regression_type or self._regression_type[ref][0]
+        regression_args = regression_args or self._regression_type[ref][1]
+        (dx, dy) = self.calc_srf_estimate_rmse(sat, ch, shift_reference,
+            db, ref, regression_type, regression_args)
         localmin = typhon.math.array.localmin(dy)
         (f1, a1) = matplotlib.pyplot.subplots()
         (f2, a2) = matplotlib.pyplot.subplots()
@@ -1655,11 +1690,13 @@ class IASI_HIRS_analyser(LUTAnalysis):
         # result to what we would like to see
         (bt_master, bt_target, srf_master, y_spectral_db, f_spectra,
             L_spectral_db, y_master) = self._prepare_args_calc_srf_estimate(
-                        sat, ch, shift_reference, db)
+                        sat, ch, shift_reference, db=db, ref=ref)
         for shift_attempt in dx[localmin]:
             bt_estimate = pyatmlab.math.calc_bts_for_srf_shift(shift_attempt,
                 bt_master, srf_master, y_spectral_db, f_spectra,
-                L_spectral_db, unit=ureg.um)
+                L_spectral_db, unit=ureg.um,
+                regression_type=regression_type,
+                regression_args=regression_args)
 
             # bt_master: BTs according to unshifted SRF
             # bt_target: BTs according to reference shifted SRF
@@ -1677,7 +1714,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
                         shift_attempt.to(ureg.nm),
                         rmse.to(ureg.K)))
         
-        addendum =  "{sat:s}-{ch:d}, shift {shift_reference:+~}, db {db:s}".format(**vars())
+        addendum = ("{sat:s}-{ch:d}, shift {shift_reference:+~}, db"
+                    " {db:s}, ref {ref:s}".format(**vars()))
         a1.set_title("Err. dist at local RMSE minima for shift recovery\n" + addendum)
         a2.set_title("Errors between BTs for estimated and reference SRF\n" + addendum)
         a1.set_xlabel("Residual error for shift [K]")
@@ -1686,22 +1724,33 @@ class IASI_HIRS_analyser(LUTAnalysis):
             a.set_ylabel("Count")
             a.legend()
             a.grid(axis="both")
+        fn_lab = "{sat:s}_ch{ch:d}_{shift_reference:.0f}_{db:s}_{ref:s}_{cls:s}_{args:s}.".format(
+                sat=sat, ch=ch, shift_reference=shift_reference.m, db=db,
+                ref=ref, cls=regression_type.__name__,
+                args=''.join(str(x) for x in itertools.chain.from_iterable(regression_args.items())))
+            
         pyatmlab.graphics.print_or_show(f1, False,
-            "srf_estimate_errdist_per_localmin_{sat:s}_ch{ch:d}_{shift_reference:.0f}_{db:s}.".format(
-                sat=sat, ch=ch, shift_reference=shift_reference.m, db=db))
+            "srf_estimate_errdist_per_localmin_"+fn_lab)
         pyatmlab.graphics.print_or_show(f2, False,
-            "srf_misestimate_bt_propagation_{sat:s}_ch{ch:d}_{shift_reference:.0f}_{db:s}.".format(
-                sat=sat, ch=ch, shift_reference=shift_reference.m, db=db))
+            "srf_misestimate_bt_propagation_"+fn_lab)
         
 
-    def visualise_srf_estimate_rmse(self, sat, db="different"):
+    def visualise_srf_estimate_rmse(self, sat, db="different",
+                                    ref="single",
+                                    regression_type=None,
+                                    regression_args=None):
+        regression_type = regression_type or self._regression_type[ref][0]
+        regression_args = regression_args or self._regression_type[ref][1]
         (f, ax_all) = matplotlib.pyplot.subplots(4, 3, figsize=(14, 9))
         for i in range(12):
             ch = i + 1
             for (k, shift) in enumerate(numpy.array([-60.0, -30.0, 5.0, 40.0])*ureg.nm):
                 logging.info("Estimating {sat:s} ch, {ch:d}, shift "
-                             "{shift:+7.3~}".format(**vars()))
-                (dx, dy) = self.calc_srf_estimate_rmse(sat, ch, shift)
+                             "{shift:+5.3~}, db {db:s}, ref {ref:s}, "
+                             "cls {regression_type.__name__:s}, args "
+                             "{regression_args!s}".format(**vars()))
+                (dx, dy) = self.calc_srf_estimate_rmse(sat, ch, shift, db,
+                        ref, regression_type, regression_args)
                 a = ax_all.ravel()[i]
                 p = a.plot(dx, dy) #color=self.colors[i%7],
                                #linestyle="solid",
@@ -1723,10 +1772,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
             a.set_ylabel(r"RMSE for estimate [$\Delta$ K]")
             a.grid(axis="both")
 #            a.legend(ncol=2, loc="right", bbox_to_anchor=(1, 0.5))
-        f.suptitle("Cost function minimisation for recovering shifted {:s} SRF ({:s} db)".format(sat, db))
+        f.suptitle("Cost function minimisation for recovering shifted {:s} SRF "
+                   "({:s} db, channel {:s}, regr {:s})".format(sat, db,
+                   ref, regression_type.__name__))
         f.subplots_adjust(hspace=0.45, wspace=0.32)#, right=0.7)
         pyatmlab.graphics.print_or_show(f, False,
-            "SRF_prediction_cost_function_{:s}_{:s}.".format(sat, db))
+            "SRF_prediction_cost_function_{:s}_{:s}_{:s}_{:s}_{:s}.".format(sat,
+            db, ref, regression_type.__name__,
+            ''.join(str(x) for x in itertools.chain.from_iterable(regression_args.items()))))
 
 
 
@@ -1747,7 +1800,7 @@ def main():
         vis = IASI_HIRS_analyser()
         if not isinstance(vis.iasi, pyatmlab.datasets.tovs.IASISub):
             vis.iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
-        h = pyatmlab.datasets.tovs.HIRS3()
+        h = pyatmlab.datasets.tovs.HIRS3(name="hirs")
 
         if p.makelut:
             print("Making LUT only")
@@ -1755,10 +1808,10 @@ def main():
                                  npc=p.npc, channels=p.channels)
             return
 
-#        if vis.gran is None:
+        if vis.gran is None:
             #vis.gran = vis.iasi.read(next(vis.graniter))
 #            vis.gran = vis.iasi.read_period(next(vis.graniter))
-#            vis.gran = vis.iasi.read_period(start=datetime.datetime(2011, 1, 1), end=datetime.datetime(2011, 1, 30))
+            vis.gran = vis.iasi.read_period(start=datetime.datetime(2011, 1, 1), end=datetime.datetime(2011, 3, 30))
             
         N = 40
         col = 50
@@ -1779,12 +1832,35 @@ def main():
 #                +0.02*ureg.um, N=N, col=col)
 #        vis.visualise_pls2_diagnostics("NOAA19", "NOAA18")
 #        vis.M1 = vis.gran
-#        vis.visualise_srf_estimate_rmse("NOAA19")
+        dbref = itertools.product(
+            #("same", "similar", "different"),
+            ("different",),
+            #("single", "all"),
+            ("all",),
+            ((sklearn.linear_model.LinearRegression,
+              {"fit_intercept": True}),
+             (sklearn.cross_decomposition.PLSRegression,
+              {"n_components": 9, "scale": False}),
+             (sklearn.cross_decomposition.PLSRegression,
+              {"n_components": 12, "scale": False}),
+              ))
+        dbref = [x for x in dbref if not (x[1]=="single" and
+                    x[2][0] is sklearn.cross_decomposition.PLSRegression)]
+#        dbref = list(itertools.product(("different",),
+#                                  ("all",)))
+        # Test, why am I getting worse with PLS than with OLS?
+        vis.plot_errdist_per_srf_costfunc_localmin(
+            "NOAA19", 6, 60.0*ureg.nm, db="different", ref="all")
+        for (db, ref, (cls, args)) in dbref:
+            vis.visualise_srf_estimate_rmse("NOAA19", db=db, ref=ref,
+                regression_type=cls, regression_args=args)
         for ch in (1, 6, 11, 12):
             for shift in numpy.linspace(-80.0, 80.0, 9)*ureg.nm:
-                for db in ("same", "similar", "different"):
+                for (db, ref, (cls, args)) in dbref:
                     vis.plot_errdist_per_srf_costfunc_localmin(
-                        "NOAA19", ch, shift, db=db)
+                        "NOAA19", ch, shift, db=db, ref=ref, 
+                        regression_type=cls,
+                        regression_args=args)
 #        vis.map_with_hirs_pca(h, "NOAA16")
 #        for i in range(1, 13):
 #            vis.plot_bt_srf_shift("NOAA19", i)
