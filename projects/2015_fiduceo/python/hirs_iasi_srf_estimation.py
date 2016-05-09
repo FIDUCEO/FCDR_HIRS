@@ -73,6 +73,10 @@ def parse_cmdline():
     parser.add_argument("--plot_bt_srf_shift",
         action="store_true", default=False)
 
+    parser.add_argument("--write_channel_locations",
+        action="store", default="", type=str,
+        help="Write channel centroids to file as a LaTeX booktabs table.")
+
     parser.add_argument("--latrange",
         action="store", type=float, nargs=2, default=(-90, 90),
         help="Latitude range to use in training database")
@@ -1104,8 +1108,12 @@ class IASI_HIRS_analyser(LUTAnalysis):
             y_in_view = [spectrum[(self.iasi.frequency>freq_lo) &
                                   (self.iasi.frequency<freq_hi)]
                          for spectrum in spectra]
-            a.set_ylim(min([yv.min() for yv in y_in_view]).m,
-                       max([yv.max() for yv in y_in_view]).m)
+            extremes = (min([yv.min() for yv in y_in_view]),
+                        max([yv.max() for yv in y_in_view]))
+            try:
+                a.set_ylim(*[e.m for e in extremes])
+            except AttributeError:
+                a.set_ylim(*extremes)
             x_lo = freq_lo.to(self.x["unit"][x_quantity], "sp")
             x_hi = freq_hi.to(self.x["unit"][x_quantity], "sp")
             a.set_xlim(min(x_lo, x_hi).m, max(x_lo, x_hi).m)
@@ -1973,6 +1981,25 @@ class IASI_HIRS_analyser(LUTAnalysis):
         stderr = (estimates - (shift_reference.to(ureg.um).m)).std()
         return (stderr*ureg.um).to(ureg.nm)
 
+    def write_channel_locations(self, outfile, channels):
+        """Write a LaTeX table with locations for all channels for all satellites
+        """
+        with open(outfile, "wt", encoding="ascii") as s:
+            s.write(r"\begin{tabular}{r" + "l"*len(channels) + "}\n")
+            s.write(r"\toprule" + "\n")
+            for i in range(1, len(channels)+1):
+                s.write("& {:d} ".format(i))
+            s.write(r"\\" + "\n")
+            s.write(r"\midrule" + "\n")
+            for sat in sorted(self.srfs.keys()):
+                s.write(sat + " ")
+                for (ch, srf) in enumerate(self.srfs[sat], start=1):
+                    if ch in channels:
+                        s.write("& {:.3f} ".format(srf.centroid().to(ureg.um, "sp").m))
+                s.write(r"\\" + "\n")
+            s.write(r"\bottomrule" + "\n")
+            s.write(r"\end{tabular}" + "\n")
+
 def main():
     p = parsed_cmdline
     print(p)
@@ -2139,7 +2166,10 @@ def main():
 #                vis.plot_channel_BT_deviation(h)
 #            except FileNotFoundError as msg:
 #                logging.error("Skipping {:s}: {!s}".format(h, msg))
-#        logging.info("Done")
+        if p.write_channel_locations != "":
+            vis.write_channel_locations(p.write_channel_locations,
+                channels=p.channels)
+        logging.info("Done")
 
 if __name__ == "__main__":
     main()
