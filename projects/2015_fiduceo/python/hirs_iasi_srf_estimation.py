@@ -92,6 +92,8 @@ def parse_cmdline():
                         default=0.0)
     parser.add_argument("--threads", action="store", type=int,
                         default=16)
+    parser.add_argument("--compare_hiasi_hirs", action="store_true",
+        help="Plot comparison of HIASI and HIRS")
 
     p = parser.parse_args()
     return p
@@ -118,6 +120,8 @@ import numpy
 import numpy.lib.recfunctions
 import scipy.stats
 
+import netCDF4
+
 import matplotlib
 if __name__ == "__main__":
     matplotlib.use("Agg")
@@ -140,11 +144,18 @@ import pyatmlab.graphics
 import pyatmlab.stats
 import pyatmlab.db
 
-from pyatmlab.constants import micro, centi, tera, nano
-from pyatmlab import ureg
+from pyatmlab.constants import (micro, centi, tera, nano)
+from pyatmlab.units import ureg, radiance_units as rad_u
+
+hirs_iasi_matchup = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS")
 
 unit_specrad_wn = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
 unit_specrad_freq = ureg.W / (ureg.m**2 * ureg.sr * ureg.Hz)
+
+class HIM(typhon.datasets.dataset.MultiFileDataset):
+    """For HIRS-IASI-Matchups
+    """
+    basedir = "/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS/W_XX-EUMETSAT-Darmstadt,SATCAL+COLLOC+LEOLEOIR,M02+HIRS+M02+IASI_C_EUMS_20130101005203_20130101001158.nc"
 
 class LUTAnalysis:
     """Helper class centralising all LUT-related approaches
@@ -2000,6 +2011,32 @@ class IASI_HIRS_analyser(LUTAnalysis):
             s.write(r"\bottomrule" + "\n")
             s.write(r"\end{tabular}" + "\n")
 
+    def compare_hiasi_hirs(self, ch=1, start=0):
+        i = ch - 1
+        g = hirs_iasi_matchup.glob("*.nc")
+        for k in range(start+1):
+            himfile = next(g)
+        ds = netCDF4.Dataset(himfile)
+        # This uses the counts included in the NetCDF files, but those
+        # appear to be wrong for all but channel 1...
+        iasi_specrad = (ds["ref_radiance"][...] * rad_u["ir"]).to(
+                rad_u["si"], "radiance")
+        freq = numpy.loadtxt(self.iasi.freqfile) * ureg.Hz
+        iasi_rad = self.srfs["METOPA"][i].integrate_radiances(freq,
+                    iasi_specrad).to(rad_u["ir"], "radiance")
+        hirs_rad = ((ds["mon_c0"][:, i] + ds["mon_c1"][:, i] * ds["mon_counts"][:, i])
+                    * rad_u["ir"])
+        (f, a) = matplotlib.pyplot.subplots()
+        a.plot(iasi_rad, hirs_rad-iasi_rad, 'o')
+        a.set_xlabel("IASI-simulated HIRS [{:~}]".format(iasi_rad.u))
+        a.set_ylabel("HIRS - IASI-simulated HIRS [{:~}]".format(iasi_rad.u))
+        a.set_title("IASI-HIRS comparison {:s}".format(ds.RefStartTimeSec))
+        pyatmlab.graphics.print_or_show(f, False,
+            "HIRS_IASI_comparison_{:s}.".format(ds.RefStartTimeSec))
+
+
+
+
 def main():
     p = parsed_cmdline
     print(p)
@@ -2169,6 +2206,9 @@ def main():
         if p.write_channel_locations != "":
             vis.write_channel_locations(p.write_channel_locations,
                 channels=p.channels)
+        if p.compare_hiasi_hirs:
+            for i in range(25):
+                vis.compare_hiasi_hirs(ch=1, start=i)
         logging.info("Done")
 
 if __name__ == "__main__":
