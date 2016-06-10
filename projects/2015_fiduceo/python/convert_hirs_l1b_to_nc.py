@@ -22,6 +22,8 @@ import scipy.stats
 import netCDF4
 import progressbar
 
+import typhon.datasets.dataset
+
 import pyatmlab.stats
 import pyatmlab.config
 import pyatmlab.graphics
@@ -109,6 +111,16 @@ def convert_granule(h, satname, dt, gran, overwrite=False):
                 ("scanlines", "scanpos"), zlib=True)
             lza.units = "degrees"
             lza[:, :] = lines["sat_za"]
+        elif "lza_approx" in lines.dtype.names:
+            lza = ds.createVariable("lza", "f4",
+                ("scanlines", "scanpos"), zlib=True)
+            lza.units = "degrees"
+            lza.note = ("Values are approximate. "
+                "Original data include LZA only for outermost "
+                "footprint.  Remaining estimated using a full "
+                "scanline of LZAs from MetOpA scaled by the ratio "
+                "of the outermost footprint LZAs.")
+            lza[:, :] = lines["lza_approx"]
 
         bt = ds.createVariable("bt", "f4",
             ("scanlines", "scanpos", "channels_calib"), zlib=True)
@@ -146,7 +158,12 @@ def convert_period(h, sat, start_date, end_date, **kwargs):
     bar.update(0)
     for (dt, gran) in h.find_granules_sorted(start_date, end_date,
             return_time=True, satname=sat):
-        convert_granule(h, sat, dt, gran, **kwargs)
+        try:
+            convert_granule(h, sat, dt, gran, **kwargs)
+        except (typhon.datasets.dataset.InvalidDataError,
+                typhon.datasets.dataset.InvalidFileError) as exc:
+            logging.error("Unable to process {!s}: {:s}: {!s}".format(
+                gran, type(exc).__name__, exc))
         bar.update((dt-start_date)/(end_date-start_date))
     bar.update(1)
     bar.finish()
