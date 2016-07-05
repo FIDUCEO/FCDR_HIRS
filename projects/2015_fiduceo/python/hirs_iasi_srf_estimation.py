@@ -13,7 +13,7 @@ def parse_cmdline():
     parser.add_argument("--sat", action="store", default="NOAA18")
     parser.add_argument("--channels", action="store", type=int,
                         default=list(range(1, 13)),
-                        choices=list(range(1, 13)), nargs="+")
+                        choices=list(range(1, 20)), nargs="+")
 
     parser.add_argument("--makelut", action="store_true", default=False,
         help="Make look up table")
@@ -2002,12 +2002,24 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 s.write("& {:d} ".format(i))
             s.write(r"\\" + "\n")
             s.write(r"\midrule" + "\n")
-            for sat in sorted(self.srfs.keys()):
+            centroids = numpy.empty(shape=(len(channels), len(self.srfs)))*ureg.um
+            for (i, sat) in enumerate(sorted(self.srfs.keys())):
                 s.write(sat + " ")
                 for (ch, srf) in enumerate(self.srfs[sat], start=1):
                     if ch in channels:
-                        s.write("& {:.3f} ".format(srf.centroid().to(ureg.um, "sp").m))
+                        c = srf.centroid().to(ureg.um, "sp")
+                        centroids[ch-1, i] = c
+                        s.write("& {:.3f} ".format(c.m))
                 s.write(r"\\" + "\n")
+            s.write(r"\bottomrule" + "\n")
+            s.write("Mean ")
+            for i in range(len(channels)):
+                s.write("& {:.4f} ".format(centroids[i, :].mean().m))
+            s.write("r\\" + "\n")
+            s.write("Std [nm] ")
+            for i in range(len(channels)):
+                s.write("& {:.4f} ".format(centroids[i, :].std().m))
+            s.write(r"\\" + "\n")
             s.write(r"\bottomrule" + "\n")
             s.write(r"\end{tabular}" + "\n")
 
