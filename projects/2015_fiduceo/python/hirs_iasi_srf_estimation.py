@@ -95,6 +95,12 @@ def parse_cmdline():
     parser.add_argument("--compare_hiasi_hirs", action="store_true",
         help="Plot comparison of HIASI and HIRS")
 
+    parser.add_argument("--cost_frac_bt", action="store", type=float,
+        help="In cost function, relative importance of BT deviation")
+
+    parser.add_argument("--cost_frac_dλ", action="store", type=float,
+        help="In cost function, relative weight of penalty for larger dλ shift")
+
     p = parser.parse_args()
     return p
 
@@ -144,8 +150,8 @@ import pyatmlab.graphics
 import pyatmlab.stats
 import pyatmlab.db
 
-from pyatmlab.constants import (micro, centi, tera, nano)
-from pyatmlab.units import ureg, radiance_units as rad_u
+from typhon.physics.constants import (micro, centi, tera, nano)
+from typhon.physics.units import ureg, radiance_units as rad_u
 
 hirs_iasi_matchup = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS")
 
@@ -1737,13 +1743,26 @@ class IASI_HIRS_analyser(LUTAnalysis):
             regression_type=None,
             regression_args=None,
             limits={},
-            noise_level={"target": 0.0, "master": 0.0}):
+            noise_level={"target": 0.0, "master": 0.0},
+            A=1.,
+            B=0.):
         """Calculate cost function for estimating SRF
 
         Construct artificial HIRS measurements with a prescribed SRF
         shift.  Estimate how well we can recover this SRF shift using
         independent data: as a function of attempted SRF shift, calculate
-        the RMSE between estimated and reference radiances.  Hopefully,
+        the cost function:
+        
+            C = A/µ_y**2 * (y_est - y_ref)**2 +
+              + B/λ**2 + dλ**2
+
+        where A and B are weights, µ_y is the mean brightness temperature,
+        y_est is the BT estimated with attempted SRF shift dλ, y_ref is
+        the reference brightness temperature calculated with reference
+        shift, λ is the centroid wavelength for the reference SRF, and dλ
+        is the attempted shift.  Returned will be (dλ, C).
+
+        RMSE between estimated and reference radiances.  Hopefully,
         the global minimum of this cost function will coincide with the
         prescribed SRF shift.
 
@@ -1780,7 +1799,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
             sat [str]: Name of satellite, such as NOAA19
             ch [int]: Channel number
-            shift [pint Quantity]: Reference shift, such as 100*ureg.nm.
+            shift [pint Quantity]: Reference shift, such as 10*ureg.nm.
             db [str]: Indicates whether how similar set2 should be to
                 set1.  Valid values are 'same' (identical set), 'similar'
                 (different set, but from same region in time and space),
@@ -1799,10 +1818,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 `:func:typhon.math.array.limit_ndarray`.
             noise_level [dict]: Noise levels applied to target and master.
                 Dictionary {"target": float, "master": float}.
+            A [float]: Weight for cost function component due to radiance
+                differences between reference and attempted SRF.  Defaults
+                to 1 for backward compatibility.
+            B [float]: Weight for cost function component.  Defaults to 0.
 
         Returns:
 
-            (dx, dy) [(ndarray, ndarray)]: RMSE [K] as a function of
+            (dλ, dy) [(ndarray, ndarray)]: RMSE [K] as a function of
                 attempted SRF shift [nm].  Hopefully, this function will
                 have a global minimum corresponding to the actual shift.
         """
@@ -1813,13 +1836,22 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         regression_type = regression_type or self._regression_type[ref][0]
         regression_args = regression_args or self._regression_type[ref][1]
-        dx = numpy.linspace(-100.0, 100.0, 51.0) * ureg.nm
+        dλ = numpy.linspace(-100.0, 100.0, 51.0) * ureg.nm
         dy = [pyatmlab.math.calc_rmse_for_srf_shift(q,
                 bt_master, bt_target, srf_master, y_spectral_db,
                 f_spectra, L_spectral_db, ureg.um,
-                regression_type, regression_args) for q in dx]
+                regression_type, regression_args) for q in dλ]
         dy = numpy.array([d.m for d in dy])*dy[0].u
-        return (dx, dy)
+
+        # add penalty for larger shifts.  This ensures that we prefer a
+        # local minima with a small shift than with a large shift.
+
+        (A, B) = (A/(A+B), B/(A+B)) # ensure they add up to 1
+
+        C = (A / bt_master.mean()**2 * dy**2 +
+             B / (srf_master.centroid().to("nm", "sp")**2) * dλ**2)
+
+        return (dλ, C)
 
     def plot_errdist_per_srf_costfunc_localmin(self, 
             sat, ch, shift_reference, db="different",
@@ -1827,19 +1859,23 @@ class IASI_HIRS_analyser(LUTAnalysis):
             regression_type=None,
             regression_args=None,
             limits={},
-            noise_level={"target": 0.0, "master": 0.0}):
+            noise_level={"target": 0.0, "master": 0.0},
+            A=1.,
+            B=0.):
         """Investigate error dist. for SRF cost function local minima
 
         For all local minima in the SRF shift recovery cost function,
         visualise the error distribution.  Experience has shown that the
         global minimum does not always recover the correct SRF.
+
+        Arguments are identical as for self.calc_srf_estimate_rmse.
         """
 
         regression_type = regression_type or self._regression_type[ref][0]
         regression_args = regression_args or self._regression_type[ref][1]
         (dx, dy) = self.calc_srf_estimate_rmse(sat, ch, shift_reference,
             db, ref, regression_type, regression_args, limits,
-            noise_level)
+            noise_level, A=A, B=B)
         localmin = typhon.math.array.localmin(dy)
         (f1, a1) = matplotlib.pyplot.subplots()
         (f2, a2) = matplotlib.pyplot.subplots()
@@ -1905,7 +1941,12 @@ class IASI_HIRS_analyser(LUTAnalysis):
                                     regression_type=None,
                                     regression_args=None,
                                     limits={},
-                                    noise_level={"target": 0.0, "master": 0.0}):
+                                    noise_level={"target": 0.0, "master":
+                                    0.0},
+                                    A=1.,
+                                    B=0.):
+        """Visualise cost function for SRF minimisation
+        """
         regression_type = regression_type or self._regression_type[ref][0]
         regression_args = regression_args or self._regression_type[ref][1]
         (f, ax_all) = matplotlib.pyplot.subplots(4, 3, figsize=(14, 9))
@@ -1919,7 +1960,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                              "{limits!s}".format(**vars()))
                 (dx, dy) = self.calc_srf_estimate_rmse(sat, ch, shift, db,
                         ref, regression_type, regression_args, limits,
-                        noise_level)
+                        noise_level, A=A, B=B)
                 a = ax_all.ravel()[i]
                 p = a.plot(dx, dy) #color=self.colors[i%7],
                                #linestyle="solid",
@@ -1943,15 +1984,16 @@ class IASI_HIRS_analyser(LUTAnalysis):
 #            a.legend(ncol=2, loc="right", bbox_to_anchor=(1, 0.5))
         f.suptitle("Cost function minimisation for recovering shifted {:s} SRF "
                    "({:s} db, channel {:s}, regr {:s})\n"
-                   "({!s}, {!s}), noise level {!s}".format(sat, db,
-                   ref, regression_type.__name__,
-                   regression_args, limits, noise_level))
+                   "({!s}, {!s}), noise level {!s}, A={:.2f}, B={:.2f}".format(
+                   sat, db, ref, regression_type.__name__,
+                   regression_args, limits, noise_level, A, B))
         f.subplots_adjust(hspace=0.45, wspace=0.32)#, right=0.7)
         pyatmlab.graphics.print_or_show(f, False,
-            "SRF_prediction_cost_function_{:s}_{:s}_{:s}_{:s}_{:s}_{:s}_noise{:d}mK{:d}mK.".format(sat,
+            "SRF_prediction_cost_function_{:s}_{:s}_{:s}_{:s}_{:s}_{:s}_A{:d}_B{:d}_noise{:d}mK{:d}mK.".format(sat,
                 db, ref, regression_type.__name__,
                 ''.join(str(x) for x in itertools.chain.from_iterable(regression_args.items())),
                 "global" if limits=={} else "nonglobal",
+                int(100*A), int(100*B),
                 int(1e3*noise_level["target"]),
                 int(1e3*noise_level["master"])))
 
@@ -2125,7 +2167,7 @@ def main():
             for (db, ref, (cls, args), limits) in dbref:
                 vis.visualise_srf_estimate_rmse("NOAA19", db=db, ref=ref,
                     regression_type=cls, regression_args=args,
-                    limits=limits)
+                    limits=limits, A=p.cost_frac_bt, B=p.cost_frac_dλ)
         if p.plot_errdist_per_localmin:
             for ch in (1, 6, 11, 12):
                 for shift in numpy.linspace(-80.0, 80.0, 9)*ureg.nm:
