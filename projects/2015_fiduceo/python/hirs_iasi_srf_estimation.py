@@ -1379,7 +1379,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 label="{:+3~}".format(q),
                 ptile_to_legend=True if i==0 else False)
 
-        a.set_title("Radiance change distribution per radiance for shifted SRF, HIRS, {:s} ch. {:d}".format(satellite, channel))
+        a.set_title("BT change distribution per BT for shifted SRF\n"
+            "{:s} HIRS, ch. {:d}".format(satellite, channel))
         box = a.get_position()
         a.set_position([box.x0, box.y0, box.width * 0.7, box.height])
         a.legend(loc="center left",ncol=1,bbox_to_anchor=(1,0.5))
@@ -2355,9 +2356,10 @@ def main():
                             start1=start, start2=start_alt,
                             end1=end, end2=end_alt)
         if p.plot_bt_srf_shift:
-            for i in range(1, 13):
-                logging.info("Plotting shifts for NOAA19 ch.  {:d}".format(i))
-                vis.plot_bt_srf_shift("NOAA19", i)
+            for ch in p.channels:
+                logging.info("Plotting shifts for {:s} ch. {:d}".format(
+                    p.sat, ch))
+                vis.plot_bt_srf_shift(p.sat, ch)
 
         shift = p.shift*ureg.nm
         if p.estimate_errorprop:
