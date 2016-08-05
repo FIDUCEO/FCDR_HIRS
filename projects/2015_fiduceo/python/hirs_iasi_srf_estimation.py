@@ -109,13 +109,21 @@ def parse_cmdline():
         default="mW cm/m^2/sr",
         help="Unit for noise.  If noise_quantity is bt, this must be K. "
              "Otherwise, can be anything with dimensions convertible to "
-             "radiance units.")
+             "radiance units.  If noise_units='relative', the noise is "
+             "taken as a factor of a per-channel default which was "
+             "estimated based on a single noaa18 orbit 2005-08-18 "
+             "14:08-15:54.  In this case, the noise quantity must be "
+             "radiance. ")
     parser.add_argument("--n_tries", action="store", type=int,
         default=100,
         help="For use with --estimate_errorprop, how many times to "
              "recover the SRF shift with different noise realisations. "
              "Higher means more accurate estimate of uncertainty but also "
              "longer runtime.")
+    parser.add_argument("--predict_quantity", action="store", type=str,
+        default="bt", choices=["radiance", "bt"],
+        help="For SRF prediction, work in radiances or in BTs. "
+             "Use with --estimate_errorprop or --plot_srf_cost")
 
     parser.add_argument("--threads", action="store", type=int,
                         default=16,
@@ -169,6 +177,13 @@ def parse_cmdline():
     parser.add_argument("--vis_expected_range", action="store_true",
         help="Visualise expected variability for all channels, as a "
              "function of radiance.")
+
+    parser.add_argument('--cache', dest='cache', action='store_true',
+        help="Use caching.  More memory, higher speed.")
+    parser.add_argument('--no-cache', dest='cache', action='store_false',
+        help="Suppress caching.  Less memory, slower speed.")
+    parser.set_defaults(feature=True)
+
 
     p = parser.parse_args()
     return p
@@ -842,6 +857,16 @@ class IASI_HIRS_analyser(LUTAnalysis):
 #                wavenumber="Wave number [cm^-1]",
 #                frequency="Frequency [THz]"))
             )
+
+    # Noise order of magnitudes.  Obtained visually from
+    # HIRS_radiance_noise_{sat}_ch{ch}... files.
+
+    noise_scale = ureg.Quantity(numpy.array(
+        [1.6, 0.8, 0.35, 0.35, 0.3, 0.3, 0.25, 0.1, 0.18, 0.28, 0.20,
+        0.18, 1.3e-3, 1.2e-3, 1.0e3, 1.0e-3, 0.9e-3, 0.8e-3, 4.0e-4]),
+        rad_u["ir"])
+
+    pred_channels = range(1, 13) # used for prediction
                 
     _iasi = None
     @property
@@ -876,7 +901,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def gran(self, value):
         self._gran = value
 
-    def __init__(self, mode="Viju"):
+    def __init__(self, mode="Viju", usecache=True):
         #logging.info("Finding and reading IASI")
         if mode == "iasinc":
             self.iasi = pyatmlab.datasets.tovs.IASINC(name="iasinc")
@@ -885,6 +910,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         elif mode == "iasisub":
             self.iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
         self.graniter = self.iasi.find_granules()
+        self.usecache = usecache
 
         hconf = pyatmlab.config.conf["hirs"]
         srfs = {}
@@ -1829,7 +1855,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
         # match the characteristics of the collocations.  However, it
         # should NOT be applied to testing data that I need to use to
         # verify how good the prediction is.
-        M1 = iasi.read_period(start=start1, end=end1)
+        M1 = iasi.read_period(start=start1, end=end1,
+                NO_CACHE=not self.usecache)
         M1_limited = typhon.math.array.limit_ndarray(M1, limits=limits)
         L_full_testing = pyatmlab.physics.specrad_wavenumber2frequency(
             M1["spectral_radiance"][::5, 2, :8461] * unit_specrad_wn)
@@ -1839,7 +1866,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
             L_spectral_db = pyatmlab.physics.specrad_wavenumber2frequency(
                 M1["spectral_radiance"][2::5, 2, :8461] * unit_specrad_wn)
         elif db == "different":
-            M2 = iasi.read_period(start=start2, end=end2)
+            M2 = iasi.read_period(start=start2, end=end2,
+                NO_CACHE=not self.usecache)
             M2_limited = typhon.math.array.limit_ndarray(M2, limits=limits)
             L_spectral_db = pyatmlab.physics.specrad_wavenumber2frequency(
                 M2["spectral_radiance"][::3, 1, :8461] * unit_specrad_wn)
@@ -1849,10 +1877,12 @@ class IASI_HIRS_analyser(LUTAnalysis):
         srf_target = srf_master.shift(shift)
         freq = self.iasi.frequency
 
-        if ref == "all":
+        if ref == "all": # means 1–12 for now
             #bt_master = self.get_tb_channels(sat, specrad_f=L_full_testing)
-            L_master = self.get_L_channels(sat, specrad_f=L_full_testing)
-            bt_ref = self.get_tb_channels(sat, specrad_f=L_spectral_db)
+            L_master = self.get_L_channels(sat, channels=self.pred_channels,
+                                           specrad_f=L_full_testing)
+            bt_ref = self.get_tb_channels(sat, channels=self.pred_channels,
+                                           specrad_f=L_spectral_db)
         elif ref == "single":
             L_master = srf_master.integrate_radiances(freq, L_full_testing)
             bt_ref = srf_master.channel_radiance2bt(
@@ -1862,7 +1892,17 @@ class IASI_HIRS_analyser(LUTAnalysis):
                              "got '{:s}'".format(ref))
 
 
+        noise_level = noise_level.copy()
         L_target = srf_target.integrate_radiances(freq, L_full_testing)
+        if noise_units == "relative":
+            if noise_quantity != "radiance":
+                raise ValueError("When noise_units=relative, "
+                    "you must use noise_quantity=radiance")
+
+            noise_level["master"] *= self.noise_scale
+            noise_level["target"] *= self.noise_scale[ch-1]
+            noise_units = self.noise_scale.u
+
         if noise_quantity == "radiance":
             L_target += ureg.Quantity(
                 noise_level["target"] * numpy.random.randn(*L_target.shape),
@@ -1872,9 +1912,11 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     noise_level["master"]*numpy.random.randn(*L_master.shape),
                     noise_units).to(L_master.u, "radiance")
             else: # noise level per channel
-                # FIXME: Implement per-channel noise levels
-                raise NotImplementedError(
-                    "Per-channel noise level not implemented yet")
+                L_master += (noise_level["master"]
+                                        [numpy.asarray(range(1, 13))-1]
+                                        [numpy.newaxis, :] *
+                    numpy.random.randn(*L_master.shape)).to(
+                        L_master.u, "radiance")
         bt_master = srf_master.channel_radiance2bt(L_master)
         bt_target = srf_target.channel_radiance2bt(L_target)
 
@@ -2208,12 +2250,41 @@ class IASI_HIRS_analyser(LUTAnalysis):
                              {"n_components": 9, "scale": False}),
             optimiser_func=scipy.optimize.minimize_scalar,
             optimiser_args=dict(bracket=[-0.04, 0.04], bounds=[-0.1, 0.1],
-                method="brent", args=(ureg.um,)),
+                method="bounded", args=(ureg.um,)),
             limits={}, noise_level={"target": 1.0, "master": 1.0},
             noise_quantity="bt", noise_units="K", 
-            cost_mode="total", N=100, *,
+            cost_mode="total", N=100,
+            predict_quantity="K", *,
             start1, start2, end1, end2):
-        """Estimate error propagation under SRF recovery
+        """Estimate error propagation under SRF recovery.
+
+        Mandatory arguments:
+
+            sat
+            ch
+            shift_reference
+
+        Optional arguments:
+
+            db
+            ref
+            regression_type
+            regression_args
+            optimiser_func
+            optimiser_args
+            limits
+            noise_level
+            noise_quantity
+            noise_units
+            cost_mode   "total" or "anomalies"
+            N
+            predict_quantity
+
+        Mandatory keyword arguments:
+            start1
+            start2
+            end1
+            end2
         """
         estimates = numpy.empty(shape=(N,), dtype="f4")
 
@@ -2238,7 +2309,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 optimiser_func=optimiser_func,
                 optimiser_args=optimiser_args,
                 cost_mode=cost_mode,
-                args=(ureg.um,))
+                args=(ureg.um,),
+                predict_quantity=predict_quantity)
             estimates[i] = res.x
             bar.update(i+1)
         bar.finish()
@@ -2247,25 +2319,28 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         pdd = pathlib.Path(pyatmlab.io.plotdatadir())
 
-        tofile = (pdd / "srf_errorprop_{sat:s}_ch{ch:d}_ref{ref:s}".format(
-            **vars()))
+        tofile = (pdd / "srf_errorprop_{sat:s}_ch{ch:d}_db{db:s}_ref{ref:s}_"
+                        "rt{regression_type.__name__:s}_"
+                        "nq{noise_quantity:s}_nu{noise_units:s}_"
+                        "cm{cost_mode:s}_pq{predict_quantity:s}".format(**vars()))
 
         tofile.parent.mkdir(parents=True, exist_ok=True)
 
-        logging.info("Writing to {!s}.(dat,info)".format(tofile))
+        logging.info("Writing to {!s}".format(tofile) + ".{dat,info}")
 
         with tofile.with_suffix(".info").open("a", encoding="utf-8") as fp:
             fp.write(" ".join(sys.argv) + "\n")
+            fp.write(pyatmlab.tools.get_verbose_stack_description())
 
         with tofile.with_suffix(".dat").open("a", encoding="ascii") as fp:
             fp.write(
-                "{ch:3d} "
-                "{shift_reference.m:.2f} "
-                "{N:d} "
-                "{noise_level[target]:.3f} "
-                "{noise_level[master]:.3f} "
-                "{bias:.6f} "
-                "{stderr:.6f} ".format(**vars()))
+                "{ch:<6d} "
+                "{shift_reference.m:<8.2f} "
+                "{N:<6d} "
+                "{noise_level[target]:<9.3f} "
+                "{noise_level[master]:<9.3f} "
+                "{bias:<12.6f} "
+                "{stderr:<12.6f}\n".format(**vars()))
         return (ureg.Quantity(bias, ureg.um).to(ureg.nm),
                 ureg.Quantity(stderr, ureg.um).to(ureg.nm))
 
@@ -2372,7 +2447,7 @@ def main():
 
 
     with numpy.errstate(all="raise"):
-        vis = IASI_HIRS_analyser()
+        vis = IASI_HIRS_analyser(usecache=p.cache)
         if not isinstance(vis.iasi, pyatmlab.datasets.tovs.IASISub):
             vis.iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
         h = pyatmlab.datasets.tovs.HIRS3(name="hirs")
@@ -2388,10 +2463,12 @@ def main():
         start_alt = datetime.datetime.strptime(p.iasi_period2[0], p.datefmt)
         end_alt = datetime.datetime.strptime(p.iasi_period2[1], p.datefmt)
         if (p.plot_bt_srf_shift or p.vis_expected_range) and vis.gran is None:
-            vis.gran = vis.iasi.read_period(start=start, end=end)
+            vis.gran = vis.iasi.read_period(start=start, end=end,
+                NO_CACHE=not p.cache)
         if p.plot_spectrum_with_channels or p.plot_shifted_srf_in_subplots:
             if vis.gran is None:
-                vis.gran = vis.iasi.read_period(start=start, end=end)
+                vis.gran = vis.iasi.read_period(start=start, end=end,
+                    NO_CACHE=not p.cache)
             if p.seed > 0:
                 logging.info("Seeding with {:d}".format(p.seed))
                 numpy.random.seed(p.seed)
@@ -2492,7 +2569,7 @@ def main():
                     optimiser_func=scipy.optimize.minimize_scalar
                     optimiser_args=dict(bracket=[-0.04, 0.04],
                                         bounds=[-0.1, 0.1],
-                                        method="brent",
+                                        method="bounded",
                                         args=(ureg.um,))
 
                 logging.info("Finding variation of minima for "
@@ -2514,24 +2591,24 @@ def main():
                     
                 (bias, std) = vis.estimate_errorprop_srf_recovery(p.sat, ch,
                     shift.to(ureg.um), db="different",
-                    ref="all",
+                    ref=p.predict_chan[0],
                     regression_type=sklearn.linear_model.LinearRegression,
                     regression_args={"fit_intercept": True},
                     optimiser_func=optimiser_func,
                     optimiser_args=optimiser_args,
-                    limits={"lat": (60, 90, "all")},
+                    limits={"lat": (*p.latrange, "all")},
                     noise_level=noise_level,
                     noise_quantity=p.noise_quantity,
                     noise_units=p.noise_units,
                     cost_mode=p.cost_mode,
                     start1=start, start2=start_alt,
                     end1=end, end2=end_alt,
-                    N=N)
-                print("Channel {:d} shift of {:~}, noise {!s} ({:s} in ({:s}) has "
+                    N=N,
+                    predict_quantity=p.predict_quantity)
+                print("Channel {:d} shift of {:~}, noise {!s} ({:s} in ({:s})) has "
                     "bias {:~}, stderror {:~}, based on {:d} attempts".format(
                         ch, shift, noise_level, p.noise_quantity, 
                         p.noise_units, bias, std, N))
-                # write out more friendlyish
 
 #            vis.map_with_hirs(h, "NOAA16", i)
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_8.0")
