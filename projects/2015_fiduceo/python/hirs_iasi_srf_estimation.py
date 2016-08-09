@@ -59,11 +59,12 @@ def parse_cmdline():
                     help="Predict single-to-single or all-to-single")
 
     parser.add_argument("--regression_type", action="store",
-        choices=["LR", "PLSR"],
+        choices=["LR", "PLSR", "ODR"],
         default=["LR"],
         nargs="+",
         help="What kind of regression to use for prediction: linear "
-             "regression of partial least squares regression")
+             "regression, partial least squares regression, or "
+             "orthogonal distance regression")
 
     parser.add_argument("--nplsr", action="store", type=int,
         default=12,
@@ -209,6 +210,7 @@ import pathlib
 import numpy
 import numpy.lib.recfunctions
 import scipy.stats
+import scipy.odr
 
 import netCDF4
 
@@ -1912,15 +1914,19 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         if ref == "all": # means 1–12 for now
             L_master = self.get_L_channels(sat, channels=self.pred_channels,
-                                           specrad_f=L_full_testing)
+                                           specrad_f=L_full_testing).to(
+                                                rad_u["ir"], "radiance")
             L_ref = self.get_L_channels(sat, channels=self.pred_channels,
-                                           specrad_f=L_spectral_db)
+                                           specrad_f=L_spectral_db).to(
+                                                rad_u["ir"], "radiance")
             if predict_quantity == "bt":
                 bt_ref = self.get_tb_channels(sat, channels=self.pred_channels,
                                                specrad_f=L_spectral_db)
         elif ref == "single":
-            L_master = srf_master.integrate_radiances(freq, L_full_testing)
-            L_ref = srf_master.integrate_radiances(freq, L_spectral_db)
+            L_master = srf_master.integrate_radiances(freq, L_full_testing).to(
+                                                rad_u["ir"], "radiance")
+            L_ref = srf_master.integrate_radiances(freq, L_spectral_db).to(
+                                                rad_u["ir"], "radiance")
             if predict_quantity == "bt":
                 bt_ref = srf_master.channel_radiance2bt(L_ref)
         else:
@@ -1929,13 +1935,15 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
 
         noise_level = noise_level.copy()
-        L_target = srf_target.integrate_radiances(freq, L_full_testing)
+        L_target = srf_target.integrate_radiances(freq, L_full_testing).to(
+                                                rad_u["ir"], "radiance")
         if noise_units == "relative":
             if noise_quantity != "radiance":
                 raise ValueError("When noise_units=relative, "
                     "you must use noise_quantity=radiance")
 
-            noise_level["master"] *= self.noise_scale
+            noise_level["master"] *= self.noise_scale[
+                numpy.array(self.pred_channels)-1]
             noise_level["target"] *= self.noise_scale[ch-1]
             noise_units = self.noise_scale.u
 
@@ -1949,7 +1957,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     noise_units).to(L_master.u, "radiance")
             else: # noise level per channel
                 L_master += (noise_level["master"]
-                                        [numpy.asarray(range(1, 13))-1]
+                                        [numpy.asarray(self.pred_channels)-1]
                                         [numpy.newaxis, :] *
                     numpy.random.randn(*L_master.shape)).to(
                         L_master.u, "radiance")
@@ -1967,12 +1975,15 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 noise_units)
 
         #L_master, L_target, L_spectral_db
+        L_spectral_db = L_spectral_db.to(rad_u["ir"], "radiance")
         if predict_quantity == "bt":
             return (bt_master, bt_target, srf_master, L_spectral_db,
-                        freq, bt_ref, L_master)
+                        freq, bt_ref, L_master, noise_level["master"],
+                        noise_level["target"])
         elif predict_quantity == "radiance":
             return (L_master, L_target, srf_master, L_spectral_db,
-                        freq, L_ref, L_master)
+                        freq, L_ref, L_master, 
+                        noise_level["master"], noise_level["target"])
         else:
             raise ValueError("Unknown prediction quantity: "
                              "{:s}.  Expecting bt or radiance.".format(
@@ -2097,7 +2108,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 actual shift.
         """
         (y_master, y_target, srf_master, L_spectral_db, f_spectra,
-            y_ref, L_master) = self._prepare_args_calc_srf_estimate(
+            y_ref, L_master, u_y_ref, u_y_target) = self._prepare_args_calc_srf_estimate(
                     sat, ch, shift, db, ref=ref, limits=limits,
                     noise_level=noise_level,
                     noise_quantity=noise_quantity,
@@ -2113,7 +2124,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 y_master, y_target, srf_master, L_spectral_db,
                 f_spectra, y_ref, ureg.um,
                 regression_type, regression_args,
-                cost_mode, predict_quantity=predict_quantity) for q in dλ]
+                cost_mode, predict_quantity=predict_quantity,
+                u_y_ref=u_y_ref,
+                u_y_target=u_y_target) for q in dλ]
         C1 = ureg.Quantity(numpy.array([d.m for d in C1]), C1[0].u)
 
         # add penalty for larger shifts.  This ensures that we prefer a
@@ -2166,7 +2179,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         # calc_y_for_srf_shift, we still need it to compare its
         # result to what we would like to see
         (y_master, y_target, srf_master, L_spectral_db, f_spectra,
-            y_ref, L_master) = self._prepare_args_calc_srf_estimate(
+            y_ref, L_master, u_y_ref, u_y_target) = self._prepare_args_calc_srf_estimate(
                         sat, ch, shift_reference, db=db, ref=ref,
                         limits=limits, noise_level=noise_level,
                         noise_quantity=noise_quantity,
@@ -2259,8 +2272,10 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     start1, end1, start2, end2):
         """Visualise cost function for SRF minimisation
         """
-        regression_type = regression_type or self._regression_type[ref][0]
-        regression_args = regression_args or self._regression_type[ref][1]
+        if regression_type is None:
+            regression_type = self._regression_type[ref][0]
+        if regression_args is None:
+            regression_args = self._regression_type[ref][1]
         (f, ax_all) = matplotlib.pyplot.subplots(4, 3, figsize=(14, 9))
         for i in range(12):
             ch = i + 1
@@ -2373,7 +2388,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         for i in range(estimates.size):
             (y_master, y_target, srf_master, L_spectral_db, f_spectra,
-                y_ref, _) = self._prepare_args_calc_srf_estimate(
+                y_ref, _, u_y_ref, u_y_target) = self._prepare_args_calc_srf_estimate(
                             sat, ch, shift_reference, db=db, ref=ref,
                             limits=limits, noise_level=noise_level,
                             noise_quantity=noise_quantity,
@@ -2390,7 +2405,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 optimiser_args=optimiser_args,
                 cost_mode=cost_mode,
                 args=(ureg.um,),
-                predict_quantity=predict_quantity)
+                predict_quantity=predict_quantity,
+                u_y_ref=u_y_ref,
+                u_y_target=u_y_target)
             estimates[i] = res.x
             bar.update(i+1)
         bar.finish()
@@ -2586,6 +2603,8 @@ def main():
                 regrs.append(
                     (sklearn.linear_model.LinearRegression,
                         {"fit_intercept": True}))
+            elif regr == "ODR":
+                regrs.append((scipy.odr.odrpack.ODR, {}))
             else:
                 raise RuntimeError("Impossible")
         dbref = itertools.product(
@@ -2610,7 +2629,12 @@ def main():
                     ref_dλ=ureg.Quantity(p.ref_shifts, ureg.nm),
                     dλ=ureg.Quantity(numpy.linspace(*p.shift_range, 41), ureg.nm),
                     start1=start, start2=start_alt,
-                    end1=end, end2=end_alt)
+                    end1=end, end2=end_alt,
+                    noise_level={"target": p.noise_level_target,
+                                 "master": p.noise_level_master},
+                    predict_quantity=p.predict_quantity,
+                    noise_quantity=p.noise_quantity,
+                    noise_units=p.noise_units)
         if p.plot_errdist_per_localmin:
             for ch in (1, 6, 11, 12):
                 for shift in numpy.linspace(-80.0, 80.0, 9)*ureg.nm:
@@ -2670,26 +2694,27 @@ def main():
 
                 N = p.n_tries
                     
-                (bias, std) = vis.estimate_errorprop_srf_recovery(p.sat, ch,
-                    shift.to(ureg.um), db="different",
-                    ref=p.predict_chan[0],
-                    regression_type=sklearn.linear_model.LinearRegression,
-                    regression_args={"fit_intercept": True},
-                    optimiser_func=optimiser_func,
-                    optimiser_args=optimiser_args,
-                    limits={"lat": (*p.latrange, "all")},
-                    noise_level=noise_level,
-                    noise_quantity=p.noise_quantity,
-                    noise_units=p.noise_units,
-                    cost_mode=p.cost_mode,
-                    start1=start, start2=start_alt,
-                    end1=end, end2=end_alt,
-                    N=N,
-                    predict_quantity=p.predict_quantity)
-                print("Channel {:d} shift of {:~}, noise {!s} ({:s} in ({:s})) has "
-                    "bias {:~}, stderror {:~}, based on {:d} attempts".format(
-                        ch, shift, noise_level, p.noise_quantity, 
-                        p.noise_units, bias, std, N))
+                for (db, ref, (cls, args), limits) in dbref:
+                    (bias, std) = vis.estimate_errorprop_srf_recovery(p.sat, ch,
+                        shift.to(ureg.um), db=db,
+                        ref=ref,
+                        regression_type=cls,
+                        regression_args=args,
+                        optimiser_func=optimiser_func,
+                        optimiser_args=optimiser_args,
+                        limits=limits,
+                        noise_level=noise_level,
+                        noise_quantity=p.noise_quantity,
+                        noise_units=p.noise_units,
+                        cost_mode=p.cost_mode,
+                        start1=start, start2=start_alt,
+                        end1=end, end2=end_alt,
+                        N=N,
+                        predict_quantity=p.predict_quantity)
+                    print("Channel {:d} shift of {:~}, noise {!s} ({:s} in ({:s})) has "
+                        "bias {:~}, stderror {:~}, based on {:d} attempts".format(
+                            ch, shift, noise_level, p.noise_quantity, 
+                            p.noise_units, bias, std, N))
 
 #            vis.map_with_hirs(h, "NOAA16", i)
 #        vis.lut_load("/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11,ch12_4_8.0")
