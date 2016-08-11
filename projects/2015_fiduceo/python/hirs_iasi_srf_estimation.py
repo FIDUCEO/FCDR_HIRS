@@ -12,7 +12,13 @@ def parse_cmdline():
         description="Experiment with HIRS SRF estimation",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--sat", action="store", default="NOAA19",
-        help="Satellite to use")
+        type=str, help="Primary satellite to use")
+    parser.add_argument("--sat2", action="store", type=str,
+        help="Secondary satellite to use, where applicable.  "
+             "For example, when estimating cost function or "
+             "error propagation, one may wish to go from one "
+             "satellite to another.  By default it will be the same as "
+             "the primary satellite")
     parser.add_argument("--channels", action="store", type=int,
                         default=list(range(1, 13)),
                         choices=list(range(1, 20)), nargs="+")
