@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.5
 
 import logging
+import numpy
 import argparse
 
 # logging needs to be handled here, therefore also argument parsing
@@ -207,7 +208,6 @@ import functools
 import pickle
 import pathlib
 
-import numpy
 import numpy.lib.recfunctions
 import scipy.stats
 import scipy.odr
@@ -2268,6 +2268,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     ref_dλ=ureg.Quantity(numpy.array([-10.0, -2.0, +5.0,
                             +15.0]), ureg.nm),
                     dλ=ureg.Quantity(numpy.linspace(-80, 80, 50), ureg.nm),
+                    channels=range(1, 13),
                     *,
                     start1, end1, start2, end2):
         """Visualise cost function for SRF minimisation
@@ -2277,8 +2278,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         if regression_args is None:
             regression_args = self._regression_type[ref][1]
         (f, ax_all) = matplotlib.pyplot.subplots(4, 3, figsize=(14, 9))
-        for i in range(12):
-            ch = i + 1
+        for (i, ch) in enumerate(channels):
             p_all = []
             for shift in ref_dλ:
                 logging.info("Estimating {sat:s} ch, {ch:d}, shift "
@@ -2315,27 +2315,27 @@ class IASI_HIRS_analyser(LUTAnalysis):
 #            a.legend(ncol=2, loc="right", bbox_to_anchor=(1, 0.5))
         f.suptitle("Cost function evaluation for recovering shifted {:s} SRF "
                    "({:s} db, channel {:s}, regr {:s})\n"
-                   "({!s}, {!s}), noise level {!s}, A={:.2f}, B={:.2f}"
+                   "({!s}, {!s}), noise level {!s},\nA={:.2f}, B={:.2f}"
                    "cm={:s}, pred in {:s}, noise at {:s} in {:s}".format(
                    sat, db, ref, regression_type.__name__,
                    regression_args, limits, noise_level, A, B,
-                   cost_mode, prediction_quantity, noise_quantity,
+                   cost_mode, predict_quantity, noise_quantity,
                    noise_units))
         f.subplots_adjust(hspace=0.47, wspace=0.35)#, right=0.7)
         pyatmlab.graphics.print_or_show(f, False,
             "SRF_prediction_cost_function_{sat:s}_{db:s}_{ref:s}_"
-            "{regression_type.__name__:s}_{regrargs:s}_{limstr:s}_A{A:d}"
-            "_B{B:d}_noise{noise_targ:d}mK{noise_lev:d}mK_cm{cm:s}_{cst:s}"
+            "{regression_type.__name__:s}_{regrargs:s}_lim{limstr:s}_A{A:d}"
+            "_B{B:d}_noise{noise_targ:d},{noise_lev:d}_cm{cm:s}_{cst:s}"
             "pq{pq:s}_nq{nq:s}_nu{nu:s}.".format(sat=sat,
                 db=db, ref=ref, regression_type=regression_type,
                 regrargs=''.join(str(x) for x in itertools.chain.from_iterable(regression_args.items())),
-                limstr="global" if limits=={} else "nonglobal",
+                limstr="".join("{:s}{:.0f}-{:.0f}".format(k, *v) for (k,v) in limits.items()),
                 A=int(100*A), B=int(100*B),
-                noise_targ=int(1e3*noise_level["target"]),
-                noise_lev=int(1e3*noise_level["master"]),
+                noise_targ=int(1e3*numpy.array(noise_level["target"]).squeeze()),
+                noise_lev=int(1e3*numpy.array(noise_level["master"]).squeeze()),
                 cm=cost_mode,
                 cst=",".join("{:d}".format(int(x.m)) for x in ref_dλ),
-                pq=prediction_quantity, nq=noise_quantity, nu=noise_units))
+                pq=predict_quantity, nq=noise_quantity, nu=noise_units))
 
     def estimate_errorprop_srf_recovery(self, sat, ch, shift_reference, db="different",
             ref="all",
@@ -2416,8 +2416,10 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         pdd = pathlib.Path(pyatmlab.io.plotdatadir())
 
+        regrargs=''.join(str(x) for x in itertools.chain.from_iterable(sorted(regression_args.items())))
         tofile = (pdd / "srf_errorprop_{sat:s}_ch{ch:d}_db{db:s}_ref{ref:s}_"
                         "rt{regression_type.__name__:s}_"
+                        "ra{regrargs:s}_"
                         "nq{noise_quantity:s}_nu{noise_units:s}_"
                         "cm{cost_mode:s}_pq{predict_quantity:s}".format(**vars()))
 
@@ -2634,9 +2636,10 @@ def main():
                                  "master": p.noise_level_master},
                     predict_quantity=p.predict_quantity,
                     noise_quantity=p.noise_quantity,
-                    noise_units=p.noise_units)
+                    noise_units=p.noise_units,
+                    channels=p.channels)
         if p.plot_errdist_per_localmin:
-            for ch in (1, 6, 11, 12):
+            for ch in p.channels:
                 for shift in numpy.linspace(-80.0, 80.0, 9)*ureg.nm:
                     for (db, ref, (cls, args), limits) in dbref:
                         vis.plot_errdist_per_srf_costfunc_localmin(
