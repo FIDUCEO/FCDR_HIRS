@@ -48,7 +48,7 @@ def parse_cmdline():
     parser.add_argument("--seed", action="store", type=int,
         default=0,
         help="Random seed to use when selecting IASI spectra to plot.  "
-             "0 means do not seed.")
+             "0 (the default) means do not seed.")
 
     parser.add_argument("--plot_srf_cost",
         action="store_true", default=False,
@@ -1848,6 +1848,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 noise_quantity="bt",
                 noise_units="K",
                 predict_quantity="bt",
+                sat2=None,
                 *, start1, end1, start2, end2):
         """Helper for calc_srf_estimate_costfunc and others
         
@@ -1865,7 +1866,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 BTs [K] or radiances [rad units] for target: shifted SRF
                 from same DB as y_master
 
-            srf_master
+            srf0
 
             L_spectral_db
 
@@ -1882,6 +1883,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
             L_master
         """
+        sat2 = sat2 or sat
         iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
         if not noise_quantity in {"bt", "radiance"}:
             raise ValueError("Unrecognised noise_quantity: "
@@ -1914,8 +1916,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 M2["spectral_radiance"][::3, 1, :8461] * unit_specrad_wn)
         else:
             raise ValueError("Unrecognised option for db: {:s}".format(db))
-        srf_master = self.srfs[sat][ch-1]
-        srf_target = srf_master.shift(shift)
+        srf0 = self.srfs[sat2][ch-1]
+        srf_target = srf0.shift(shift)
         freq = self.iasi.frequency
 
         if ref == "all": # means 1–12 for now
@@ -1929,12 +1931,12 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 bt_ref = self.get_tb_channels(sat, channels=self.pred_channels,
                                                specrad_f=L_spectral_db)
         elif ref == "single":
-            L_master = srf_master.integrate_radiances(freq, L_full_testing).to(
-                                                rad_u["ir"], "radiance")
-            L_ref = srf_master.integrate_radiances(freq, L_spectral_db).to(
-                                                rad_u["ir"], "radiance")
+            L_master = self.srfs[sat][ch-1].integrate_radiances(freq,
+                L_full_testing).to(rad_u["ir"], "radiance")
+            L_ref = self.srfs[sat][ch-1].integrate_radiances(freq,
+                L_spectral_db).to(rad_u["ir"], "radiance")
             if predict_quantity == "bt":
-                bt_ref = srf_master.channel_radiance2bt(L_ref)
+                bt_ref = self.srfs[sat][ch-1].channel_radiance2bt(L_ref)
         else:
             raise ValueError("invalid 'ref', expected 'all' or 'single', "
                              "got '{:s}'".format(ref))
@@ -1964,12 +1966,12 @@ class IASI_HIRS_analyser(LUTAnalysis):
             else: # noise level per channel
                 L_master += (noise_level["master"]
                                         [numpy.asarray(self.pred_channels)-1]
-                                        [numpy.newaxis, :] *
+                                       [numpy.newaxis, :] *
                     numpy.random.randn(*L_master.shape)).to(
                         L_master.u, "radiance")
 
         if predict_quantity == "bt":
-            bt_master = srf_master.channel_radiance2bt(L_master)
+            bt_master = self.srfs[sat][ch-1].channel_radiance2bt(L_master)
             bt_target = srf_target.channel_radiance2bt(L_target)
 
         if noise_quantity == "bt":
@@ -1983,11 +1985,11 @@ class IASI_HIRS_analyser(LUTAnalysis):
         #L_master, L_target, L_spectral_db
         L_spectral_db = L_spectral_db.to(rad_u["ir"], "radiance")
         if predict_quantity == "bt":
-            return (bt_master, bt_target, srf_master, L_spectral_db,
+            return (bt_master, bt_target, srf0, L_spectral_db,
                         freq, bt_ref, L_master, noise_level["master"],
                         noise_level["target"])
         elif predict_quantity == "radiance":
-            return (L_master, L_target, srf_master, L_spectral_db,
+            return (L_master, L_target, srf0, L_spectral_db,
                         freq, L_ref, L_master, 
                         noise_level["master"], noise_level["target"])
         else:
@@ -2013,7 +2015,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
             A=1.,
             B=0.,
             cost_mode="total",
-            dλ=ureg.Quantity(numpy.linspace(-50.0, 50.0, 41), ureg.nm), *,
+            dλ=ureg.Quantity(numpy.linspace(-50.0, 50.0, 41), ureg.nm),
+            sat2=None, *,
             start1, end1, start2, end2):
         """Calculate cost function for estimating SRF
 
@@ -2105,6 +2108,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
             B [float]: Weight for cost function component.  Defaults to 0.
             cost_mode (str): "total" or "anomalies"
             dλ [ndarray]: values of dλ to try
+            sat2 [str]: Secondary satellite.  This is the satellite on
+                which the channel is for which we wish to estimate the
+                shift.  By default, sat2 equals sat.
 
         Returns:
 
@@ -2113,13 +2119,15 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 function will have a global minimum corresponding to the
                 actual shift.
         """
-        (y_master, y_target, srf_master, L_spectral_db, f_spectra,
+        sat2 = sat2 or sat
+        (y_master, y_target, srf0, L_spectral_db, f_spectra,
             y_ref, L_master, u_y_ref, u_y_target) = self._prepare_args_calc_srf_estimate(
                     sat, ch, shift, db, ref=ref, limits=limits,
                     noise_level=noise_level,
                     noise_quantity=noise_quantity,
                     noise_units=noise_units,
                     predict_quantity=predict_quantity,
+                    sat2=sat2,
                     start1=start1, start2=start2,
                     end1=end1, end2=end2)
 
@@ -2127,7 +2135,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         regression_args = regression_args or self._regression_type[ref][1]
         #dλ = numpy.linspace(-100.0, 100.0, 51.0) * ureg.nm
         C1 = [pyatmlab.math.calc_cost_for_srf_shift(q,
-                y_master, y_target, srf_master, L_spectral_db,
+                y_master, y_target, srf0, L_spectral_db,
                 f_spectra, y_ref, ureg.um,
                 regression_type, regression_args,
                 cost_mode, predict_quantity=predict_quantity,
@@ -2141,7 +2149,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         (A, B) = (A/(A+B), B/(A+B)) # ensure they add up to 1
 
         C = (A * C1 + 
-             B / (srf_master.centroid().to("nm", "sp")**2) * dλ**2)
+             B / (srf0.centroid().to("nm", "sp")**2) * dλ**2)
 
         return (dλ, C)
 
@@ -2158,6 +2166,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             A=1.,
             B=0.,
             cost_mode="total",
+            sat2=None,
             *,
             start1, start2, end1, end2):
         """Investigate error dist. for SRF cost function local minima
@@ -2169,6 +2178,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         Arguments are identical as for self.calc_srf_estimate_costfunc.
         """
 
+        sat2 = sat2 or sat
         regression_type = regression_type or self._regression_type[ref][0]
         regression_args = regression_args or self._regression_type[ref][1]
         (dx, dy) = self.calc_srf_estimate_costfunc(sat, ch, shift_reference,
@@ -2176,6 +2186,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             noise_level, noise_quantity=noise_quantity,
             noise_units=noise_units,
             predict_quantity=predict_quantity,
+            sat2=sat2,
             A=A, B=B, cost_mode=cost_mode,
             start1=start1, end1=end1, start2=start2, end2=end2)
         localmin = typhon.math.array.localmin(dy)
@@ -2184,7 +2195,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         # although we don't need y_target to prepare to call
         # calc_y_for_srf_shift, we still need it to compare its
         # result to what we would like to see
-        (y_master, y_target, srf_master, L_spectral_db, f_spectra,
+        (y_master, y_target, srf0, L_spectral_db, f_spectra,
             y_ref, L_master, u_y_ref, u_y_target) = self._prepare_args_calc_srf_estimate(
                         sat, ch, shift_reference, db=db, ref=ref,
                         limits=limits, noise_level=noise_level,
@@ -2192,11 +2203,12 @@ class IASI_HIRS_analyser(LUTAnalysis):
                         noise_units=noise_units,
                         predict_quantity=predict_quantity,
                         A=A, B=B,
+                        sat2=sat2,
                         start1=start1, start2=start2,
                         end1=end1, end2=end2)
         for shift_attempt in dx[localmin]:
             y_estimate = pyatmlab.math.calc_y_for_srf_shift(shift_attempt,
-                y_master, srf_master, L_spectral_db, f_spectra,
+                y_master, srf0, L_spectral_db, f_spectra,
                 y_ref, unit=ureg.um,
                 regression_type=regression_type,
                 regression_args=regression_args,
@@ -2207,7 +2219,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             # y_estimate: BTs according to regression estimated shifted SRF
             # bt_...: BTs according to attempted shifted SRF (non regression)
 
-            srf_shift_attempt = srf_master.shift(shift_attempt)
+            srf_shift_attempt = srf0.shift(shift_attempt)
             L_shift_attempt = srf_shift_attempt.integrate_radiances(self.iasi.frequency, L_master)
             if prediction_quantity == "bt":
                 y_shift_attempt = srf_shift_attempt.channel_radiance2bt(L_shift_attempt)
@@ -2224,7 +2236,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                         shift_attempt.to(ureg.nm),
                         rmse.to(ureg.K)))
             
-        addendum = ("{sat:s}-{ch:d}, shift {shift_reference:+~}, db "
+        addendum = ("{sat:s} to {sat2:s}-{ch:d}, shift {shift_reference:+~}, db "
                     "{db:s}, ref {ref:s}, regr "
                     "{regression_type.__name__:s} args {regression_args!s} "
                     "limits {limits!s} noises {noise_level!s} "
@@ -2239,11 +2251,12 @@ class IASI_HIRS_analyser(LUTAnalysis):
             a.set_ylabel("Count")
             a.legend()
             a.grid(axis="both")
-        fn_lab = ("{sat:s}_ch{ch:d}_{shift_reference:.0f}_{db:s}_{ref:s}"
+        fn_lab = ("{sat:s}→{sat2:s}_ch{ch:d}_{shift_reference:.0f}_{db:s}_{ref:s}"
                   "_{cls:s}_{args:s}_{lim:s}_noise{noise1:d}_{noise2:d}_"
                   "pq{prediction_quantity:s}_nq{noise_quantity:s}_"
                   "nu{noise_units:s}.").format(
-                sat=sat, ch=ch, shift_reference=shift_reference.m, db=db,
+                sat=sat, sat2=sat2, ch=ch,
+                shift_reference=shift_reference.m, db=db,
                 ref=ref, cls=regression_type.__name__,
                 args=''.join(str(x) for x in itertools.chain.from_iterable(regression_args.items())),
                 lim="global" if limits=={} else "nonglobal",
@@ -2287,7 +2300,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
         for (i, ch) in enumerate(channels):
             p_all = []
             for shift in ref_dλ:
-                logging.info("Estimating {sat:s} ch, {ch:d}, shift "
+                logging.info("Estimating {sat2:s} ch {ch:d} from {sat:s} "
+                             "channels {self.pred_channels!s}, shift "
                              "{shift:+5.3~}, db {db:s}, ref {ref:s}, "
                              "cls {regression_type.__name__:s}, args "
                              "{regression_args!s}, limits "
@@ -2321,18 +2335,20 @@ class IASI_HIRS_analyser(LUTAnalysis):
 #            a.legend(ncol=2, loc="right", bbox_to_anchor=(1, 0.5))
         f.suptitle("Cost function evaluation for recovering shifted {:s} SRF "
                    "({:s} db, channel {:s}, regr {:s})\n"
+                   "from {:s}"
                    "({!s}, {!s}), noise level {!s},\nA={:.2f}, B={:.2f}"
                    "cm={:s}, pred in {:s}, noise at {:s} in {:s}".format(
-                   sat, db, ref, regression_type.__name__,
+                   sat2, db, ref, regression_type.__name__,
+                   sat,
                    regression_args, limits, noise_level, A, B,
                    cost_mode, predict_quantity, noise_quantity,
                    noise_units))
         f.subplots_adjust(hspace=0.47, wspace=0.35)#, right=0.7)
         pyatmlab.graphics.print_or_show(f, False,
-            "SRF_prediction_cost_function_{sat:s}_{db:s}_{ref:s}_"
+            "SRF_prediction_cost_function_{sat:s}→{sat2:s}_{db:s}_{ref:s}_"
             "{regression_type.__name__:s}_{regrargs:s}_lim{limstr:s}_A{A:d}"
             "_B{B:d}_noise{noise_targ:d},{noise_lev:d}_cm{cm:s}_{cst:s}"
-            "pq{pq:s}_nq{nq:s}_nu{nu:s}.".format(sat=sat,
+            "pq{pq:s}_nq{nq:s}_nu{nu:s}.".format(sat=sat, sat2=sat2,
                 db=db, ref=ref, regression_type=regression_type,
                 regrargs=''.join(str(x) for x in itertools.chain.from_iterable(regression_args.items())),
                 limstr="".join("{:s}{:.0f}-{:.0f}".format(k, *v) for (k,v) in limits.items()),
@@ -2354,7 +2370,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
             limits={}, noise_level={"target": 1.0, "master": 1.0},
             noise_quantity="bt", noise_units="K", 
             cost_mode="total", N=100,
-            predict_quantity="BT", *,
+            predict_quantity="BT", 
+            sat2=None,
+            *,
             start1, start2, end1, end2):
         """Estimate error propagation under SRF recovery.
 
@@ -2379,6 +2397,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             cost_mode   "total" or "anomalies"
             N
             predict_quantity
+            sat2
 
         Mandatory keyword arguments:
             start1
@@ -2386,6 +2405,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             end1
             end2
         """
+        sat2 = sat2 or sat
         estimates = numpy.empty(shape=(N,), dtype="f4")
 
         bar = progressbar.ProgressBar(maxval=estimates.size,
@@ -2393,18 +2413,19 @@ class IASI_HIRS_analyser(LUTAnalysis):
         bar.start()
 
         for i in range(estimates.size):
-            (y_master, y_target, srf_master, L_spectral_db, f_spectra,
+            (y_master, y_target, srf0, L_spectral_db, f_spectra,
                 y_ref, _, u_y_ref, u_y_target) = self._prepare_args_calc_srf_estimate(
                             sat, ch, shift_reference, db=db, ref=ref,
                             limits=limits, noise_level=noise_level,
                             noise_quantity=noise_quantity,
                             noise_units=noise_units,
                             predict_quantity=predict_quantity,
+                            sat2=sat2,
                             start1=start1, start2=start2,
                             end1=end1, end2=end2)
 
             res = pyatmlab.math.estimate_srf_shift(
-                y_master, y_target, srf_master, L_spectral_db, f_spectra,
+                y_master, y_target, srf0, L_spectral_db, f_spectra,
                 y_ref,
                 regression_type=regression_type, regression_args=regression_args,
                 optimiser_func=optimiser_func,
@@ -2423,7 +2444,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
         pdd = pathlib.Path(pyatmlab.io.plotdatadir())
 
         regrargs=''.join(str(x) for x in itertools.chain.from_iterable(sorted(regression_args.items())))
-        tofile = (pdd / "srf_errorprop_{sat:s}_ch{ch:d}_db{db:s}_ref{ref:s}_"
+        tofile = (pdd / "srf_errorprop_{sat:s}→{sat2:s}_ch{ch:d}_"
+                        "db{db:s}_ref{ref:s}_"
                         "rt{regression_type.__name__:s}_"
                         "ra{regrargs:s}_"
                         "nq{noise_quantity:s}_nu{noise_units:s}_"
@@ -2628,6 +2650,7 @@ def main():
 #        vis.plot_errdist_per_srf_costfunc_localmin(
 #            "NOAA19", 6, 60.0*ureg.nm, db="different", ref="all",
 #            limits={"lat": (60, 90, "all")})
+
         if p.plot_srf_cost:
             for (db, ref, (cls, args), limits) in dbref:
                 vis.visualise_srf_estimate_costfunc(p.sat.upper(), db=db, ref=ref,
@@ -2636,6 +2659,7 @@ def main():
                     cost_mode=p.cost_mode, 
                     ref_dλ=ureg.Quantity(p.ref_shifts, ureg.nm),
                     dλ=ureg.Quantity(numpy.linspace(*p.shift_range, 41), ureg.nm),
+                    sat2=p.sat2.upper(),
                     start1=start, start2=start_alt,
                     end1=end, end2=end_alt,
                     noise_level={"target": p.noise_level_target,
@@ -2644,6 +2668,7 @@ def main():
                     noise_quantity=p.noise_quantity,
                     noise_units=p.noise_units,
                     channels=p.channels)
+
         if p.plot_errdist_per_localmin:
             for ch in p.channels:
                 for shift in numpy.linspace(-80.0, 80.0, 9)*ureg.nm:
@@ -2657,8 +2682,10 @@ def main():
                             A=p.cost_frac_bt,
                             B=p.cost_frac_dλ,
                             cost_mode=p.cost_mode,
+                            sat2=sat2,
                             start1=start, start2=start_alt,
                             end1=end, end2=end_alt)
+
         if p.plot_bt_srf_shift:
             for ch in p.channels:
                 logging.info("Plotting shifts for {:s} ch. {:d}".format(
@@ -2716,6 +2743,7 @@ def main():
                         noise_quantity=p.noise_quantity,
                         noise_units=p.noise_units,
                         cost_mode=p.cost_mode,
+                        sat2=sat2,
                         start1=start, start2=start_alt,
                         end1=end, end2=end_alt,
                         N=N,
