@@ -2270,8 +2270,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
             for (a, y) in ((a1, y_estimate), (a2, y_shift_attempt)):
                 rmse = numpy.sqrt(((y_target - y)**2).mean())
                 a.hist((y_target-y), 100, histtype="step",
-                    label=r"{:+.3~} [RMSE={:.3~}]".format(
-                        shift_attempt.to(ureg.nm), rmse))
+                    label=r"{:+.3~} [RMSE={:.5~}; {:s}]".format(
+                        shift_attempt.to(ureg.nm), rmse,
+                        ", ".join(
+                            (["truth"] if numpy.isclose(
+                                shift_attempt.m, shift_reference.m)
+                                       else []) +
+                            (["localmin"] if shift_attempt in dx[localmin]
+                                       else []))))
             
         addendum = ("{sat:s} to {sat2:s}-{ch:d}, shift {shift_reference:+~}, db "
                     "{db:s}, ref {ref:s}, regr "
