@@ -11,26 +11,6 @@ def parse_cmdline():
     parser = argparse.ArgumentParser(
         description="Experiment with HIRS SRF estimation",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--sat", action="store", default="NOAA19",
-        type=str, help="Primary satellite to use")
-    parser.add_argument("--sat2", action="store", type=str,
-        help="Secondary satellite to use, where applicable.  "
-             "For example, when estimating cost function or "
-             "error propagation, one may wish to go from one "
-             "satellite to another.  By default it will be the same as "
-             "the primary satellite")
-    parser.add_argument("--channels", action="store", type=int,
-                        default=list(range(1, 13)),
-                        choices=list(range(1, 20)), nargs="+")
-
-    parser.add_argument("--makelut", action="store_true", default=False,
-        help="Make look up table")
-    parser.add_argument("--pca", action="store_true", default=False,
-        help="Use Principal Component Analysis.")
-    parser.add_argument("--factor", action="store", type=float,
-        help="Make LUT denser by factor")
-    parser.add_argument("--npca", action="store", type=int,
-        help="Number of PCs to retain")
 
     parser.add_argument("--plot_shifted_srf_in_subplots",
         action="store_true", default=False,
@@ -41,6 +21,60 @@ def parse_cmdline():
         action="store_true", default=False, 
         help="Plot a selection of IASI spectra along with HIRS SRFs. ")
 
+    parser.add_argument("--plot_srf_cost",
+        action="store_true", default=False,
+        help="Visualise cost function involved in recovering shifted SRF")
+
+    parser.add_argument("--plot_errdist_per_localmin",
+        action="store_true", default=False,
+        help="For each local minimum in the cost function, "
+             "visualise the error distribution.")
+
+    parser.add_argument("--plot_bt_srf_shift",
+        action="store_true", default=False)
+
+    parser.add_argument("--vis_expected_range", action="store_true",
+        help="Visualise expected variability for all channels, as a "
+             "function of radiance.")
+
+    parser.add_argument("--compare_hiasi_hirs", action="store_true",
+        help="Plot comparison of HIASI and HIRS")
+
+    parser.add_argument("--write_channel_locations",
+        action="store", default="", type=str,
+        help="Write channel centroids to file as a LaTeX booktabs table.")
+
+    parser.add_argument("--estimate_errorprop", action="store_true",
+        help="Estimate uncertainty propagation.  Does not make a figure. "
+             "Use with --shift and --channels to choose a single shift "
+             "and potentially many channels.")
+
+    parser.add_argument("--makelut", action="store_true", default=False,
+        help="Make look up table")
+
+    parser.add_argument("--sat", action="store", default="NOAA19",
+        type=str, help="Primary satellite to use")
+
+    parser.add_argument("--sat2", action="store", type=str,
+        help="Secondary satellite to use, where applicable.  "
+             "For example, when estimating cost function or "
+             "error propagation, one may wish to go from one "
+             "satellite to another.  By default it will be the same as "
+             "the primary satellite")
+
+    parser.add_argument("--channels", action="store", type=int,
+                        default=list(range(1, 13)),
+                        choices=list(range(1, 20)), nargs="+")
+
+    parser.add_argument("--pca", action="store_true", default=False,
+        help="Use Principal Component Analysis for LUT.")
+
+    parser.add_argument("--factor", action="store", type=float,
+        help="Make LUT denser by factor")
+
+    parser.add_argument("--npca", action="store", type=int,
+        help="Number of PCs to retain in LUT")
+
     parser.add_argument("--spectrum_count", action="store", type=int,
         default=40,
         help="When plotting IASI spectra, how many to plot?")
@@ -49,10 +83,6 @@ def parse_cmdline():
         default=0,
         help="Random seed to use when selecting IASI spectra to plot.  "
              "0 (the default) means do not seed.")
-
-    parser.add_argument("--plot_srf_cost",
-        action="store_true", default=False,
-        help="Visualise cost function involved in recovering shifted SRF")
 
     parser.add_argument("--db", action="store",
                     choices=["same", "similar", "different"],
@@ -77,42 +107,44 @@ def parse_cmdline():
         default=12,
         help="When regressing with PLSR, how many components to use")
 
-    parser.add_argument("--plot_errdist_per_localmin",
-        action="store_true", default=False)
-    parser.add_argument("--plot_bt_srf_shift",
-        action="store_true", default=False)
-
-    parser.add_argument("--write_channel_locations",
-        action="store", default="", type=str,
-        help="Write channel centroids to file as a LaTeX booktabs table.")
-
     parser.add_argument("--latrange",
         action="store", type=float, nargs=2, default=(-90, 90),
         help="Latitude range to use in training database")
 
-    parser.add_argument("--estimate_errorprop", action="store_true",
-        help="Estimate uncertainty propagation.  Does not make a figure. "
-             "Use with --shift and --channels to choose a single shift "
-             "and potentially many channels.")
     parser.add_argument("--shift", action="store", type=float,
         help="SRF shift [nm].  Use with estimate_errorprop.",
         default=0.0)
+
+    parser.add_argument("--ref_shifts", action="store", type=float,
+        nargs="+",
+        default=[-60.0, -30.0, 5.0, 40.0],
+        help="For use with plot_srf_cost, what reference shifts (in nm) to impose.")
+
+    parser.add_argument("--shift_range", action="store", type=float,
+        nargs=2, default=[-80.0, 80.0],
+        help="For use with plot_srf_cost, what range of shifts to show "
+             "cost function for")
+
     parser.add_argument("--verbose", action="store_true", default=False)
+
     parser.add_argument("--noise_level_target", action="store", type=float,
         default=0.0, nargs="+",
         help="Noise level for the target satellite, that is, the satellite "
              "for which the SRF is to be estimated.  Number of values is "
              "either 1 or equal to number of channels.")
+
     parser.add_argument("--noise_level_master", action="store", type=float,
         default=0.0, nargs="+",
         help="Noise level for the master satellite, that is, the satellite "
              "where the SRF is assumed known and that is used to predict "
              "radiances.  Number of values is either 1 or equals no. of "
              "channels.")
+
     parser.add_argument("--noise_quantity", action="store", type=str,
         choices=["radiance", "bt"],
         default="bt",
         help="Quantity to which to apply noise (bt or radiance)")
+
     parser.add_argument("--noise_units", action="store", type=str,
         default="mW cm/m^2/sr",
         help="Unit for noise.  If noise_quantity is bt, this must be K. "
@@ -122,12 +154,14 @@ def parse_cmdline():
              "estimated based on a single noaa18 orbit 2005-08-18 "
              "14:08-15:54.  In this case, the noise quantity must be "
              "radiance. ")
+
     parser.add_argument("--n_tries", action="store", type=int,
         default=100,
         help="For use with --estimate_errorprop, how many times to "
              "recover the SRF shift with different noise realisations. "
              "Higher means more accurate estimate of uncertainty but also "
              "longer runtime.")
+
     parser.add_argument("--predict_quantity", action="store", type=str,
         default="bt", choices=["radiance", "bt"],
         help="For SRF prediction, work in radiances or in BTs. "
@@ -137,8 +171,6 @@ def parse_cmdline():
                         default=16,
                         help="How many threads to use in "
                              "numexpr-calculations")
-    parser.add_argument("--compare_hiasi_hirs", action="store_true",
-        help="Plot comparison of HIASI and HIRS")
 
     parser.add_argument("--cost_frac_bt", action="store", type=float,
         help="In cost function, relative importance of BT deviation. "
@@ -158,16 +190,6 @@ def parse_cmdline():
              "If set to 'total', calculate regular cost (y_est - y_ref)**2. "
              "If set to 'anomalies', substract medians for each first.")
 
-    parser.add_argument("--ref_shifts", action="store", type=float,
-        nargs="+",
-        default=[-60.0, -30.0, 5.0, 40.0],
-        help="For use with plot_srf_cost, what reference shifts (in nm) to impose.")
-
-    parser.add_argument("--shift_range", action="store", type=float,
-        nargs=2, default=[-80.0, 80.0],
-        help="For use with plot_srf_cost, what range of shifts to show "
-             "cost function for")
-
     parser.add_argument("--iasi_period", action="store", type=str,
         nargs=2, default=["2011-1-1", "2011-6-30"],
         metavar=("start", "end"),
@@ -182,15 +204,14 @@ def parse_cmdline():
         default="%Y-%m-%d",
         help="Date format for interpretation of period")
     
-    parser.add_argument("--vis_expected_range", action="store_true",
-        help="Visualise expected variability for all channels, as a "
-             "function of radiance.")
 
     parser.add_argument('--cache', dest='cache', action='store_true',
         help="Use caching.  More memory, higher speed.")
+
     parser.add_argument('--no-cache', dest='cache', action='store_false',
         help="Suppress caching.  Less memory, slower speed.")
-    parser.set_defaults(feature=True)
+
+    parser.set_defaults(cache=True)
 
 
     p = parser.parse_args()
