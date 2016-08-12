@@ -2284,6 +2284,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     A=1.,
                     B=0.,
                     cost_mode="total",
+                    sat2=None,
                     ref_dλ=ureg.Quantity(numpy.array([-10.0, -2.0, +5.0,
                             +15.0]), ureg.nm),
                     dλ=ureg.Quantity(numpy.linspace(-80, 80, 50), ureg.nm),
@@ -2292,6 +2293,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     start1, end1, start2, end2):
         """Visualise cost function for SRF minimisation
         """
+        sat2 = sat2 or sat
         if regression_type is None:
             regression_type = self._regression_type[ref][0]
         if regression_args is None:
@@ -2682,7 +2684,7 @@ def main():
                             A=p.cost_frac_bt,
                             B=p.cost_frac_dλ,
                             cost_mode=p.cost_mode,
-                            sat2=sat2,
+                            sat2=p.sat2,
                             start1=start, start2=start_alt,
                             end1=end, end2=end_alt)
 
@@ -2743,7 +2745,7 @@ def main():
                         noise_quantity=p.noise_quantity,
                         noise_units=p.noise_units,
                         cost_mode=p.cost_mode,
-                        sat2=sat2,
+                        sat2=p.sat2,
                         start1=start, start2=start_alt,
                         end1=end, end2=end_alt,
                         N=N,
