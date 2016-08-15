@@ -125,6 +125,10 @@ def parse_cmdline():
         help="For use with plot_srf_cost, what range of shifts to show "
              "cost function for")
 
+    parser.add_argument("--shift_count", action="store", type=int,
+        default=41,
+        help="How many shifts to try in shift_range")
+
     parser.add_argument("--verbose", action="store_true", default=False)
 
     parser.add_argument("--noise_level_target", action="store", type=float,
@@ -211,6 +215,11 @@ def parse_cmdline():
     parser.add_argument('--no-cache', dest='cache', action='store_false',
         help="Suppress caching.  Less memory, slower speed.")
 
+    parser.add_argument("--log", action="store", type=str,
+        metavar="file",
+        default="",
+        help="Log stdout to file")
+
     parser.set_defaults(cache=True)
 
 
@@ -220,10 +229,17 @@ def parse_cmdline():
 if __name__ == "__main__":
     parsed_cmdline = parse_cmdline()
 
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-             "%(lineno)s: %(message)s"),
-    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
+if parsed_cmdline.log == "":
+    logging.basicConfig(
+        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
+                 "%(lineno)s: %(message)s"),
+        level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
+else:
+    logging.basicConfig(
+        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
+                 "%(lineno)s: %(message)s"),
+        filename=parsed_cmdline.log,
+        level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
 
 import sys
 import os
@@ -525,10 +541,11 @@ class LUTAnalysis:
                    ("y_std", radiances.dtype),
                    ("y_ptp", radiances.dtype)])
         logging.info("Using LUT to find IASI for {:,} HIRS spectra".format(radiances.size))
-        bar = progressbar.ProgressBar(maxval=radiances.size,
-                widgets=pyatmlab.tools.my_pb_widget)
-        bar.start()
-        bar.update(0)
+        if self.dobar:
+            bar = progressbar.ProgressBar(maxval=radiances.size,
+                    widgets=pyatmlab.tools.my_pb_widget)
+            bar.start()
+            bar.update(0)
         for (i, dat) in enumerate(radiances):
             stats[i]["x"] = dat
             try:
@@ -550,8 +567,10 @@ class LUTAnalysis:
             except IndexError:
                 count.extend([0] * (n-len(count)+1))
                 count[n] += 1
-            bar.update(i+1)
-        bar.finish()
+            if self.dobar:
+                bar.update(i+1)
+        if self.dobar:
+            bar.finish()
         return (radiances, numpy.array(count), stats)
 
     def lut_visualise_stats_unseen_data(self, sat="NOAA18"):
@@ -961,6 +980,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
 #                lon=self.gran["lon"][coor[0], coor[1]],
 #                time=self.gran["time"][coor[0], coor[1]].astype(datetime.datetime),
 #                sza=self.gran["solar_zenith_angle"][coor[0], coor[1]]))
+        
+        self.dobar = sys.stdout.isatty()
 
     def get_y(self, unit, return_label=False):
         """Get measurement in desired unit
@@ -1426,9 +1447,10 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         yo = numpy.zeros(shape=bt_nom.shape + shift.shape)
 
-        bar = progressbar.ProgressBar(maxval=len(shift),
-                widgets=pyatmlab.tools.my_pb_widget)
-        bar.start()
+        if self.dobar:
+            bar = progressbar.ProgressBar(maxval=len(shift),
+                    widgets=pyatmlab.tools.my_pb_widget)
+            bar.start()
 
         logging.info("Shifting {:,} spectra by {:d} values between "
             "{:+~} and {:+~}".format(y.size//y.shape[-1], len(shift), shift[0], shift[-1]))
@@ -1437,8 +1459,10 @@ class IASI_HIRS_analyser(LUTAnalysis):
             L_new = srf_new.integrate_radiances(self.iasi.frequency, y)
             bt_new = srf_new.channel_radiance2bt(L_new)
             yo.reshape(*yo.shape[:2], -1)[:, :, i] = bt_new
-            bar.update(i+1)
-        bar.finish()
+            if self.dobar:
+                bar.update(i+1)
+        if self.dobar:
+            bar.finish()
 
         return yo
        
@@ -2454,9 +2478,10 @@ class IASI_HIRS_analyser(LUTAnalysis):
         sat2 = sat2 or sat
         estimates = numpy.empty(shape=(N,), dtype="f4")
 
-        bar = progressbar.ProgressBar(maxval=estimates.size,
-                widgets=pyatmlab.tools.my_pb_widget)
-        bar.start()
+        if self.dobar:
+            bar = progressbar.ProgressBar(maxval=estimates.size,
+                    widgets=pyatmlab.tools.my_pb_widget)
+            bar.start()
 
         for i in range(estimates.size):
             (y_master, y_target, srf0, L_spectral_db, L_full_testing, f_spectra,
@@ -2482,8 +2507,13 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 u_y_ref=u_y_ref,
                 u_y_target=u_y_target)
             estimates[i] = res.x
-            bar.update(i+1)
-        bar.finish()
+            logging.debug("Estimate {:d}/{:d}: {:.5f} nm (truth: {:.3f} nm)".format(
+                i, estimates.size, estimates[i]*1e3,
+                shift_reference.to(ureg.nm).m))
+            if self.dobar:
+                bar.update(i+1)
+        if self.dobar:
+            bar.finish()
         bias = estimates.mean() - shift_reference.to(ureg.um).m
         stderr = (estimates - shift_reference.to(ureg.um).m).std()
 
@@ -2514,6 +2544,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 "{noise_level[master]:<9.3f} "
                 "{bias:<15.9f} "
                 "{stderr:<15.9f}\n".format(**vars()))
+        
+        # Now, for range of estimates, 
+
         return (ureg.Quantity(bias, ureg.um).to(ureg.nm),
                 ureg.Quantity(stderr, ureg.um).to(ureg.nm))
 
@@ -2732,7 +2765,7 @@ def main():
                             noise_quantity=p.noise_quantity,
                             noise_units=p.noise_units,
                             dλ=ureg.Quantity(
-                                numpy.linspace(*p.shift_range, 41),
+                                numpy.linspace(*p.shift_range, p.shift_count),
                                                ureg.nm),
                             A=p.cost_frac_bt,
                             B=p.cost_frac_dλ,
@@ -2757,7 +2790,7 @@ def main():
                                         niter=100, niter_success=20,
                                         interval=10, disp=False,
                                         minimizer_kwargs=dict(
-                                            bounds=[(-0.2, +0.2)],
+                                            bounds=[(-0.1, +0.1)],
                                             options=dict(
                                                 factr=1e12),
                                             args=(ureg.um,)))
