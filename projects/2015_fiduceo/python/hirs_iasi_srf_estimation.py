@@ -197,12 +197,18 @@ def parse_cmdline():
     parser.add_argument("--iasi_period", action="store", type=str,
         nargs=2, default=["2011-1-1", "2011-6-30"],
         metavar=("start", "end"),
-        help="IASI period to read")
+        help="IASIsub period to read")
 
     parser.add_argument("--iasi_period2", action="store", type=str,
         nargs=2, default=["2012-1-1", "2012-6-30"],
         metavar=("start", "end"),
-        help="IASI period to read, alternate")
+        help="IASIsub period to read, alternate")
+
+    parser.add_argument("--iasi_fraction", action="store", type=float,
+        default=0.5,
+        help="Fraction of IASIsub data to keep.  Reading 6 months of "
+             "IASIsub data needs some 16 GiB RAM.  If you read a year "
+             "and set iasi_fraction to 0.1, you should need around 3 GB.")
 
     parser.add_argument("--datefmt", action="store", type=str,
         default="%Y-%m-%d",
@@ -250,6 +256,7 @@ import itertools
 import functools
 import pickle
 import pathlib
+import lzma
 
 import numpy.lib.recfunctions
 import scipy.stats
@@ -267,6 +274,7 @@ import progressbar
 import numexpr
 import mpl_toolkits.basemap
 import sklearn.cross_decomposition
+from memory_profiler import profile
 
 import typhon.plots
 import typhon.math
@@ -1033,9 +1041,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
             srf = self.srfs[sat][c-1]
             if c in srfshift:
                 srf = srf.shift(srfshift[c])
-                logging.debug("Calculating channel L {:s}-{:d}{:+.2~}".format(sat, c, srfshift[c]))
+                logging.debug("Calculating channel radiance {:s}-{:d}{:+.2~}".format(sat, c, srfshift[c]))
             else:
-                logging.debug("Calculating channel L {:s}-{:d}".format(sat, c))
+                logging.debug("Calculating channel radiance {:s}-{:d}".format(sat, c))
             L = srf.integrate_radiances(self.iasi.frequency, specrad_f)
 
             L_chans[..., i] = L
@@ -1886,14 +1894,19 @@ class IASI_HIRS_analyser(LUTAnalysis):
         self.plot_hist_pls_perf(sat_ref, sat_targ, tb_ref, tb_targ)
         
 
+    # do caching here, for typhons caching makes a copy
+    M1 = None
+    M2 = None
     # Can't do cache with random noise addition
     #@typhon.utils.cache.mutable_cache(maxsize=20)
+    @profile
     def _prepare_args_calc_srf_estimate(self, sat, ch, shift, db,
                 ref="single", limits={}, noise_level={"master": 0, "target": 0},
                 noise_quantity="bt",
                 noise_units="K",
                 predict_quantity="bt",
                 sat2=None,
+                iasi_frac=0.5,
                 *, start1, end1, start2, end2):
         """Helper for calc_srf_estimate_costfunc and others
         
@@ -1941,15 +1954,19 @@ class IASI_HIRS_analyser(LUTAnalysis):
             raise ValueError("when predicting in radiance, noise_quantity "
                 "MUST be radiance, found {:s} instead!".format(noise_quantity))
 
-        # FIXME: I really should apply limits afterward.  Limits should be
+        # I really should apply limits afterward.  Limits should be
         # applied to training data, which will be from collocations, and
         # to spectral database data, which I will be able to choose to
         # match the characteristics of the collocations.  However, it
         # should NOT be applied to testing data that I need to use to
         # verify how good the prediction is.
-        M1 = iasi.read_period(start=start1, end=end1,
-                NO_CACHE=not self.usecache)
-        M1_limited = typhon.math.array.limit_ndarray(M1, limits=limits)
+        #
+        # For memory reduction, immediately throw away ⅔ of the data.
+        M1 = self.M1 if self.M1 is not None else iasi.read_period(start=start1, end=end1,
+                NO_CACHE=True,
+                filters={lambda M: M[numpy.random.random(M.shape[0])<iasi_frac]})
+        self.M1 = M1
+        #M1_limited = typhon.math.array.limit_ndarray(M1, limits=limits)
         L_full_testing = pyatmlab.physics.specrad_wavenumber2frequency(
             M1["spectral_radiance"][::5, 2, :8461] * unit_specrad_wn)
         if db == "same":
@@ -1958,9 +1975,11 @@ class IASI_HIRS_analyser(LUTAnalysis):
             L_spectral_db = pyatmlab.physics.specrad_wavenumber2frequency(
                 M1["spectral_radiance"][2::5, 2, :8461] * unit_specrad_wn)
         elif db == "different":
-            M2 = iasi.read_period(start=start2, end=end2,
-                NO_CACHE=not self.usecache)
-            M2_limited = typhon.math.array.limit_ndarray(M2, limits=limits)
+            M2 = self.M2 if self.M2 is not None else iasi.read_period(start=start2, end=end2,
+                NO_CACHE=True,
+                limits=limits)
+            self.M2 = M2
+            #M2_limited = typhon.math.array.limit_ndarray(M2, limits=limits)
             L_spectral_db = pyatmlab.physics.specrad_wavenumber2frequency(
                 M2["spectral_radiance"][::3, 1, :8461] * unit_specrad_wn)
         else:
@@ -2067,7 +2086,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
             B=0.,
             cost_mode="total",
             dλ=ureg.Quantity(numpy.linspace(-50.0, 50.0, 41), ureg.nm),
-            sat2=None, *,
+            sat2=None, 
+            iasi_frac=0.5, *,
             start1, end1, start2, end2):
         """Calculate cost function for estimating SRF
 
@@ -2162,6 +2182,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             sat2 [str]: Secondary satellite.  This is the satellite on
                 which the channel is for which we wish to estimate the
                 shift.  By default, sat2 equals sat.
+            iasi_frac [float]: Fraction of IASIsub to keep
 
         Returns:
 
@@ -2179,6 +2200,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     noise_units=noise_units,
                     predict_quantity=predict_quantity,
                     sat2=sat2,
+                    iasi_frac=iasi_frac,
                     start1=start1, start2=start2,
                     end1=end1, end2=end2)
 
@@ -2220,6 +2242,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             B=0.,
             cost_mode="total",
             sat2=None,
+            iasi_frac=0.5,
             *,
             start1, start2, end1, end2):
         """Investigate error dist. for SRF cost function local minima
@@ -2240,6 +2263,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             noise_units=noise_units,
             predict_quantity=predict_quantity,
             sat2=sat2,
+            iasi_frac=iasi_frac,
             dλ=dλ,
             A=A, B=B, cost_mode=cost_mode,
             start1=start1, end1=end1, start2=start2, end2=end2)
@@ -2257,6 +2281,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                         noise_units=noise_units,
                         predict_quantity=predict_quantity,
                         sat2=sat2,
+                        iasi_frac=iasi_frac,
                         start1=start1, start2=start2,
                         end1=end1, end2=end2)
         shift_attempts = dx[localmin]
@@ -2382,6 +2407,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                         noise_units=noise_units,
                         predict_quantity=predict_quantity,
                         A=A, B=B, cost_mode=cost_mode,
+                        iasi_frac=iasi_frac,
                         dλ=dλ,
                         start1=start1, end1=end1, start2=start2, end2=end2)
                 a = ax_all.ravel()[i]
@@ -2429,6 +2455,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 cst=",".join("{:d}".format(int(x.m)) for x in ref_dλ),
                 pq=predict_quantity, nq=noise_quantity, nu=noise_units))
 
+    @profile
     def estimate_errorprop_srf_recovery(self, sat, ch, shift_reference, db="different",
             ref="all",
             regression_type=sklearn.linear_model.LinearRegression,
@@ -2442,6 +2469,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             cost_mode="total", N=100,
             predict_quantity="BT", 
             sat2=None,
+            iasi_frac=0.5,
             *,
             start1, start2, end1, end2):
         """Estimate error propagation under SRF recovery.
@@ -2468,6 +2496,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             N
             predict_quantity
             sat2
+            iasi_frac
 
         Mandatory keyword arguments:
             start1
@@ -2477,6 +2506,21 @@ class IASI_HIRS_analyser(LUTAnalysis):
         """
         sat2 = sat2 or sat
         estimates = numpy.empty(shape=(N,), dtype="f4")
+
+        # to estimate propagation through calibration, use real HIRS
+        # measurements.  Memory intensive; rad_wn_all will be
+        # N * m * 56 * 4 bytes, or around 3 GB/day when N=100.
+        h = pyatmlab.datasets.tovs.which_hirs_fcdr(sat.lower())
+        M = h.read_period(start1, start1+datetime.timedelta(days=2), 
+            locator_args={"satname": sat.lower()},
+            reader_args={"filter_firstline": False},
+            fields=["time", "hrs_scntyp", "counts", "temp_iwt", "lat",
+                    "lon", "hrs_scnlin"])
+        rad_wn_all = ureg.Quantity(
+            numpy.empty(shape=(N, M.shape[0], 56), dtype="f4"),
+            rad_u["ir"])
+
+        rad_wn_ref = h.Mtorad(M, self.srfs[sat2][ch-1], ch)
 
         if self.dobar:
             bar = progressbar.ProgressBar(maxval=estimates.size,
@@ -2492,6 +2536,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                             noise_units=noise_units,
                             predict_quantity=predict_quantity,
                             sat2=sat2,
+                            iasi_frac=iasi_frac,
                             start1=start1, start2=start2,
                             end1=end1, end2=end2)
 
@@ -2507,9 +2552,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 u_y_ref=u_y_ref,
                 u_y_target=u_y_target)
             estimates[i] = res.x
-            logging.debug("Estimate {:d}/{:d}: {:.5f} nm (truth: {:.3f} nm)".format(
-                i, estimates.size, estimates[i]*1e3,
+            logging.debug("Estimate {:d}/{:d}: {:.5f} nm (“truth”: {:.3f} nm)".format(
+                i+1, estimates.size, estimates[i]*1e3,
                 shift_reference.to(ureg.nm).m))
+
+            # use res.x to calibrate?
+            rad_wn_all[i, :, :] = h.Mtorad(M,
+                srf0.shift(ureg.Quantity(res.x, ureg.um)), ch)
+
             if self.dobar:
                 bar.update(i+1)
         if self.dobar:
@@ -2520,16 +2570,28 @@ class IASI_HIRS_analyser(LUTAnalysis):
         pdd = pathlib.Path(pyatmlab.io.plotdatadir())
 
         regrargs=''.join(str(x) for x in itertools.chain.from_iterable(sorted(regression_args.items())))
-        tofile = (pdd / "srf_errorprop_{sat:s}→{sat2:s}_ch{ch:d}_"
-                        "db{db:s}_ref{ref:s}_"
-                        "rt{regression_type.__name__:s}_"
-                        "ra{regrargs:s}_"
-                        "nq{noise_quantity:s}_nu{noise_units:s}_"
-                        "cm{cost_mode:s}_pq{predict_quantity:s}".format(**vars()))
+        basename = ("srf_errorprop_{sat:s}→{sat2:s}_ch{ch:d}_"
+                    "db{db:s}_ref{ref:s}_"
+                    "rt{regression_type.__name__:s}_"
+                    "ra{regrargs:s}_"
+                    "nq{noise_quantity:s}_nu{noise_units:s}_"
+                    "cm{cost_mode:s}_pq{predict_quantity:s}".format(**vars()))
+
+        dmpdir = pathlib.Path(typhon.config.conf["main"]["mydatadir"])
+        dmpfile = dmpdir / "srf_errorprop" / (basename + "_estimates")
+                
+        tofile = pdd / basename
 
         tofile.parent.mkdir(parents=True, exist_ok=True)
+        dmpfile.parent.mkdir(parents=True, exist_ok=True)
+        with lzma.open(str(dmpfile.with_suffix(".pkl.lzma")),
+                mode="wb", preset=lzma.PRESET_DEFAULT) as fp:
+            logging.info("Dumping to {!s}".format(
+                    dmpfile.with_suffix(".pkl.lzma")))
+            pickle.dump((estimates, rad_wn_ref, rad_wn_all), fp)
 
         logging.info("Writing to {!s}".format(tofile) + ".{dat,info}")
+        Δrad = rad_wn_all - rad_wn_ref[numpy.newaxis, ...]
 
         with tofile.with_suffix(".info").open("a", encoding="utf-8") as fp:
             fp.write(" ".join(sys.argv) + "\n")
@@ -2543,9 +2605,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 "{noise_level[target]:<9.3f} "
                 "{noise_level[master]:<9.3f} "
                 "{bias:<15.9f} "
-                "{stderr:<15.9f}\n".format(**vars()))
+                "{stderr:<15.9f} "
+                "{radbias:<15.9f} "
+                "{radstderr:<15.9f} "
+                "\n".format(
+                    radbias=Δrad.mean().m,
+                    radstderr=Δrad.std().m,
+                    **vars()))
         
-        # Now, for range of estimates, 
 
         return (ureg.Quantity(bias, ureg.um).to(ureg.nm),
                 ureg.Quantity(stderr, ureg.um).to(ureg.nm))
@@ -2644,7 +2711,6 @@ class IASI_HIRS_analyser(LUTAnalysis):
             cb.set_label("No. spectra")
             pyatmlab.graphics.print_or_show(f, False,
                 "HIRS_{:d}_exp_radrange_{:s}.".format(ch, lab))
-
 
 def main():
     p = parsed_cmdline
@@ -2771,6 +2837,7 @@ def main():
                             B=p.cost_frac_dλ,
                             cost_mode=p.cost_mode,
                             sat2=p.sat2,
+                            iasi_frac=p.iasi_fraction,
                             start1=start, start2=start_alt,
                             end1=end, end2=end_alt)
 
@@ -2832,6 +2899,7 @@ def main():
                         noise_units=p.noise_units,
                         cost_mode=p.cost_mode,
                         sat2=p.sat2,
+                        iasi_frac=p.iasi_fraction,
                         start1=start, start2=start_alt,
                         end1=end, end2=end_alt,
                         N=N,
