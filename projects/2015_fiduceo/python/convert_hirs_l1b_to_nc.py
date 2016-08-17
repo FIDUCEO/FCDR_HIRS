@@ -148,6 +148,14 @@ def convert_granule(h, satname, dt, gran, overwrite=False):
         scanpos.units = "number"
         scanpos[:] = range(56)
 
+        scantype = ds.createVariable("scanline_type", "i1",
+            ("scanlines",), zlib=True)
+        scantype.units = "flag"
+        scantype.note = ("0 = Earth view  1 = space view  "
+                         "2 = ICCT view  3 = IWCT view")
+        scantype[:] = lines[h.scantype_fieldname]
+
+
 def convert_period(h, sat, start_date, end_date, **kwargs):
     logging.info("Converting NOAA to NetCDF, {:s} "
         "{:%Y-%m-%d %H:%M:%S}–{:%Y-%m-%d %H:%M:%S}".format(
