@@ -274,7 +274,7 @@ import progressbar
 import numexpr
 import mpl_toolkits.basemap
 import sklearn.cross_decomposition
-from memory_profiler import profile
+#from memory_profiler import profile
 
 import typhon.plots
 import typhon.math
@@ -1899,7 +1899,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
     M2 = None
     # Can't do cache with random noise addition
     #@typhon.utils.cache.mutable_cache(maxsize=20)
-    @profile
+    #@profile
     def _prepare_args_calc_srf_estimate(self, sat, ch, shift, db,
                 ref="single", limits={}, noise_level={"master": 0, "target": 0},
                 noise_quantity="bt",
@@ -2378,6 +2378,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     B=0.,
                     cost_mode="total",
                     sat2=None,
+                    iasi_frac=0.5,
                     ref_dλ=ureg.Quantity(numpy.array([-10.0, -2.0, +5.0,
                             +15.0]), ureg.nm),
                     dλ=ureg.Quantity(numpy.linspace(-80, 80, 50), ureg.nm),
@@ -2455,7 +2456,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 cst=",".join("{:d}".format(int(x.m)) for x in ref_dλ),
                 pq=predict_quantity, nq=noise_quantity, nu=noise_units))
 
-    @profile
+    #@profile
     def estimate_errorprop_srf_recovery(self, sat, ch, shift_reference, db="different",
             ref="all",
             regression_type=sklearn.linear_model.LinearRegression,
