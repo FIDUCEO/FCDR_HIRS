@@ -204,6 +204,11 @@ def parse_cmdline():
         metavar=("start", "end"),
         help="IASIsub period to read, alternate")
 
+    parser.add_argument("--hirs_period", action="store", type=str,
+        nargs=2,
+        metavar=("start", "end"),
+        help="HIRS period to read for estimating uncertainty propagation")
+
     parser.add_argument("--iasi_fraction", action="store", type=float,
         default=0.5,
         help="Fraction of IASIsub data to keep.  Reading 6 months of "
@@ -891,9 +896,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
     styles = ("solid", "dashed", "dash_dot", "dotted")
     markers = "os^p*hv<>"
 
-    allsats = (pyatmlab.datasets.tovs.HIRS2.satellites |
-               pyatmlab.datasets.tovs.HIRS3.satellites |
-               pyatmlab.datasets.tovs.HIRS4.satellites)
+    allsats = (pyatmlab.datasets.tovs.HIRS2FCDR.satellites |
+               pyatmlab.datasets.tovs.HIRS3FCDR.satellites |
+               pyatmlab.datasets.tovs.HIRS4FCDR.satellites)
     allsats = {re.sub(r"0(\d)", r"\1", sat).upper() for sat in allsats}
 
     x = dict(#converter=dict(
@@ -2472,7 +2477,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             sat2=None,
             iasi_frac=0.5,
             *,
-            start1, start2, end1, end2):
+            hirs_start, hirs_end, start1, start2, end1, end2):
         """Estimate error propagation under SRF recovery.
 
         Mandatory arguments:
@@ -2504,6 +2509,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
             start2
             end1
             end2
+            hirs_start
+            hirs_end
         """
         sat2 = sat2 or sat
         estimates = numpy.empty(shape=(N,), dtype="f4")
@@ -2512,7 +2519,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         # measurements.  Memory intensive; rad_wn_all will be
         # N * m * 56 * 4 bytes, or around 3 GB/day when N=100.
         h = pyatmlab.datasets.tovs.which_hirs_fcdr(sat.lower())
-        M = h.read_period(start1, start1+datetime.timedelta(days=2), 
+        M = h.read_period(hirs_start, hirs_end,
             locator_args={"satname": sat.lower()},
             reader_args={"filter_firstline": False},
             fields=["time", "hrs_scntyp", "counts", "temp_iwt", "lat",
@@ -2723,7 +2730,7 @@ def main():
         vis = IASI_HIRS_analyser(usecache=p.cache)
         if not isinstance(vis.iasi, pyatmlab.datasets.tovs.IASISub):
             vis.iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
-        h = pyatmlab.datasets.tovs.HIRS3(name="hirs")
+        #h = pyatmlab.datasets.tovs.HIRS3(name="hirs")
 
         if p.makelut:
             print("Making LUT only")
@@ -2850,6 +2857,8 @@ def main():
 
         shift = ureg.Quantity(p.shift, ureg.nm)
         if p.estimate_errorprop:
+            hirs_start = datetime.datetime.strptime(p.hirs_period[0], p.datefmt)
+            hirs_end = datetime.datetime.strptime(p.hirs_period[1], p.datefmt)
             for (ch_i, ch) in enumerate(p.channels):
                 # I found those channels on HIRS may get local minima:
                 if ch in {1, 6, 9, 11, 12}:
@@ -2901,6 +2910,8 @@ def main():
                         cost_mode=p.cost_mode,
                         sat2=p.sat2,
                         iasi_frac=p.iasi_fraction,
+                        hirs_start=hirs_start,
+                        hirs_end=hirs_end,
                         start1=start, start2=start_alt,
                         end1=end, end2=end_alt,
                         N=N,
