@@ -2470,7 +2470,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             optimiser_func=scipy.optimize.minimize_scalar,
             optimiser_args=dict(bracket=[-0.04, 0.04], bounds=[-0.1, 0.1],
                 method="bounded", args=(ureg.um,)),
-            limits={}, noise_level={"target": 1.0, "master": 1.0},
+            limits={"lat": (-90, 90, "all")}, noise_level={"target": 1.0, "master": 1.0},
             noise_quantity="bt", noise_units="K", 
             cost_mode="total", N=100,
             predict_quantity="BT", 
@@ -2560,13 +2560,15 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 u_y_ref=u_y_ref,
                 u_y_target=u_y_target)
             estimates[i] = res.x
-            logging.debug("Estimate {:d}/{:d}: {:.5f} nm (“truth”: {:.3f} nm)".format(
-                i+1, estimates.size, estimates[i]*1e3,
-                shift_reference.to(ureg.nm).m))
 
-            # use res.x to calibrate?
             rad_wn_all[i, :, :] = h.Mtorad(M,
                 srf0.shift(ureg.Quantity(res.x, ureg.um)), ch)
+
+            logging.debug("Estimate {:d}/{:d}: {:.5f} nm (“truth”: {:.3f} nm), "
+                          "ΔL = {:.3~}".format(
+                i+1, estimates.size, estimates[i]*1e3,
+                shift_reference.to(ureg.nm).m,
+                (rad_wn_all[i, :, :] - rad_wn_ref).mean()))
 
             if self.dobar:
                 bar.update(i+1)
@@ -2582,11 +2584,17 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     "db{db:s}_ref{ref:s}_"
                     "rt{regression_type.__name__:s}_"
                     "ra{regrargs:s}_"
+                    "lats{limits[lat][0]}-{limits[lat][1]}_"
                     "nq{noise_quantity:s}_nu{noise_units:s}_"
                     "cm{cost_mode:s}_pq{predict_quantity:s}".format(**vars()))
 
         dmpdir = pathlib.Path(typhon.config.conf["main"]["mydatadir"])
-        dmpfile = dmpdir / "srf_errorprop" / (basename + "_estimates")
+        dmpfile = dmpdir / "srf_errorprop" / (basename + 
+            "_sr{:d}_N{:d}_nl{:d},{:d}_estimates".format(
+                int(round(shift_reference.to(ureg.nm).m)),
+                N,
+                int(noise_level["target"]*1e3),
+                int(noise_level["master"]*1e3)))
                 
         tofile = pdd / basename
 
@@ -2618,7 +2626,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 "{radstderr:<15.9f} "
                 "\n".format(
                     radbias=Δrad.mean().m,
-                    radstderr=Δrad.std().m,
+                    # not interested in std across channels / radiances
+                    radstderr=Δrad.m.data.std(0).mean(),
                     **vars()))
         
 
@@ -2812,7 +2821,7 @@ def main():
                     limits=limits, A=p.cost_frac_bt, B=p.cost_frac_dλ,
                     cost_mode=p.cost_mode, 
                     ref_dλ=ureg.Quantity(p.ref_shifts, ureg.nm),
-                    dλ=ureg.Quantity(numpy.linspace(*p.shift_range, 41), ureg.nm),
+                    dλ=ureg.Quantity(numpy.linspace(*p.shift_range, p.shift_count), ureg.nm),
                     sat2=p.sat2.upper(),
                     start1=start, start2=start_alt,
                     end1=end, end2=end_alt,
