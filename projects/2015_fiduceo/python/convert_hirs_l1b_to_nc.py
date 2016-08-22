@@ -66,8 +66,8 @@ def convert_granule(h, satname, dt, gran, overwrite=False):
         gran (pathlib.Path): Full path to granule
     """
     (head, lines) = h.read(gran, return_header=True,
-        filter_firstline=False, apply_scale_factors=True,
-        calibrate=True, apply_flags=False, radiance_units="classic")
+        filter_firstline=True, apply_scale_factors=True,
+        calibrate=True, apply_flags=True, radiance_units="classic")
     outfile = pathlib.Path(str((outdir / gran.name).with_suffix(".nc")).format(
             sat=satname, year=dt.year, month=dt.month, day=dt.day))
 
@@ -83,8 +83,10 @@ def convert_granule(h, satname, dt, gran, overwrite=False):
         ds.history = "Converted from native HIRS L1B {:%Y-%m-%d %H:%M:%S}".format(datetime.datetime.now())
         ds.author = "Gerrit Holl <g.holl@reading.ac.uk>"
         ds.dataname = head["dataname"]
+            # don't use hrs_h_scnlin; I want to avoid duplicates
         scanlines = ds.createDimension("scanlines",
-                                       head["hrs_h_scnlin"][0])
+                                       lines.shape[0])
+                                       #head["hrs_h_scnlin"][0])
         channels = ds.createDimension("channels_all", 20)
         calib_channels = ds.createDimension("channels_calib", 19)
         scanpos = ds.createDimension("scanpos", 56)
@@ -92,67 +94,94 @@ def convert_granule(h, satname, dt, gran, overwrite=False):
         time = ds.createVariable("time", "u4", ("scanlines",), zlib=True)
         time.units = "seconds since 1970-01-01"
         time.calendar = "gregorian"
-        time[:] = netCDF4.date2num(lines["time"].astype(datetime.datetime),
-            units=time.units, calendar=time.calendar)
 
         lat = ds.createVariable("lat", "f8",
-            ("scanlines", "scanpos"), zlib=True)
+            ("scanlines", "scanpos"), zlib=True,
+            fill_value=-999.)#lines["lat"].fill_value)
         lat.units = "degrees north"
-        lat[:, :] = lines["lat"]
 
         lon = ds.createVariable("lon", "f8",
-            ("scanlines", "scanpos"), zlib=True)
+            ("scanlines", "scanpos"), zlib=True,
+            fill_value=-999.)#lines["lon"].fill_value)
         lon.units = "degrees east"
-        lon[:, :] = lines["lon"]
-        
+
+        bt = ds.createVariable("bt", "f4",
+            ("scanlines", "scanpos", "channels_calib"), zlib=True,
+            fill_value=-999.)#lines["bt"].fill_value)
+        bt.units = "K"
+
         if "sat_za" in lines.dtype.names:
             # Only on HIRS/3 and HIRS/4
             lza = ds.createVariable("lza", "f4",
-                ("scanlines", "scanpos"), zlib=True)
+                ("scanlines", "scanpos"), zlib=True,
+                fill_value=-999.)#lines["sat_za"].fill_value)
             lza.units = "degrees"
-            lza[:, :] = lines["sat_za"]
         elif "lza_approx" in lines.dtype.names:
             lza = ds.createVariable("lza", "f4",
-                ("scanlines", "scanpos"), zlib=True)
+                ("scanlines", "scanpos"), zlib=True,
+                fill_value=-999.)#lines["lza_approx"].fill_value)
             lza.units = "degrees"
             lza.note = ("Values are approximate. "
                 "Original data include LZA only for outermost "
                 "footprint.  Remaining estimated using a full "
                 "scanline of LZAs from MetOpA scaled by the ratio "
                 "of the outermost footprint LZAs.")
-            lza[:, :] = lines["lza_approx"]
-
-        bt = ds.createVariable("bt", "f4",
-            ("scanlines", "scanpos", "channels_calib"), zlib=True)
-        bt.units = "K"
-        bt[:, :, :] = lines["bt"]
 
         rad = ds.createVariable("radiance", "f8", ("scanlines", "scanpos",
-                                                   "channels_all"), zlib=True)
+                                                   "channels_all"),
+                                zlib=True,
+                                fill_value=-999.)#lines["radiance"].fill_value)
+
         #rad.units = "W m^-2 sr^-1 Hz^-1"
         rad.units = "mW m^-2 sr^-1 cm"
-        rad[:] = lines["radiance"]
 
         counts = ds.createVariable("counts", "i4",
-            ("scanlines", "scanpos", "channels_all"), zlib=True)
+            ("scanlines", "scanpos", "channels_all"), zlib=True,
+            fill_value=99999)#lines["counts"].fill_value)
         counts.units = "counts"
-        counts[:, :, :] = lines["counts"]
 
         scanline = ds.createVariable("scanline", "i2",
-            ("scanlines",), zlib=True)
+            ("scanlines",), zlib=True,
+            fill_value=numpy.iinfo("i2").max)#lines["hrs_scnlin"].fill_value)
         scanline.units = "number"
-        scanline[:] = lines["hrs_scnlin"]
 
         scanpos = ds.createVariable("scanpos", "i1",
-            ("scanpos",), zlib=True)
+            ("scanpos",), zlib=True,
+            fill_value=0)#numpy.iinfo("i1").max)
         scanpos.units = "number"
-        scanpos[:] = range(56)
 
         scantype = ds.createVariable("scanline_type", "i1",
-            ("scanlines",), zlib=True)
+            ("scanlines",), zlib=True,
+            fill_value=9)#lines[h.scantype_fieldname].fill_value)
         scantype.units = "flag"
         scantype.note = ("0 = Earth view  1 = space view  "
                          "2 = ICCT view  3 = IWCT view")
+
+        ds.set_auto_mask(True)
+
+        time[:] = netCDF4.date2num(lines["time"].astype(datetime.datetime),
+            units=time.units, calendar=time.calendar)
+
+        lat[:, :] = lines["lat"]
+
+        lon[:, :] = lines["lon"]
+
+        bt[:, :, :] = lines["bt"]
+        
+        if "sat_za" in lines.dtype.names:
+            # Only on HIRS/3 and HIRS/4
+            lza[:, :] = lines["sat_za"]
+        elif "lza_approx" in lines.dtype.names:
+            lza[:, :] = lines["lza_approx"]
+
+        rad[:] = lines["radiance"]
+
+        counts[:, :, :] = lines["counts"]
+
+        scanline[:] = lines["hrs_scnlin"]
+
+        scanpos[:] = range(56)
+
         scantype[:] = lines[h.scantype_fieldname]
 
 
