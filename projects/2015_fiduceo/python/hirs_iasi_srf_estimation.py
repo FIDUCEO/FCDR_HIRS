@@ -2348,7 +2348,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             a.set_ylabel("Count")
             a.legend()
             a.grid(axis="both")
-        fn_lab = ("{sat:s}→{sat2:s}_ch{ch:d}_{shift_reference:.0f}_{db:s}_{ref:s}"
+        fn_lab = ("{sat:s}_{sat2:s}_ch{ch:d}_{shift_reference:.0f}_{db:s}_{ref:s}"
                   "_{cls:s}_{args:s}_{lim:s}_noise{noise1:d}_{noise2:d}_"
                   "pq{predict_quantity:s}_nq{noise_quantity:s}_"
                   "nu{noise_units:s}.").format(
@@ -2397,7 +2397,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
             regression_type = self._regression_type[ref][0]
         if regression_args is None:
             regression_args = self._regression_type[ref][1]
-        (f, ax_all) = matplotlib.pyplot.subplots(4, 3, figsize=(14, 9))
+        (f, ax_all) = matplotlib.pyplot.subplots(
+                *typhon.plots.get_subplot_arrangement(len(channels)),
+                figsize=(14, 9))
         for (i, ch) in enumerate(channels):
             p_all = []
             for shift in ref_dλ:
@@ -2447,9 +2449,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
                    noise_units))
         f.subplots_adjust(hspace=0.47, wspace=0.35)#, right=0.7)
         pyatmlab.graphics.print_or_show(f, False,
-            "SRF_prediction_cost_function_{sat:s}→{sat2:s}_{db:s}_{ref:s}_"
+            "SRF_prediction_cost_function_{sat:s}_{sat2:s}_{db:s}_{ref:s}_"
             "{regression_type.__name__:s}_{regrargs:s}_lim{limstr:s}_A{A:d}"
-            "_B{B:d}_noise{noise_targ:d},{noise_lev:d}_cm{cm:s}_{cst:s}"
+            "_B{B:d}_noise{noise_targ:d},{noise_lev:d}_cm{cm:s}_{cst:s}_"
             "pq{pq:s}_nq{nq:s}_nu{nu:s}.".format(sat=sat, sat2=sat2,
                 db=db, ref=ref, regression_type=regression_type,
                 regrargs=''.join(str(x) for x in itertools.chain.from_iterable(regression_args.items())),
@@ -2580,7 +2582,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         pdd = pathlib.Path(pyatmlab.io.plotdatadir())
 
         regrargs=''.join(str(x) for x in itertools.chain.from_iterable(sorted(regression_args.items())))
-        basename = ("srf_errorprop_{sat:s}→{sat2:s}_ch{ch:d}_"
+        basename = ("srf_errorprop_{sat:s}_{sat2:s}_ch{ch:d}_"
                     "db{db:s}_ref{ref:s}_"
                     "rt{regression_type.__name__:s}_"
                     "ra{regrargs:s}_"
