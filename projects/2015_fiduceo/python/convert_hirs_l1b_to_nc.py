@@ -68,6 +68,10 @@ def convert_granule(h, satname, dt, gran, overwrite=False):
     (head, lines) = h.read(gran, return_header=True,
         filter_firstline=True, apply_scale_factors=True,
         calibrate=True, apply_flags=True, radiance_units="classic")
+    if lines.size == 0:
+        logging.error("Apparently empty: {!s}".format(gran))
+        return
+
     outfile = pathlib.Path(str((outdir / gran.name).with_suffix(".nc")).format(
             sat=satname, year=dt.year, month=dt.month, day=dt.day))
 
