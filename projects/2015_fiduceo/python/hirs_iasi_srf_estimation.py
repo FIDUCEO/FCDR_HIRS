@@ -2586,10 +2586,11 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     "db{db:s}_ref{ref:s}_"
                     "rt{regression_type.__name__:s}_"
                     "ra{regrargs:s}_"
-                    "lats{limits[lat][0]}-{limits[lat][1]}_"
+                    "lats{lowlat}-{highlat}_"
                     "nq{noise_quantity:s}_nu{noise_units:s}_"
-                    "cm{cost_mode:s}_pq{predict_quantity:s}".format(**vars()))
-
+                    "cm{cost_mode:s}_pq{predict_quantity:s}".format(
+                        lowlat=int(limits["lat"][0]),
+                        highlat=int(limits["lat"][1]), **vars()))
         dmpdir = pathlib.Path(typhon.config.conf["main"]["mydatadir"])
         dmpfile = dmpdir / "srf_errorprop" / (basename + 
             "_sr{:d}_N{:d}_nl{:d},{:d}_estimates".format(
@@ -2601,12 +2602,13 @@ class IASI_HIRS_analyser(LUTAnalysis):
         tofile = pdd / basename
 
         tofile.parent.mkdir(parents=True, exist_ok=True)
-        dmpfile.parent.mkdir(parents=True, exist_ok=True)
-        with lzma.open(str(dmpfile.with_suffix(".pkl.lzma")),
-                mode="wb", preset=lzma.PRESET_DEFAULT) as fp:
-            logging.info("Dumping to {!s}".format(
-                    dmpfile.with_suffix(".pkl.lzma")))
-            pickle.dump((estimates, rad_wn_ref, rad_wn_all), fp)
+        # Too slow and I really am not using it.
+#        dmpfile.parent.mkdir(parents=True, exist_ok=True)
+#        with lzma.open(str(dmpfile.with_suffix(".pkl.lzma")),
+#                mode="wb", preset=lzma.PRESET_DEFAULT) as fp:
+#            logging.info("Dumping to {!s}".format(
+#                    dmpfile.with_suffix(".pkl.lzma")))
+#            pickle.dump((estimates, rad_wn_ref, rad_wn_all), fp)
 
         logging.info("Writing to {!s}".format(tofile) + ".{dat,info}")
         Δrad = rad_wn_all - rad_wn_ref[numpy.newaxis, ...]
