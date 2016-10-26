@@ -6,6 +6,7 @@
 
 import datetime
 import itertools
+import os
 import pathlib
 import logging
 import argparse
@@ -16,6 +17,9 @@ if __name__ == "__main__":
         level=logging.INFO)
 
 import numpy
+p = pathlib.Path("/home/users/gholl/.cache/matplotlib/tex.cache")
+if p.is_symlink() and not p.exists():
+    (p.parent / os.readlink(str(p))).mkdir(parents=True, exist_ok=True)
 import matplotlib.pyplot
 import matplotlib.dates
 import scipy.stats
