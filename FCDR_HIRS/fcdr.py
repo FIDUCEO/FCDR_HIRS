@@ -51,6 +51,7 @@ class HIRSFCDR:
         self.srfs = [typhon.physics.units.em.SRF.fromArtsXML(
                      satname.upper(), "hirs", i) for i in range(1, 20)]
         super().__init__(*args, satname=satname, **kwargs)
+        self.my_pseudo_fields.update(radiance_fid=self.calculate_radiance_all)
         #self.hirs = hirs
         #self.srfs = srfs
 
@@ -281,6 +282,17 @@ class HIRSFCDR:
         return rad_wn
     Mtorad = calculate_radiance
 
+    def calculate_radiance_all(self, M, interp_kind="zero", srf=None):
+        """Calculate radiances for all channels
+
+        """
+
+        all_rad = [self.calculate_radiance(M, i, interp_kind=interp_kind)
+            for i in range(1, 20)]
+        return ureg.Quantity(numpy.ma.concatenate([rad.m[...,
+            numpy.newaxis] for rad in all_rad], 2), all_rad[0].u)
+
+        
     
     def estimate_noise(self, M, ch, typ="both"):
         """Calculate noise level at each calibration line.
