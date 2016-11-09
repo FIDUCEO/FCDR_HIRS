@@ -77,6 +77,7 @@ setup(
                       "matplotlib>=1.5",
                       "numexpr>=2.6",
                       "typhon>=0.3.4",
+                      "pyatmlab>=0.1.1",
                       "progressbar2>=3.10",
                       "netCDF4>=1.2",
                       "pint>=0.7"],
