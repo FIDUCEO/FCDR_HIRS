@@ -114,6 +114,8 @@ matplotlib.rcParams['text.latex.preamble'] = [
        #r'\sansmath',              # <- tricky! -- gotta actually tell tex to use!
        r'\DeclareSIUnit\count{count}'  # siunitx doesn't know this one
 ]
+# this too must be before importing matplotlib.pyplot
+pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 import matplotlib.pyplot
 import matplotlib.gridspec
 import matplotlib.dates
@@ -434,7 +436,7 @@ class NoiseAnalyser:
 
         # cycle manually as I plot many at once
         styles = list(matplotlib.pyplot.style.library["typhon"]["axes.prop_cycle"])
-        N = 2*(len(all_tp)>0) + (len(temperatures)>0) + include_gain + 3*include_rself
+        N = 2*(len(all_tp)>0) + (len(temperatures)>0) + 2*include_gain + 3*include_rself
         #k = int(numpy.ceil(len(temperatures)/2)*2)
         Ntemps = len(temperatures)
         fact = 16
@@ -472,7 +474,8 @@ class NoiseAnalyser:
                 M=M, t_slope=t_slope, med_gain=med_gain, ch=ch,
                 temperatures=temperatures, k=k,
                 ax2lims=ax2lims, styles=styles,
-                hiasi_mode=hiasi_mode)
+                hiasi_mode=hiasi_mode,
+                include_gain=include_gain)
             # some self-emission characteristics
 
         logging.info("Finalising")
@@ -612,7 +615,7 @@ class NoiseAnalyser:
         return ax2lims
 
     def _plot_rself(self, M, t_slope, med_gain, ch, temperatures, k,
-                    ax2lims, styles, hiasi_mode):
+                    ax2lims, styles, hiasi_mode, include_gain):
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, 0:int(0.45*k)])
         view_space = M[self.hirs.scantype_fieldname] == self.hirs.typ_space
@@ -783,6 +786,12 @@ class NoiseAnalyser:
                 # it should have all, not only space views!
                 ha_ax[tmpfld] = a1
 
+            if include_gain:
+                pos = a_h2d[-1].get_position()
+                agn = self.fig.add_axes([pos.x0, pos.y0-pos.height, pos.width, pos.height])
+                a_h2d.append(agn)
+
+
             # assuming outliers are at most 2% of the data, this
             # should be safe even before I filter outliers in my
             # reading routine
@@ -801,6 +810,7 @@ class NoiseAnalyser:
                 linestyles=self.linestyles,
                 linewidth=1.5)
             rng[1] = scipy.stats.scoreatpercentile(adv[~adv.mask], [1, 99])
+
             (_, _, _, imad) = aad.hist2d(xt, adv, bins=20, 
                 range=rng, cmap="viridis", cmin=1)
             typhon.plots.plot_distribution_as_percentiles(
@@ -808,16 +818,29 @@ class NoiseAnalyser:
                 color="tan", ptiles=self.ptiles,
                 linestyles=self.linestyles,
                 linewidth=1.5)
+
+            rng[1] = scipy.stats.scoreatpercentile(med_gain[~med_gain.mask], [1, 99])
+            (_, _, _, imgn) = agn.hist2d(xt, med_gain.m, bins=20,
+                range=rng, cmap="viridis", cmin=1)
+            typhon.plots.plot_distribution_as_percentiles(
+                agn, xt, med_gain, bins=ptlbins,
+                color="tan", ptiles=self.ptiles,
+                linestyles=self.linestyles,
+                linewidth=1.5)
+
             if i == 0:
                 asc.set_ylabel("Space counts")
                 aad.set_ylabel("Space Allan dev.\n[counts]")
+                agn.set_ylabel("Gain\n[{:~}]".format(med_gain.u))
             else:
                 # keep the grid but share ylabel with leftmost
                 for a in a_h2d:
                     a.get_yaxis().set_ticklabels([])
-            a1.get_xaxis().set_ticklabels([])
-            a2.set_xlabel("T [K]")
-            a1.set_title(tmpfld.replace("_", ""))
+            for a in a_h2d[:-1]:
+                a.get_xaxis().set_ticklabels([])
+            a_h2d[-1].set_xlabel("T [K]")
+            a_h2d[0].set_title(tmpfld.replace("_", ""))
+
             for a in a_h2d:
                 a.xaxis.set_major_locator(
                     matplotlib.ticker.MaxNLocator(nbins=4,
@@ -851,7 +874,10 @@ class NoiseAnalyser:
             acsc = self.fig.add_subplot(self.gridspec[C1, k-2:])
         pos = acsc.get_position()
         acad = self.fig.add_axes([pos.x0, pos.y0-pos.height, pos.width, pos.height])
-        for (a, im) in zip((acsc, acad), (imsc, imad)):
+        if include_gain:
+            pos = acad.get_position()
+            acgn = self.fig.add_axes([pos.x0, pos.y0-pos.height, pos.width, pos.height])
+        for (a, im) in zip((acsc, acad, acgn), (imsc, imad, imgn)):
             cb = self.fig.colorbar(im, cax=a)
             allcb.append(cb)
 
@@ -878,7 +904,6 @@ class NoiseAnalyser:
 # 1, 2, 8, 19
 
 def main():
-    pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
     p = parsed_cmdline
     if p.plot_iwt_anomaly:
         write_timeseries_per_day_iwt_anomaly_period(
