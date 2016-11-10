@@ -270,7 +270,7 @@ class HIRSFCDR:
             raise ValueError("Found {:d} calibration cycles, too few!".format(offset.shape[0]))
         else:
             return ureg.Quantity(
-                numpy.zeros(shape=M.shape, dtype="f4"),
+                numpy.zeros(shape=M["radiance"][:, :, ch-1].shape, dtype="f4"),
                 typhon.physics.units.common.radiance_units["ir"])
         rad_wn = self.custom_calibrate(
             ureg.Quantity(M["counts"][:, :, ch-1].astype("f4"), ureg.count),
@@ -558,8 +558,8 @@ def which_hirs_fcdr(satname):
     """Given a satellite, return right HIRS object
     """
     for h in {HIRS2FCDR, HIRS3FCDR, HIRS4FCDR}:
-        if satname in h.satellites:
-            return h(satname=satname)
-            break
+        for (k, v) in h.satellites.items():
+            if satname in {k}|v:
+                return h(satname=k)
     else:
         raise ValueError("Unknown HIRS satellite: {:s}".format(satname))
