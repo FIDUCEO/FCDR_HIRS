@@ -111,6 +111,7 @@ setup(
     entry_points={
         'console_scripts': [
             'plot_hirs_field_timeseries=FCDR_HIRS.analysis.timeseries:main',
+            "inspect_hirs_matchups=FCDR_HIRS.analysis.inspect_hirs_matchups:main",
         ],
     },
 )
