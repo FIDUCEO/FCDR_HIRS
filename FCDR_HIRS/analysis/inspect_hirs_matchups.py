@@ -5,7 +5,51 @@ logging.basicConfig(
     format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
              "%(lineno)s: %(message)s"),
     level=logging.DEBUG)
+
+#####
+#!/usr/bin/env python3.5
+
+"""Plot various timeseries for HIRS
+
+Anomalies averaged per orbit.
+"""
+
+import argparse
+
+def parse_cmdline():
+    parser = argparse.ArgumentParser(
+        description="Run some checks on BC matchups",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    choices=["ma", "mb", "n19", "n18", "n17", "n16", "n15", "n14",
+        "n13", "n12", "n11", "n10", "n09", "n08", "n07", "n06", "tn"]
+    choices.sort()
+
+    parser.add_argument("prim", action="store", type=str,
+        help="Primary satellite",
+        choices=choices)
+
+    parser.add_argument("sec", action="store", type=str,
+        help="Secondary satellite",
+        choices=choices)
+
+    parser.add_argument("from_date", action="store", type=str,
+        help="Starting date/time")
+
+    parser.add_argument("to_date", action="store", type=str,
+        help="Ending date/time")
+
+    parser.add_argument("--datefmt", action="store",
+        default="%Y%m%d", help="Plot various other noise characteristics.")
+
+    parser.add_argument("--verbose", action="store_true",
+        default=False, help="Be verbose.")
+
+    p = parser.parse_args()
+    return p
+parsed_cmdline = parse_cmdline()
                       
+import datetime
 import pathlib
 
 import numpy
@@ -21,6 +65,8 @@ import pyatmlab.graphics
 from typhon.physics.units import radiance_units as rad_u
 from typhon.datasets.tovs import HIRSHIRS
 
+from .. import fcdr
+
 #srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-094_2009-102_v2.nc")
 #srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-096_2009-102.nc")
 #srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/mms/mmd/mmd05/hirs_n17_n16/mmd05_hirs-n17_hirs-n16_2011-251_2011-257.nc")
@@ -28,12 +74,31 @@ from typhon.datasets.tovs import HIRSHIRS
 hh = HIRSHIRS()
 
 class HIRSMatchupInspector:
-    def __init__(self, sf):
-        self.ds = netCDF4.Dataset(str(sf), "r")
-        self.sf = sf
+    #def __init__(self, sf):
+    def __init__(self, start_date, end_date, prim, sec):
+        #self.ds = netCDF4.Dataset(str(sf), "r")
+        M = hh.read_period(start_date, end_date,
+            locator_args={"prim": prim, "sec": sec},
+            pseudo_fields={
+                "time_{:s}".format(prim):
+                    lambda M: M["hirs-{:s}_time".format(prim)][:, 3, 3].astype("M8[s]"),
+                "time_{:s}".format(sec):
+                    lambda M: M["hirs-{:s}_time".format(sec)][:, 3, 3].astype("M8[s]")})
+        Mcp = hh.combine(M, fcdr.which_hirs_fcdr(prim), trans={"time_{:s}".format(prim): "time"},
+                         timetol=numpy.timedelta64(3, 's'))
+        Mcs = hh.combine(M, fcdr.which_hirs_fcdr(sec), trans={"time_{:s}".format(sec): "time"},
+                         timetol=numpy.timedelta64(3, 's'))
+        self.start_date = start_date
+        self.end_date = end_date
+        self.M = M
+        self.Mcp = Mcp
+        self.Mcs = Mcs
+        self.prim = prim
+        self.sec = sec
 
-    def plot_channel(self, ch, prim="n17", sec="n16"):
- 
+    def plot_channel(self, ch):#, prim="n17", sec="n16"):
+        prim = self.prim
+        sec = self.sec
         xlab = "HIRS {prim:s}".format(prim=prim.upper())
         ylab = "HIRS {sec:s}".format(sec=sec.upper())
         Δylab = "HIRS {prim:s}-{sec:s}".format(prim=prim.upper(),
@@ -43,7 +108,7 @@ class HIRSMatchupInspector:
 
         (f, a) = matplotlib.pyplot.subplots(2, 3, figsize=(14, 10))
         invalid = numpy.zeros(
-            shape=(self.ds.dimensions["matchup_count"].size),
+            shape=(self.M.shape),
             dtype="?")
 
         # only plot those where data are unmasked for all three variables
@@ -51,12 +116,12 @@ class HIRSMatchupInspector:
         y_all = []
         for (i, v) in enumerate(v_all):
             x = numpy.ma.masked_invalid(
-                self.ds.variables["hirs-{:s}_{:s}_ch{:02d}".format(prim, v, ch)][:, 3, 3])
+                self.M["hirs-{:s}_{:s}_ch{:02d}".format(prim, v, ch)][:, 3, 3])
             y = numpy.ma.masked_invalid(
-                self.ds.variables["hirs-{:s}_{:s}_ch{:02d}".format(sec, v, ch)][:, 3, 3])
+                self.M["hirs-{:s}_{:s}_ch{:02d}".format(sec, v, ch)][:, 3, 3])
             is_measurement = (
-                (self.ds.variables["hirs-{:s}_scanline_type".format(prim)][:, 3, 3] == 0) &
-                (self.ds.variables["hirs-{:s}_scanline_type".format(sec)][:, 3, 3] == 0))
+                (self.M["hirs-{:s}_scanline_type".format(prim)][:, 3, 3] == 0) &
+                (self.M["hirs-{:s}_scanline_type".format(sec)][:, 3, 3] == 0))
             x.mask |= ~is_measurement
             y.mask |= ~is_measurement
             invalid |= x.mask
@@ -98,17 +163,23 @@ class HIRSMatchupInspector:
         a[0, 2].legend(loc="upper left", bbox_to_anchor=(1, 1))
 
         f.subplots_adjust(hspace=0.2, wspace=0.3, right=0.8)
-        f.suptitle("Inspecting {:s}, ch. {:d}".format(self.sf.name, ch))
+        f.suptitle("HIRS-HIRS {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, ch. {:d}".format(
+            self.M["time"][0].astype(datetime.datetime),
+            self.M["time"][-1].astype(datetime.datetime), ch))
 
         pyatmlab.graphics.print_or_show(f, False,
-            "{:s}/{:s}_{:d}.png".format(self.sf.parent.name, self.sf.stem, ch),
-            dump_pickle=False) # for speed
+            "hirshirs/hirshirs_{:%Y%m%d%H%M}_{:%Y%m%d%H%M}_ch{:d}.png".format(
+                self.M["time"][0].astype(datetime.datetime),
+                self.M["time"][-1].astype(datetime.datetime), ch))
 
 def main():
-    for srcfile in hh.find_granules_sorted(prim="n14", sec="n12"):
-        hmi = HIRSMatchupInspector(srcfile)
-        for ch in range(1, 20):
-            hmi.plot_channel(ch, prim="n14", sec="n12")
+    p = parsed_cmdline
+    hmi = HIRSMatchupInspector(
+        datetime.datetime.strptime(p.from_date, p.datefmt),
+        datetime.datetime.strptime(p.to_date, p.datefmt),
+        p.prim, p.sec)
+    for ch in range(1, 20):
+        hmi.plot_channel(ch)#, prim="n14", sec="n12")
    
 if __name__ == "__main__":
     main()
