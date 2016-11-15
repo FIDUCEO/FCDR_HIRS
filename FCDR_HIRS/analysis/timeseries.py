@@ -458,13 +458,19 @@ class NoiseAnalyser:
             (t_slope, _, slope) = self.hirs.calculate_offset_and_slope(M, ch)
             slope = slope.to(ureg.mW/(ureg.m**2 * ureg.sr *
                 1/ureg.cm * ureg.counts), "radiance")
+            u_slope = self.hirs.calc_uslope(M, ch)
             gain = 1/slope
+            u_gain = (numpy.sqrt((-1/slope**2)**2 
+                      * (u_slope.to(slope.u, "radiance"))**2))
             med_gain = ureg.Quantity(
                 numpy.ma.median(gain.m[:, :], 1),
                 gain.u)
+            # http://physics.stackexchange.com/a/292884/6319
+            u_med_gain = u_gain.mean(1) * numpy.sqrt(numpy.pi*(2*48+1)/(4*48))
 
         if include_gain:
-            self._plot_gain(t_slope=t_slope, med_gain=med_gain)
+            self._plot_gain(t_slope=t_slope, med_gain=med_gain,
+                u_med_gain=u_med_gain)
                 
         if len(temperatures) > 0:
             ax2lims = self._plot_temperatures(M=M, temperatures=temperatures)
@@ -556,18 +562,26 @@ class NoiseAnalyser:
         a1h.legend([x[0] for x in L1], all_tp, loc="upper left",
             bbox_to_anchor=(1.0, 1.0))
 
-    def _plot_gain(self, t_slope, med_gain):
+    def _plot_gain(self, t_slope, med_gain, u_med_gain):
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
         logging.info("Plotting gain")
-        a.plot_date(t_slope.astype(datetime.datetime),
-                    med_gain, '.',
+#        a.plot_date(t_slope.astype(datetime.datetime),
+        a.xaxis_date()
+        a.errorbar(t_slope.astype(datetime.datetime),
+                    med_gain.m, 
+                    xerr=None,
+                    yerr=u_med_gain.m,
+                    fmt='.',
                         color="black",
                         markersize=5)
         a.set_xlabel("Date / time")
         a.set_ylabel("Gain\n" + "[{:Lx}]".format(med_gain.u))
         valid = (~t_slope.mask) & (~med_gain.mask)
-        a.set_ylim(scipy.stats.scoreatpercentile(med_gain[valid], [1, 99]))
+        a.set_ylim(
+            scipy.stats.scoreatpercentile(med_gain[valid]-u_med_gain[valid], 1),
+            scipy.stats.scoreatpercentile(med_gain[valid]+u_med_gain[valid], 99),
+            )
         a.set_title("Gain development over time")
 
         ah = self.fig.add_subplot(self.gridspec[C, self.ifhs:])

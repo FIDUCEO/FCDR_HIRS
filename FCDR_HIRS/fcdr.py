@@ -133,7 +133,8 @@ class HIRSFCDR:
         """
         return offset[:, numpy.newaxis] + slope[:, numpy.newaxis] * counts
 
-    def extract_calibcounts_and_temp(self, M, ch, srf=None):
+    def extract_calibcounts_and_temp(self, M, ch, srf=None,
+            return_u=False):
         """Calculate calibration counts and IWCT temperature
 
         In the IR, space view temperature can be safely estimated as 0
@@ -156,6 +157,10 @@ class HIRSFCDR:
                 SRF object used to estimate IWCT.  Optional; if not given
                 or None, use the NOAA-reported SRF for channel.
 
+            return_u [bool]
+
+                Also return uncertainty estimates.  Defaults to False.
+
         Returns:
 
             time
@@ -168,13 +173,22 @@ class HIRSFCDR:
                 assuming ε=1 (blackbody), an arithmetic mean of all
                 temperature sensors on the IWCT, and the SRF passed to the
                 method.
-                        counts_iwct
+
+            counts_iwct
 
                 counts corresponding to IWCT views
 
             counts_space
 
                 counts corresponding to space views
+
+            u_counts_iwct
+
+                (if return_u is True)
+
+            u_counts_space
+
+                (if return_u is True)
         """
 
         srf = srf or self.srfs[ch-1]
@@ -205,7 +219,16 @@ class HIRSFCDR:
         L_iwct = srf.blackbody_radiance(T_iwct)
         L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
 
-        return (M_space["time"], L_iwct, counts_iwct, counts_space)
+        if return_u:
+            u_counts_iwct = (typhon.math.stats.adev(counts_iwct, 1) /
+                numpy.sqrt(counts_iwct.shape[1]))
+            u_counts_space = (typhon.math.stats.adev(counts_space, 1) /
+                numpy.sqrt(counts_space.shape[1]))
+            extra = (u_counts_iwct, u_counts_space)
+        else:
+            extra = ()
+            
+        return (M_space["time"], L_iwct, counts_iwct, counts_space) + extra
 
 
     def calculate_offset_and_slope(self, M, ch, srf=None):
@@ -227,6 +250,9 @@ class HIRSFCDR:
                 SRF used to estimate slope.  Needs to implement the
                 `blackbody_radiance` method such as `typhon.physics.em.SRF`
                 does.  Optional: if not provided, use standard one.
+
+                If true, additionally return uncertainties on offset and
+                slope.
 
         Returns:
 
@@ -323,6 +349,10 @@ class HIRSFCDR:
 
         Currently implemented to return noise level for IWCT and space
         views.
+
+        Warning: this does not ensure that only space views followed by
+        IWCT views are taken into account.  If you need such an assurance,
+        use extract_calibcounts_and_temp instead.
         """
         if typ == "both":
             calib = M[self.scantype_fieldname] != self.typ_Earth
@@ -331,7 +361,9 @@ class HIRSFCDR:
 
         calibcounts = ureg.Quantity(M["counts"][calib, 8:, ch-1],
                                     ureg.counts)
-        return (M["time"][calib], typhon.math.stats.adev(calibcounts, 1))
+        return (M["time"][calib],
+                typhon.math.stats.adev(calibcounts, 1) /
+                    numpy.sqrt(calibcounts.shape[1]))
 
     def recalibrate(self, M, ch, srf=None, realisations=None):
         """Recalibrate counts to radiances with uncertainties
@@ -450,14 +482,52 @@ class HIRSFCDR:
         return f(L_iwct[:, numpy.newaxis], C_iwct[:, numpy.newaxis],
                  C_space[:, numpy.newaxis], C_Earth)
     
+    @typhon.math.common.calculate_precisely
     def calc_sens_coef_C_Earth(self, L_iwct, C_iwct, C_space, C_Earth):
         return L_iwct / (C_iwct - C_space)
 
+    @typhon.math.common.calculate_precisely
     def calc_sens_coef_C_iwct(self, L_iwct, C_iwct, C_space, C_Earth):
         return - L_iwct * (C_Earth - C_space) / (C_iwct - C_space)**2
 
+    @typhon.math.common.calculate_precisely
+    def calc_sens_coef_C_iwct_slope(self, L_iwct, C_iwct, C_space):
+        """Sensitivity coefficient for C_IWCT for slope (a₁) calculation
+
+        Arguments:
+
+            L_iwct [ndarray]
+
+                Radiance for IWCT.  Can be obtained with
+                self.extract_calibcounts_and_temp.  Should
+                be 1-D [N].
+
+            C_iwct [ndarray]
+
+                Counts for IWCTs.  Should be 2-D [N × 48]
+
+            C_space [ndarray]
+
+                Counts for space views.  Same shape as C_iwct.
+
+        Returns:
+
+            Sensitivity coefficient.
+        """
+        return L_iwct[:, numpy.newaxis] / (C_iwct - C_space)**2
+
+    @typhon.math.common.calculate_precisely
     def calc_sens_coef_C_space(self, L_iwct, C_iwct, C_space, C_Earth):
         return L_iwct * (C_Earth - C_iwct) / (C_iwct - C_space)**2
+
+    @typhon.math.common.calculate_precisely
+    def calc_sens_coef_C_space_slope(self, L_iwct, C_iwct, C_space):
+        """Sensitivity coefficient for C_space for slope (a₁) calculation
+
+        Input as for calc_sens_coef_C_iwct_slope
+        """
+        return -L_iwct[:, numpy.newaxis] / (C_iwct - C_space)**2
+
 
     def calc_urad(self, typ, M, ch, *args, srf=None):
         """Calculate uncertainty
@@ -500,12 +570,35 @@ class HIRSFCDR:
 
     def calc_urad_calib(self, L_iwct, C_iwct, C_space, C_Earth,
                               u_C_iwct, u_C_space):
+        """Calculate radiance uncertainty due to calibration
+        """
         s_iwct = self.calc_sens_coef_C_iwct(
                     L_iwct, C_iwct, C_space, C_Earth)
         s_space = self.calc_sens_coef_C_space(
                     L_iwct, C_iwct, C_space, C_Earth)
         return numpy.sqrt((s_iwct * u_C_iwct)**2 +
                     (s_space * u_C_space)**2)
+
+    def calc_uslope(self, M, ch, srf=None):
+        """Direct calculation of slope uncertainty
+
+        Such as for purposes of visualising uncertainties in slope/gain
+        """
+        srf = srf or self.srfs[ch-1]
+        (time, L_iwct, C_iwct, C_space, u_C_iwct,
+            u_C_space) = self.extract_calibcounts_and_temp(
+                M, ch, srf, return_u=True)
+        s_iwct = self.calc_sens_coef_C_iwct_slope(L_iwct, C_iwct, C_space)
+        s_space = self.calc_sens_coef_C_space_slope(L_iwct, C_iwct, C_space)
+#        (t_iwt_noise_level, u_C_iwct) = self.estimate_noise(M, ch, typ="iwt")
+#        (t_space_noise_level, u_C_space) = self.estimate_noise(M, ch, typ="space")
+#        (u_C_iwct,) = h.interpolate_between_calibs(M,
+#            t_iwt_noise_level, u_C_iwct)
+#        (u_C_space,) = h.interpolate_between_calibs(M,
+#            t_space_noise_level, u_C_space)
+
+        return numpy.sqrt((s_iwct * u_C_iwct[:, numpy.newaxis])**2 +
+                          (s_space * u_C_space[:, numpy.newaxis])**2)
 
     def calc_S_noise(self, u):
         """Calculate covariance matrix between two uncertainty vectors
