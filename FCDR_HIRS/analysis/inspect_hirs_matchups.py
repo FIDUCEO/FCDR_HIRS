@@ -85,9 +85,11 @@ class HIRSMatchupInspector:
                 "time_{:s}".format(sec):
                     lambda M: M["hirs-{:s}_time".format(sec)][:, 3, 3].astype("M8[s]")})
         Mcp = hh.combine(M, fcdr.which_hirs_fcdr(prim), trans={"time_{:s}".format(prim): "time"},
-                         timetol=numpy.timedelta64(3, 's'))
+                         timetol=numpy.timedelta64(3, 's'),
+                         col_field="hirs-{:s}_scanpos".format(prim))
         Mcs = hh.combine(M, fcdr.which_hirs_fcdr(sec), trans={"time_{:s}".format(sec): "time"},
-                         timetol=numpy.timedelta64(3, 's'))
+                         timetol=numpy.timedelta64(3, 's'),
+                         col_field="hirs-{:s}_scanpos".format(sec))
         self.start_date = start_date
         self.end_date = end_date
         self.M = M
@@ -104,9 +106,9 @@ class HIRSMatchupInspector:
         Δylab = "HIRS {prim:s}-{sec:s}".format(prim=prim.upper(),
             sec=sec.upper())
 
-        v_all = ("counts", "radiance", "bt")
+        v_all = ("counts", "radiance", "radiance_fid", "bt", "bt_fid")
 
-        (f, a) = matplotlib.pyplot.subplots(2, 3, figsize=(14, 10))
+        (f, a) = matplotlib.pyplot.subplots(2, 5, figsize=(14, 10))
         invalid = numpy.zeros(
             shape=(self.M.shape),
             dtype="?")
@@ -115,10 +117,14 @@ class HIRSMatchupInspector:
         x_all = []
         y_all = []
         for (i, v) in enumerate(v_all):
-            x = numpy.ma.masked_invalid(
-                self.M["hirs-{:s}_{:s}_ch{:02d}".format(prim, v, ch)][:, 3, 3])
-            y = numpy.ma.masked_invalid(
-                self.M["hirs-{:s}_{:s}_ch{:02d}".format(sec, v, ch)][:, 3, 3])
+            if v.endswith("_fid"):
+                x = numpy.ma.masked_invalid(self.Mcp[v][:, ch-1])
+                y = numpy.ma.masked_invalid(self.Mcs[v][:, ch-1])
+            else:
+                x = numpy.ma.masked_invalid(
+                    self.M["hirs-{:s}_{:s}_ch{:02d}".format(prim, v, ch)][:, 3, 3])
+                y = numpy.ma.masked_invalid(
+                    self.M["hirs-{:s}_{:s}_ch{:02d}".format(sec, v, ch)][:, 3, 3])
             is_measurement = (
                 (self.M["hirs-{:s}_scanline_type".format(prim)][:, 3, 3] == 0) &
                 (self.M["hirs-{:s}_scanline_type".format(sec)][:, 3, 3] == 0))
@@ -148,21 +154,33 @@ class HIRSMatchupInspector:
         a[0, 0].set_ylabel(ylab + " counts")
         a[1, 0].set_ylabel(Δylab + " counts")
 
-        a[0, 1].set_xlabel(xlab + " radiance [{:~}]".format(rad_u["ir"].u))
-        a[1, 1].set_xlabel(xlab + " radiance [{:~}]".format(rad_u["ir"].u))
+        a[0, 1].set_xlabel(xlab + " NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[1, 1].set_xlabel(xlab + " NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
 
-        a[0, 1].set_ylabel(ylab + " radiance [{:~}]".format(rad_u["ir"].u))
-        a[1, 1].set_ylabel(Δylab + " radiance [{:~}]".format(rad_u["ir"].u))
+        a[0, 1].set_ylabel(ylab + " NOAA radiance [{:~}]".format(rad_u["ir"].u))
+        a[1, 1].set_ylabel(Δylab + " NOAA radiance [{:~}]".format(rad_u["ir"].u))
 
-        a[0, 2].set_xlabel(xlab + " BT [K]")
-        a[1, 2].set_xlabel(xlab + " BT [K]")
+        a[0, 2].set_xlabel(xlab + " FID radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[1, 2].set_xlabel(xlab + " FID radiance\n[{:~}]".format(rad_u["ir"].u))
 
-        a[0, 2].set_ylabel(ylab + " BT [K]")
-        a[1, 2].set_ylabel(Δylab + " BT [K]")
+        a[0, 2].set_ylabel(ylab + " FID radiance [{:~}]".format(rad_u["ir"].u))
+        a[1, 2].set_ylabel(Δylab + " FID radiance [{:~}]".format(rad_u["ir"].u))
 
-        a[0, 2].legend(loc="upper left", bbox_to_anchor=(1, 1))
+        a[0, 3].set_xlabel(xlab + " NOAA BT [K]")
+        a[1, 3].set_xlabel(xlab + " NOAA BT [K]")
 
-        f.subplots_adjust(hspace=0.2, wspace=0.3, right=0.8)
+        a[0, 3].set_ylabel(ylab + " NOAA BT [K]")
+        a[1, 3].set_ylabel(Δylab + " NOAA BT [K]")
+
+        a[0, 4].set_xlabel(xlab + " FID BT [K]")
+        a[1, 4].set_xlabel(xlab + " FID BT [K]")
+
+        a[0, 4].set_ylabel(ylab + " FID BT [K]")
+        a[1, 4].set_ylabel(Δylab + " FID BT [K]")
+
+        a[0, 4].legend(loc="upper left", bbox_to_anchor=(1, 1))
+
+        f.subplots_adjust(hspace=0.4, wspace=0.5, right=0.8)
         f.suptitle("HIRS-HIRS {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, ch. {:d}".format(
             self.M["time"][0].astype(datetime.datetime),
             self.M["time"][-1].astype(datetime.datetime), ch))

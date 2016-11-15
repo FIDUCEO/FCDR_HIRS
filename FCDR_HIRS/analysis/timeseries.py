@@ -480,11 +480,12 @@ class NoiseAnalyser:
 
         logging.info("Finalising")
 
-        for cb in allcb:
-            cb.set_label("No.")
-            cb.ax.yaxis.set_major_locator(
-                matplotlib.ticker.MaxNLocator(nbins=5, prune="both"))
-            cb.update_ticks()
+        if include_rself:
+            for cb in allcb:
+                cb.set_label("No.")
+                cb.ax.yaxis.set_major_locator(
+                    matplotlib.ticker.MaxNLocator(nbins=5, prune="both"))
+                cb.update_ticks()
                     
         t = M["time"].astype(datetime.datetime)
         for a in self.fig.axes:

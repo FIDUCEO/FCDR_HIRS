@@ -51,7 +51,16 @@ class HIRSFCDR:
         self.srfs = [typhon.physics.units.em.SRF.fromArtsXML(
                      satname.upper(), "hirs", i) for i in range(1, 20)]
         super().__init__(*args, satname=satname, **kwargs)
-        self.my_pseudo_fields.update(radiance_fid=self.calculate_radiance_all)
+        self.my_pseudo_fields["radiance_fid"] = (lambda M, D:
+            self.calculate_radiance_all(M, interp_kind="zero"))
+        self.my_pseudo_fields["bt_fid"] = (lambda M, D:
+            ureg.Quantity(
+                numpy.ma.concatenate(
+                    [self.srfs[ch-1].channel_radiance2bt(
+                        D["radiance_fid"][:, :, ch-1])[..., numpy.newaxis]#.astype("f4")
+                            for ch in range(1, 20)], 2),
+                ureg.K))
+
         #self.hirs = hirs
         #self.srfs = srfs
 
@@ -98,7 +107,8 @@ class HIRSFCDR:
             y = numpy.ma.asarray(y)
             # explicitly set masked data to nan, for scipy.interpolate
             # doesn't understand this
-            y.data[y.mask] = numpy.nan
+            if not numpy.isscalar(y.mask):
+                y.data[y.mask] = numpy.nan
             fnc = scipy.interpolate.interp1d(
                 x, y,
                 kind=kind,
@@ -240,6 +250,20 @@ class HIRSFCDR:
 
         offset = -slope * counts_space
 
+        # sometimes IWCT or space counts seem to drift over a “scan line”
+        # of calibration.  Identify this by comparing the IQR to the
+        # counts.  For truly random normally distributed data:
+        # (25, 75) … > 2: false positive 0.2%
+        # (10, 90) … > 3.3: false positive 0.5%
+        # …based on a simple simulated # experiment.
+        bad_iwct = (scipy.stats.iqr(counts_iwct, 1, (10, 90)) > 3.3 *
+            typhon.math.stats.adev(counts_iwct, 1))
+        bad_space = (scipy.stats.iqr(counts_space, 1, (10, 90)) > 3.3 *
+            typhon.math.stats.adev(counts_space, 1))
+
+        bad = bad_iwct | bad_space
+        slope.mask |= bad[:, numpy.newaxis]
+        offset.mask |= bad[:, numpy.newaxis]
         return (time,
                 offset,
                 slope)
