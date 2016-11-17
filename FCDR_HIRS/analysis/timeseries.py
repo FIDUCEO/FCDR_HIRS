@@ -74,7 +74,7 @@ def parse_cmdline():
         help="Satellite to use.")
 
     parser.add_argument("--channel", action="store", type=int,
-        default=1, help="Channel to consider")
+        nargs="+", help="Channels to consider")
 
     parser.add_argument("--log", action="store", type=str,
         help="Logfile to write to")
@@ -240,7 +240,7 @@ class NoiseAnalyser:
     fte = 0.67
     fhs = 0.73
 #@profile
-    def __init__(self, start_date, end_date, satname, ch, temp_fields={"iwt",
+    def __init__(self, start_date, end_date, satname, temp_fields={"iwt",
                         "fwh", "fwm"}):
         #self.hirs = pyatmlab.datasets.tovs.which_hirs_fcdr(satname)
         self.hirs = fcdr.which_hirs_fcdr(satname)
@@ -253,7 +253,7 @@ class NoiseAnalyser:
 #        else:
 #            raise ValueError("Unknown satellite: {:s}".format(satname))
         self.satname = satname
-        self.ch = ch
+#        self.ch = ch
 
 #        self.srfs = [typhon.physics.units.em.SRF.fromArtsXML(
 #                    satname.upper().replace("NOAA0", "NOAA"), "hirs", i) for i in range(1, 20)]
@@ -273,9 +273,9 @@ class NoiseAnalyser:
         Mhrsall = self.hirs.read_period(start_date, end_date,
             pseudo_fields=
                 {"tsc": self.hirs.calc_time_since_last_calib,
-                 "lsc": self.hirs.count_lines_since_last_calib,
-                 "radiance_fid": lambda M:
-                    self.hirs.calculate_radiance(M, ch, interp_kind="zero").m},
+                 "lsc": self.hirs.count_lines_since_last_calib},
+#                 "radiance_fid": lambda M:
+#                    self.hirs.calculate_radiance(M, ch, interp_kind="zero").m},
             NO_CACHE=True, **hrsargs)
 #        Mhrsallnew = numpy.ma.zeros(shape=Mhrsall.shape,
 #            dtype=Mhrsall.dtype.descr + [("tsc", "u2")])
@@ -419,12 +419,14 @@ class NoiseAnalyser:
 
     #@profile
     def plot_noise_with_other(self, 
+            ch,
             all_tp=["space", "iwt"], temperatures=["iwt"],
             include_gain=True,
             include_rself=True,
             hiasi_mode="perc"):
+        logging.info("Channel {:d}".format(ch))
         M = self.Mhrsall
-        ch = self.ch
+#        ch = self.ch
         start_date = self.start_date
         end_date = self.end_date
         # need SRF for calculating gain
@@ -495,7 +497,8 @@ class NoiseAnalyser:
                     
         t = M["time"].astype(datetime.datetime)
         for a in self.fig.axes:
-            a.autoscale_view()
+            if not "hist" in a.get_title():
+                a.autoscale_view()
             a.grid("on")
             if isinstance(a.xaxis.major.formatter, matplotlib.dates.AutoDateFormatter):
                 self.set_ax_loc(a, t, N=1)
@@ -565,6 +568,9 @@ class NoiseAnalyser:
     def _plot_gain(self, t_slope, med_gain, u_med_gain):
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
+        if med_gain.mask.all():
+            logging.warning("No valid gain values found, skipping")
+            return
         logging.info("Plotting gain")
 #        a.plot_date(t_slope.astype(datetime.datetime),
         a.xaxis_date()
@@ -685,7 +691,7 @@ class NoiseAnalyser:
         if self.Lhiasi is not None:
             C = next(self.counter)
 
-            Lhrs = ureg.Quantity(self.Mhrscmb["radiance_fid"],
+            Lhrs = ureg.Quantity(self.Mhrscmb["radiance_fid"][..., ch-1],
                 typhon.physics.units.common.radiance_units["ir"])
             dL = Lhrs - self.Lhiasi[:, ch-1]
             ΔRselfint, = self.hirs.interpolate_between_calibs(
@@ -834,14 +840,17 @@ class NoiseAnalyser:
                 linestyles=self.linestyles,
                 linewidth=1.5)
 
-            rng[1] = scipy.stats.scoreatpercentile(med_gain[~med_gain.mask], [1, 99])
-            (_, _, _, imgn) = agn.hist2d(xt, med_gain.m, bins=20,
-                range=rng, cmap="viridis", cmin=1)
-            typhon.plots.plot_distribution_as_percentiles(
-                agn, xt, med_gain, bins=ptlbins,
-                color="tan", ptiles=self.ptiles,
-                linestyles=self.linestyles,
-                linewidth=1.5)
+            if not med_gain.mask.all():
+                rng[1] = scipy.stats.scoreatpercentile(med_gain[~med_gain.mask], [1, 99])
+                (_, _, _, imgn) = agn.hist2d(xt, med_gain.m, bins=20,
+                    range=rng, cmap="viridis", cmin=1)
+                typhon.plots.plot_distribution_as_percentiles(
+                    agn, xt, med_gain, bins=ptlbins,
+                    color="tan", ptiles=self.ptiles,
+                    linestyles=self.linestyles,
+                    linewidth=1.5)
+            else:
+                imgn = None
 
             if i == 0:
                 asc.set_ylabel("Space counts")
@@ -893,8 +902,9 @@ class NoiseAnalyser:
             pos = acad.get_position()
             acgn = self.fig.add_axes([pos.x0, pos.y0-pos.height, pos.width, pos.height])
         for (a, im) in zip((acsc, acad, acgn), (imsc, imad, imgn)):
-            cb = self.fig.colorbar(im, cax=a)
-            allcb.append(cb)
+            if im is not None:
+                cb = self.fig.colorbar(im, cax=a)
+                allcb.append(cb)
 
         return allcb
 
@@ -931,8 +941,8 @@ def main():
             datetime.datetime.strptime(p.from_date, p.datefmt),
             datetime.datetime.strptime(p.to_date, p.datefmt),
             p.sat,
-            temp_fields=p.temp_fields,
-            ch=p.channel)
+            temp_fields=p.temp_fields)
+#            ch=p.channel)
 
     if p.plot_noise:
         logging.info("Plotting noise")
@@ -940,10 +950,11 @@ def main():
 
     if p.plot_noise_with_other:
         logging.info("Plotting more noise")
-        na.plot_noise_with_other(temperatures=p.temp_fields,
-            all_tp=p.count_fields, include_gain=p.include_gain,
-            include_rself=p.include_rself,
-            hiasi_mode=p.hiasi_mode)
+        for ch in p.channel:
+            na.plot_noise_with_other(ch, temperatures=p.temp_fields,
+                all_tp=p.count_fields, include_gain=p.include_gain,
+                include_rself=p.include_rself,
+                hiasi_mode=p.hiasi_mode)
 
     if p.plot_noise_map:
         #make_hirs_orbit_maps(sat, dt, ch, cmap="viridis"):

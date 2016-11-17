@@ -48,18 +48,23 @@ class HIRSFCDR:
     # Use noise levels to propagate through calibration and BT conversion
 
     def __init__(self, *args, satname, **kwargs):
-        self.srfs = [typhon.physics.units.em.SRF.fromArtsXML(
-                     satname.upper(), "hirs", i) for i in range(1, 20)]
+        for nm in {satname}|self.satellites[satname]:
+            try:
+                self.srfs = [typhon.physics.units.em.SRF.fromArtsXML(
+                             nm, "hirs", i) for i in range(1, 20)]
+            except FileNotFoundError:
+                pass # try the next one
+            else:
+                break
+        else:
+            raise ValueError("Could not find SRF for any of: {:s}".format(
+                ','.join({satname}|self.satellites[satname])))
         super().__init__(*args, satname=satname, **kwargs)
-        self.my_pseudo_fields["radiance_fid"] = (lambda M, D:
+        self.my_pseudo_fields["radiance_fid"] = ([],
+            lambda M, D:
             self.calculate_radiance_all(M, interp_kind="zero"))
-        self.my_pseudo_fields["bt_fid"] = (lambda M, D:
-            ureg.Quantity(
-                numpy.ma.concatenate(
-                    [self.srfs[ch-1].channel_radiance2bt(
-                        D["radiance_fid"][:, :, ch-1])[..., numpy.newaxis]#.astype("f4")
-                            for ch in range(1, 20)], 2),
-                ureg.K))
+        self.my_pseudo_fields["bt_fid"] = (["radiance_fid"],
+            self.calculate_bt_all)
 
         #self.hirs = hirs
         #self.srfs = srfs
@@ -342,8 +347,19 @@ class HIRSFCDR:
         return ureg.Quantity(numpy.ma.concatenate([rad.m[...,
             numpy.newaxis] for rad in all_rad], 2), all_rad[0].u)
 
-        
-    
+    def calculate_bt_all(self, M, D): 
+        bt_all = ureg.Quantity(
+            numpy.ma.concatenate(
+                [self.srfs[ch-1].channel_radiance2bt(
+                    D["radiance_fid"][:, :, ch-1])[..., numpy.newaxis]#.astype("f4")
+                        for ch in range(1, 20)], 2),
+            ureg.K)
+        if numpy.isscalar(bt_all.m.mask):
+            bt_all.m.mask = D["radiance_fid"].mask
+        else:
+            bt_all.m.mask |= D["radiance_fid"].mask
+        return bt_all
+   
     def estimate_noise(self, M, ch, typ="both"):
         """Calculate noise level at each calibration line.
 

@@ -1,0 +1,117 @@
+"""Show field on map
+
+Note that this could be more generic than just for HIRS FCDR
+"""
+
+import argparse
+
+def parse_cmdline():
+    parser = argparse.ArgumentParser(
+        description="Show field on map",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument("satname", action="store", type=str,
+        help="Satellite to plot")
+
+    parser.add_argument("field", action="store", type=str,
+        help="Field to plot.  If this has channels, also pass --channels")
+
+    parser.add_argument("start_time", action="store", type=str,
+        help="Starting time in %%Y-%%m-%%dT%%H:%%M")
+
+    parser.add_argument("duration", action="store", type=str,
+        help="duration in %%H:%%M")
+
+    parser.add_argument("--channels", action="store", type=int,
+        nargs="+", help="Channels to consider.  Only used/needed "
+        "for some fields.")
+
+    parser.add_argument("--vmin", action="store", type=float,
+        nargs="+",
+        help="As pcolors vmin, one per channel")
+
+    parser.add_argument("--vmax", action="store", type=float,
+        nargs="+",
+        help="As vmin")
+
+    parser.add_argument("--label", action="store", type=str,
+        help="Label to put on colourbar",
+        default="UNLABELED!")
+
+    parser.add_argument("--verbose", action="store_true", default=False)
+
+    p = parser.parse_args()
+    return p
+parsed_cmdline = parse_cmdline()
+import logging
+logging.basicConfig(
+    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
+            "%(lineno)s: %(message)s"),
+    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
+
+import datetime
+import matplotlib.pyplot
+import mpl_toolkits.basemap
+
+import pyatmlab.graphics
+from .. import fcdr
+
+def plot_field(lon, lat, fld, filename, tit, cblabel, **kwargs):
+    (f, a) = matplotlib.pyplot.subplots()
+    m = mpl_toolkits.basemap.Basemap(projection="moll", resolution="c",
+        lon_0=0, ax=a)
+    c = pyatmlab.graphics.pcolor_on_map(
+        m, lon, lat, fld, cmap="viridis", **kwargs)
+    m.drawcoastlines()
+    cb = m.colorbar(c)
+    cb.set_label(cblabel)
+    a.set_title(tit)
+    pyatmlab.graphics.print_or_show(
+        f, False, filename)
+
+def read_and_plot_field(satname, field, start_time, duration, channels=[],
+        vmin=None, vmax=None, label="",
+        **kwargs):
+    if duration > datetime.timedelta(days=1):
+        raise ValueError("Duration must not exceed 24 hours, found "
+                         "{!s}".format(duration))
+    h = fcdr.which_hirs_fcdr(satname)
+    M = h.read_period(start_time, duration,
+        fields=("lat", "lon", "time", field))
+
+    tit = ("{satname:s} {field:s} {start_time:%Y-%m-%d %H:%M} -- "
+           "{end_time:%H:%M}".format(end_time=start_time+duration,
+           **locals()))
+
+    if M[field].ndim > 2:
+        for (ch, mn, mx) in zip(channels, vmin, vmax):
+            plot_field(
+                M["lon"], M["lat"], M[field][..., ch-1],
+                    vmin=mn, vmax=mx, 
+                    cblabel=label,
+                    tit=tit + ", ch. {:d}".format(ch),
+                    filename=
+                    "HIRS_{satname:s}_{field:s}_{ch:d}_{start_time:%Y%m%d%H%M}.png".format(
+                        **locals()),
+                    **kwargs)
+    else:
+        plot_field(
+                M["lon"], M["lat"], M[field],
+                    vmin=mn[0], vmax=mx[0], 
+                    cblabel=label,
+                    tit=tit,
+                    filename=
+                    "HIRS_{satname:s}_{field:s}_{start_time:%Y%m%d%H%M}.png".format(**locals()),
+                    **kwargs)
+
+
+def main():
+    p = parsed_cmdline 
+    start_time = datetime.datetime.strptime(p.start_time,
+        "%Y-%m-%dT%H:%M")
+    (hours, minutes) = p.duration.split(":")
+    duration = datetime.timedelta(hours=int(hours), minutes=int(minutes))
+    vmin = p.vmin or [None] * len(p.channels)
+    vmax = p.vmax or [None] * len(p.channels)
+    read_and_plot_field(p.satname, p.field, start_time, duration, p.channels,
+        vmin=vmin, vmax=vmax, label=p.label)
