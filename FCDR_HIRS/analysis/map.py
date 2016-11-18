@@ -57,7 +57,7 @@ import pyatmlab.graphics
 from .. import fcdr
 
 def plot_field(lon, lat, fld, filename, tit, cblabel, **kwargs):
-    (f, a) = matplotlib.pyplot.subplots()
+    (f, a) = matplotlib.pyplot.subplots(figsize=(14, 8))
     m = mpl_toolkits.basemap.Basemap(projection="moll", resolution="c",
         lon_0=0, ax=a)
     c = pyatmlab.graphics.pcolor_on_map(
