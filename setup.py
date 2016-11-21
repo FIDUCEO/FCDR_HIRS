@@ -113,6 +113,7 @@ setup(
             'plot_hirs_field_timeseries=FCDR_HIRS.analysis.timeseries:main',
             "inspect_hirs_matchups=FCDR_HIRS.analysis.inspect_hirs_matchups:main",
             "map_hirs_field=FCDR_HIRS.analysis.map:main",
+            "plot_hirs_temp_matrix=FCDR_HIRS.analysis.tempmat:main",
         ],
     },
 )
