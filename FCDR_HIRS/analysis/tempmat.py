@@ -3,41 +3,18 @@
 """
 
 import argparse
+from .. import common
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description="Plot temperature matrix",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("satname", action="store", type=str,
-        help="Satellite name",
-        choices=["tirosn"]
-            + ["noaa{:d}".format(n) for n in range(6, 19)]
-            + ["metop{:s}".format(s) for s in "ab"])
-
-    parser.add_argument("from_date", action="store", type=str,
-        help="Start date/time")
-
-    parser.add_argument("to_date", action="store", type=str,
-        help="End date/time")
-
-    parser.add_argument("temp_fields", action="store", type=str,
-        nargs="+",
-        choices=['an_el', 'patch_exp', 'an_scnm', 'fwm', 'scanmotor',
-            'iwt', 'sectlscp', 'primtlscp', 'elec', 'baseplate', 'an_rd',
-            'an_baseplate', 'ch', 'an_fwm', 'ict', 'an_pch', 'scanmirror',
-            'fwh', 'patch_full', 'fsr'],
-        help="Temperature fields to include")
-
-    parser.add_argument("--datefmt", action="store", type=str,
-        help="Date format for start/end dates",
-        default="%Y-%m-%d")
-
-    parser.add_argument("--verbose", action="store_true",
-        help="Be verbose", default=False)
-
-    parser.add_argument("--log", action="store", type=str,
-        help="Logfile to write to.  Leave out for stdout.")
+    parse = common.add_to_argparse(parser,
+        include_period=True,
+        include_sat=True,
+        include_channels=False,
+        include_temperatures=True)
 
     p = parser.parse_args()
     return p
@@ -98,11 +75,12 @@ def plot_temperature_matrix(M, temp_fields,
             a.set_xlim(rng[0])
             a.set_ylim(rng[1])
 
-        if x_i == 0:
-            a.set_ylabel(y_f)
-
+        # I seem to have swapped x and y
         if y_i == len(temp_fields)-1:
             a.set_xlabel(x_f)
+
+        if x_i == 0:
+            a.set_ylabel(y_f)
 
         for ax in (a.xaxis, a.yaxis):
             ax.set_major_locator(
@@ -120,9 +98,9 @@ def read_and_plot_temperatures(sat, from_date, to_date, temp_fields):
     M = h.read_period(from_date, to_date,
         fields=["temp_{:s}".format(t) for t in temp_fields])
     plot_temperature_matrix(M, temp_fields,
-        title="HIRS temperatures {from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}".format(
+        title="HIRS temperatures {sat:s} {from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}".format(
             **locals()),
-        filename="hirs_tempmat_{from_date:%Y%m%d%H%M}--{to_date:%Y%m%d%H%M}.png".format(
+        filename="hirs_tempmat_{sat:s}_{from_date:%Y%m%d%H%M}--{to_date:%Y%m%d%H%M}.png".format(
             **locals()))
 
 def main():
