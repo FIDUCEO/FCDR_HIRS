@@ -60,11 +60,17 @@ class HIRSFCDR:
             raise ValueError("Could not find SRF for any of: {:s}".format(
                 ','.join({satname}|self.satellites[satname])))
         super().__init__(*args, satname=satname, **kwargs)
+        # if the user has asked for headers to be returned, M is a tuple
+        # (head, lines) so we need to extract the lines.  Otherwise M is
+        # just lines.
         self.my_pseudo_fields["radiance_fid"] = ([],
             lambda M, D:
-            self.calculate_radiance_all(M, interp_kind="zero"))
+            self.calculate_radiance_all(
+                M[1] if isinstance(M, tuple) else M, interp_kind="zero"),
+            {"calibrate": True})
         self.my_pseudo_fields["bt_fid"] = (["radiance_fid"],
-            self.calculate_bt_all)
+            self.calculate_bt_all,
+            {"calibrate": True})
 
         #self.hirs = hirs
         #self.srfs = srfs

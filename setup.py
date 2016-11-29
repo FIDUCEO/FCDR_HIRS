@@ -115,6 +115,7 @@ setup(
             "map_hirs_field=FCDR_HIRS.analysis.map:main",
             "plot_hirs_temp_matrix=FCDR_HIRS.analysis.tempmat:main",
             "plot_hirs_calibcounts_per_scanpos=FCDR_HIRS.analysis.calibcounts_stats_per_scanpos:main",
+            "plot_hirs_test_rself=FCDR_HIRS.analysis.test_rself:main",
         ],
     },
 )

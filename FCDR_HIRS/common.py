@@ -13,7 +13,7 @@ def add_to_argparse(parser,
         parser.add_argument("satname", action="store", type=str,
             help="Satellite name",
             choices=["tirosn"]
-                + ["noaa{:d}".format(n) for n in range(6, 19)]
+                + ["noaa{:d}".format(n) for n in range(6, 20)]
                 + ["metop{:s}".format(s) for s in "ab"])
 
     if include_period:
@@ -27,20 +27,31 @@ def add_to_argparse(parser,
             help="Date format for start/end dates",
             default="%Y-%m-%d")
 
+    hasboth = include_channels and include_temperatures
+    if hasboth:
+        required_named = parser.add_argument_group(
+            "required named arguments")
+        ch_tm = required_named
+    else:
+        ch_tm = parser
+
+    # http://stackoverflow.com/a/24181138/974555
     if include_channels:
-        parser.add_argument("channels", action="store", type=int,
+        ch_tm.add_argument(("--" if hasboth else "") + "channels", action="store", type=int,
             nargs="+", choices=list(range(1, 21)),
             default=list(range(1, 20)),
-            help="Channels to consider")
+            help="Channels to consider",
+            required=True)
 
     if include_temperatures:
-        parser.add_argument("temp_fields", action="store", type=str,
+        ch_tm.add_argument(("--" if hasboth else "") + "temperatures", action="store", type=str,
             nargs="+",
             choices=['an_el', 'patch_exp', 'an_scnm', 'fwm', 'scanmotor',
                 'iwt', 'sectlscp', 'primtlscp', 'elec', 'baseplate',
                 'an_rd', 'an_baseplate', 'ch', 'an_fwm', 'ict', 'an_pch',
                 'scanmirror', 'fwh', 'patch_full', 'fsr'],
-            help="Temperature fields to use")
+            help="Temperature fields to use",
+            required=True)
 
     parser.add_argument("--verbose", action="store_true",
         help="Be verbose", default=False)

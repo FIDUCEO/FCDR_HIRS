@@ -6,10 +6,10 @@ Work in progress!
 """
 
 import scipy.stats
-import sklearn.cross_decomposition.PLSRegression
+import sklearn.cross_decomposition
+import numpy
 
 class RSelf:
-
     temperatures = ["scanmirror", "fwh", "iwt",
                     "sectlscp", "baseplate", "elec"]
 
@@ -27,22 +27,26 @@ class RSelf:
                 x = x.mean(-1)
             L.append(x[:, numpy.newaxis])
         X = numpy.concatenate(tuple(L))
-        # Note: median may not be an optimal solution, see plots produced
-        # by plot_hirs_calibcounts_per_scanpos
-        Y = numpy.ma.median(M["counts"][:, 8:, ch-1], 1)
         # fit in terms of X⁴ because that's closer to radiance than
         # temperature is
         Xn = ((X**4)-(X**4).mean(0))/(X**4).std(0)
         return Xn
 
+    def get_predictand(self, M, ch):
+        # Note: median may not be an optimal solution, see plots produced
+        # by plot_hirs_calibcounts_per_scanpos
+        Y = numpy.ma.median(M["counts"][:, 8:, ch-1], 1)
+
     def fit(self, M, ch):
         """Fit model
         """
-        (X, Y) = self.get_predictor_predictand(M, ch)
+        X = self.get_predictor(M, ch)
+        Y = self.get_predictand(M, ch)
         self.model.fit(X, Y)
 
     def evaluate(self, M, ch):
-        (X, Y_ref) = self.get_predictor_predictand(M, ch)
+        X = self.get_predictor(M, ch)
+        Y_ref = self.get_predictand(M, ch)
         Y_pred = self.model.predict(X)
         return (X, Y_ref, Y_pred)
 

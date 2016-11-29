@@ -58,7 +58,7 @@ def plot_calibcount_stats(h, Mall, channels,
 
     (nrow, ncol) = typhon.plots.common.get_subplot_arrangement(N)
 
-    x = numpy.arange(49)
+    x = numpy.arange(0, 49, 2)
     (f, ax_all) = matplotlib.pyplot.subplots(nrow, ncol,
         sharex=True,
         figsize=(4+3*nrow, 4+2*ncol))
@@ -69,13 +69,14 @@ def plot_calibcount_stats(h, Mall, channels,
     for (a1, c) in zip(ax_all.ravel(), channels):
         a2 = a1.twinx()
         for (Mlocal, a, color, lab) in (
-                (Msp, a1, "tan", "space"),
+                (Msp, a1, "blue", "space"),
                 (Miwt, a2, "green", "IWCT")):
             typhon.plots.plot_distribution_as_percentiles(a,
-                x, Mlocal["counts"][:, 8:, c-1].T, bins=x, color=color,
+                numpy.arange(1, 49), Mlocal["counts"][:, 8:, c-1].T, bins=x, color=color,
                 ptiles=[5, 25, 50, 75, 95],
                 linestyles=[":", "--", "-", "--", ":"],
-                label=lab)
+                label=lab,
+                linewidth=1.0)
             a.grid(True, which="major")
             for ax in (a.xaxis, a.yaxis):
                 ax.set_major_locator(
@@ -92,7 +93,7 @@ def plot_calibcount_stats(h, Mall, channels,
             a1.legend(lines + lines2, labels + labels2,
                 loc="upper left", bbox_to_anchor=(1.5, 1.15))
         for tl in a1.get_yticklabels():
-            tl.set_color("tan")
+            tl.set_color("blue")
         for tl in a2.get_yticklabels():
             tl.set_color("green")
         a1.set_title("Ch. {:d}".format(c))
