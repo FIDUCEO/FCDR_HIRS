@@ -33,37 +33,66 @@ matplotlib.use("Agg")
 import pathlib
 pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 
+import matplotlib.ticker
+import scipy.stats
 import datetime
 import typhon.plots
+import pyatmlab.graphics
+
+from typhon.physics.units.common import radiance_units as rad_u
 
 from .. import models
 from .. import fcdr
 
-def plot_rself_test(h, M, temperatures, channels):
+def plot_rself_test(h, M, temperatures, channels,
+        tit, fn):
     
-    model = models.RSelf(temperatures)
+    model = models.RSelf(h, temperatures)
 
-    view_space = M[h.scantype_fieldname] == h.typ_space
+    #view_space = M[h.scantype_fieldname] == h.typ_space
 
-    M = M[view_space]
+    #M = M[view_space]
 
     N = len(channels)
 
-    (nrow, ncol) = typhon.plots.get_subplot_arrangement(N)
+    (ncol, nrow) = typhon.plots.get_subplot_arrangement(N)
 
     (f, ax_all) = matplotlib.pyplot.subplots(nrow, ncol,
-        sharex=True, figsize=(4+3*nrow, 4+2*ncol))
+        sharex=False, figsize=(2+3*ncol, 3+2.5*nrow))
     for (a, c) in zip(ax_all.ravel(), channels):
         model.fit(M, c)
         (X, Y_ref, Y_pred) = model.test(M, c)
-        a.hist2d(Y_ref, Y_pred, cmap="viridis")
+        xloc = Y_ref.to(rad_u["ir"], "radiance").m
+        yloc = (Y_pred - Y_ref).to(rad_u["ir"], "radiance").m
+        rng = [scipy.stats.scoreatpercentile(
+            xloc[~xloc.mask], [1, 99]),
+               scipy.stats.scoreatpercentile(
+            yloc[~xloc.mask], [1, 99])]
+        a.hist2d(xloc, yloc,
+                cmap="viridis", cmin=1,
+                bins=20, range=rng)
         typhon.plots.plot_distribution_as_percentiles(a,
-            Y_ref, Y_pred,
+            xloc, yloc,
             nbins=20, color="tan",
             ptiles=[5, 25, 50, 75, 95],
             linestyles=[":", "--", "-", "--", ":"])
+        a.set_title("Ch. {:d}".format(c))
+        a.grid(axis="both", color="white")
+        #a.set_aspect("equal", "box", "C")
+        a.plot(rng, [0, 0], 'k-', linewidth=0.5)
+        if a in ax_all[:, 0]:
+            a.set_ylabel("Calib. offset (Estimate-Reference)\n[{:~}]".format(rad_u["ir"]))
+        if a in ax_all[-1, :]:
+            a.set_xlabel("Calib. offset (Reference)\n[{:~}]".format(rad_u["ir"]))
+        for ax in (a.xaxis, a.yaxis):
+            ax.set_major_locator(
+                matplotlib.ticker.MaxNLocator(nbins=4, prune=None))
     for a in ax_all.ravel()[len(channels):]:
         a.set_visible(False)
+
+    f.suptitle(tit)
+    f.subplots_adjust(hspace=0.3)
+    pyatmlab.graphics.print_or_show(f, False, fn)
 
 
 def read_and_plot_rself_test(sat, from_date, to_date, temperatures,
@@ -72,9 +101,21 @@ def read_and_plot_rself_test(sat, from_date, to_date, temperatures,
     M = h.read_period(from_date, to_date,
         fields=["time", "counts"] +
             ["temp_{:s}".format(t) for t in temperatures])
-    plot_rself_test(h, M, temperatures, channels)
+    plot_rself_test(h, M, temperatures, channels,
+        "self-emission regression performance, {sat:s}, "
+        "{from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}\n"
+        "using {temperatures:s}".format(
+            sat=sat, from_date=from_date, to_date=to_date,
+            temperatures=', '.join(temperatures)),
+        "rself_regr_test_{sat:s}_{from_date:%Y%m%d%H%M}-"
+        "{to_date:%Y%m%d%H%M}_from_{temperatures:s}.".format(
+            sat=sat, from_date=from_date, to_date=to_date,
+            temperatures=",".join(temperatures)))
 
 def main():
+    import warnings
+    warnings.filterwarnings("error")
+    warnings.filterwarnings("always", category=DeprecationWarning)
     p = parsed_cmdline
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)

@@ -145,7 +145,7 @@ class HIRSFCDR:
         return offset[:, numpy.newaxis] + slope[:, numpy.newaxis] * counts
 
     def extract_calibcounts_and_temp(self, M, ch, srf=None,
-            return_u=False):
+            return_u=False, return_ix=False):
         """Calculate calibration counts and IWCT temperature
 
         In the IR, space view temperature can be safely estimated as 0
@@ -200,6 +200,10 @@ class HIRSFCDR:
             u_counts_space
 
                 (if return_u is True)
+
+            ix
+
+                (if return_ix is True)
         """
 
         srf = srf or self.srfs[ch-1]
@@ -230,16 +234,17 @@ class HIRSFCDR:
         L_iwct = srf.blackbody_radiance(T_iwct)
         L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
 
+        extra = []
         if return_u:
             u_counts_iwct = (typhon.math.stats.adev(counts_iwct, 1) /
                 numpy.sqrt(counts_iwct.shape[1]))
             u_counts_space = (typhon.math.stats.adev(counts_space, 1) /
                 numpy.sqrt(counts_space.shape[1]))
-            extra = (u_counts_iwct, u_counts_space)
-        else:
-            extra = ()
+            extra.extend([u_counts_iwct, u_counts_space])
+        if return_ix:
+            extra.append(space_followed_by_iwct.nonzero()[0])
             
-        return (M_space["time"], L_iwct, counts_iwct, counts_space) + extra
+        return (M_space["time"], L_iwct, counts_iwct, counts_space) + tuple(extra)
 
 
     def calculate_offset_and_slope(self, M, ch, srf=None):
@@ -315,6 +320,13 @@ class HIRSFCDR:
         srf = srf or self.srfs[ch-1]
         (time, offset, slope) = self.calculate_offset_and_slope(
             M, ch, srf)
+        # NOTE: taking the median may not be an optimal solution.  See,
+        # for example, plots produced by the script
+        # plot_hirs_calibcounts_per_scanpos in the FCDR_HIRS package
+        # within FIDUCEO, in particular for noaa18 channels 1--12, where
+        # the lowest scan positions are systematically offset compared to
+        # the higher ones.  See also the note at
+        # calculate_offset_and_slope.
         if offset.shape[0] > 1:
             (interp_offset, interp_slope) = self.interpolate_between_calibs(M, time,
                 ureg.Quantity(numpy.ma.median(offset.m, 1), offset.u),
