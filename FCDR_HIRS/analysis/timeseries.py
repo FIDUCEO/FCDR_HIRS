@@ -442,7 +442,7 @@ class NoiseAnalyser:
         #k = int(numpy.ceil(len(temperatures)/2)*2)
         Ntemps = len(temperatures)
         fact = 16
-        k = int((Ntemps+(2/fact))*fact)
+        k = int((max(Ntemps,1)+(2/fact))*fact)
         self.ifte = int(self.fte*k)
         self.ifhs = int(self.fhs*k)
         self.gridspec = matplotlib.gridspec.GridSpec(N, k)
@@ -505,6 +505,7 @@ class NoiseAnalyser:
         self.fig.suptitle("Characteristics for {:s} HIRS ch. {:d}, "
                    "{:%Y-%m-%d}--{:%Y-%m-%d}".format(
                         self.satname, ch, start_date, end_date),
+                y=1.05,
                 fontsize=26)
         self.fig.subplots_adjust(hspace=0.5, top=0.95)
         logging.info("Writing out")
@@ -752,11 +753,17 @@ class NoiseAnalyser:
                     ok = (~x.mask) & (~ydL.mask)
                     x = x[ok] # scoreatpercentile dislikes maskedarrays
                     ydL = ydL[ok]
-                    (_, _, _, im) = a.hist2d(x, ydL,
-                        bins=[xbins, ybins],
-                        range=[[0, 40],
-                               scipy.stats.scoreatpercentile(ydL, [1, 99])],
-                        cmin=1)
+                    im = a.hexbin(x, ydL,
+                        extent=[0, 40,
+                                *scipy.stats.scoreatpercentile(ydL, [1, 99])],
+                        gridsize=20,
+                        mincnt=1,
+                        cmap="viridis")
+#                    (_, _, _, im) = a.hist2d(x, ydL,
+#                        bins=[xbins, ybins],
+#                        range=[[0, 40],
+#                               scipy.stats.scoreatpercentile(ydL, [1, 99])],
+#                        cmin=1)
                     typhon.plots.plot_distribution_as_percentiles(
                         a, x, ydL,
                         bins=numpy.linspace(0, 40, 10, dtype="uint8"),
@@ -822,8 +829,12 @@ class NoiseAnalyser:
 
             asc = a2 if (self.Lhiasi is not None and hiasi_mode == "hist") else a1
             aad = a3 if (self.Lhiasi is not None and hiasi_mode == "hist") else a2
-            (_, _, _, imsc) = asc.hist2d(xt, y, bins=20, 
-                range=rng, cmap="viridis", cmin=1)
+            imsc = asc.hexbin(xt, y,
+                gridsize=20,
+                extent=[rng[0][0], rng[0][1], rng[1][0], rng[1][1]],
+                mincnt=1, cmap="viridis")
+#            (_, _, _, imsc) = asc.hist2d(xt, y, bins=20, 
+#                range=rng, cmap="viridis", cmin=1)
             ptlbins = numpy.linspace(*rng[0], 20)
             typhon.plots.plot_distribution_as_percentiles(
                 asc, xt, y, bins=ptlbins,
@@ -831,9 +842,12 @@ class NoiseAnalyser:
                 linestyles=self.linestyles,
                 linewidth=1.5)
             rng[1] = scipy.stats.scoreatpercentile(adv[~adv.mask], [1, 99])
-
-            (_, _, _, imad) = aad.hist2d(xt, adv, bins=20, 
-                range=rng, cmap="viridis", cmin=1)
+            imad = aad.hexbin(xt, adv,
+                gridsize=20,
+                extent=[rng[0][0], rng[0][1], rng[1][0], rng[1][1]],
+                mincnt=1, cmap="viridis")
+#            (_, _, _, imad) = aad.hist2d(xt, adv, bins=20, 
+#                range=rng, cmap="viridis", cmin=1)
             typhon.plots.plot_distribution_as_percentiles(
                 aad, xt, adv, bins=ptlbins,
                 color="tan", ptiles=self.ptiles,
@@ -842,8 +856,13 @@ class NoiseAnalyser:
 
             if not med_gain.mask.all():
                 rng[1] = scipy.stats.scoreatpercentile(med_gain[~med_gain.mask], [1, 99])
-                (_, _, _, imgn) = agn.hist2d(xt, med_gain.m, bins=20,
-                    range=rng, cmap="viridis", cmin=1)
+                imgn = agn.hexbin(xt, med_gain.m,
+                    gridsize=20,
+                    extent=[rng[0][0], rng[0][1], rng[1][0], rng[1][1]],
+                    cmap="viridis",
+                    mincnt=1)
+#                (_, _, _, imgn) = agn.hist2d(xt, med_gain.m, bins=20,
+#                    range=rng, cmap="viridis", cmin=1)
                 typhon.plots.plot_distribution_as_percentiles(
                     agn, xt, med_gain, bins=ptlbins,
                     color="tan", ptiles=self.ptiles,
@@ -874,11 +893,18 @@ class NoiseAnalyser:
         if self.Lhiasi is not None and hiasi_mode == "hist":
             for (i, (tmpfld, xt)) in enumerate(self.loop_through_temps(self.Mhrscmb, temperatures)):
                 ha = ha_ax[tmpfld]
-                (_, _, _, imha) = ha.hist2d(
-                    xt.data[dLok], dL.m.data[dLok], bins=20,
-                    range=[allrng[tmpfld],
-                           scipy.stats.scoreatpercentile(dL.m[dLok], [1, 99])],
-                    cmin=1)
+                imha = ha.hexbin(xt.data[dLok],
+                    dL.m.data[dLok],
+                    gridsize=20,
+                    extent=[*allrng[tmpfld],
+                            *scipy.stats.scoreatpercentile(dL.m[dLok], [1, 99])],
+                    mincnt=1,
+                    cmap="viridis")
+#                (_, _, _, imha) = ha.hist2d(
+#                    xt.data[dLok], dL.m.data[dLok], bins=20,
+#                    range=[allrng[tmpfld],
+#                           scipy.stats.scoreatpercentile(dL.m[dLok], [1, 99])],
+#                    cmin=1)
                 typhon.plots.plot_distribution_as_percentiles(ha, 
                     xt, dL, nbins=20, color="tan",
                     ptiles=self.ptiles,

@@ -32,8 +32,10 @@ def add_to_argparse(parser,
         required_named = parser.add_argument_group(
             "required named arguments")
         ch_tm = required_named
+        regarg = dict(required=True)
     else:
         ch_tm = parser
+        regarg = {}
 
     # http://stackoverflow.com/a/24181138/974555
     if include_channels:
@@ -41,7 +43,7 @@ def add_to_argparse(parser,
             nargs="+", choices=list(range(1, 21)),
             default=list(range(1, 20)),
             help="Channels to consider",
-            required=True)
+            **regarg)
 
     if include_temperatures:
         ch_tm.add_argument(("--" if hasboth else "") + "temperatures", action="store", type=str,
@@ -51,7 +53,7 @@ def add_to_argparse(parser,
                 'an_rd', 'an_baseplate', 'ch', 'an_fwm', 'ict', 'an_pch',
                 'scanmirror', 'fwh', 'patch_full', 'fsr'],
             help="Temperature fields to use",
-            required=True)
+            **regarg)
 
     parser.add_argument("--verbose", action="store_true",
         help="Be verbose", default=False)

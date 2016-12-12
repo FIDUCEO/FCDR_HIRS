@@ -1,14 +1,4 @@
 #!/usr/bin/env python3.5
-
-import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-             "%(lineno)s: %(message)s"),
-    level=logging.DEBUG)
-
-#####
-#!/usr/bin/env python3.5
-
 """Plot various timeseries for HIRS
 
 Anomalies averaged per orbit.
@@ -40,7 +30,7 @@ def parse_cmdline():
         help="Ending date/time")
 
     parser.add_argument("--datefmt", action="store",
-        default="%Y%m%d", help="Plot various other noise characteristics.")
+        default="%Y%m%d", help="Date range.")
 
     parser.add_argument("--verbose", action="store_true",
         default=False, help="Be verbose.")
@@ -48,6 +38,13 @@ def parse_cmdline():
     p = parser.parse_args()
     return p
 parsed_cmdline = parse_cmdline()
+
+import logging
+logging.basicConfig(
+    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
+             "%(lineno)s: %(message)s"),
+    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
+
                       
 import datetime
 import pathlib
@@ -58,14 +55,17 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot
 import netCDF4
+import scipy.stats
 
 import typhon.plots
 import pyatmlab.graphics
+import matplotlib.ticker
 
 from typhon.physics.units import radiance_units as rad_u
 from typhon.datasets.tovs import HIRSHIRS
 
 from .. import fcdr
+matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
 
 #srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-094_2009-102_v2.nc")
 #srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-096_2009-102.nc")
@@ -108,7 +108,7 @@ class HIRSMatchupInspector:
 
         v_all = ("counts", "radiance", "radiance_fid", "bt", "bt_fid")
 
-        (f, a) = matplotlib.pyplot.subplots(2, 5, figsize=(14, 10))
+        (f, a) = matplotlib.pyplot.subplots(2, 5, figsize=(30, 10))
         invalid = numpy.zeros(
             shape=(self.M.shape),
             dtype="?")
@@ -138,15 +138,30 @@ class HIRSMatchupInspector:
         for (i, (x, y)) in enumerate(zip(x_all, y_all)):
             x = x[~invalid]
             y = y[~invalid]
-            a[0, i].plot(x, y, '.')
+            rng = numpy.asarray([scipy.stats.scoreatpercentile(x, [1, 99]),
+                   scipy.stats.scoreatpercentile(y, [1, 99])])
+            #a[0, i].plot(x, y, '.')
+            a[0, i].hist2d(x, y, bins=40, range=rng, cmap="viridis",
+                cmin=1)
             typhon.plots.plot_distribution_as_percentiles(a[0, i], x, y,
-                nbins=40, ptiles=[5, 25, 50, 75, 95], label="N17-MA")
+                nbins=40, ptiles=[5, 25, 50, 75, 95], color="tan",
+                label=' ')
             a[0, i].grid("on")
+            a[0, i].plot(*[[rng.min(), rng.max()]]*2, 'k-',
+                linewidth=3)
+            a[0, i].set_aspect("equal", "box", "C")
 
-            a[1, i].plot(x, y-x, '.')
+            rng[1] = scipy.stats.scoreatpercentile(y-x, [1, 99])
+            #a[1, i].plot(x, y-x, '.')
+            a[1, i].hist2d(x, y-x, bins=40, range=rng, cmap="viridis",
+                cmin=1)
             typhon.plots.plot_distribution_as_percentiles(a[1, i], x, y-x,
-                nbins=40, ptiles=[5, 25, 50, 75, 95], label="N17-MA")
+                nbins=40, ptiles=[5, 25, 50, 75, 95], color="tan",
+                label=' ')
             a[1, i].grid("on")
+            a[1, i].plot([rng[0, 0], rng[0, 1]], [0, 0], 'k-',
+                linewidth=3)
+            a[1, i].set_aspect("equal", "box", "C")
 
         a[0, 0].set_xlabel(xlab + " counts")
         a[1, 0].set_xlabel(xlab + " counts")
@@ -154,20 +169,20 @@ class HIRSMatchupInspector:
         a[0, 0].set_ylabel(ylab + " counts")
         a[1, 0].set_ylabel(Δylab + " counts")
 
-        a[0, 1].set_xlabel(xlab + " NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
-        a[1, 1].set_xlabel(xlab + " NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[0, 1].set_xlabel(xlab + "NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[1, 1].set_xlabel(xlab + "NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
 
-        a[0, 1].set_ylabel(ylab + " NOAA radiance [{:~}]".format(rad_u["ir"].u))
-        a[1, 1].set_ylabel(Δylab + " NOAA radiance [{:~}]".format(rad_u["ir"].u))
+        a[0, 1].set_ylabel(ylab + " NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[1, 1].set_ylabel(Δylab + " NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
 
-        a[0, 2].set_xlabel(xlab + " FID radiance\n[{:~}]".format(rad_u["ir"].u))
-        a[1, 2].set_xlabel(xlab + " FID radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[0, 2].set_xlabel(xlab + "FID radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[1, 2].set_xlabel(xlab + "FID radiance\n[{:~}]".format(rad_u["ir"].u))
 
-        a[0, 2].set_ylabel(ylab + " FID radiance [{:~}]".format(rad_u["ir"].u))
-        a[1, 2].set_ylabel(Δylab + " FID radiance [{:~}]".format(rad_u["ir"].u))
+        a[0, 2].set_ylabel(ylab + " FID radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[1, 2].set_ylabel(Δylab + " FID radiance\n[{:~}]".format(rad_u["ir"].u))
 
-        a[0, 3].set_xlabel(xlab + " NOAA BT [K]")
-        a[1, 3].set_xlabel(xlab + " NOAA BT [K]")
+        a[0, 3].set_xlabel(xlab + "NOAA BT [K]")
+        a[1, 3].set_xlabel(xlab + "NOAA BT [K]")
 
         a[0, 3].set_ylabel(ylab + " NOAA BT [K]")
         a[1, 3].set_ylabel(Δylab + " NOAA BT [K]")
@@ -180,13 +195,26 @@ class HIRSMatchupInspector:
 
         a[0, 4].legend(loc="upper left", bbox_to_anchor=(1, 1))
 
-        f.subplots_adjust(hspace=0.4, wspace=0.5, right=0.8)
-        f.suptitle("HIRS-HIRS {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, ch. {:d}".format(
+        for ta in a.ravel():
+            ta.xaxis.set_major_locator(
+                matplotlib.ticker.MaxNLocator(nbins=4, prune=None))
+            ta.yaxis.set_major_locator(
+                matplotlib.ticker.MaxNLocator(
+                    nbins=max(int(round(numpy.ptp(ta.get_ylim()) /
+                                    numpy.ptp(ta.get_xlim()) * 6)),
+                              3),
+                    prune=None))
+            # yaxis still okay
+
+        f.subplots_adjust(hspace=0.2, wspace=0.4, right=0.8)
+        f.suptitle("HIRS-HIRS {:s}-{:s} ch. {:d}\n{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}".format(
+            prim, sec, ch,
             self.M["time"][0].astype(datetime.datetime),
-            self.M["time"][-1].astype(datetime.datetime), ch))
+            self.M["time"][-1].astype(datetime.datetime)))
 
         pyatmlab.graphics.print_or_show(f, False,
-            "hirshirs/hirshirs_{:%Y%m%d%H%M}_{:%Y%m%d%H%M}_ch{:d}.png".format(
+            "hirshirs/hirshirs_{:s}_{:s}_{:%Y%m%d%H%M}_{:%Y%m%d%H%M}_ch{:d}.png".format(
+                prim, sec,
                 self.M["time"][0].astype(datetime.datetime),
                 self.M["time"][-1].astype(datetime.datetime), ch))
 

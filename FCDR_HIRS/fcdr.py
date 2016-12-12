@@ -37,11 +37,22 @@ class HIRSFCDR:
     """Produce, write, study, and read HIRS FCDR.
 
     Mixin for kiddies HIRS?FCDR
+
+    Relevant papers:
+    - NOAA: cao07_improved_jaot.pdf
+    - PDF_TEN_990007-EPS-HIRS4-PGS.pdf
     """
 
     realisations = 100
     srfs = None
     satname = None
+
+    # NB: first 8 views of space counts deemed always unusable, see
+    # NOAA or EUMETSAT calibration papers/documents.  I've personaly
+    # witnessed (on NOAA-18) that later positions are sometimes also
+    # systematically offset
+    start_space_calib = 8
+    start_iwct_calib = 8
 
     # Read in some HIRS data, including nominal calibration
     # Estimate noise levels from space and IWCT views
@@ -63,14 +74,18 @@ class HIRSFCDR:
         # if the user has asked for headers to be returned, M is a tuple
         # (head, lines) so we need to extract the lines.  Otherwise M is
         # just lines.
+        # the following line means the pseudo field is only calculated if
+        # the value of the keyword "calibrate" (passed to
+        # read/read_period/…) is equal to any of the values in the tuple
+        cond = {"calibrate": (None, True)}
         self.my_pseudo_fields["radiance_fid"] = ([],
             lambda M, D:
             self.calculate_radiance_all(
                 M[1] if isinstance(M, tuple) else M, interp_kind="zero"),
-            {"calibrate": True})
+            cond)
         self.my_pseudo_fields["bt_fid"] = (["radiance_fid"],
             self.calculate_bt_all,
-            {"calibrate": True})
+            cond)
 
         #self.hirs = hirs
         #self.srfs = srfs
@@ -223,10 +238,11 @@ class HIRSFCDR:
         M_space = M[:-dsi][space_followed_by_iwct]
         M_iwct = M[dsi:][space_followed_by_iwct]
 
-        counts_space = ureg.Quantity(M_space["counts"][:, 8:, ch-1],
-                                     ureg.count)
-        counts_iwct = ureg.Quantity(M_iwct["counts"][:, 8:, ch-1],
-                                    ureg.count)
+        counts_space = ureg.Quantity(M_space["counts"][:,
+            self.start_space_calib:, ch-1], ureg.count)
+        # For IWCT, at least EUMETSAT uses all 56…
+        counts_iwct = ureg.Quantity(M_iwct["counts"][:,
+            self.start_iwct_calib:, ch-1], ureg.count)
 
         T_iwct = ureg.Quantity(
             M_space["temp_iwt"].mean(-1).mean(-1).astype("f4"), ureg.K)

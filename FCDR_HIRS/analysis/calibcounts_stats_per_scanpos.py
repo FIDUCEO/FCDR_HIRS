@@ -106,7 +106,7 @@ def plot_calibcount_stats(h, Mall, channels,
     # set remaining invisible
     for a in ax_all.ravel()[len(channels):]:
         a.set_visible(False)
-    f.suptitle(title)
+    f.suptitle(title, y=1.02)
     f.subplots_adjust(hspace=0.5, wspace=0.5,
         right=0.75 if nrow*ncol==len(channels) else 0.9)
     pyatmlab.graphics.print_or_show(f, False, filename)
@@ -120,7 +120,8 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels):
               "{sat:s} {from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}".format(
                 **locals()),
         filename="hirs_calib_per_scanpos_{sat:s}_{from_date:%Y%m%d%H%M}-"
-                 "{to_date:%Y%m%d%H%M}.png".format(**locals()))
+                 "{to_date:%Y%m%d%H%M}_{ch:s}.png".format(
+                    ch=",".join([str(x) for x in channels]), **locals()))
 
 def main():
     p = parsed_cmdline
