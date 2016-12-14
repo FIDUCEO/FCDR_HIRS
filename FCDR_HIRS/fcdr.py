@@ -78,7 +78,8 @@ class HIRSFCDR:
         # the value of the keyword "calibrate" (passed to
         # read/read_period/…) is equal to any of the values in the tuple
         cond = {"calibrate": (None, True)}
-        self.my_pseudo_fields["radiance_fid"] = (["radiance", "hrs_scntyp"],
+        self.my_pseudo_fields["radiance_fid"] = (
+            ["radiance", "hrs_scntyp", "temp_iwt", "time"],
             lambda M, D:
             self.calculate_radiance_all(
                 M[1] if isinstance(M, tuple) else M, interp_kind="zero"),
@@ -356,7 +357,7 @@ class HIRSFCDR:
             interp_slope[:] = numpy.ma.median(slope.m, 1)
             interp_slope = ureg.Quantity(interp_slope, offset.u)
         elif M.shape[0] > 0:
-            raise ValueError("Found {:d} calibration cycles, too few!".format(offset.shape[0]))
+            raise typhon.datasets.dataset.InvalidFileError("Found {:d} calibration cycles, too few!".format(offset.shape[0]))
         else:
             return ureg.Quantity(
                 numpy.zeros(shape=M["radiance"][:, :, ch-1].shape, dtype="f4"),

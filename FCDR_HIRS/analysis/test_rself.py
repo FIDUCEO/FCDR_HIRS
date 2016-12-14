@@ -92,7 +92,7 @@ def plot_rself_test(h, M, temperatures, channels,
         for ax in (a.xaxis, a.yaxis):
             ax.set_major_locator(
                 matplotlib.ticker.MaxNLocator(nbins=4, prune=None))
-    for a in ax_all.ravel()[:len(channels)]:
+#    for a in ax_all.ravel()[:len(channels)]:
         a.set_xlim(rng[0])
         a.set_ylim(rng[1])
     for a in ax_all.ravel()[len(channels):]:

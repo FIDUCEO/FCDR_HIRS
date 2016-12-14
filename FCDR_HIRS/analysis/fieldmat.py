@@ -47,14 +47,14 @@ import pyatmlab.graphics
 from typhon.physics.units.common import ureg
 from .. import fcdr
 
-def plot_field_matrix(MM, ranges, title, filename, x_u, y_u):
+def plot_field_matrix(MM, ranges, title, filename, units):
     f = typhon.plots.plots.scatter_density_plot_matrix(
         MM,
         hist_kw={"bins": 20},
         hist2d_kw={"bins": 20, "cmin": 1, "cmap": "viridis"},
         hexbin_kw={"gridsize": 20, "mincnt": 1, "cmap": "viridis"},
         ranges=ranges,
-        x_u=x_u, y_u=y_u)
+        units=units)
     for a in f.get_axes():
         for ax in (a.xaxis, a.yaxis):
             ax.set_major_locator(
@@ -78,9 +78,9 @@ def plot_temperature_matrix(M, temp_fields,
             {fld: scipy.stats.scoreatpercentile(M["temp_{:s}".format(fld)], [1, 99])
                 for fld in temp_fields},
         title=title, filename=filename,
-        x_u="K", y_u="K")
+        units={fld: "K" for fld in temp_fields})
 
-def plot_noise_matrix(h, M, channels,
+def plot_noise_level_matrix(h, M, channels,
         noise_typ="iwt",
         title="", filename=""):
 
@@ -100,8 +100,48 @@ def plot_noise_matrix(h, M, channels,
             {"ch{:d}".format(ch): scipy.stats.scoreatpercentile(
                 MM["ch{:d}".format(ch)], [1, 99]) for ch in channels},
         title=title, filename=filename,
-        x_u="{:~}".format(x.u),
-        y_u="{:~}".format(x.u))
+        units={"ch{:d}".format(ch): x.u for ch in channels})
+
+def plot_noise_value_matrix(h, M, channels,
+        noise_typ="iwt",
+        title="", filename="",
+        npos=6,
+        calibpos=20):
+
+    views = M[h.scantype_fieldname] == getattr(h, "typ_{:s}".format(noise_typ))
+    ccnt = M["counts"][views, 8:, :]
+    mccnt = ccnt.mean(1, keepdims=True)
+    accnt = ccnt - mccnt
+
+    allpos = numpy.linspace(0, 47, npos, dtype="uint8")
+    
+    for ch in channels:
+        X = numpy.zeros(dtype=[("pos{:d}".format(d), "f4") for d in allpos],
+                        shape=accnt.shape[0])
+        for d in allpos:
+            X["pos{:d}".format(d)] = accnt[:, d, ch]
+        plot_field_matrix(
+            X,
+            ranges={"pos{:d}".format(d): scipy.stats.scoreatpercentile(
+                X["pos{:d}".format(d)], [1, 99]) for d in allpos},
+        title=title.format(ch=ch),
+        filename=filename.format(ch=ch),
+        units={"pos{:d}".format(d): "counts" for d in allpos})
+
+    X = numpy.zeros(dtype=[("ch{:d}".format(ch), "f4") for ch in channels],
+                    shape=accnt.shape[0])
+    for ch in channels:
+        X["ch{:d}".format(ch, "f4")] = accnt[:, calibpos, ch-1]
+    plot_field_matrix(
+        X,
+        ranges={"ch{:d}".format(ch): scipy.stats.scoreatpercentile(
+            X["ch{:d}".format(ch)], [1, 99]) for ch in channels},
+        title=title.format(ch=0) +
+            "\n{noise_typ:s} view no. {calibpos:d} - {noise_typ:s} mean, "
+            "scatter density between channels".format(
+            noise_typ=noise_typ, calibpos=calibpos),
+        filename=filename.format(ch=0),
+        units={"ch{:d}".format(ch): "counts" for ch in channels})
 
 def read_and_plot_field_matrices(sat, from_date, to_date, temp_fields, channels):
     h = fcdr.which_hirs_fcdr(sat)
@@ -117,10 +157,16 @@ def read_and_plot_field_matrices(sat, from_date, to_date, temp_fields, channels)
         filename=filename.format(what="tempmat") +
             "_T_{:s}.png".format(",".join(temp_fields)))
     for typ in ("iwt", "space"):
-        plot_noise_matrix(h, M, channels, noise_typ=typ,
-            title=title.format(what="{:s} noises".format(typ)),
-            filename=filename.format(what="{:s}noise".format(typ)) + 
+        plot_noise_level_matrix(h, M, channels, noise_typ=typ,
+            title=title.format(what="{:s} noise levels".format(typ)),
+            filename=filename.format(what="{:s}noiselevel".format(typ)) + 
                 "_ch_{:s}.png".format(','.join([str(x) for x in channels])))
+        plot_noise_value_matrix(h, M, channels, noise_typ=typ,
+            title=title.format(what="{:s} noise values".format(typ)) +
+                " ch. {ch:d}",
+            filename=filename.format(what="{:s}noisevalue".format(typ)) + 
+                "_ch_{ch:d}.png",
+            npos=6)
 
 
 def main():
