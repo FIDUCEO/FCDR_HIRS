@@ -68,11 +68,16 @@ def plot_rself_test(h, M, temperatures, channels,
             xloc[~xloc.mask], [1, 99]),
                scipy.stats.scoreatpercentile(
             yloc[~xloc.mask], [1, 99])]
-        a.hist2d(xloc, yloc,
-                cmap="viridis", cmin=1,
-                bins=20, range=rng)
+        unmasked = (~xloc.mask) & (~yloc.mask)
+        a.hexbin(xloc[unmasked], yloc[unmasked],
+            cmap="viridis", mincnt=1,
+            gridsize=20,
+            extent=[rng[0][0], rng[0][1], rng[1][0], rng[1][1]])
+#        a.hist2d(xloc, yloc,
+#                cmap="viridis", cmin=1,
+#                bins=20, range=rng)
         typhon.plots.plot_distribution_as_percentiles(a,
-            xloc, yloc,
+            xloc[unmasked], yloc[unmasked],
             nbins=20, color="tan",
             ptiles=[5, 25, 50, 75, 95],
             linestyles=[":", "--", "-", "--", ":"])
@@ -81,14 +86,16 @@ def plot_rself_test(h, M, temperatures, channels,
         #a.set_aspect("equal", "box", "C")
         a.plot(rng, [0, 0], 'k-', linewidth=0.5)
         if a in ax_all[:, 0]:
-            a.set_ylabel("Calib. offset (Estimate-Reference)\n[{:~}]".format(rad_u["ir"]))
+            a.set_ylabel("Calib. offset (Estimate-Reference)\n[{:~}]".format(rad_u["ir"].u))
         if a in ax_all[-1, :]:
-            a.set_xlabel("Calib. offset (Reference)\n[{:~}]".format(rad_u["ir"]))
+            a.set_xlabel("Calib. offset (Reference)\n[{:~}]".format(rad_u["ir"].u))
         for ax in (a.xaxis, a.yaxis):
             ax.set_major_locator(
                 matplotlib.ticker.MaxNLocator(nbins=4, prune=None))
-    for a in ax_all.ravel()[len(channels):]:
+    for a in ax_all.ravel()[:len(channels)]:
         a.set_visible(False)
+        a.set_xlim(rng[0])
+        a.set_ylim(rng[1])
 
     f.suptitle(tit)
     f.subplots_adjust(hspace=0.3)
@@ -108,8 +115,11 @@ def read_and_plot_rself_test(sat, from_date, to_date, temperatures,
             sat=sat, from_date=from_date, to_date=to_date,
             temperatures=', '.join(temperatures)),
         "rself_regr_test_{sat:s}_{from_date:%Y%m%d%H%M}-"
-        "{to_date:%Y%m%d%H%M}_from_{temperatures:s}.".format(
+        "{to_date:%Y%m%d%H%M}_"
+        "ch_{ch:s}_"
+        "from_{temperatures:s}.png".format(
             sat=sat, from_date=from_date, to_date=to_date,
+            ch=",".join([str(c) for c in channels]),
             temperatures=",".join(temperatures)))
 
 def main():

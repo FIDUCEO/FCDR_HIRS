@@ -78,7 +78,7 @@ class HIRSFCDR:
         # the value of the keyword "calibrate" (passed to
         # read/read_period/…) is equal to any of the values in the tuple
         cond = {"calibrate": (None, True)}
-        self.my_pseudo_fields["radiance_fid"] = ([],
+        self.my_pseudo_fields["radiance_fid"] = (["radiance", "hrs_scntyp"],
             lambda M, D:
             self.calculate_radiance_all(
                 M[1] if isinstance(M, tuple) else M, interp_kind="zero"),
