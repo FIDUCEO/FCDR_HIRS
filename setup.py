@@ -22,7 +22,7 @@ setup(
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
-    version='0.0.3',
+    version='0.0.4',
 
     description='Library and scripts for HIRS FCDR analysis and production',
     long_description=long_description,
@@ -113,7 +113,7 @@ setup(
             'plot_hirs_field_timeseries=FCDR_HIRS.analysis.timeseries:main',
             "inspect_hirs_matchups=FCDR_HIRS.analysis.inspect_hirs_matchups:main",
             "map_hirs_field=FCDR_HIRS.analysis.map:main",
-            "plot_hirs_field_matrix=FCDR_HIRS.analysis.fieldmat:main",
+            "plot_hirs_field_matrix=FCDR_HIRS.analysis.fieldmat:read_and_plot_field_matrices",
             "plot_hirs_calibcounts_per_scanpos=FCDR_HIRS.analysis.calibcounts_stats_per_scanpos:main",
             "plot_hirs_test_rself=FCDR_HIRS.analysis.test_rself:main",
         ],
