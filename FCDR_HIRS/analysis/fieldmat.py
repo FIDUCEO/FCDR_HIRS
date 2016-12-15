@@ -116,7 +116,7 @@ class MatrixPlotter:
 
         self.title_sat_date = "{sat:s} {from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}".format(
             **locals())
-        self.filename_sat_date = "{sat:s}_{from_date:%Y%m%d%H%M}--{to_date:%Y%m%d%H%M}".format(
+        self.filename_sat_date = "{sat:s}_{from_date:%Y}/{sat:s}_{from_date:%Y%m%d%H%M}--{to_date:%Y%m%d%H%M}".format(
             **locals())
 
     def plot_temperature_sdm(self, temp_fields):
@@ -226,7 +226,10 @@ class MatrixPlotter:
             calibpos=20):
         accnt = self._get_accnt(noise_typ)
         (f, a) = matplotlib.pyplot.subplots()
-        # corrcoef can't handle masked
+        # although there is a scipy.stats.mstats module,
+        # scipy.stats.mstats.spearman can only calculate individual
+        # covariances, not covariance matrices (it's not vectorised) and
+        # explicit looping is too slow
         unmasked = ~(accnt[:, calibpos, :].mask.any(1))
         S = numpy.corrcoef(accnt[:, calibpos,  channels].T[:, unmasked])
         im = a.imshow(S, cmap="viridis", interpolation="none")
