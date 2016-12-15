@@ -226,7 +226,9 @@ class MatrixPlotter:
             calibpos=20):
         accnt = self._get_accnt(noise_typ)
         (f, a) = matplotlib.pyplot.subplots()
-        S = numpy.corrcoef(accnt[:, calibpos,  channels].T)
+        # corrcoef can't handle masked
+        unmasked = ~(accnt[:, calibpos, :].mask.any(1))
+        S = numpy.corrcoef(accnt[:, calibpos,  channels].T[:, unmasked])
         im = a.imshow(S, cmap="viridis", interpolation="none")
         a.set_xticks(numpy.arange(len(channels)))
         a.set_yticks(numpy.arange(len(channels)))
