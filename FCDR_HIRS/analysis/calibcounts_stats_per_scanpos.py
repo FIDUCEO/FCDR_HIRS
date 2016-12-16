@@ -20,6 +20,19 @@ def parse_cmdline():
         include_sat=True,
         include_channels=True,
         include_temperatures=False)
+    
+    parser.add_argument("--plot_distributions",
+        action="store_true", 
+        default=False,
+        help="Plot median + quantiles over large number of calibration lines")
+
+    parser.add_argument("--plot_examples",
+        action="store",
+        type=int,
+        nargs=2,
+        metavar=("no", "seed"),
+        default=(0, 0),
+        help="Randomly select N examples with seed s")
 
     p = parser.parse_args()
     return p
@@ -41,6 +54,7 @@ pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 import datetime
 import itertools
 import scipy.stats
+import random
 
 import numpy
 import matplotlib.pyplot
@@ -111,21 +125,64 @@ def plot_calibcount_stats(h, Mall, channels,
         right=0.75 if nrow*ncol==len(channels) else 0.9)
     pyatmlab.graphics.print_or_show(f, False, filename)
 
-def read_and_plot_calibcount_stats(sat, from_date, to_date, channels):
+def plot_calibcount_anomaly_examples(h, M, channels, N):
+    Msp = M[M[h.scantype_fieldname] == h.typ_space]
+    ccnt = Msp["counts"][:, h.start_space_calib:, :]
+    mccnt = ccnt.mean(1, keepdims=True)
+    accnt = ccnt - mccnt
+    
+    idx = numpy.random.choice(numpy.arange(accnt.shape[0]),
+        size=N, replace=False)
+    idx.sort()
+
+    #show = accnt[idx, :, :][:, numpy.asarray(channels)-1]
+
+    (f, ax) = matplotlib.pyplot.subplots(N, 1, sharex=True,
+        figsize=(10, 4+2*N))
+    for (a, i) in zip(ax.ravel(), idx):
+        for ch in channels:
+            a.plot(numpy.arange(h.start_space_calib, h.n_perline),
+                    accnt[i, :,  ch-1],
+                    'o-', mfc="none",
+                    label="ch. {:d}".format(ch))
+        a.set_title(str(Msp["time"][i]))
+        a.set_ylabel("Anomaly to scanline mean\n[counts]")
+        a.grid()
+    ax.ravel()[-1].set_xlabel("Scanline position")
+    ax.ravel()[0].legend() # FIXME: position
+
+    f.suptitle("{:s} space view calibration anomalies".format(h.satname))
+
+    pyatmlab.graphics.print_or_show(f, False,
+        "space_calib_anomalies_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}.png".format(
+            h.satname,
+            M["time"][idx[0]].astype(datetime.datetime),
+            M["time"][idx[-1]].astype(datetime.datetime), N,
+            ",".join(str(ch) for ch in channels)))
+
+    
+
+def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
+        plot_stats=False,
+        plot_examples=(0, 0)):
     h = fcdr.which_hirs_fcdr(sat)
     M = h.read_period(from_date, to_date,
             fields=["time", "counts", h.scantype_fieldname])
-    plot_calibcount_stats(h, M, channels,
-        title="HIRS calibration consistency check per scanpos\n"
-              "{sat:s} {from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}".format(
-                **locals()),
-        filename="hirs_calib_per_scanpos_{sat:s}_{from_date:%Y%m%d%H%M}-"
-                 "{to_date:%Y%m%d%H%M}_{ch:s}.png".format(
-                    ch=",".join([str(x) for x in channels]), **locals()))
+    if plot_stats:
+        plot_calibcount_stats(h, M, channels,
+            title="HIRS calibration consistency check per scanpos\n"
+                  "{sat:s} {from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}".format(
+                    **locals()),
+            filename="hirs_calib_per_scanpos_{sat:s}_{from_date:%Y%m%d%H%M}-"
+                     "{to_date:%Y%m%d%H%M}_{ch:s}.png".format(
+                            ch=",".join([str(x) for x in channels]), **locals()))
+    if plot_examples[0] > 0:
+        numpy.random.seed(plot_examples[1])
+        plot_calibcount_anomaly_examples(h, M, channels, plot_examples[0])
 
 def main():
     p = parsed_cmdline
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)
     read_and_plot_calibcount_stats(p.satname, from_date, to_date,
-        p.channels)
+        p.channels, p.plot_distributions, p.plot_examples)
