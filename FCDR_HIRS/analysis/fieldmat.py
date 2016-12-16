@@ -75,6 +75,7 @@ import numpy
 
 import matplotlib.pyplot
 import matplotlib.ticker
+import matplotlib.gridspec
 import typhon.plots
 matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
 import typhon.plots.plots
@@ -225,23 +226,30 @@ class MatrixPlotter:
             noise_typ="iwt",
             calibpos=20):
         accnt = self._get_accnt(noise_typ)
-        (f, a) = matplotlib.pyplot.subplots()
+        (f, ax_all) = matplotlib.pyplot.subplots(1, 3, figsize=(16, 8),
+            gridspec_kw={"width_ratios": (14, 14, 1)})
         # although there is a scipy.stats.mstats module,
         # scipy.stats.mstats.spearman can only calculate individual
         # covariances, not covariance matrices (it's not vectorised) and
         # explicit looping is too slow
         unmasked = ~(accnt[:, calibpos, :].mask.any(1))
         S = numpy.corrcoef(accnt[:, calibpos,  channels].T[:, unmasked])
-        im = a.imshow(S, cmap="viridis", interpolation="none")
-        a.set_xticks(numpy.arange(len(channels)))
-        a.set_yticks(numpy.arange(len(channels)))
-        a.set_xticklabels([str(ch) for ch in channels])
-        a.set_yticklabels([str(ch) for ch in channels])
-        cb = f.colorbar(im)
-        a.set_xlabel("Channel no.")
-        a.set_ylabel("Channel no.")
+        im1 = ax_all[0].imshow(S, cmap="PuOr", interpolation="none")
+        ρ = scipy.stats.spearmanr(accnt[:, calibpos, channels][unmasked, :])[0]
+        im2 = ax_all[1].imshow(ρ, cmap="PuOr", interpolation="none")
+        for (a, im) in zip(ax_all[:2], (im1, im2)):
+            im.set_clim([-1, 1])
+            a.set_xticks(numpy.arange(len(channels)))
+            a.set_yticks(numpy.arange(len(channels)))
+            a.set_xticklabels([str(ch) for ch in channels])
+            a.set_yticklabels([str(ch) for ch in channels])
+            a.set_xlabel("Channel no.")
+            a.set_ylabel("Channel no.")
+        cb = f.colorbar(im2, cax=ax_all[2])
         cb.set_label("Correlation")
-        a.set_title("HIRS noise correlations, {:s}, {:s} pos {:d}".format(
+        ax_all[0].set_title("Pearson correlation")
+        ax_all[1].set_title("Spearman correlation")
+        f.suptitle("HIRS noise correlations, {:s}, {:s} pos {:d}".format(
             self.title_sat_date, noise_typ, calibpos))
         pyatmlab.graphics.print_or_show(f, False,
                 "hirs_noise_correlations_{:s}_ch_{:s}_{:s}{:d}.png".format(
