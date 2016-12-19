@@ -950,6 +950,24 @@ class NoiseAnalyser:
 
 #    def get_calibcount_range(self, satname="metopa", year=2015):
         
+    def plot_noise_correlation_timeseries(self,
+            timeres=numpy.timedelta64(3, 'h')):
+        """Plot space/iwt view anomaly correlation timeseries
+        """
+        raise NotImplementedError("Not implemented yet")
+        M = self.Mhrsall
+
+        try:
+            timeres = timeres.astype(datetime.timedelta)
+        except AttributeError: # hopefully pandas understands as-is
+            pass
+
+        times = pandas.date_range(
+            M["time"][0].astype("M8[D]"),
+            M["time"][-1], freq=timeres)
+
+        (f, ax_all) = matplotlib.pyplot.subplots(19, 3)
+
     
 
 # 1, 2, 8, 19
