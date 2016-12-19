@@ -188,7 +188,7 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
                 for i in range(accnt.shape[0])])
         N_channel_combi = channels.shape[0]*(channels.shape[0]-1)//2
         for (ia, ib) in ((ia, ib) for (ia, ib) in
-                itertools.product(range(channelns.shape[0]), repeat=2) if ia<ib):
+                itertools.product(range(channels.shape[0]), repeat=2) if ia<ib):
             thiscorr = all_corr[ia, ib, :].copy()
             idx_sorted = numpy.argsort(thiscorr)
             if mode == "highcorr": # sort descending
@@ -206,7 +206,7 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
         figsize=(10, 4+2*N))
     for (a, i) in zip(ax.ravel(), idx):
         for ch in channels:
-            a.plot(numpy.arange(h.start_space_calib, h.n_perline),
+            a.plot(numpy.arange(h.start_space_calib+1, h.n_perline+1),
                     accnt[i, :,  ch-1],
                     'o-', mfc="none",
                     label="ch. {:d}".format(ch))
