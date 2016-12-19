@@ -181,7 +181,7 @@ class MatrixPlotter:
             X = numpy.zeros(dtype=[("pos{:d}".format(d), "f4") for d in allpos],
                             shape=accnt.shape[0])
             for d in allpos:
-                X["pos{:d}".format(d)] = accnt[:, d, ch]
+                X["pos{:d}".format(d)] = accnt[:, d, ch-1]
             plot_field_matrix(
                 X,
                 ranges={"pos{:d}".format(d): scipy.stats.scoreatpercentile(
@@ -228,14 +228,15 @@ class MatrixPlotter:
         accnt = self._get_accnt(noise_typ)
         (f, ax_all) = matplotlib.pyplot.subplots(1, 3, figsize=(16, 8),
             gridspec_kw={"width_ratios": (14, 14, 1)})
+        channels = numpy.asarray(channels)
         # although there is a scipy.stats.mstats module,
         # scipy.stats.mstats.spearman can only calculate individual
         # covariances, not covariance matrices (it's not vectorised) and
         # explicit looping is too slow
         unmasked = ~(accnt[:, calibpos, :].mask.any(1))
-        S = numpy.corrcoef(accnt[:, calibpos,  channels].T[:, unmasked])
+        S = numpy.corrcoef(accnt[:, calibpos,  channels-1].T[:, unmasked])
         im1 = ax_all[0].imshow(S, cmap="PuOr", interpolation="none")
-        ρ = scipy.stats.spearmanr(accnt[:, calibpos, channels][unmasked, :])[0]
+        ρ = scipy.stats.spearmanr(accnt[:, calibpos, channels-1][unmasked, :])[0]
         im2 = ax_all[1].imshow(ρ, cmap="PuOr", interpolation="none")
         for (a, im) in zip(ax_all[:2], (im1, im2)):
             im.set_clim([-1, 1])

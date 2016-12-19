@@ -13,7 +13,7 @@ def add_to_argparse(parser,
         parser.add_argument("satname", action="store", type=str,
             help="Satellite name",
             choices=["tirosn"]
-                + ["noaa{:d}".format(n) for n in range(6, 20)]
+                + ["noaa{:02d}".format(n) for n in range(6, 20)]
                 + ["metop{:s}".format(s) for s in "ab"])
 
     if include_period:

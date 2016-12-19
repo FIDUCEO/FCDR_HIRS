@@ -29,10 +29,21 @@ def parse_cmdline():
     parser.add_argument("--plot_examples",
         action="store",
         type=int,
-        nargs=2,
-        metavar=("no", "seed"),
-        default=(0, 0),
-        help="Randomly select N examples with seed s")
+        default=0,
+        help="How many examples to plot")
+    
+    parser.add_argument("--random_seed",
+        action="store",
+        type=int,
+        default=0,
+        help="Randomly select with seed s")
+
+    parser.add_argument("--examples_mode",
+        action="store",
+        type=str,
+        choices=("random", "highcorr", "lowcorr"),
+        default="random",
+        help="How to select examples to show")
 
     p = parser.parse_args()
     return p
@@ -53,6 +64,7 @@ pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 
 import datetime
 import itertools
+import math
 import scipy.stats
 import random
 
@@ -125,15 +137,68 @@ def plot_calibcount_stats(h, Mall, channels,
         right=0.75 if nrow*ncol==len(channels) else 0.9)
     pyatmlab.graphics.print_or_show(f, False, filename)
 
-def plot_calibcount_anomaly_examples(h, M, channels, N):
+def plot_calibcount_anomaly_examples(h, M, channels, N,
+        mode="random"):
+    """Plot examples of calibcount anomalies
+
+    Currently chooses randomly but planned is to include:
+
+    - examples of extreme change within a scanline
+    - examples of extreme positive or negative correlation
+      between channels requested (calculate per scanpos)
+
+    Arguments:
+
+        h [HIRS]
+        
+            HIRS object
+
+        M [ndarray]
+
+            structured array such as returned by h.read, must contain at
+            least coints and info on scantypes
+
+        channels [Array[int]]
+
+            channels to plot
+
+        N [int]
+
+            How many examples to choose
+
+    """
     Msp = M[M[h.scantype_fieldname] == h.typ_space]
     ccnt = Msp["counts"][:, h.start_space_calib:, :]
     mccnt = ccnt.mean(1, keepdims=True)
     accnt = ccnt - mccnt
+    aok = ~(accnt[:, :, :].mask.any(2).any(1))
+    if not aok.any():
+        logging.error("Nothing to plot.  All flagged.")
+        return
+    accnt = accnt[aok, :, :]
     
-    idx = numpy.random.choice(numpy.arange(accnt.shape[0]),
-        size=N, replace=False)
-    idx.sort()
+    channels = numpy.asarray(channels)
+    if mode == "random":
+        idx = numpy.random.choice(numpy.arange(accnt.shape[0]),
+            size=N, replace=False)
+    elif mode in ("lowcorr", "highcorr"): # low/high correlations
+        idx = []
+        all_corr = numpy.dstack(
+            [numpy.corrcoef(accnt[i, :, :][:, channels-1].T)
+                for i in range(accnt.shape[0])])
+        N_channel_combi = channels.shape[0]*(channels.shape[0]-1)//2
+        for (ia, ib) in ((ia, ib) for (ia, ib) in
+                itertools.product(range(channelns.shape[0]), repeat=2) if ia<ib):
+            thiscorr = all_corr[ia, ib, :].copy()
+            idx_sorted = numpy.argsort(thiscorr)
+            if mode == "highcorr": # sort descending
+                idx_sorted = idx_sorted[::-1] 
+            idx.extend(idx_sorted[:math.ceil(N/N_channel_combi)])
+    else:
+        raise ValueError("Expected mode to be 'random', 'lowcorr', or 'highcorr', "
+            "got {!s}".format(mode))
+    idx.sort() # show examples chronologically
+    idx = idx[:N]
 
     #show = accnt[idx, :, :][:, numpy.asarray(channels)-1]
 
@@ -154,17 +219,18 @@ def plot_calibcount_anomaly_examples(h, M, channels, N):
     f.suptitle("{:s} space view calibration anomalies".format(h.satname))
 
     pyatmlab.graphics.print_or_show(f, False,
-        "space_calib_anomalies_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}.png".format(
+        "space_calib_anomalies_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}_{:s}.png".format(
             h.satname,
             M["time"][idx[0]].astype(datetime.datetime),
             M["time"][idx[-1]].astype(datetime.datetime), N,
-            ",".join(str(ch) for ch in channels)))
-
-    
+            ",".join(str(ch) for ch in channels),
+            mode))
 
 def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
         plot_stats=False,
-        plot_examples=(0, 0)):
+        plot_examples=0,
+        random_seed=0,
+        sample_mode="random"):
     h = fcdr.which_hirs_fcdr(sat)
     M = h.read_period(from_date, to_date,
             fields=["time", "counts", h.scantype_fieldname])
@@ -176,13 +242,17 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
             filename="hirs_calib_per_scanpos_{sat:s}_{from_date:%Y%m%d%H%M}-"
                      "{to_date:%Y%m%d%H%M}_{ch:s}.png".format(
                             ch=",".join([str(x) for x in channels]), **locals()))
-    if plot_examples[0] > 0:
-        numpy.random.seed(plot_examples[1])
-        plot_calibcount_anomaly_examples(h, M, channels, plot_examples[0])
+    if plot_examples > 0:
+        numpy.random.seed(random_seed)
+        plot_calibcount_anomaly_examples(
+            h, M, channels, plot_examples,
+            mode=sample_mode)
 
 def main():
     p = parsed_cmdline
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)
     read_and_plot_calibcount_stats(p.satname, from_date, to_date,
-        p.channels, p.plot_distributions, p.plot_examples)
+        p.channels, p.plot_distributions, p.plot_examples,
+        p.random_seed, 
+        p.examples_mode)
