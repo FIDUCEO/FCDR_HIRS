@@ -80,6 +80,9 @@ setup(
                       "pyatmlab>=0.1.1",
                       "progressbar2>=3.10",
                       "netCDF4>=1.2",
+                      "pandas>=0.19",
+                      "xarray>=0.8",
+                      "seaborn>=0.7",
                       "pint>=0.7"],
 
     # List additional groups of dependencies here (e.g. development

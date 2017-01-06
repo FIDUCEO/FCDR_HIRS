@@ -250,8 +250,9 @@ class MatrixPlotter:
         cb.set_label("Correlation")
         ax_all[0].set_title("Pearson correlation")
         ax_all[1].set_title("Spearman correlation")
-        f.suptitle("HIRS noise correlations, {:s}, {:s} pos {:d}".format(
-            self.title_sat_date, noise_typ, calibpos))
+        f.suptitle("HIRS noise correlations, {:s}, {:s} pos {:d}\n"
+            "({:d} cycles)".format(
+            self.title_sat_date, noise_typ, calibpos, unmasked.sum()))
         pyatmlab.graphics.print_or_show(f, False,
                 "hirs_noise_correlations_{:s}_ch_{:s}_{:s}{:d}.png".format(
             self.filename_sat_date,

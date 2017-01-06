@@ -27,6 +27,10 @@ def parse_cmdline():
     parser.add_argument("--plot_noise_map", action="store_true", #type=bool,
         default=False, help="Plot orbit with counts and noise.")
 
+    parser.add_argument("--plot_noise_correlation_timeseries",
+        action="store_true", default=False,
+        help="Plot noise correlation timeseries")
+
     parser.add_argument("--from_date", action="store", type=str,
         help="Starting date for plotting period. ")
 
@@ -66,6 +70,12 @@ def parse_cmdline():
     parser.add_argument("--without_rself", dest="include_rself",
         action="store_false")
 
+    parser.add_argument("--with_corrs", action="store",
+        type="str", choices=["low", "high", "both", "none"],
+        default="none",
+        help="Show time series of channel pairs with extremely "
+        "high/low correlations (not implemented yet)")
+
     parser.add_argument("--hiasi_mode", action="store", type=str,
         choices=["perc", "hist"], default="perc",
         help="For HIASI anomalies, show as PERCentiles or as HIST2d")
@@ -104,22 +114,25 @@ import numpy
 import matplotlib
 matplotlib.use("Agg")
 # Source: http://stackoverflow.com/a/20709149/974555
-# … but wait until I have LaTeX up and running
-matplotlib.rc('text', usetex=True)
-matplotlib.rcParams['text.latex.preamble'] = [
-       r'\usepackage{siunitx}',   # i need upright \micro symbols, but you need...
-       r'\sisetup{detect-all}',   # ...this to force siunitx to actually use your fonts
-       #r'\usepackage{helvet}',    # set the normal font here
-       #r'\usepackage{sansmath}',  # load up the sansmath so that math -> helvet
-       #r'\sansmath',              # <- tricky! -- gotta actually tell tex to use!
-       r'\DeclareSIUnit\count{count}'  # siunitx doesn't know this one
-]
+if parsed_cmdline.plot_noise_with_other:
+    matplotlib.rc('text', usetex=True)
+    matplotlib.rcParams['text.latex.preamble'] = [
+           r'\usepackage{siunitx}',   # i need upright \micro symbols, but you need...
+           r'\sisetup{detect-all}',   # ...this to force siunitx to actually use your fonts
+           #r'\usepackage{helvet}',    # set the normal font here
+           #r'\usepackage{sansmath}',  # load up the sansmath so that math -> helvet
+           #r'\sansmath',              # <- tricky! -- gotta actually tell tex to use!
+           r'\DeclareSIUnit\count{count}'  # siunitx doesn't know this one
+    ]
 # this too must be before importing matplotlib.pyplot
 pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 import matplotlib.pyplot
 import matplotlib.gridspec
 import matplotlib.dates
 import matplotlib.ticker
+
+import pandas
+import xarray
 
 #from memory_profiler import profile
 
@@ -951,24 +964,76 @@ class NoiseAnalyser:
 #    def get_calibcount_range(self, satname="metopa", year=2015):
         
     def plot_noise_correlation_timeseries(self,
-            timeres=numpy.timedelta64(3, 'h')):
+            timeres='3H',
+            scanpos=20):
         """Plot space/iwt view anomaly correlation timeseries
+
+        Valid time resolution strings are from
+        http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
         """
-        raise NotImplementedError("Not implemented yet")
         M = self.Mhrsall
 
-        try:
-            timeres = timeres.astype(datetime.timedelta)
-        except AttributeError: # hopefully pandas understands as-is
-            pass
+#        try:
+#            timeres = timeres.astype(datetime.timedelta)
+#        except AttributeError: # hopefully pandas understands as-is
+#            pass
 
-        times = pandas.date_range(
-            M["time"][0].astype("M8[D]"),
-            M["time"][-1], freq=timeres)
+        # Create an xarray Dataset object for easier time series
+        # processing
+        # need to get rid of masked values first, otherwise xarray changes
+        # everything to float
+        # (https://github.com/pydata/xarray/issues/1194)
+        OK =  ~M["counts"].mask[:, 8:, :19].any(1).any(1)
+        D = xarray.Dataset(
+            {"counts": (["time", "scanpos", "channel"],
+                        M["counts"][OK, 8:, :19]),
+             "hrs_scntyp": (["time"],
+                            M["hrs_scntyp"][OK])},
+            coords={"time": M["time"][OK], "scanpos": range(9, 57),
+                    "channel": range(1, 20)})
+        ccnt = D.isel(time=D["hrs_scntyp"]==self.hirs.typ_space)["counts"]
+        mccnt = ccnt.mean(dim="scanpos")
+        accnt = mccnt - ccnt
 
-        (f, ax_all) = matplotlib.pyplot.subplots(19, 3)
+        times = pandas.date_range(*M["time"][[0, -1]], freq=timeres)
 
-    
+        correlations = xarray.DataArray(
+            numpy.zeros(shape=(19, 19, times.shape[0]-1), dtype="f4"),
+            [("cha", D.channel), ("chb", D.channel),
+             ("time", times[:-1])])
+        for i in range(times.shape[0]-1):
+            correlations[:, :, i] = numpy.corrcoef(
+                accnt.sel(time=slice(times[i], times[i+1]),
+                scanpos=scanpos).T)
+
+        (f, ax_all) = matplotlib.pyplot.subplots(19, 3,
+            sharex=True, sharey=True, figsize=(12, 30))
+
+        for ((i, ch_a), (j, ch_b)) in itertools.product(
+                enumerate(range(1, 20)), repeat=2):
+            if ch_a == ch_b: continue
+            correlations.sel(cha=ch_a, chb=ch_b).plot(
+                ax=ax_all[i, min(j//6, 2)],
+                label="vs. ch. {:d}".format(ch_b))
+#            ax_all[i, min(j//3, 2)].plot_date(
+#                correlations["time"].astype("M8[s]").astype(datetime.datetime),
+#                correlations.sel(cha=ch_a, chb=ch_b).data,
+#                label="ch. {:d}+{:d}".format(ch_a, ch_b))
+            ax_all[i, min(j//6, 2)].set_title("ch. {:d}".format(ch_a))
+        for a in ax_all.ravel():
+            if a in ax_all[0, :]:
+                a.legend()
+            a.set_ylim(-1, 1)
+        
+        f.suptitle("Inter-channel correlation timeseries, "
+                   "{:s} HIRS "
+                   "{:%Y-%m-%d}--{:%Y-%m-%d} pos {:d}".format(
+                        self.satname, self.start_date, self.end_date,
+                        scanpos))
+        pyatmlab.graphics.print_or_show(f, False,
+            "timeseries_channel_noise_correlation_"
+            "HIRS_{:s}{:%Y%m%d%H%M}-{:%Y%m%d%H%M}_p{:d}.png".format(
+                self.satname, self.start_date, self.end_date, scanpos))
 
 # 1, 2, 8, 19
 
@@ -980,7 +1045,7 @@ def main():
             datetime.date(2014, 3, 1))
         plot_timeseries_temp_iwt_anomaly_all_sats()
     
-    if p.plot_noise or p.plot_noise_with_other:
+    if p.plot_noise or p.plot_noise_with_other or p.plot_noise_correlation_timeseries:
         na = NoiseAnalyser(
             datetime.datetime.strptime(p.from_date, p.datefmt),
             datetime.datetime.strptime(p.to_date, p.datefmt),
@@ -999,6 +1064,10 @@ def main():
                 all_tp=p.count_fields, include_gain=p.include_gain,
                 include_rself=p.include_rself,
                 hiasi_mode=p.hiasi_mode)
+
+    if p.plot_noise_correlation_timeseries:
+        logging.info("Plotting noise correlation timeseries")
+        na.plot_noise_correlation_timeseries()
 
     if p.plot_noise_map:
         #make_hirs_orbit_maps(sat, dt, ch, cmap="viridis"):

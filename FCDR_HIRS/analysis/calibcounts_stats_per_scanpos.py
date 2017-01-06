@@ -45,6 +45,13 @@ def parse_cmdline():
         default="random",
         help="How to select examples to show")
 
+    parser.add_argument("--calibtype",
+        action="store",
+        type=str,
+        choices=("iwt", "ict", "space"),
+        default="iwt",
+        help="What kind of calibration to show")
+
     p = parser.parse_args()
     return p
 
@@ -138,14 +145,8 @@ def plot_calibcount_stats(h, Mall, channels,
     pyatmlab.graphics.print_or_show(f, False, filename)
 
 def plot_calibcount_anomaly_examples(h, M, channels, N,
-        mode="random"):
+        mode="random", typ="space"):
     """Plot examples of calibcount anomalies
-
-    Currently chooses randomly but planned is to include:
-
-    - examples of extreme change within a scanline
-    - examples of extreme positive or negative correlation
-      between channels requested (calculate per scanpos)
 
     Arguments:
 
@@ -166,9 +167,17 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
 
             How many examples to choose
 
+        mode [str]
+
+            Can be "random", "lowcorr", or "highcorr"
+
+        typ [str]
+
+            Can be "space", "iwt", or (HIRS/2 only) "ict".
+
     """
-    Msp = M[M[h.scantype_fieldname] == h.typ_space]
-    ccnt = Msp["counts"][:, h.start_space_calib:, :]
+    Mv = M[M[h.scantype_fieldname] == getattr(h, "typ_{:s}".format(typ))]
+    ccnt = Mv["counts"][:, h.start_space_calib:, :]
     mccnt = ccnt.mean(1, keepdims=True)
     accnt = ccnt - mccnt
     aok = ~(accnt[:, :, :].mask.any(2).any(1))
@@ -176,6 +185,7 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
         logging.error("Nothing to plot.  All flagged.")
         return
     accnt = accnt[aok, :, :]
+    logging.info("Found {:d} unflagged calibration cycles".format(accnt.shape[0]))
     
     channels = numpy.asarray(channels)
     if mode == "random":
@@ -210,17 +220,18 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
                     accnt[i, :,  ch-1],
                     'o-', mfc="none",
                     label="ch. {:d}".format(ch))
-        a.set_title(str(Msp["time"][i]))
+        a.set_title(str(Mv["time"][i]))
         a.set_ylabel("Anomaly to scanline mean\n[counts]")
         a.grid()
     ax.ravel()[-1].set_xlabel("Scanline position")
     ax.ravel()[0].legend() # FIXME: position
 
-    f.suptitle("{:s} space view calibration anomalies".format(h.satname))
+    f.suptitle("{:s} {:s} view calibration anomalies".format(
+        h.satname, typ))
 
     pyatmlab.graphics.print_or_show(f, False,
-        "space_calib_anomalies_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}_{:s}.png".format(
-            h.satname,
+        "{:s}_{:s}_calib_anomalies_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}_{:s}.png".format(
+            typ, mode, h.satname,
             M["time"][idx[0]].astype(datetime.datetime),
             M["time"][idx[-1]].astype(datetime.datetime), N,
             ",".join(str(ch) for ch in channels),
@@ -230,7 +241,8 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
         plot_stats=False,
         plot_examples=0,
         random_seed=0,
-        sample_mode="random"):
+        sample_mode="random",
+        typ="iwt"):
     h = fcdr.which_hirs_fcdr(sat)
     M = h.read_period(from_date, to_date,
             fields=["time", "counts", h.scantype_fieldname])
@@ -246,7 +258,8 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
         numpy.random.seed(random_seed)
         plot_calibcount_anomaly_examples(
             h, M, channels, plot_examples,
-            mode=sample_mode)
+            mode=sample_mode,
+            typ=typ)
 
 def main():
     p = parsed_cmdline
@@ -255,4 +268,5 @@ def main():
     read_and_plot_calibcount_stats(p.satname, from_date, to_date,
         p.channels, p.plot_distributions, p.plot_examples,
         p.random_seed, 
-        p.examples_mode)
+        p.examples_mode,
+        p.calibtype)
