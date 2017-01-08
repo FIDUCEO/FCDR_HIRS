@@ -70,11 +70,47 @@ def parse_cmdline():
     parser.add_argument("--without_rself", dest="include_rself",
         action="store_false")
 
-    parser.add_argument("--with_corrs", action="store",
-        type="str", choices=["low", "high", "both", "none"],
-        default="none",
-        help="Show time series of channel pairs with extremely "
-        "high/low correlations (not implemented yet)")
+    parser.add_argument("--with_corr", dest="include_corr",
+        action="store", type=str,
+        choices=["min_mean", "max_mean", "min_std", "max_std", "choose"],
+        nargs="*",
+        help="Include time series of channel pairs with extremely "
+        "high/low correlations.  Only with --plot_noise_with_other. "
+        "'min_mean' means pairs with lowest (negative) correlations; "
+        "'max_mean' means pairs with highest correlations; "
+        "'min_std' means rather constant pairs; "
+        "'max_std' means rather varying pairs; "
+        "'choose' means user chooses pairs; need to provide -corr_pairs. "
+        "Multiple alternatives possible. "
+        "--corr_perc controls the rank to select. "
+        "To be implemented")
+
+    parser.add_argument("--corr_pairs", action="store",
+        type=int, choices=range(1, 20),
+        nargs="*", 
+        help="For sure with --with_corr only, specify exactly "
+             "which channel pairs to plot.  Even numbers.")
+
+    parser.add_argument("--corr_perc", action="store",
+        type=float, default=100.0,
+        choices=range(0, 101),
+        help="Rank (percentile) to select for extreme cases for use "
+             "with --with_corr.  To be implemented, now always 100.")
+
+    parser.add_argument("--corr_count", action="store",
+        type=int, default=2,
+        help="How many correlation cases to plot per selected choice. "
+             "Use with --with_corrs.")
+    
+    parser.add_argument("--corr_calibpos", action="store",
+        type=int, default=20,
+        help="What calibration position to use for correlation calculations")
+
+    parser.add_argument("--corr_timeres", action="store",
+        type=str, default="12H",
+        help="What time resolution to use for correlation timeseries. "
+             "Valid values at "
+             "http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases")
 
     parser.add_argument("--hiasi_mode", action="store", type=str,
         choices=["perc", "hist"], default="perc",
@@ -436,6 +472,8 @@ class NoiseAnalyser:
             all_tp=["space", "iwt"], temperatures=["iwt"],
             include_gain=True,
             include_rself=True,
+            include_corr=(),
+            corr_info={},
             hiasi_mode="perc"):
         logging.info("Channel {:d}".format(ch))
         M = self.Mhrsall
@@ -451,7 +489,8 @@ class NoiseAnalyser:
 
         # cycle manually as I plot many at once
         styles = list(matplotlib.pyplot.style.library["typhon"]["axes.prop_cycle"])
-        N = 2*(len(all_tp)>0) + (len(temperatures)>0) + 2*include_gain + 3*include_rself
+        N = (2*(len(all_tp)>0) + (len(temperatures)>0) + 2*include_gain +
+             3*include_rself + (len(include_corr)>0)*len(all_tp))
         #k = int(numpy.ceil(len(temperatures)/2)*2)
         Ntemps = len(temperatures)
         fact = 16
@@ -464,8 +503,9 @@ class NoiseAnalyser:
         #itax = iter(ax)
         logging.info("Plotting calibration counts + noise")
         self.counter = itertools.count()
+        a_cc = ah_cc = a_ccn = ah_ccn = None
         if len(all_tp) > 0:
-            self._plot_calib_counts_noise(M=M, ch=ch, all_tp=all_tp, styles=styles)
+            (a_cc, ah_cc, a_ccn, ah_ccn) = self._plot_calib_counts_noise(M=M, ch=ch, all_tp=all_tp, styles=styles)
 
         if include_gain or include_rself:
             #ax[3].plot_date(t, M[views]["calcof_sorted"][:, ch-1, 1], '.')
@@ -483,12 +523,29 @@ class NoiseAnalyser:
             # http://physics.stackexchange.com/a/292884/6319
             u_med_gain = u_gain.mean(1) * numpy.sqrt(numpy.pi*(2*48+1)/(4*48))
 
+        a_gain = ah_gain = None
         if include_gain:
-            self._plot_gain(t_slope=t_slope, med_gain=med_gain,
+            (a_gain, ah_gain) = self._plot_gain(t_slope=t_slope, med_gain=med_gain,
                 u_med_gain=u_med_gain)
+
+        a_corr = []
+        if len(include_corr)>0:
+            for typ in all_tp:
+                a_corr.append(self._plot_corr(ch, typ,
+                    calibpos=corr_info.get("calibpos", 20),
+                    timeres=corr_info.get("timeres", "3H"),
+                    N=corr_info.get("count", 2)))
                 
+        a_temp = ah_temp = None
         if len(temperatures) > 0:
-            ax2lims = self._plot_temperatures(M=M, temperatures=temperatures)
+            (ax2lims, at, ath) = self._plot_temperatures(M=M, temperatures=temperatures)
+
+        # make correlation axlimits consistent with others
+        for ac in a_corr:
+            for aref in (a_cc, a_ccn, a_gain, a_temp):
+                if aref:
+                    ac.set_xlim(aref.get_xlim())
+                    break
 
         if include_rself:
             allcb = self._plot_rself(
@@ -579,6 +636,8 @@ class NoiseAnalyser:
         a1h.legend([x[0] for x in L1], all_tp, loc="upper left",
             bbox_to_anchor=(1.0, 1.0))
 
+        return (a0, a0h, a1, a1h)
+
     def _plot_gain(self, t_slope, med_gain, u_med_gain):
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
@@ -615,7 +674,49 @@ class NoiseAnalyser:
         ah.set_title("Gain hist.")
         ah.xaxis.set_major_locator(
             matplotlib.ticker.MaxNLocator(nbins=6))
+        return (a, ah)
     
+    def _plot_corr(self, ch, typ, calibpos, timeres, N):
+        C = next(self.counter)
+        a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
+        #timeres = "3H" # FIXME: choose smarter
+        correlations = self._get_correlations(timeres, typ, calibpos).sel(cha=ch)
+        # in case I need to select based on max_std or min_std I need to
+        # calculate all correlations anyway
+        mcorr = correlations.mean(dim="time")
+        stdcorr = correlations.std(dim="time")
+        chpairs = set()
+        # gather min_mean, max_mean, min_std, max_std
+        for extr_name in ("min", "max"):
+            for reduc_name in ("mean", "std"):
+                rcorr = getattr(correlations, reduc_name)(dim="time")
+                rcorr = rcorr.sel(chb=numpy.setdiff1d(rcorr.chb, rcorr.cha))
+                extremum = getattr(rcorr, extr_name)()
+                ch_sec = rcorr.chb[rcorr.argmax()]
+                asrt = rcorr.argsort()
+                if extr_name == "max":
+                    asrt = asrt[::-1]
+                # FIXME, should use argsort instead?
+                for ch_sec in rcorr.chb[asrt[:N]]:
+                    t = (ch, int(ch_sec))
+                    if not t in chpairs:
+                        chpairs.add(t)
+        # plot all those pairs
+        for (cha, chb) in sorted(chpairs):
+            a.plot_date(correlations["time"].astype(datetime.datetime),
+                correlations.sel(chb=chb),
+                markersize=5,
+                linestyle="-",
+                linewidth=1,
+                label="ch. {:d}".format(chb))
+        a.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
+        a.set_title("{:s} noise correlations".format(typ))
+        a.set_ylabel("noise correlation")
+        return a
+        #correlations.sel(cha=ch_a, chb=ch_b)
+        # FIXME: histogram
+        #ah = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
+
     def _plot_temperatures(self, M, temperatures):
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
@@ -647,7 +748,7 @@ class NoiseAnalyser:
             matplotlib.ticker.MaxNLocator(nbins=6))
         ah.set_xlabel(a.get_ylabel().replace("\n", " "))
         ah.set_ylabel("Number")
-        return ax2lims
+        return ax2lims, a, ah
 
     def _plot_rself(self, M, t_slope, med_gain, ch, temperatures, k,
                     ax2lims, styles, hiasi_mode, include_gain):
@@ -962,21 +1063,9 @@ class NoiseAnalyser:
                 raise RuntimeError("Impossible!")
 
 #    def get_calibcount_range(self, satname="metopa", year=2015):
-        
-    def plot_noise_correlation_timeseries(self,
-            timeres='3H',
-            scanpos=20):
-        """Plot space/iwt view anomaly correlation timeseries
 
-        Valid time resolution strings are from
-        http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
-        """
+    def _get_accnt(self, typ):
         M = self.Mhrsall
-
-#        try:
-#            timeres = timeres.astype(datetime.timedelta)
-#        except AttributeError: # hopefully pandas understands as-is
-#            pass
 
         # Create an xarray Dataset object for easier time series
         # processing
@@ -985,27 +1074,84 @@ class NoiseAnalyser:
         # (https://github.com/pydata/xarray/issues/1194)
         OK =  ~M["counts"].mask[:, 8:, :19].any(1).any(1)
         D = xarray.Dataset(
-            {"counts": (["time", "scanpos", "channel"],
+            {"counts": (["time", "calibpos", "channel"],
                         M["counts"][OK, 8:, :19]),
              "hrs_scntyp": (["time"],
                             M["hrs_scntyp"][OK])},
-            coords={"time": M["time"][OK], "scanpos": range(9, 57),
+            coords={"time": M["time"][OK], "calibpos": range(9, 57),
                     "channel": range(1, 20)})
-        ccnt = D.isel(time=D["hrs_scntyp"]==self.hirs.typ_space)["counts"]
-        mccnt = ccnt.mean(dim="scanpos")
+        # select either space or iwt counts
+        ccnt = D.isel(time=D["hrs_scntyp"]==getattr(self.hirs,
+            "typ_{:s}".format(typ)))["counts"]
+        mccnt = ccnt.mean(dim="calibpos")
         accnt = mccnt - ccnt
 
-        times = pandas.date_range(*M["time"][[0, -1]], freq=timeres)
+        return accnt
+
+    def _get_correlations(self, timeres, typ, calibpos):
+        accnt = self._get_accnt(typ)
+
+        times = pandas.date_range(*accnt["time"][[0, -1]].data, freq=timeres)
 
         correlations = xarray.DataArray(
             numpy.zeros(shape=(19, 19, times.shape[0]-1), dtype="f4"),
-            [("cha", D.channel), ("chb", D.channel),
+            [("cha", accnt.channel), ("chb", accnt.channel),
              ("time", times[:-1])])
         for i in range(times.shape[0]-1):
             correlations[:, :, i] = numpy.corrcoef(
                 accnt.sel(time=slice(times[i], times[i+1]),
-                scanpos=scanpos).T)
+                calibpos=calibpos).T)
+        return correlations
 
+    
+    def plot_noise_correlation_timeseries(self,
+            timeres='3H',
+            calibpos=20):
+        """Plot space/iwt view anomaly correlation timeseries
+
+        Valid time resolution strings are from
+        http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
+        """
+        raise NotImplementedError("Needs updating")
+        M = self.Mhrsall
+
+#        try:
+#            timeres = timeres.astype(datetime.timedelta)
+#        except AttributeError: # hopefully pandas understands as-is
+#            pass
+# 
+#         # Create an xarray Dataset object for easier time series
+#         # processing
+#         # need to get rid of masked values first, otherwise xarray changes
+#         # everything to float
+#         # (https://github.com/pydata/xarray/issues/1194)
+#         OK =  ~M["counts"].mask[:, 8:, :19].any(1).any(1)
+#         D = xarray.Dataset(
+#             {"counts": (["time", "scanpos", "channel"],
+#                         M["counts"][OK, 8:, :19]),
+#              "hrs_scntyp": (["time"],
+#                             M["hrs_scntyp"][OK])},
+#             coords={"time": M["time"][OK], "scanpos": range(9, 57),
+#                     "channel": range(1, 20)})
+#         ccnt = D.isel(time=D["hrs_scntyp"]==self.hirs.typ_space)["counts"]
+#         mccnt = ccnt.mean(dim="scanpos")
+#         accnt = mccnt - ccnt
+# 
+#         accnt = self._get_accnt()
+
+        correlations = self._get_correlations()
+
+#         times = pandas.date_range(*M["time"][[0, -1]], freq=timeres)
+# 
+#         correlations = xarray.DataArray(
+#             numpy.zeros(shape=(19, 19, times.shape[0]-1), dtype="f4"),
+#             [("cha", D.channel), ("chb", D.channel),
+#              ("time", times[:-1])])
+#         for i in range(times.shape[0]-1):
+#             correlations[:, :, i] = numpy.corrcoef(
+#                 accnt.sel(time=slice(times[i], times[i+1]),
+#                 scanpos=scanpos).T)
+# 
         (f, ax_all) = matplotlib.pyplot.subplots(19, 3,
             sharex=True, sharey=True, figsize=(12, 30))
 
@@ -1029,7 +1175,7 @@ class NoiseAnalyser:
                    "{:s} HIRS "
                    "{:%Y-%m-%d}--{:%Y-%m-%d} pos {:d}".format(
                         self.satname, self.start_date, self.end_date,
-                        scanpos))
+                        calibpos))
         pyatmlab.graphics.print_or_show(f, False,
             "timeseries_channel_noise_correlation_"
             "HIRS_{:s}{:%Y%m%d%H%M}-{:%Y%m%d%H%M}_p{:d}.png".format(
@@ -1063,7 +1209,13 @@ def main():
             na.plot_noise_with_other(ch, temperatures=p.temp_fields,
                 all_tp=p.count_fields, include_gain=p.include_gain,
                 include_rself=p.include_rself,
-                hiasi_mode=p.hiasi_mode)
+                hiasi_mode=p.hiasi_mode,
+                include_corr=p.include_corr,
+                corr_info={"pairs": p.corr_pairs,
+                           "perc": p.corr_perc,
+                           "count": p.corr_count,
+                           "timeres": p.corr_timeres,
+                           "calibpos": p.corr_calibpos})
 
     if p.plot_noise_correlation_timeseries:
         logging.info("Plotting noise correlation timeseries")
