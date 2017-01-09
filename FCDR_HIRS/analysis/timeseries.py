@@ -1076,12 +1076,12 @@ class NoiseAnalyser:
         D = xarray.Dataset(
             {"counts": (["time", "calibpos", "channel"],
                         M["counts"][OK, 8:, :19]),
-             "hrs_scntyp": (["time"],
-                            M["hrs_scntyp"][OK])},
+             "scantype": (["time"],
+                            M[self.hirs.scantype_fieldname][OK])},
             coords={"time": M["time"][OK], "calibpos": range(9, 57),
                     "channel": range(1, 20)})
         # select either space or iwt counts
-        ccnt = D.isel(time=D["hrs_scntyp"]==getattr(self.hirs,
+        ccnt = D.isel(time=D["scantype"]==getattr(self.hirs,
             "typ_{:s}".format(typ)))["counts"]
         mccnt = ccnt.mean(dim="calibpos")
         accnt = mccnt - ccnt
