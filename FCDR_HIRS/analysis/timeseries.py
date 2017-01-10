@@ -72,7 +72,8 @@ def parse_cmdline():
 
     parser.add_argument("--with_corr", dest="include_corr",
         action="store", type=str,
-        choices=["min_mean", "max_mean", "min_std", "max_std", "choose"],
+        choices=["min_mean", "max_mean", "min_std", "max_std", "above",
+                 "choose"],
         nargs="*",
         help="Include time series of channel pairs with extremely "
         "high/low correlations.  Only with --plot_noise_with_other. "
@@ -80,6 +81,7 @@ def parse_cmdline():
         "'max_mean' means pairs with highest correlations; "
         "'min_std' means rather constant pairs; "
         "'max_std' means rather varying pairs; "
+        "'above' means N channels 'above' the present one are chosen; "
         "'choose' means user chooses pairs; need to provide -corr_pairs. "
         "Multiple alternatives possible. "
         "--corr_perc controls the rank to select. "
@@ -520,6 +522,10 @@ class NoiseAnalyser:
             med_gain = ureg.Quantity(
                 numpy.ma.median(gain.m[:, :], 1),
                 gain.u)
+            if numpy.isscalar(med_gain.mask):
+                med_gain.mask = (numpy.ones if med_gain.mask
+                                          else numpy.zeros)(
+                    shape=med_gain.shape, dtype="?")
             # http://physics.stackexchange.com/a/292884/6319
             u_med_gain = u_gain.mean(1) * numpy.sqrt(numpy.pi*(2*48+1)/(4*48))
 
@@ -534,7 +540,8 @@ class NoiseAnalyser:
                 a_corr.append(self._plot_corr(ch, typ,
                     calibpos=corr_info.get("calibpos", 20),
                     timeres=corr_info.get("timeres", "3H"),
-                    N=corr_info.get("count", 2)))
+                    N=corr_info.get("count", 2),
+                    corr_types=include_corr))
                 
         a_temp = ah_temp = None
         if len(temperatures) > 0:
@@ -597,12 +604,19 @@ class NoiseAnalyser:
         a1h = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
         L0 = []
         L1 = []
+        success = False
         for (i, tp) in enumerate(all_tp):
             views = M[self.hirs.scantype_fieldname
                         ] == getattr(self.hirs, "typ_"+tp)
 
             t = M[views]["time"].astype(datetime.datetime)
             x = M[views]["counts"][:, 8:, ch-1]
+            nok = (~x.mask).any(1).sum()
+            if nok < 3:
+                logging.warning("Found only {:d} valid timestamps with "
+                    "{:s} counts, not plotting".format(nok, tp))
+                continue
+            success = True
             L0.append(a0.plot_date(t, x, marker='.', markersize=5,
                     color=colours[i]))
             a0h.hist(x.ravel()[~x.ravel().mask], bins=40, normed=False, histtype="step",
@@ -624,8 +638,6 @@ class NoiseAnalyser:
         a0h.set_title("Calib. counts hist.")
         a0h.xaxis.set_major_locator(
             matplotlib.ticker.MaxNLocator(nbins=6))
-        a0h.legend([x[0] for x in L0], all_tp, loc="upper left",
-            bbox_to_anchor=(1.0, 1.0))
         a1.set_title("Calibration noise (Allan deviation) for space "
                         "and IWCT views")
         a1h.set_title("Calib. noise hist.")
@@ -633,24 +645,33 @@ class NoiseAnalyser:
         a1.set_ylabel("Allan deviation\n[counts]")
         a1h.set_xlabel(a1.get_ylabel().replace("\n", " "))
         a1h.set_ylabel("Number")
-        a1h.legend([x[0] for x in L1], all_tp, loc="upper left",
-            bbox_to_anchor=(1.0, 1.0))
+        if success:
+            a0h.legend([x[0] for x in L0], all_tp, loc="upper left",
+                bbox_to_anchor=(1.0, 1.0))
+            a1h.legend([x[0] for x in L1], all_tp, loc="upper left",
+                bbox_to_anchor=(1.0, 1.0))
 
         return (a0, a0h, a1, a1h)
 
     def _plot_gain(self, t_slope, med_gain, u_med_gain):
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
-        if med_gain.mask.all():
-            logging.warning("No valid gain values found, skipping")
-            return
+        ah = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
         logging.info("Plotting gain")
+        if (~med_gain.mask.sum()) < 3:
+            logging.warning("Not enough valid gain values found, skipping")
+            return (None, None)
 #        a.plot_date(t_slope.astype(datetime.datetime),
         a.xaxis_date()
-        a.errorbar(t_slope.astype(datetime.datetime),
-                    med_gain.m, 
+        # keeping masked-array as-is leads to either 'UserWarning:
+        # Warning: converting a masked element to nan' or to
+        # 'ValueError: setting an array element with a sequence', see also
+        # https://github.com/numpy/numpy/issues/8461
+        OK = (~t_slope.mask)&(~med_gain.mask)
+        a.errorbar(t_slope.astype(datetime.datetime).data[OK],
+                    med_gain.m.data[OK], 
                     xerr=None,
-                    yerr=u_med_gain.m,
+                    yerr=u_med_gain.m.data[OK],
                     fmt='.',
                         color="black",
                         markersize=5)
@@ -663,7 +684,6 @@ class NoiseAnalyser:
             )
         a.set_title("Gain development over time")
 
-        ah = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
         # Due to https://github.com/numpy/numpy/issues/8123 must
         # convert range to same type as med_gain
         ah.hist(med_gain, bins=40, normed=False, histtype="bar",
@@ -676,36 +696,45 @@ class NoiseAnalyser:
             matplotlib.ticker.MaxNLocator(nbins=6))
         return (a, ah)
     
-    def _plot_corr(self, ch, typ, calibpos, timeres, N):
+    def _plot_corr(self, ch, typ, calibpos, timeres, N, corr_types):
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
-        #timeres = "3H" # FIXME: choose smarter
+        logging.info("Plotting correlation timeseries ({:s})".format(typ))
         correlations = self._get_correlations(timeres, typ, calibpos).sel(cha=ch)
         # in case I need to select based on max_std or min_std I need to
         # calculate all correlations anyway
         mcorr = correlations.mean(dim="time")
         stdcorr = correlations.std(dim="time")
         chpairs = set()
+        if any(x in corr_types for x in {"min_std", "max_std", "min_mean",
+                "max_mean"}):
         # gather min_mean, max_mean, min_std, max_std
-        for extr_name in ("min", "max"):
-            for reduc_name in ("mean", "std"):
-                rcorr = getattr(correlations, reduc_name)(dim="time")
-                rcorr = rcorr.sel(chb=numpy.setdiff1d(rcorr.chb, rcorr.cha))
-                extremum = getattr(rcorr, extr_name)()
-                ch_sec = rcorr.chb[rcorr.argmax()]
-                asrt = rcorr.argsort()
-                if extr_name == "max":
-                    asrt = asrt[::-1]
-                # FIXME, should use argsort instead?
-                for ch_sec in rcorr.chb[asrt[:N]]:
-                    t = (ch, int(ch_sec))
-                    if not t in chpairs:
-                        chpairs.add(t)
+            for extr_name in ("min", "max"):
+                for reduc_name in ("mean", "std"):
+                    rcorr = getattr(correlations, reduc_name)(dim="time")
+                    rcorr = rcorr.sel(chb=numpy.setdiff1d(rcorr.chb, rcorr.cha))
+                    extremum = getattr(rcorr, extr_name)()
+                    ch_sec = rcorr.chb[rcorr.argmax()]
+                    asrt = rcorr.argsort()
+                    if extr_name == "max":
+                        asrt = asrt[::-1]
+                    for ch_sec in rcorr.chb[asrt[:N]]:
+                        t = (ch, int(ch_sec))
+                        if not t in chpairs:
+                            chpairs.add(t)
+        if "above" in corr_types:
+            chpairs |= {(ch, chb+1) for chb in
+                            numpy.arange(ch, ch+N) % 19}
         # plot all those pairs
         for (cha, chb) in sorted(chpairs):
+            if correlations.sel(chb=chb).shape[0] < 3:
+                logging.warning("Found only {:d} valid values for "
+                    "({:d}, {:d}), skipping".format(
+                        correlations.sel(chb=chb).shape[0], cha, chb))
+                continue
             a.plot_date(correlations["time"].astype(datetime.datetime),
                 correlations.sel(chb=chb),
-                markersize=5,
+                markersize=1,
                 linestyle="-",
                 linewidth=1,
                 label="ch. {:d}".format(chb))
@@ -772,6 +801,10 @@ class NoiseAnalyser:
         # `y` is on every space view, `med_gain` is only on space
         # views followed by earth views...
         ΔRself = ureg.Quantity(numpy.diff(y), ureg.count) / med_gain[1:]
+        if (~ΔRself.mask).sum() < 3:
+            logging.error("Found only {:d} valid values for ΔRself, not "
+                          "plotting".format((~ΔRself.mask).sum()))
+            return []
         # plot ΔR(ΔT) for those temperatures that change considerably
         # (this limitation prevents clutter around ΔT=0)
         maxptp = 0
@@ -968,7 +1001,7 @@ class NoiseAnalyser:
                 linestyles=self.linestyles,
                 linewidth=1.5)
 
-            if not med_gain.mask.all():
+            if (~med_gain.mask).sum() > 5:
                 rng[1] = scipy.stats.scoreatpercentile(med_gain[~med_gain.mask], [1, 99])
                 imgn = agn.hexbin(xt, med_gain.m,
                     gridsize=20,
@@ -1072,13 +1105,17 @@ class NoiseAnalyser:
         # need to get rid of masked values first, otherwise xarray changes
         # everything to float
         # (https://github.com/pydata/xarray/issues/1194)
-        OK =  ~M["counts"].mask[:, 8:, :19].any(1).any(1)
+        # …but this OK is too conservative, fails everything if one
+        # channel is bad…
+        #OK =  ~M["counts"].mask[:, 8:, :19].any(1).any(1)
+        # accept conversion to floats and nans as lesser of two bad
+        # choices
         D = xarray.Dataset(
             {"counts": (["time", "calibpos", "channel"],
-                        M["counts"][OK, 8:, :19]),
+                        M["counts"][:, 8:, :19]),
              "scantype": (["time"],
-                            M[self.hirs.scantype_fieldname][OK])},
-            coords={"time": M["time"][OK], "calibpos": range(9, 57),
+                            M[self.hirs.scantype_fieldname])},
+            coords={"time": M["time"], "calibpos": range(9, 57),
                     "channel": range(1, 20)})
         # select either space or iwt counts
         ccnt = D.isel(time=D["scantype"]==getattr(self.hirs,
@@ -1091,6 +1128,10 @@ class NoiseAnalyser:
     def _get_correlations(self, timeres, typ, calibpos):
         accnt = self._get_accnt(typ)
 
+        if accnt["time"].shape[0] < 3:
+            raise ValueError("Cannot calculate correlations, only {:d} "
+                "time elements found".format(accnt["time"].shape[0]))
+
         times = pandas.date_range(*accnt["time"][[0, -1]].data, freq=timeres)
 
         correlations = xarray.DataArray(
@@ -1098,9 +1139,19 @@ class NoiseAnalyser:
             [("cha", accnt.channel), ("chb", accnt.channel),
              ("time", times[:-1])])
         for i in range(times.shape[0]-1):
-            correlations[:, :, i] = numpy.corrcoef(
-                accnt.sel(time=slice(times[i], times[i+1]),
-                calibpos=calibpos).T)
+            # accnt is now an array containing nans, because xarray does
+            # not support masked arrays
+            # see also https://github.com/pydata/xarray/issues/1194 and
+            # https://github.com/numpy/numpy/issues/4592 but copying
+            # between masked and unmasked does not work very well, need to
+            # be careful
+            cc = numpy.ma.corrcoef(
+                numpy.ma.masked_invalid(
+                    accnt.sel(time=slice(times[i], times[i+1]),
+                    calibpos=calibpos).T))
+            cch = cc.data
+            cch[cc.mask].fill(numpy.nan)
+            correlations[:, :, i] = cch
         return correlations
 
     
