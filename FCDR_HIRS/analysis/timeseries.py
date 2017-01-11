@@ -130,6 +130,9 @@ def parse_cmdline():
     parser.add_argument("--verbose", action="store_true",
         help="Be verbose", default=False)
 
+    parser.add_argument("--store_only", action="store_true",
+        help="Only store to NetCDF, do not plot.  Name calculate automatically.", default=False)
+
     parser.set_defaults(include_gain=True, include_rself=True)
     
     p = parser.parse_args()
@@ -175,6 +178,7 @@ import xarray
 #from memory_profiler import profile
 
 import typhon.plots
+import typhon.config
 #try:
 #    typhon.plots.install_mplstyles() # seems to be needed to run in queueing system
 #except FileExistsError:
@@ -468,6 +472,27 @@ class NoiseAnalyser:
             "hirs_{:s}_space_counts_adev_{:%Y%m%d}-{:%Y%m%d}.".format(
                 self.satname, t[0], t[-1]))
 
+    def get_gain(self, M, ch):
+        (t_slope, _, slope) = self.hirs.calculate_offset_and_slope(M, ch)
+        slope = slope.to(ureg.mW/(ureg.m**2 * ureg.sr *
+            1/ureg.cm * ureg.counts), "radiance")
+        u_slope = self.hirs.calc_uslope(M, ch)
+        gain = 1/slope
+        u_gain = (numpy.sqrt((-1/slope**2)**2 
+                  * (u_slope.to(slope.u, "radiance"))**2))
+        med_gain = ureg.Quantity(
+            numpy.ma.median(gain.m[:, :], 1),
+            gain.u)
+        if numpy.isscalar(med_gain.mask):
+            med_gain.mask = (numpy.ones if med_gain.mask
+                                      else numpy.zeros)(
+                shape=med_gain.shape, dtype="?")
+        # http://physics.stackexchange.com/a/292884/6319
+        u_med_gain = u_gain.mean(1) * numpy.sqrt(numpy.pi*(2*48+1)/(4*48))
+
+        return (t_slope, med_gain, u_med_gain)
+
+
     #@profile
     def plot_noise_with_other(self, 
             ch,
@@ -507,37 +532,20 @@ class NoiseAnalyser:
         self.counter = itertools.count()
         a_cc = ah_cc = a_ccn = ah_ccn = None
         if len(all_tp) > 0:
-            (a_cc, ah_cc, a_ccn, ah_ccn) = self._plot_calib_counts_noise(M=M, ch=ch, all_tp=all_tp, styles=styles)
+            (a_cc, ah_cc, a_ccn, ah_ccn) = self.plot_calib_counts_noise(M=M, ch=ch, all_tp=all_tp, styles=styles)
 
         if include_gain or include_rself:
-            #ax[3].plot_date(t, M[views]["calcof_sorted"][:, ch-1, 1], '.')
-
-            (t_slope, _, slope) = self.hirs.calculate_offset_and_slope(M, ch)
-            slope = slope.to(ureg.mW/(ureg.m**2 * ureg.sr *
-                1/ureg.cm * ureg.counts), "radiance")
-            u_slope = self.hirs.calc_uslope(M, ch)
-            gain = 1/slope
-            u_gain = (numpy.sqrt((-1/slope**2)**2 
-                      * (u_slope.to(slope.u, "radiance"))**2))
-            med_gain = ureg.Quantity(
-                numpy.ma.median(gain.m[:, :], 1),
-                gain.u)
-            if numpy.isscalar(med_gain.mask):
-                med_gain.mask = (numpy.ones if med_gain.mask
-                                          else numpy.zeros)(
-                    shape=med_gain.shape, dtype="?")
-            # http://physics.stackexchange.com/a/292884/6319
-            u_med_gain = u_gain.mean(1) * numpy.sqrt(numpy.pi*(2*48+1)/(4*48))
+            (t_slope, med_gain, u_med_gain) = self.get_gain(M, ch)
 
         a_gain = ah_gain = None
         if include_gain:
-            (a_gain, ah_gain) = self._plot_gain(t_slope=t_slope, med_gain=med_gain,
+            (a_gain, ah_gain) = self.plot_gain(t_slope=t_slope, med_gain=med_gain,
                 u_med_gain=u_med_gain)
 
         a_corr = []
         if len(include_corr)>0:
             for typ in all_tp:
-                a_corr.append(self._plot_corr(ch, typ,
+                a_corr.append(self.plot_corr(ch, typ,
                     calibpos=corr_info.get("calibpos", 20),
                     timeres=corr_info.get("timeres", "3H"),
                     N=corr_info.get("count", 2),
@@ -545,7 +553,7 @@ class NoiseAnalyser:
                 
         a_temp = ah_temp = None
         if len(temperatures) > 0:
-            (ax2lims, at, ath) = self._plot_temperatures(M=M, temperatures=temperatures)
+            (ax2lims, at, ath) = self.plot_temperatures(M=M, temperatures=temperatures)
 
         # make correlation axlimits consistent with others
         for ac in a_corr:
@@ -555,7 +563,7 @@ class NoiseAnalyser:
                     break
 
         if include_rself:
-            allcb = self._plot_rself(
+            allcb = self.plot_rself(
                 M=M, t_slope=t_slope, med_gain=med_gain, ch=ch,
                 temperatures=temperatures, k=k,
                 ax2lims=ax2lims, styles=styles,
@@ -595,7 +603,20 @@ class NoiseAnalyser:
                 self=self, ch=ch, alltyp='_'.join(all_tp),
                 alltemp='_'.join(temperatures), tb=t[0], te=t[-1]))
 
-    def _plot_calib_counts_noise(self, M, ch, all_tp, styles):
+    def get_calib_counts_noise(self, M, ch, all_tp):
+        D = {}
+        for (i, tp) in enumerate(all_tp): 
+            views = M[self.hirs.scantype_fieldname
+                        ] == getattr(self.hirs, "typ_"+tp)
+            t = M[views]["time"].astype(datetime.datetime)
+            C = M[views]["counts"][:, 8:, ch-1]
+            adv = typhon.math.stats.adev(C, 1)
+            D[tp] = (t, C, adv)
+        return D
+
+    def plot_calib_counts_noise(self, M, ch, all_tp, styles):
+        """Add two rows with calibration counts + noise timeseries
+        """
         C = next(self.counter)
         a0 = self.fig.add_subplot(self.gridspec[C, :self.ifte])
         a0h = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
@@ -604,13 +625,15 @@ class NoiseAnalyser:
         a1h = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
         L0 = []
         L1 = []
+        D = self.get_calib_counts_noise(M, ch, all_tp)
         success = False
         for (i, tp) in enumerate(all_tp):
-            views = M[self.hirs.scantype_fieldname
-                        ] == getattr(self.hirs, "typ_"+tp)
-
-            t = M[views]["time"].astype(datetime.datetime)
-            x = M[views]["counts"][:, 8:, ch-1]
+#            views = M[self.hirs.scantype_fieldname
+#                        ] == getattr(self.hirs, "typ_"+tp)
+#
+#            t = M[views]["time"].astype(datetime.datetime)
+#            x = M[views]["counts"][:, 8:, ch-1]
+            (t, x, adv) = D[tp]
             nok = (~x.mask).any(1).sum()
             if nok < 3:
                 logging.warning("Found only {:d} valid timestamps with "
@@ -653,12 +676,14 @@ class NoiseAnalyser:
 
         return (a0, a0h, a1, a1h)
 
-    def _plot_gain(self, t_slope, med_gain, u_med_gain):
+    def plot_gain(self, t_slope, med_gain, u_med_gain):
+        """Add gain time series plot + hist to next row of figure
+        """
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
         ah = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
         logging.info("Plotting gain")
-        if (~med_gain.mask.sum()) < 3:
+        if ((~med_gain.mask).sum()) < 3:
             logging.warning("Not enough valid gain values found, skipping")
             return (None, None)
 #        a.plot_date(t_slope.astype(datetime.datetime),
@@ -696,11 +721,13 @@ class NoiseAnalyser:
             matplotlib.ticker.MaxNLocator(nbins=6))
         return (a, ah)
     
-    def _plot_corr(self, ch, typ, calibpos, timeres, N, corr_types):
+    def plot_corr(self, ch, typ, calibpos, timeres, N, corr_types):
+        """Add correlation timeseries plot to next row of figure
+        """
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
         logging.info("Plotting correlation timeseries ({:s})".format(typ))
-        correlations = self._get_correlations(timeres, typ, calibpos).sel(cha=ch)
+        correlations = self.get_correlations(timeres, typ, calibpos).sel(cha=ch)
         # in case I need to select based on max_std or min_std I need to
         # calculate all correlations anyway
         mcorr = correlations.mean(dim="time")
@@ -726,19 +753,22 @@ class NoiseAnalyser:
             chpairs |= {(ch, chb+1) for chb in
                             numpy.arange(ch, ch+N) % 19}
         # plot all those pairs
+        success = False
         for (cha, chb) in sorted(chpairs):
             if correlations.sel(chb=chb).shape[0] < 3:
                 logging.warning("Found only {:d} valid values for "
                     "({:d}, {:d}), skipping".format(
                         correlations.sel(chb=chb).shape[0], cha, chb))
                 continue
+            success = True
             a.plot_date(correlations["time"].astype(datetime.datetime),
                 correlations.sel(chb=chb),
                 markersize=1,
                 linestyle="-",
                 linewidth=1,
                 label="ch. {:d}".format(chb))
-        a.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
+        if success:
+            a.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
         a.set_title("{:s} noise correlations".format(typ))
         a.set_ylabel("noise correlation")
         return a
@@ -746,7 +776,9 @@ class NoiseAnalyser:
         # FIXME: histogram
         #ah = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
 
-    def _plot_temperatures(self, M, temperatures):
+    def plot_temperatures(self, M, temperatures):
+        """Add temperatures timeseries plot + hist to next row of figure
+        """
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
         ah = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
@@ -779,8 +811,20 @@ class NoiseAnalyser:
         ah.set_ylabel("Number")
         return ax2lims, a, ah
 
-    def _plot_rself(self, M, t_slope, med_gain, ch, temperatures, k,
+    def plot_rself(self, M, t_slope, med_gain, ch, temperatures, k,
                     ax2lims, styles, hiasi_mode, include_gain):
+        """Add self-emission characteristics to next rows of figure
+
+        Adds up to five rows:
+        - space counts vs. temperatures and ΔRspace vs Δtemperatures
+        - difference with IASI, if available, per position in calib. cycle
+        - hexbin plots of space counts vs. temperatures
+        - hexbin plots of allan deviation vs. temperatures (*)
+        - hexbin plots of gain vs. temperatures (*)
+
+        The ones marked with (*) should probably be moved to another
+        method.
+        """
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, 0:int(0.45*k)])
         view_space = M[self.hirs.scantype_fieldname] == self.hirs.typ_space
@@ -1097,7 +1141,15 @@ class NoiseAnalyser:
 
 #    def get_calibcount_range(self, satname="metopa", year=2015):
 
-    def _get_accnt(self, typ):
+    def get_accnt(self, typ):
+        """Get calibration count anomalies
+
+        Returns an xarray.Dataset.  Due to limitations in pandas and xarray
+        (see https://github.com/pydata/xarray/issues/1194), counts are
+        converted to floats and masking is done with nans rather than
+        masked arrays.  As we only select 2.5% of the data the increase in
+        memory is acceptable in this case.
+        """
         M = self.Mhrsall
 
         # Create an xarray Dataset object for easier time series
@@ -1125,8 +1177,10 @@ class NoiseAnalyser:
 
         return accnt
 
-    def _get_correlations(self, timeres, typ, calibpos):
-        accnt = self._get_accnt(typ)
+    def get_correlations(self, timeres, typ, calibpos):
+        """Calculate correlation matrix at time resolution
+        """
+        accnt = self.get_accnt(typ)
 
         if accnt["time"].shape[0] < 3:
             raise ValueError("Cannot calculate correlations, only {:d} "
@@ -1188,9 +1242,9 @@ class NoiseAnalyser:
 #         mccnt = ccnt.mean(dim="scanpos")
 #         accnt = mccnt - ccnt
 # 
-#         accnt = self._get_accnt()
+#         accnt = self.get_accnt()
 
-        correlations = self._get_correlations()
+        correlations = self.get_correlations()
 
 #         times = pandas.date_range(*M["time"][[0, -1]], freq=timeres)
 # 
@@ -1232,6 +1286,48 @@ class NoiseAnalyser:
             "HIRS_{:s}{:%Y%m%d%H%M}-{:%Y%m%d%H%M}_p{:d}.png".format(
                 self.satname, self.start_date, self.end_date, scanpos))
 
+
+    ##### EXPERIMENTAL NO GO ZONE FOR NOW #####
+    def get_noise_with_other(self, 
+            ch,
+            all_tp=["space", "iwt"], temperatures=["iwt"],
+            include_gain=True,
+            include_corr=(),
+            corr_info={}):
+        logging.info("Channel {:d}".format(ch))
+        M = self.Mhrsall
+#        ch = self.ch
+        start_date = self.start_date
+        end_date = self.end_date
+        #k = int(numpy.ceil(len(temperatures)/2)*2)
+        Ntemps = len(temperatures)
+        logging.info("Getting calibration counts + noise")
+        if len(all_tp) > 0:
+            D_ccn = self.get_calib_counts_noise(M=M, ch=ch, all_tp=all_tp)
+
+        if include_gain or include_rself:
+            (t_slope, med_gain, u_med_gain) = self.get_gain(M, ch)
+
+        corr_typ = {}
+        if len(include_corr)>0:
+            for typ in all_tp:
+                corr_typ[typ] = self.get_correlations(
+                    typ=typ,
+                    calibpos=corr_info.get("calibpos", 20),
+                    timeres=corr_info.get("timeres", "3H"),
+                    N=corr_info.get("count", 2),
+                    corr_types=include_corr)
+                
+        if len(temperatures) > 0:
+            tempfields = list(self.loop_through_temps(M, temperatures))
+            rv = self.get_temperatures(M=M, temperatures=temperatures)
+
+        # don't do self-emission here, it's not time series anyway
+        
+        p = pathlib.Path(typhon.config.conf["main"]["myscratchdir"])
+
+
+    ##### END OF EXPERIMENTAL NO GO ZONE #####
 # 1, 2, 8, 19
 
 def main():
@@ -1257,16 +1353,26 @@ def main():
     if p.plot_noise_with_other:
         logging.info("Plotting more noise")
         for ch in p.channel:
-            na.plot_noise_with_other(ch, temperatures=p.temp_fields,
-                all_tp=p.count_fields, include_gain=p.include_gain,
-                include_rself=p.include_rself,
-                hiasi_mode=p.hiasi_mode,
-                include_corr=p.include_corr,
-                corr_info={"pairs": p.corr_pairs,
-                           "perc": p.corr_perc,
-                           "count": p.corr_count,
-                           "timeres": p.corr_timeres,
-                           "calibpos": p.corr_calibpos})
+            if p.store_only:
+                na.get_noise_with_other(ch, temperatures=p.temp_fields,
+                    all_tp=p.count_fields, include_gain=p.include_gain,
+                    include_corr=p.include_corr,
+                    corr_info={"pairs": p.corr_pairs,
+                               "perc": p.corr_perc,
+                               "count": p.corr_count,
+                               "timeres": p.corr_timeres,
+                               "calibpos": p.corr_calibpos})
+            else:
+                na.plot_noise_with_other(ch, temperatures=p.temp_fields,
+                    all_tp=p.count_fields, include_gain=p.include_gain,
+                    include_rself=p.include_rself,
+                    hiasi_mode=p.hiasi_mode,
+                    include_corr=p.include_corr,
+                    corr_info={"pairs": p.corr_pairs,
+                               "perc": p.corr_perc,
+                               "count": p.corr_count,
+                               "timeres": p.corr_timeres,
+                               "calibpos": p.corr_calibpos})
 
     if p.plot_noise_correlation_timeseries:
         logging.info("Plotting noise correlation timeseries")
