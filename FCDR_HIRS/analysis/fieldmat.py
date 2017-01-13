@@ -40,6 +40,10 @@ def parse_cmdline():
         action="store_true",
         help="Plot correlation matrix between actual channel noise")
 
+    parser.add_argument("--plot_noise_value_scanpos_corr",
+        action="store_true",
+        help="Plot correlation matrix between actual scanpos noise")
+
     parser.add_argument("--calibpos", action="store", type=int,
         nargs="+", default=[20],
         help="When plotting SDM of noise values between chanels, "
@@ -254,10 +258,47 @@ class MatrixPlotter:
             "({:d} cycles)".format(
             self.title_sat_date, noise_typ, calibpos, unmasked.sum()))
         pyatmlab.graphics.print_or_show(f, False,
-                "hirs_noise_correlations_{:s}_ch_{:s}_{:s}{:d}.png".format(
+                "hirs_noise_correlations_channels_{:s}_ch_{:s}_{:s}{:d}.png".format(
             self.filename_sat_date,
             ",".join(str(ch) for ch in channels),
             noise_typ, calibpos))
+
+    def plot_noise_value_scanpos_corr(self, channels,
+            noise_typ="iwt"):
+
+        accnt = self._get_accnt(noise_typ)
+        channels = numpy.asarray(channels)
+        for ch in channels:
+            (f, ax_all) = matplotlib.pyplot.subplots(1, 5, figsize=(16, 8),
+                gridspec_kw={"width_ratios": (13, 1, 1, 13, 1)})
+            #S = numpy.corrcoef(accnt[:, :, ch].T)
+            unmasked = ~(accnt[:, :, ch].mask.any(1))
+            (S, p) = typhon.math.stats.corrcoef(accnt[unmasked, :, ch].T)
+            # hack to make logarithmic possible
+            if (p==0).any():
+                logging.warn("{:d} elements have underflow (p=0), setting "
+                    "to tiny".format((p==0).sum()))
+                p[p==0] = numpy.finfo("float64").tiny * numpy.finfo("float64").eps
+            im1 = ax_all[0].imshow(S, cmap="PuOr", interpolation="none")
+            im1.set_clim([-1, 1])
+            im2 = ax_all[3].imshow(p, cmap="viridis",
+                interpolation="none", norm=matplotlib.colors.LogNorm(
+                    vmin=p.min(), vmax=(p-numpy.eye(p.shape[0])).max()))
+            ax_all[0].set_title("Pearson correlation")
+            ax_all[3].set_title("Likelihood of non-correlation")
+            for a in ax_all:
+                a.set_xlabel("Scanpos")
+                a.set_ylabel("Scanpos")
+            cb1 = f.colorbar(im1, cax=ax_all[1])
+            cb1.set_label("Correlation coefficient")
+            cb2 = f.colorbar(im2, cax=ax_all[4])
+            cb2.set_label("p-value")
+            f.suptitle("HIRS noise correlations, {:s}, {:s} ch. {:d}\n"
+                "({:d} cycles)".format(
+                    self.title_sat_date, noise_typ, ch, unmasked.sum()))
+            pyatmlab.graphics.print_or_show(f, False,
+                "hirs_noise_correlations_scanpos_{:s}_ch{:d}_{:s}.png".format(
+                    self.filename_sat_date, ch, noise_typ))
 
 def read_and_plot_field_matrices():
 #    h = fcdr.which_hirs_fcdr(sat)
@@ -282,7 +323,10 @@ def read_and_plot_field_matrices():
                 mp.plot_noise_value_channel_sdm(p.channels, typ, calibpos)
 
             if p.plot_noise_value_channel_corr:
-                    mp.plot_noise_value_channel_corr(p.channels, typ, calibpos)
+                mp.plot_noise_value_channel_corr(p.channels, typ, calibpos)
+            
+            if p.plot_noise_value_scanpos_corr:
+                mp.plot_noise_value_scanpos_corr(p.channels, typ)
 
 #    M = h.read_period(from_date, to_date,
 #        fields=temp_fields_full + ["counts", "time"])

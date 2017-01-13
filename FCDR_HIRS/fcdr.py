@@ -155,8 +155,7 @@ class HIRSFCDR:
     def custom_calibrate(self, counts, slope, offset):
         """Calibrate with my own slope and offset
 
-        Currently linear.  Uncertainties currently considered upstream in
-        MC sense, to be amended.
+        Currently linear.
         """
         return offset[:, numpy.newaxis] + slope[:, numpy.newaxis] * counts
 
