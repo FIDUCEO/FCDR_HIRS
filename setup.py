@@ -119,6 +119,7 @@ setup(
             "plot_hirs_field_matrix=FCDR_HIRS.analysis.fieldmat:read_and_plot_field_matrices",
             "plot_hirs_calibcounts_per_scanpos=FCDR_HIRS.analysis.calibcounts_stats_per_scanpos:main",
             "plot_hirs_test_rself=FCDR_HIRS.analysis.test_rself:main",
+            "calc_sensitivity_params=FCDR_HIRS.analysis.sensitivities:main",
         ],
     },
 )
