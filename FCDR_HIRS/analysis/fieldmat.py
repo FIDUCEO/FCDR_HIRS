@@ -269,8 +269,8 @@ class MatrixPlotter:
         accnt = self._get_accnt(noise_typ)
         channels = numpy.asarray(channels)
         for ch in channels:
-            (f, ax_all) = matplotlib.pyplot.subplots(1, 5, figsize=(16, 8),
-                gridspec_kw={"width_ratios": (13, 1, 1, 13, 1)})
+            (f, ax_all) = matplotlib.pyplot.subplots(1, 8, figsize=(24, 6),
+                gridspec_kw={"width_ratios": (15, 1, 6, 15, 1, 6, 15, 1)})
             #S = numpy.corrcoef(accnt[:, :, ch].T)
             unmasked = ~(accnt[:, :, ch].mask.any(1))
             (S, p) = typhon.math.stats.corrcoef(accnt[unmasked, :, ch].T)
@@ -281,21 +281,32 @@ class MatrixPlotter:
                 p[p==0] = numpy.finfo("float64").tiny * numpy.finfo("float64").eps
             im1 = ax_all[0].imshow(S, cmap="PuOr", interpolation="none")
             im1.set_clim([-1, 1])
-            im2 = ax_all[3].imshow(p, cmap="viridis",
-                interpolation="none", norm=matplotlib.colors.LogNorm(
-                    vmin=p.min(), vmax=(p-numpy.eye(p.shape[0])).max()))
-            ax_all[0].set_title("Pearson correlation")
-            ax_all[3].set_title("Likelihood of non-correlation")
-            for a in ax_all:
-                a.set_xlabel("Scanpos")
-                a.set_ylabel("Scanpos")
             cb1 = f.colorbar(im1, cax=ax_all[1])
             cb1.set_label("Correlation coefficient")
+            ax_all[0].set_title("Pearson correlation")
+
+            # choose range for S
+            upto = scipy.stats.scoreatpercentile(abs(S[S<1]), 99)
+            im2 = ax_all[3].imshow(S, cmap="PuOr", vmin=-upto, vmax=upto)
+            im2.set_clim([-upto, upto])
             cb2 = f.colorbar(im2, cax=ax_all[4])
-            cb2.set_label("p-value")
+            cb2.set_label("Correlation coefficient")
+            ax_all[3].set_title("Pearson correlation")
+
+            im3 = ax_all[6].imshow(p, cmap="viridis",
+                interpolation="none", norm=matplotlib.colors.LogNorm(
+                    vmin=p.min(), vmax=(p-numpy.eye(p.shape[0])).max()))
+            ax_all[6].set_title("Likelihood of non-correlation")
+            for a in ax_all[::3]:
+                a.set_xlabel("Scanpos")
+                a.set_ylabel("Scanpos")
+            cb3 = f.colorbar(im3, cax=ax_all[7])
+            cb3.set_label("p-value")
             f.suptitle("HIRS noise correlations, {:s}, {:s} ch. {:d}\n"
                 "({:d} cycles)".format(
                     self.title_sat_date, noise_typ, ch, unmasked.sum()))
+            ax_all[2].set_visible(False)
+            ax_all[5].set_visible(False)
             pyatmlab.graphics.print_or_show(f, False,
                 "hirs_noise_correlations_scanpos_{:s}_ch{:d}_{:s}.png".format(
                     self.filename_sat_date, ch, noise_typ))
