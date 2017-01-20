@@ -1,4 +1,4 @@
-"""Measurement equation
+"""Measurement equation and associated functionality
 """
 
 import sympy
