@@ -83,6 +83,7 @@ setup(
                       "pandas>=0.19",
                       "xarray>=0.8",
                       "seaborn>=0.7",
+                      "sympy>=1.0",
                       "pint>=0.7"],
 
     # List additional groups of dependencies here (e.g. development
