@@ -5,7 +5,7 @@ import sympy
 from sympy.core.symbol import Symbol
 
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ "
-         "a_3 R_refl d_PRTnk C_PRTn k n K N h c k_b T_PRT T_IWCT B φ "
+         "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φ "
          "R_IWCT ε O_Re O_TIWCT O_TPRT")
 
 symbols = sym = dict(zip(names.split(), sympy.symbols(names)))
@@ -26,9 +26,10 @@ expressions[sym["B"]] = (
     (2*sym["h"]*sym["c"]**2)/(sym["λ"]**5) *
     1/(sympy.exp((sym["h"]*sym["c"])/(sym["λ"]*sym["k_b"]*sym["T_IWCT"]))-1))
 expressions[sym["T_IWCT"]] = (
-    sympy.Sum(sym["T_PRT"], (sym["n"], 1, sym["N"]))/sym["N"] + sym["O_TIWCT"])
-expressions[sym["T_PRT"]] = (
-    sympy.Sum(sym["d_PRTnk"] * sym["C_PRTn"]**sym["k"], (sym["k"], 0, sym["K"]-1))
+    sympy.Sum(sympy.IndexedBase(sym["T_PRT"])[sym["n"]], (sym["n"], 0, sym["N"]))/sym["N"] + sym["O_TIWCT"])
+expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"]]] = (
+    sympy.Sum(sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]] *
+        sympy.IndexedBase(sym["C_PRT"])[sym["n"]]**sym["k"], (sym["k"], 0, sym["K"]-1))
     + sym["O_TPRT"])
 expressions[sym["φ"]] = (sympy.Function("φ")(sym["λ"]))
 

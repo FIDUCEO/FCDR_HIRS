@@ -6,7 +6,7 @@ import numpy
 import xarray
 import collections
 
-from typhon.physics.units.common import ureg
+from typhon.physics.units.common import (radiance_units, ureg)
 
 from . import measurement_equation as meq
 
@@ -39,6 +39,7 @@ class Effect:
     measurement_equation module.
     """
 
+    all_effects = {}
     name = None
     parameter = None
     unit = None
@@ -49,11 +50,17 @@ class Effect:
     def __init__(self, **kwargs):
         for (k, v) in kwargs.items():
             setattr(self, k, v)
+        if not self.parameter in self.all_effects.keys():
+            self.all_effects[self.parameter] = set()
+        self.all_effects[self.parameter].add(self)
 
     def __setattr__(self, k, v):
         if not hasattr(self, k):
             raise AttributeError("Unknown attribute: {:s}".format(k))
         super().__setattr__(k, v)
+
+    def __repr__(self):
+        return "<Effect {!s}:{:s}>".format(self.parameter, self.name)
 
     # default: 0-dimensional nan
     _magnitude = xarray.DataArray(numpy.nan, name="uncertainty")
@@ -119,6 +126,17 @@ class Effect:
                 raise TypeError("correlation scale must be inf or DataArray, "
                     "found {:s}".format(type(v)))
         self._corr_scale = v
+
+    def sensitivity(self, s="R_e"):
+        """Get expression for sensitivity coefficient
+
+        Normally starting at R_e, but can provide other.
+
+        Returns sympy expression.
+        """
+
+        return meq.calc_sensitivity_coefficient(s, self.parameter)
+
 
 _I = numpy.eye(19, dtype="f2")
 _ones = numpy.ones(shape=(19, 19), dtype="f2")
@@ -190,5 +208,39 @@ IWCT_type_b = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.K,
-    magnitude = xarray.DataArray(0.1, name="uncertainty"),
+    magnitude=xarray.DataArray(0.1, name="uncertainty"),
     channel_correlations=_ones)
+
+nonlinearity = Effect(
+    name="Nonlinearity",
+    parameter=meq.symbols["a_2"],
+    correlation_type=_systematic,
+    correlation_scale=_inf,
+    unit=radiance_units["ir"]/ureg.count**2,
+    channel_correlations=
+        numpy.vstack((
+            numpy.hstack((
+                numpy.ones(shape=(12,12)),
+                numpy.zeros(shape=(12,9)))),
+            numpy.hstack((
+                numpy.zeros(shape=(9,12)),
+                numpy.ones(shape=(9,9)))))))
+
+nonnonlinearity = Effect(
+    name="Wrongness of nonlinearity",
+    parameter=meq.symbols["O_Re"],
+    correlation_type=_systematic,
+    correlation_scale=_inf,
+    unit=radiance_units["ir"],
+    channel_correlations=nonlinearity.channel_correlations)
+
+Earthshine = Effect(
+    name="Earthshine",
+    parameter=meq.symbols["R_refl"],
+    correlation_type=("rectangular_absolute", "rectangular_absolute",
+          "repeated_rectangles", "triangular_relative"),
+    unit=radiance_units["ir"])
+
+#Rself = Effect(
+#    name="self-emission",
+#    parameter=meq.symbols["Rself"],
