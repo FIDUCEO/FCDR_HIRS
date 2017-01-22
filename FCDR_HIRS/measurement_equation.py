@@ -33,6 +33,9 @@ expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"]]] = (
     + sym["O_TPRT"])
 expressions[sym["φ"]] = (sympy.Function("φ")(sym["λ"]))
 
+aliases = {}
+aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
+
 def recursive_substitution(e):
     """For expression 'e', substitute all the way down.
 
@@ -43,10 +46,13 @@ def recursive_substitution(e):
     while o != e:
         o = e
         for sym in e.free_symbols:
-            e = e.subs(sym, expressions.get(sym, sym))
+            # subs only works for simple values but is faster
+            # replace works for arbitrarily complex expressions but is
+            # slower and may yield false positives
+            e = getattr(e, ("replace" if sym in aliases else "subs"))(aliases.get(sym,sym), expressions.get(aliases.get(sym,sym), sym))
     return e
 
-dependencies = {e: recursive_substitution(expressions.get(e, e)).free_symbols
+dependencies = {e: recursive_substitution(expressions.get(aliases.get(e,e), e)).free_symbols-{e}
         for e in symbols.values()}
 
 def calc_sensitivity_coefficient(s1, s2):
@@ -63,12 +69,14 @@ def calc_sensitivity_coefficient(s1, s2):
     if not isinstance(s2, Symbol):
         s2 = symbols[s2]
 
-    expr = expressions[s1]
+    expr = expressions[aliases.get(s1, s1)]
     oldexpr = None
     # expand expression until no more sub-expressions and s2 is explicit
     while expr != oldexpr:
         oldexpr = expr
         for sym in expr.free_symbols - {s2}:
             if s2 in dependencies[sym]:
-                expr = expr.subs(sym, expressions.get(sym, sym))
+                here = aliases.get(sym, sym)
+                expr = getattr(expr, ("replace" if sym in aliases else
+                    "subs"))(here, expressions.get(here, here))
     return expr.diff(s2)
