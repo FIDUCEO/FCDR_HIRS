@@ -181,7 +181,7 @@ SRF_calib = Effect(name="Spectral response function calibration",
 #    channel_correlations=_I)
 
 PRT_counts_noise = Effect(name="IWCT PRT counts noise",
-    parameter=meq.symbols["C_PRTn"],
+    parameter=meq.symbols["C_PRT"],
     correlation_type=_calib,
     unit=ureg.count,
     channel_correlations=_ones)
@@ -196,7 +196,7 @@ IWCT_PRT_representation = Effect(
 
 IWCT_PRT_counts_to_temp = Effect(
     name="IWCT PRT counts to temperature",
-    parameter=meq.symbols["d_PRTnk"],
+    parameter=meq.symbols["d_PRT"],
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.counts/ureg.K, # FIXME WARNING: see https://github.com/FIDUCEO/FCDR_HIRS/issues/43
