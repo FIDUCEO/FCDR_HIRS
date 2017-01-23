@@ -38,7 +38,7 @@ aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
 aliases[sym["C_PRT"]] = sympy.IndexedBase(sym["C_PRT"])[sym["n"]]
 aliases[sym["d_PRT"]] = sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]]
 
-def recursive_substitution(e):
+def recursive_substitution(e, stop_at=None):
     """For expression 'e', substitute all the way down.
 
     Using the dictionary `expressions`, repeatedly substitute all symbols
@@ -48,10 +48,12 @@ def recursive_substitution(e):
     while o != e:
         o = e
         for sym in e.free_symbols:
-            # subs only works for simple values but is faster
-            # replace works for arbitrarily complex expressions but is
-            # slower and may yield false positives
-            e = getattr(e, ("replace" if sym in aliases else "subs"))(aliases.get(sym,sym), expressions.get(aliases.get(sym,sym), sym))
+            if sym != stop_at:
+                # subs only works for simple values but is faster
+                # replace works for arbitrarily complex expressions but is
+                # slower and may yield false positives
+                # see http://stackoverflow.com/a/41808652/974555
+                e = getattr(e, ("replace" if sym in aliases else "subs"))(aliases.get(sym,sym), expressions.get(aliases.get(sym,sym), sym))
     return e
 
 dependencies = {e: recursive_substitution(expressions.get(aliases.get(e,e), e)).free_symbols-{e}
