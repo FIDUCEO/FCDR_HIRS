@@ -35,6 +35,8 @@ expressions[sym["φ"]] = (sympy.Function("φ")(sym["λ"]))
 
 aliases = {}
 aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
+aliases[sym["C_PRT"]] = sympy.IndexedBase(sym["C_PRT"])[sym["n"]]
+aliases[sym["d_PRT"]] = sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]]
 
 def recursive_substitution(e):
     """For expression 'e', substitute all the way down.

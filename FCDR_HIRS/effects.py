@@ -2,9 +2,11 @@
 """
 
 import abc
+import collections
+import copy
+
 import numpy
 import xarray
-import collections
 
 from typhon.physics.units.common import (radiance_units, ureg)
 
@@ -39,7 +41,7 @@ class Effect:
     measurement_equation module.
     """
 
-    all_effects = {}
+    _all_effects = {}
     name = None
     parameter = None
     unit = None
@@ -50,9 +52,9 @@ class Effect:
     def __init__(self, **kwargs):
         for (k, v) in kwargs.items():
             setattr(self, k, v)
-        if not self.parameter in self.all_effects.keys():
-            self.all_effects[self.parameter] = set()
-        self.all_effects[self.parameter].add(self)
+        if not self.parameter in self._all_effects.keys():
+            self._all_effects[self.parameter] = set()
+        self._all_effects[self.parameter].add(self)
 
     def __setattr__(self, k, v):
         if not hasattr(self, k):
@@ -137,6 +139,13 @@ class Effect:
 
         return meq.calc_sensitivity_coefficient(s, self.parameter)
 
+def effects():
+    """Get dictionary with all known effects.
+
+    Returns a deep copy of internally used dictionary, so it should be
+    safe to alter this dictionary.
+    """
+    return copy.deepcopy(Effect._all_effects)
 
 _I = numpy.eye(19, dtype="f2")
 _ones = numpy.ones(shape=(19, 19), dtype="f2")
@@ -196,7 +205,10 @@ IWCT_PRT_representation = Effect(
 
 IWCT_PRT_counts_to_temp = Effect(
     name="IWCT PRT counts to temperature",
-    parameter=meq.symbols["d_PRT"],
+    parameter=meq.symbols["d_PRT"], # Relates to free_symbol but actual
+        # parameter in measurement equation to be replaced relates to as
+        # returned by typhon.physics.metrology.recursive_args; need to
+        # translate in some good way
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.counts/ureg.K, # FIXME WARNING: see https://github.com/FIDUCEO/FCDR_HIRS/issues/43
@@ -204,7 +216,7 @@ IWCT_PRT_counts_to_temp = Effect(
 
 IWCT_type_b = Effect(
     name="IWCT type B",
-    parameter=meq.symbols["O_TIWCT"],
+    parameter=meq.symbols["O_TPRT"],
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.K,
