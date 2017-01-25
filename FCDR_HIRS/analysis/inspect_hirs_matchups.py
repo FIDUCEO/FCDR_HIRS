@@ -64,7 +64,7 @@ import matplotlib.ticker
 from typhon.physics.units import radiance_units as rad_u
 from typhon.datasets.tovs import HIRSHIRS
 
-from .. import fcdr
+from .. import (fcdr, matchups)
 matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
 
 #srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-094_2009-102_v2.nc")
@@ -73,31 +73,7 @@ matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
 
 hh = HIRSHIRS()
 
-class HIRSMatchupInspector:
-    #def __init__(self, sf):
-    def __init__(self, start_date, end_date, prim, sec):
-        #self.ds = netCDF4.Dataset(str(sf), "r")
-        M = hh.read_period(start_date, end_date,
-            locator_args={"prim": prim, "sec": sec},
-            pseudo_fields={
-                "time_{:s}".format(prim):
-                    lambda M: M["hirs-{:s}_time".format(prim)][:, 3, 3].astype("M8[s]"),
-                "time_{:s}".format(sec):
-                    lambda M: M["hirs-{:s}_time".format(sec)][:, 3, 3].astype("M8[s]")})
-        Mcp = hh.combine(M, fcdr.which_hirs_fcdr(prim), trans={"time_{:s}".format(prim): "time"},
-                         timetol=numpy.timedelta64(3, 's'),
-                         col_field="hirs-{:s}_scanpos".format(prim))
-        Mcs = hh.combine(M, fcdr.which_hirs_fcdr(sec), trans={"time_{:s}".format(sec): "time"},
-                         timetol=numpy.timedelta64(3, 's'),
-                         col_field="hirs-{:s}_scanpos".format(sec))
-        self.start_date = start_date
-        self.end_date = end_date
-        self.M = M
-        self.Mcp = Mcp
-        self.Mcs = Mcs
-        self.prim = prim
-        self.sec = sec
-
+class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
     def plot_channel(self, ch):#, prim="n17", sec="n16"):
         prim = self.prim
         sec = self.sec

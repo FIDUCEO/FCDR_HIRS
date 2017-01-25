@@ -730,3 +730,12 @@ def which_hirs_fcdr(satname):
                 return h(satname=k)
     else:
         raise ValueError("Unknown HIRS satellite: {:s}".format(satname))
+
+def list_all_satellites():
+    """Return a set with all possible satellite names of any kind
+    """
+    S = set()
+    for h in {HIRS2FCDR, HIRS3FCDR, HIRS4FCDR}:
+        for sats in h.satellites.values():
+            S |= sats
+    return S

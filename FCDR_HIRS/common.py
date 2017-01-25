@@ -1,20 +1,33 @@
 """Common utilities between scripts
 """
 
+from .fcdr import list_all_satellites
+
 def add_to_argparse(parser,
         include_period=True,
-        include_sat=True,
+        include_sat=0,
         include_channels=True,
         include_temperatures=False):
     """Add commoners to argparse object
     """
 
-    if include_sat:
+    if include_sat == 1:
         parser.add_argument("satname", action="store", type=str,
             help="Satellite name",
-            choices=["tirosn"]
-                + ["noaa{:02d}".format(n) for n in range(6, 20)]
-                + ["metop{:s}".format(s) for s in "ab"])
+            choices=list_all_satellites())
+    elif include_sat == 2:
+        parser.add_argument("satname1", action="store", type=str,
+            help="Satellite name, primary",
+            metavar="SAT1",
+            choices=list_all_satellites())
+
+        parser.add_argument("satname2", action="store", type=str,
+            help="Satellite name, secondary",
+            metavar="SAT2",
+            choices=list_all_satellites())
+    elif include_sat!=0:
+        raise ValueError("include_sat should be False, 0, 1, True, or 2. "
+            "Got {!s}.".format(include_sat))
 
     if include_period:
         parser.add_argument("from_date", action="store", type=str,
