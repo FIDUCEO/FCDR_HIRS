@@ -52,6 +52,16 @@ def parse_cmdline():
         default="iwt",
         help="What kind of calibration to show")
 
+    parser.add_argument("--anomaly",
+        action="store_true",
+        dest="anomalies",
+        default=True,
+        help="Plot anomalies")
+
+    parser.add_argument("--no_anomaly",
+        action="store_false",
+        dest="anomalies")
+
     p = parser.parse_args()
     return p
 
@@ -145,7 +155,7 @@ def plot_calibcount_stats(h, Mall, channels,
     pyatmlab.graphics.print_or_show(f, False, filename)
 
 def plot_calibcount_anomaly_examples(h, M, channels, N,
-        mode="random", typ="space"):
+        mode="random", typ="space", anomaly=True):
     """Plot examples of calibcount anomalies
 
     Arguments:
@@ -179,7 +189,7 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
     Mv = M[M[h.scantype_fieldname] == getattr(h, "typ_{:s}".format(typ))]
     ccnt = Mv["counts"][:, h.start_space_calib:, :]
     mccnt = ccnt.mean(1, keepdims=True)
-    accnt = ccnt - mccnt
+    accnt = ccnt - mccnt if anomaly else ccnt
     aok = ~(accnt[:, :, :].mask.any(2).any(1))
     if not aok.any():
         logging.error("Nothing to plot.  All flagged.")
@@ -213,7 +223,7 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
     #show = accnt[idx, :, :][:, numpy.asarray(channels)-1]
 
     (f, ax) = matplotlib.pyplot.subplots(N, 1, sharex=True,
-        figsize=(10, 4+2*N))
+        figsize=(10, 4+2*N), squeeze=False)
     for (a, i) in zip(ax.ravel(), idx):
         for ch in channels:
             a.plot(numpy.arange(h.start_space_calib+1, h.n_perline+1),
@@ -221,17 +231,18 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
                     'o-', mfc="none",
                     label="ch. {:d}".format(ch))
         a.set_title(str(Mv["time"][i]))
-        a.set_ylabel("Anomaly to scanline mean\n[counts]")
+        a.set_ylabel(("Anomaly to scanline mean\n" if anomaly else
+                      "Calibratiov value") + "[counts]")
         a.grid()
     ax.ravel()[-1].set_xlabel("Scanline position")
     ax.ravel()[0].legend() # FIXME: position
 
-    f.suptitle("{:s} {:s} view calibration anomalies".format(
-        h.satname, typ))
+    f.suptitle("{:s} {:s} view calibration {:s}".format(
+        h.satname, typ, "anomalies" if anomaly else "values"))
 
     pyatmlab.graphics.print_or_show(f, False,
-        "{:s}_{:s}_calib_anomalies_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}_{:s}.png".format(
-            typ, mode, h.satname,
+        "{:s}_{:s}_calib_{:s}_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}_{:s}.png".format(
+            typ, mode, "anomalies" if anomaly else "values", h.satname,
             M["time"][idx[0]].astype(datetime.datetime),
             M["time"][idx[-1]].astype(datetime.datetime), N,
             ",".join(str(ch) for ch in channels),
@@ -242,7 +253,8 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
         plot_examples=0,
         random_seed=0,
         sample_mode="random",
-        typ="iwt"):
+        typ="iwt",
+        anomaly=True):
     h = fcdr.which_hirs_fcdr(sat)
     M = h.read_period(from_date, to_date,
             fields=["time", "counts", h.scantype_fieldname])
@@ -259,7 +271,8 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
         plot_calibcount_anomaly_examples(
             h, M, channels, plot_examples,
             mode=sample_mode,
-            typ=typ)
+            typ=typ,
+            anomaly=anomaly)
 
 def main():
     p = parsed_cmdline
@@ -269,4 +282,5 @@ def main():
         p.channels, p.plot_distributions, p.plot_examples,
         p.random_seed, 
         p.examples_mode,
-        p.calibtype)
+        p.calibtype,
+        p.anomalies)
