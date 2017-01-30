@@ -55,6 +55,7 @@ setup(
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
         "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
     ],
 
     # What does your project relate to?
@@ -81,7 +82,7 @@ setup(
                       "progressbar2>=3.10",
                       "netCDF4>=1.2",
                       "pandas>=0.19",
-                      "xarray>=0.8",
+                      "xarray>=0.9",
                       "seaborn>=0.7",
                       "sympy>=1.0",
                       "pint>=0.7"],
@@ -122,6 +123,7 @@ setup(
             "plot_hirs_test_rself=FCDR_HIRS.analysis.test_rself:main",
             "calc_sensitivity_params=FCDR_HIRS.analysis.sensitivities:main",
             "combine_hirs_matchups=FCDR_HIRS.processing.combine_matchups:main",
+            "generate_fcdr=FCDR_HIRS.processing.generate_fcdr:main"
         ],
     },
 )
