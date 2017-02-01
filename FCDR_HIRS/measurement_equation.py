@@ -6,7 +6,7 @@ from sympy.core.symbol import Symbol
 
 import typhon.physics.metrology
 
-names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ "
+names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
          "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φ "
          "R_IWCT ε O_Re O_TIWCT O_TPRT")
 
@@ -25,15 +25,15 @@ expressions[sym["R_IWCT"]] = (
     (1+sym["ε"]-sym["a_3"])*sym["R_refl"]) * sym["φ"], sym["λ"])) /
     sympy.Integral(sym["φ"], sym["λ"]))
 expressions[sym["B"]] = (
-    (2*sym["h"]*sym["c"]**2)/(sym["λ"]**5) *
-    1/(sympy.exp((sym["h"]*sym["c"])/(sym["λ"]*sym["k_b"]*sym["T_IWCT"]))-1))
+    (2*sym["h"]*sym["c"]**2)/((sym["λ"])**5) *
+    1/(sympy.exp((sym["h"]*sym["c"])/((sym["λ"])*sym["k_b"]*sym["T_IWCT"]))-1))
 expressions[sym["T_IWCT"]] = (
     sympy.Sum(sympy.IndexedBase(sym["T_PRT"])[sym["n"]], (sym["n"], 0, sym["N"]))/sym["N"] + sym["O_TIWCT"])
 expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"]]] = (
     sympy.Sum(sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]] *
         sympy.IndexedBase(sym["C_PRT"])[sym["n"]]**sym["k"], (sym["k"], 0, sym["K"]-1))
     + sym["O_TPRT"])
-expressions[sym["φ"]] = (sympy.Function("φ")(sym["λ"]))
+expressions[sym["φ"]] = (sympy.Function("φ")(sym["λ"]+sym["Δλ"]))
 
 aliases = {}
 aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
@@ -83,6 +83,18 @@ for s in symbols.values():
                 return_intermediates=True)
     dependencies[aliases.get(s, s)] = typhon.physics.metrology.recursive_args(e) | im
 
+def substitute_until_explicit(expr, s2):
+    oldexpr = None
+    # expand expression until no more sub-expressions and s2 is explicit
+    while expr != oldexpr:
+        oldexpr = expr
+        for sym in expr.free_symbols - {s2}:
+            if aliases.get(s2, s2) in dependencies[aliases.get(sym,sym)]:
+                here = aliases.get(sym, sym)
+                expr = getattr(expr, ("replace" if sym in aliases else
+                    "subs"))(here, expressions.get(here, here))
+    return expr
+
 def calc_sensitivity_coefficient(s1, s2):
     """Calculate sensitivity coefficient ∂s1/∂s2
 
@@ -101,13 +113,43 @@ def calc_sensitivity_coefficient(s1, s2):
         expr = s1
     else:
         expr = expressions[aliases.get(s1, s1)]
-    oldexpr = None
-    # expand expression until no more sub-expressions and s2 is explicit
-    while expr != oldexpr:
-        oldexpr = expr
-        for sym in expr.free_symbols - {s2}:
-            if aliases.get(s2, s2) in dependencies[aliases.get(sym,sym)]:
-                here = aliases.get(sym, sym)
-                expr = getattr(expr, ("replace" if sym in aliases else
-                    "subs"))(here, expressions.get(here, here))
+    expr = substitute_until_explicit(expr, s2)
+
+def evaluate_quantity(v, quantities):
+    """Evaluate numerical value of `v` using `quantities`
+
+    Get the numerical value of variable `v`, using a dictionary of
+    quantities `quantities` containing the values of other variables.
+
+    Arguments:
+
+        v [Symbol]
+        quantities [Mapping[Symbol, Expr]]
+    """
+    e = expressions[v]
+
+    values = {}
+    for arg in typhon.physics.metrology.recursive_args(e,
+            stop_at=[sympy.Symbol, sympy.Indexed]):
+        #
+        try:
+            values[arg] = quantities[arg]
+        except KeyError:
+            values[arg] = evaluate_quantity(arg) # if this fails `arg` should be added to quantities
+
+    # substitute numerical values into expression
+    sympy.lambdify
+    raise NotImplementedError("Actual substitution not implemented yet")
+
+
+            
+#    oldexpr = None
+#    # expand expression until no more sub-expressions and s2 is explicit
+#    while expr != oldexpr:
+#        oldexpr = expr
+#        for sym in expr.free_symbols - {s2}:
+#            if aliases.get(s2, s2) in dependencies[aliases.get(sym,sym)]:
+#                here = aliases.get(sym, sym)
+#                expr = getattr(expr, ("replace" if sym in aliases else
+#                    "subs"))(here, expressions.get(here, here))
     return expr.diff(aliases.get(s2,s2))

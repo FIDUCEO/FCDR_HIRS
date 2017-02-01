@@ -64,8 +64,7 @@ class Effect:
     def __repr__(self):
         return "<Effect {!s}:{:s}>".format(self.parameter, self.name)
 
-    # default: 0-dimensional nan
-    _magnitude = xarray.DataArray(numpy.nan, name="uncertainty")
+    _magnitude = None
     @property
     def magnitude(self):
         """Magnitude of the uncertainty
@@ -76,6 +75,9 @@ class Effect:
         not mean anything about the error correlation, which is treated
         separately.
         """
+#        if self._magnitude.identical(self._init_magnitude):
+#            logging.warning("uncertainty magnitude not set for " +
+#                self.name)
         return self._magnitude
 
     @magnitude.setter
@@ -174,7 +176,7 @@ IWCT_counts_noise = Effect(name="noise on IWCT counts",
     channel_correlations=_I)
 
 SRF_calib = Effect(name="Spectral response function calibration",
-    parameter=meq.symbols["φ"],
+    parameter=meq.symbols["Δλ"],
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.nm,

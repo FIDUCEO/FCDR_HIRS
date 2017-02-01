@@ -33,8 +33,16 @@ from typhon.datasets.tovs import (Radiometer, HIRS, HIRSPOD, HIRS2,
 
 from pyatmlab import tools
 
+from . import models
+from . import effects
+from . import measurement_equation as me
+
 class HIRSFCDR:
     """Produce, write, study, and read HIRS FCDR.
+
+    Some of the methods need context-information.  A class that helps in
+    passing in the requirement information is at
+    FCDR_HIRS.processing.generate_fcdr.FCDRGenerator.
 
     Mixin for kiddies HIRS?FCDR
 
@@ -510,6 +518,126 @@ class HIRSFCDR:
         C_Earth = ureg.Quantity(C_Earth, ureg.counts)
 
         return (L_iwct, C_iwct, C_space, C_Earth)
+
+    rself_model = None
+    def estimate_Rself(self, ds_core, ds_context):
+        """Estimate self-emission and associated uncertainty
+
+        Arguments:
+            
+            ds_core [xarray.Dataset]
+
+                Data for which to estimate self-emission.  Should be an
+                xarray Dataset covering the period for which the
+                self-emission shall be evaluated.
+
+            ds_context [xarray.Dataset]
+
+                Context data.  Should be an xarray Dataset containing a
+                longer period than ds_core, will be used to estimate the
+                self-emission model parameters and uncertainty.  Must
+                contain for calibration lines (space and IWCT views)
+                including temperatures and space/IWCT counts.
+
+        Returns:
+
+            xarray.DataArray?
+        """
+        
+        if self.rself_model is None:
+            self.rself_model = models.RSelf(self)
+
+        raise NotImplementedError("Not implemented yet")
+
+
+    def calc_u_for_variable(self, var, quantities):
+        """Calculate total uncertainty
+
+        This just gathers previously calculated quantities; this should be
+        called after all effects have been populated and the measurement
+        equation has been evaluated.
+
+        """
+
+        # Traversing down the uncertainty expression for the measurement
+        # equation.  Example expression for u²(R_e):
+        #
+#    4  2          2  2                      2  2         2          2             2    
+# C_E ⋅u (a₂) + C_E ⋅u (a₁) + (2⋅C_E⋅a₂ + a₁) ⋅u (C_E) + u (O_Re) + u (R_selfE) + u (a₀)
+        #
+        # Here:
+        #
+        #   1. C_E, a₂ are values that gets directly substituted,
+        #
+        #   2. u(a₂), u(C_E), u(O_Re), u(R_selfE) are uncertainties that
+        #      get directly substituted,
+        #
+        #   3. u(a₁) and u(a₀) are uncertainties on a sub-expression, for which we
+        #      will recursively call ourselves,
+        #
+        #   4. a₁ has an expression that needs to be evaluated, but should
+        #      already have been prior to calling this method, so should be
+        #      provided in some way.
+        #
+        # We need to build a dictionary where for each expression/symbol
+        # we need the values, so we can substitute them and get a value
+        # for the uncertainty.
+        # 
+        # We should make use of a cache (dictionary).  For cases (1) and
+        # (4), those get built when evaluating the measurement equation.
+        # For case (2), the cache should be built into the effects tables,
+        # when those are being populated.  For case (3), TBD.
+
+        s = me.symbols.get(var, var)
+
+        if s not in me.expressions.keys():
+            # If there is no expression for this value, the uncertainty is
+            # simply what should have already been calculated
+            all_effects = effects.effects()
+
+            if s in all_effects.keys():
+                # FIXME: put name and attributes?  Or upstream?
+                return functools.reduce(
+                    operator.add,
+                    (eff.magnitude for eff in all_effects[s]))
+            else:
+                return xarray.DataArray(0, name="u_{!s}".format(var),
+                    attrs={"quantity": str(var), "note":
+                        "No documented effect associated with this quantity"})
+
+        # evaluate expression for this quantity
+        e = me.expressions[me.symbols.get(var, var)]
+        u_e = typhon.physics.metrology.express_uncertainty(e)
+        fu = sympy.Function("u")
+        args = typhon.physics.metrology.recursive_args(u_e,
+            stop_at=(sympy.Symbol, sympy.Indexed, fu))
+
+        adict = {}
+        for v in args:
+            # check which one of the four aforementioned applies
+            if isinstance(v, fu):
+                # it's an uncertainty function
+                assert len(v.args) == 1
+                # this covers both cases (2) and (3); if there is no
+                # expression for the uncertainty, it will be read from the
+                # effects tables (see above)
+                adict[v] = self.calc_u_for_variable(v.args[0])
+            else:
+                # it's a quantity
+                if v not in quantities:
+                    if v not in me.expressions.keys():
+                        raise ValueError(
+                            "Calculation of {:s} needs defined value for "
+                            "quantity {:s} but this is not set.  I have values "
+                            "for: {:s}.".format(str(list(me.expressions.keys()))))
+                    quantities[v] = me.evaluate_quantity(v, quantities)
+
+                adict[v] = quantities[v]
+                    
+        # now I have adict with values for uncertainties and other
+        # quantities, that I need to substitute into the expression
+        raise NotImplementedError("Tot hier heeft de heer ons geholpen")
+
 
     def calc_sens_coef(self, typ, M, ch, srf): 
         """Calculate sensitivity coefficient.
