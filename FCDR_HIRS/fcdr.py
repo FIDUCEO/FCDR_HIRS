@@ -254,8 +254,12 @@ class HIRSFCDR:
 
         T_iwct = ureg.Quantity(
             M_space["temp_iwt"].mean(-1).mean(-1).astype("f4"), ureg.K)
+        self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
+            T_iwct, name="T_IWCT")
 
         L_iwct = srf.blackbody_radiance(T_iwct)
+        self._quantities[me.symbols["R_IWCT"]] = self._quantity_to_xarray(
+            L_iwct, name="R_IWCT", dims=("calibration_cycle",))
         L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
 
         extra = []
@@ -269,6 +273,22 @@ class HIRSFCDR:
             extra.append(space_followed_by_iwct.nonzero()[0])
             
         return (M_space["time"], L_iwct, counts_iwct, counts_space) + tuple(extra)
+
+    def _quantity_to_xarray(self, quantity, *args, **kwargs):
+        """Convert quantity to xarray
+
+        Quantity can be masked and with unit, which will be converted.
+        """
+        
+        da = xarray.DataArray(numpy.asarray(quantity), name,
+            dims=self.data_vars_props[name][1],
+            attrs=self.data_vars_props[name][2],
+            encoding=self.data_vars_props[name][3],
+            dtype="f4") # DataArray only supports masking for floats
+        da.attrs.setdefault("units", str(getattr(da, "u", "UNDEFINED")))
+        da[quantity.mask] = numpy.nan
+        # set attributes
+        return da
 
 
     def calculate_offset_and_slope(self, M, ch, srf=None):
@@ -334,6 +354,7 @@ class HIRSFCDR:
                 offset,
                 slope)
 
+    _quantities = {}
     def calculate_radiance(self, M, ch, interp_kind="nearest", srf=None):
         """Calculate radiance
 
@@ -341,6 +362,12 @@ class HIRSFCDR:
 
         Returns pint quantity with masked array underneath.
         """
+        # When calculating uncertainties I depend on the same quantities
+        # as when calculating radiances, so I really should keep track of
+        # the quantities I calculate so I can use them for the
+        # uncertainties after.
+        self._quantities.clear() # don't accidentally use old quantities…
+
         srf = srf or self.srfs[ch-1]
         (time, offset, slope) = self.calculate_offset_and_slope(
             M, ch, srf)
@@ -350,7 +377,7 @@ class HIRSFCDR:
         # within FIDUCEO, in particular for noaa18 channels 1--12, where
         # the lowest scan positions are systematically offset compared to
         # the higher ones.  See also the note at
-        # calculate_offset_and_slope.
+        # calculate_offset_and_slope. 
         if offset.shape[0] > 1:
             (interp_offset, interp_slope) = self.interpolate_between_calibs(M, time,
                 ureg.Quantity(numpy.ma.median(offset.m, 1), offset.u),
@@ -621,7 +648,8 @@ class HIRSFCDR:
             #all_effects = effects.effects()
 
             if s in all_effects.keys():
-                # FIXME: put name and attributes?  Or upstream?
+                # Responsibility to put name and attributes onto effect
+                # belong to effects.Effect.magnitude setter property.
                 return functools.reduce(
                     operator.add,
                     (eff.magnitude for eff in all_effects[s]))

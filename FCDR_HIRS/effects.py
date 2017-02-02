@@ -83,6 +83,8 @@ class Effect:
     @magnitude.setter
     def magnitude(self, v):
         if isinstance(v, xarray.DataArray):
+            # FIXME: use this location to set attributes defining the
+            # correlation structures
             self._magnitude = v
         else:
             raise TypeError("uncertainty magnitude must be DataArray. "
@@ -145,7 +147,7 @@ def effects():
     """Get dictionary with all known effects.
 
     Returns a deep copy of internally used dictionary, so it should be
-    safe to alter this dictionary.
+    safe to alter this dictionary.  
     """
     return copy.deepcopy(Effect._all_effects)
 
