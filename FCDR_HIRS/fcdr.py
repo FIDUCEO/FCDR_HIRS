@@ -550,13 +550,37 @@ class HIRSFCDR:
         raise NotImplementedError("Not implemented yet")
 
 
-    def calc_u_for_variable(self, var, quantities):
+    def calc_u_for_variable(self, var, quantities, all_effects,
+                            cached_uncertainties):
         """Calculate total uncertainty
 
         This just gathers previously calculated quantities; this should be
         called after all effects have been populated and the measurement
         equation has been evaluated.
 
+        Arguments:
+
+            var [str] or [symbol]
+
+                Variable for which to calculate uncertainty
+
+            quantities
+
+                Dictionary with numerical values for quantities
+
+            all_effects
+
+                Dictionary with sets of effects (effect.Effect objects)
+                with magnitudes filled in.
+
+            cached_uncertainties
+
+                Dictionary with cached uncertainties for quantities that
+                for which we do not directly estimate uncertainties, but
+                that are expressions of other quantities including
+                uncertainties and effects (i.e. R_IWCT uncertainty results
+                from uncertainties in T_IWCT, ε, φ, etc.).  Note that this
+                dictionary will be changed by this function!
         """
 
         # Traversing down the uncertainty expression for the measurement
@@ -586,14 +610,15 @@ class HIRSFCDR:
         # We should make use of a cache (dictionary).  For cases (1) and
         # (4), those get built when evaluating the measurement equation.
         # For case (2), the cache should be built into the effects tables,
-        # when those are being populated.  For case (3), TBD.
+        # when those are being populated.  For case (3), recursively call
+        # myself but also fill in cached_uncertainties dictionary.
 
         s = me.symbols.get(var, var)
 
         if s not in me.expressions.keys():
             # If there is no expression for this value, the uncertainty is
             # simply what should have already been calculated
-            all_effects = effects.effects()
+            #all_effects = effects.effects()
 
             if s in all_effects.keys():
                 # FIXME: put name and attributes?  Or upstream?
@@ -612,6 +637,12 @@ class HIRSFCDR:
         args = typhon.physics.metrology.recursive_args(u_e,
             stop_at=(sympy.Symbol, sympy.Indexed, fu))
 
+        # NB: adict is the dictionary of everything (uncertainties and
+        # quantities) that needs to be
+        # substituted to evaluate the magnitude of the uncertainty.
+        # cached_uncertainties is a dictionary persistent between function
+        # calls (until cleared) to avoid recalculating identical
+        # expressions
         adict = {}
         for v in args:
             # check which one of the four aforementioned applies
@@ -621,7 +652,11 @@ class HIRSFCDR:
                 # this covers both cases (2) and (3); if there is no
                 # expression for the uncertainty, it will be read from the
                 # effects tables (see above)
-                adict[v] = self.calc_u_for_variable(v.args[0])
+                if v.args[0] in cached_uncertainties.keys():
+                    adict[v] = cached_uncertainties[v.args[0]]
+                else:
+                    adict[v] = self.calc_u_for_variable(v.args[0])
+                    cached_uncertainties[v.args[0]] = adict[v]
             else:
                 # it's a quantity
                 if v not in quantities:
