@@ -248,18 +248,24 @@ class HIRSFCDR:
 
         counts_space = ureg.Quantity(M_space["counts"][:,
             self.start_space_calib:, ch-1], ureg.count)
+        self._quantities[me.symbols["C_space"]] = self._quantity_to_xarray(
+            counts_space, name="C_space")
         # For IWCT, at least EUMETSAT uses all 56…
         counts_iwct = ureg.Quantity(M_iwct["counts"][:,
             self.start_iwct_calib:, ch-1], ureg.count)
+        self._quantities[me.symbols["C_IWCT"]] = self._quantity_to_xarray(
+            counts_iwct, name="C_IWCT")
 
+        # FIXME wart: I should use the IWCT observation line, not the
+        # space observation line, for the IWCT temperature measurement…
         T_iwct = ureg.Quantity(
             M_space["temp_iwt"].mean(-1).mean(-1).astype("f4"), ureg.K)
         self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
-            T_iwct, name="T_IWCT")
+            T_iwct, name="T_IWCT_calib_mean")
 
         L_iwct = srf.blackbody_radiance(T_iwct)
         self._quantities[me.symbols["R_IWCT"]] = self._quantity_to_xarray(
-            L_iwct, name="R_IWCT", dims=("calibration_cycle",))
+            L_iwct, name="R_IWCT")
         L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
 
         extra = []
@@ -287,7 +293,6 @@ class HIRSFCDR:
             dtype="f4") # DataArray only supports masking for floats
         da.attrs.setdefault("units", str(getattr(da, "u", "UNDEFINED")))
         da[quantity.mask] = numpy.nan
-        # set attributes
         return da
 
 
@@ -350,6 +355,10 @@ class HIRSFCDR:
         bad = bad_iwct | bad_space
         slope.mask |= bad[:, numpy.newaxis]
         offset.mask |= bad[:, numpy.newaxis]
+        self._quantities[me.symbols["a_0"]] = self._quantity_to_xarray(
+            offset, name="offset")
+        self._quantities[me.symbols["a_1"]] = self._quantity_to_xarray(
+            slope, name="slope")
         return (time,
                 offset,
                 slope)
