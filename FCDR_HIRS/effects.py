@@ -8,6 +8,8 @@ import copy
 import numpy
 import xarray
 
+from typing import (Tuple, Mapping, Set)
+
 from typhon.physics.units.common import (radiance_units, ureg)
 
 from . import measurement_equation as meq
@@ -24,7 +26,8 @@ class Effect:
 
     Needs to have (typically set on creation):
     
-    - name: description of effect
+    - name: short name 
+    - description: description of effect
     - parameter: what it relates to
     - unit: pint unit
     - pdf_shape: str, defaults to "Gaussian"
@@ -43,6 +46,7 @@ class Effect:
 
     _all_effects = {}
     name = None
+    description = None
     parameter = None
     unit = None
     pdf_shape = "Gaussian"
@@ -81,14 +85,42 @@ class Effect:
         return self._magnitude
 
     @magnitude.setter
-    def magnitude(self, v):
-        if isinstance(v, xarray.DataArray):
-            # FIXME: use this location to set attributes defining the
-            # correlation structures
-            self._magnitude = v
-        else:
-            raise TypeError("uncertainty magnitude must be DataArray. "
-                "Found {:s}".format(type(v)))
+    def magnitude(self, da):
+        if not isinstance(da, xarray.DataArray):
+            try:
+                unit = da.u
+            except AttributeError:
+                unit = None
+
+            da = xarray.DataArray(da)
+            if unit is not None:
+                da.attrs.setdefault("units", unit)
+
+        if da.name is None:
+            da.name = "u_{:s}".format(self.name)
+
+        # make sure dimensions match
+        # FIXME: make sure short names for effects always match the short
+        # names used in _fcdr_defs so that the dictionary lookup works
+        da = da.rename(dict(zip(da.dims, _fcdr_defs[self.name][1])))
+
+        da.attrs.setdefault("long_name", self.description)
+        da.attrs["short_name"] = self.name
+        da.attrs["parameter"] = str(self.parameter)
+        da.attrs["pdf_shape"] = self.pdf_shape
+        da.attrs["channels_affected"] = self.channels_affected
+        for (k, v) in self.correlation_type.asdict():
+            da.attrs["correlation_type_" + k] = v
+            # FIXME: can an attribute have dimensions?  Or does this need to
+            # be stored as a variable?  See
+            # https://github.com/FIDUCEO/FCDR_HIRS/issues/47
+            da.attrs["correlation_scale_" + k] = self.correlation_scale.asdict()[k]
+        da.attrs["channel_correlations"] = self.channel_correlations
+
+        da.encoding.update(_fcdr_defs[self.name][3])
+
+        self._magnitude = da
+
 
     _corr_type = CorrelationType("undefined", "undefined", "undefined",
                                 "undefined")
@@ -143,11 +175,10 @@ class Effect:
 
         return meq.calc_sensitivity_coefficient(s, self.parameter)
 
-def effects():
-    """Get dictionary with all known effects.
+def effects() -> Mapping[sympy.symbol, Set[Effect]]:
+    """Initialise a new dictionary with all effects per symbol.
 
-    Returns a deep copy of internally used dictionary, so it should be
-    safe to alter this dictionary.  
+    Returns: Mapping[symbol, Set[Effect]]
     """
     return copy.deepcopy(Effect._all_effects)
 
@@ -159,25 +190,29 @@ _calib = ("rectangular_absolute", "rectangular_absolute",
 _systematic = ("rectangular_absolute",)*4
 _inf = (numpy.inf,)*4
 
-earth_counts_noise = Effect(name="noise on Earth counts",
+earth_counts_noise = Effect(name="C_Earth",
+    description="noise on Earth counts",
     parameter=meq.symbols["C_E"],
     correlation_type=_random,
     unit=ureg.count,
     channel_correlations=_I)
 
-space_counts_noise = Effect(name="noise on Space counts",
+space_counts_noise = Effect(name="C_Space",
+    description="noise on Space counts",
     parameter=meq.symbols["C_s"],
     correlation_type=_calib,
     unit=ureg.count,
     channel_correlations=_I)
 
-IWCT_counts_noise = Effect(name="noise on IWCT counts",
+IWCT_counts_noise = Effect(name="C_IWCT",
+    description="noise on IWCT counts",
     parameter=meq.symbols["C_IWCT"],
     correlation_type=_calib,
     unit=ureg.count,
     channel_correlations=_I)
 
-SRF_calib = Effect(name="Spectral response function calibration",
+SRF_calib = Effect(name="SRF_calib",
+    description="Spectral response function calibration",
     parameter=meq.symbols["Δλ"],
     correlation_type=_systematic,
     correlation_scale=_inf,
@@ -186,21 +221,23 @@ SRF_calib = Effect(name="Spectral response function calibration",
 
 # This one does not fit in measurement equation, how to code?
 #
-#SRF_RtoBT = Effect(name="Spectral response function radiance-to-BT",
+#SRF_RtoBT = Effect(description="Spectral response function radiance-to-BT",
 #    parameter=meq.symbols["T_b"],
 #    correlation_type=_systematic,
 #    correlation_scale=_inf,
 #    unit=ureg.nm,
 #    channel_correlations=_I)
 
-PRT_counts_noise = Effect(name="IWCT PRT counts noise",
+PRT_counts_noise = Effect(name="C_PRT",
+    description="IWCT PRT counts noise",
     parameter=meq.symbols["C_PRT"],
     correlation_type=_calib,
     unit=ureg.count,
     channel_correlations=_ones)
 
 IWCT_PRT_representation = Effect(
-    name="IWCT PRT representation",
+    name="O_TIWCT",
+    description="IWCT PRT representation",
     parameter=meq.symbols["O_TIWCT"],
     correlation_type=_systematic,
     correlation_scale=_inf,
@@ -208,7 +245,8 @@ IWCT_PRT_representation = Effect(
     channel_correlations=_ones)
 
 IWCT_PRT_counts_to_temp = Effect(
-    name="IWCT PRT counts to temperature",
+    name="d_PRT",
+    description="IWCT PRT counts to temperature",
     parameter=meq.symbols["d_PRT"], # Relates to free_symbol but actual
         # parameter in measurement equation to be replaced relates to as
         # returned by typhon.physics.metrology.recursive_args; need to
@@ -219,16 +257,18 @@ IWCT_PRT_counts_to_temp = Effect(
     channel_correlations=_ones)
 
 IWCT_type_b = Effect(
-    name="IWCT type B",
+    name="O_TPRT",
+    description="IWCT type B",
     parameter=meq.symbols["O_TPRT"],
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.K,
-    magnitude=xarray.DataArray(0.1, name="uncertainty"),
+    magnitude=xarray.DataArray(0.1, description="uncertainty"),
     channel_correlations=_ones)
 
 nonlinearity = Effect(
-    name="Nonlinearity",
+    name="nonlinearity",
+    description="Nonlinearity",
     parameter=meq.symbols["a_2"],
     correlation_type=_systematic,
     correlation_scale=_inf,
@@ -243,7 +283,8 @@ nonlinearity = Effect(
                 numpy.ones(shape=(9,9)))))))
 
 nonnonlinearity = Effect(
-    name="Wrongness of nonlinearity",
+    name="O_Re",
+    description="Wrongness of nonlinearity",
     parameter=meq.symbols["O_Re"],
     correlation_type=_systematic,
     correlation_scale=_inf,
@@ -252,11 +293,12 @@ nonnonlinearity = Effect(
 
 Earthshine = Effect(
     name="Earthshine",
+    description="Earthshine",
     parameter=meq.symbols["R_refl"],
     correlation_type=("rectangular_absolute", "rectangular_absolute",
           "repeated_rectangles", "triangular_relative"),
     unit=radiance_units["ir"])
 
 #Rself = Effect(
-#    name="self-emission",
+#    description="self-emission",
 #    parameter=meq.symbols["Rself"],

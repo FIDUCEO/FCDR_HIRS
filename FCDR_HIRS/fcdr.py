@@ -86,13 +86,13 @@ class HIRSFCDR:
         # the value of the keyword "calibrate" (passed to
         # read/read_period/…) is equal to any of the values in the tuple
         cond = {"calibrate": (None, True)}
-        self.my_pseudo_fields["radiance_fid"] = (
+        self.my_pseudo_fields["radiance_fid_naive"] = (
             ["radiance", self.scantype_fieldname, "temp_iwt", "time"],
             lambda M, D:
             self.calculate_radiance_all(
                 M[1] if isinstance(M, tuple) else M, interp_kind="zero"),
             cond)
-        self.my_pseudo_fields["bt_fid"] = (["radiance_fid"],
+        self.my_pseudo_fields["bt_fid_naive"] = (["radiance_fid_naive"],
             self.calculate_bt_all,
             cond)
 
@@ -106,8 +106,6 @@ class HIRSFCDR:
         in the upcoming time.
 
         Doesn't even have to be between calibs, can be any times.
-
-        FIXME: Currently implementing linear interpolation.
 
         Arguments:
         
@@ -160,12 +158,14 @@ class HIRSFCDR:
 
         return out
 
-    def custom_calibrate(self, counts, slope, offset):
+    def custom_calibrate(self, counts, slope, offset, a2, Rself):
         """Calibrate with my own slope and offset
 
-        Currently linear.
         """
-        return offset[:, numpy.newaxis] + slope[:, numpy.newaxis] * counts
+        return (offset[:, numpy.newaxis]
+              + slope[:, numpy.newaxis] * counts
+              + a2 * counts**2
+              - Rself)
 
     def extract_calibcounts_and_temp(self, M, ch, srf=None,
             return_u=False, return_ix=False):
@@ -269,11 +269,21 @@ class HIRSFCDR:
         L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
 
         extra = []
+        # this implementation is slightly more sophisticated than in
+        # self.estimate_noise although there is some code duplication.
+        # Here, we only use real calibration lines, where both space and
+        # earth views were successful.
+        u_counts_iwct = (typhon.math.stats.adev(counts_iwct, 1) /
+            numpy.sqrt(counts_iwct.shape[1]))
+        self._effects_by_name["C_IWCT"].magnitude = u_counts_iwct
+
+        u_counts_space = (typhon.math.stats.adev(counts_space, 1) /
+            numpy.sqrt(counts_space.shape[1]))
+        self._effects_by_name["C_Space"].magnitude = u_counts_space
+
+        self._effects_by_name["C_Earth"].magnitude = (
+            u_counts_iwct + u_counts_space)/2
         if return_u:
-            u_counts_iwct = (typhon.math.stats.adev(counts_iwct, 1) /
-                numpy.sqrt(counts_iwct.shape[1]))
-            u_counts_space = (typhon.math.stats.adev(counts_space, 1) /
-                numpy.sqrt(counts_space.shape[1]))
             extra.extend([u_counts_iwct, u_counts_space])
         if return_ix:
             extra.append(space_followed_by_iwct.nonzero()[0])
@@ -364,18 +374,35 @@ class HIRSFCDR:
                 slope)
 
     _quantities = {}
-    def calculate_radiance(self, M, ch, interp_kind="nearest", srf=None):
+    _effects = {}
+    def calculate_radiance(self, M, ch, interp_kind="zero", srf=None,
+                Rself_model=None):
         """Calculate radiance
 
         Wants ndarray as returned by read, SRF, and channel.
 
         Returns pint quantity with masked array underneath.
         """
+        if interp_kind != "zero":
+            raise NotImplementedError("You asked for {:s} interpolation, "
+                "but I refuse to do so.  Interpolating calibration "
+                "must be done with a zero-order spline. Corrections on "
+                "top of that must be physics-based, such as through "
+                "the self-emission model. ".format(interp_kind))
         # When calculating uncertainties I depend on the same quantities
         # as when calculating radiances, so I really should keep track of
         # the quantities I calculate so I can use them for the
         # uncertainties after.
         self._quantities.clear() # don't accidentally use old quantities…
+
+        # the two following dictionary do and should point to the same
+        # effect objects!  I want both because when I'm evaluating the
+        # effects it's easier to get them by name, but when I'm
+        # substituting them into the uncertainty-expression it's easier to
+        # get them by symbol.
+        self._effects = effects.effects()
+        self._effects_by_name = {e.name: e for e in
+                itertools.chain.from_iterable(self._effects.values())}
 
         srf = srf or self.srfs[ch-1]
         (time, offset, slope) = self.calculate_offset_and_slope(
@@ -391,23 +418,36 @@ class HIRSFCDR:
             (interp_offset, interp_slope) = self.interpolate_between_calibs(M, time,
                 ureg.Quantity(numpy.ma.median(offset.m, 1), offset.u),
                 ureg.Quantity(numpy.ma.median(slope.m, 1), slope.u),
-                kind=interp_kind)
+                kind=interp_kind) # kind is always "zero" (see above)
         elif offset.shape[0] == 1:
             interp_offset = numpy.ma.zeros(dtype=offset.dtype, shape=M.shape)
             interp_offset[:] = numpy.ma.median(offset.m, 1)
             interp_offset = ureg.Quantity(interp_offset, offset.u)
             interp_slope = numpy.ma.zeros(dtype=offset.dtype, shape=M.shape)
             interp_slope[:] = numpy.ma.median(slope.m, 1)
-            interp_slope = ureg.Quantity(interp_slope, offset.u)
+            interp_slope = ureg.Quantity(interp_slope, slope.u)
         elif M.shape[0] > 0:
             raise typhon.datasets.dataset.InvalidFileError("Found {:d} calibration cycles, too few!".format(offset.shape[0]))
         else:
             return ureg.Quantity(
                 numpy.zeros(shape=M["radiance"][:, :, ch-1].shape, dtype="f4"),
                 typhon.physics.units.common.radiance_units["ir"])
+        a2 = ureg.Quantity(0,
+            typhon.physics.units.common.radiance_units["ir"]/(ureg.count**2))
+        self._quantities[me.symbols["a_2"]] = self._quantity_to_xarray(
+            a2, name="a_2")
+        if Rself_model is None:
+            Rself = ureg.Quantity(numpy.zeros_like(M["counts"]),
+                    typhon.physics.units.common.radiance_units["ir"])
+        else:
+            raise NotImplementedError("Evaluation of self-emission model "
+                "not implemented yet")
+        self._quantities[me.symbols["Rself"]] = self._quantity_to_xarray(
+            Rself, name="Rself")
         rad_wn = self.custom_calibrate(
             ureg.Quantity(M["counts"][:, :, ch-1].astype("f4"), ureg.count),
-            interp_slope, interp_offset).to(typhon.physics.units.common.radiance_units["ir"], "radiance")
+            interp_slope, interp_offset, a2, Rself).to(
+                typhon.physics.units.common.radiance_units["ir"], "radiance")
         rad_wn = ureg.Quantity(numpy.ma.array(rad_wn), rad_wn.u)
         rad_wn.m.mask = M["counts"][:, :, ch-1].mask
         rad_wn.m.mask |= M["radiance"][:, :, ch-1].mask
@@ -429,13 +469,13 @@ class HIRSFCDR:
         bt_all = ureg.Quantity(
             numpy.ma.concatenate(
                 [self.srfs[ch-1].channel_radiance2bt(
-                    D["radiance_fid"][:, :, ch-1])[..., numpy.newaxis]#.astype("f4")
+                    D["radiance_fid_naive"][:, :, ch-1])[..., numpy.newaxis]#.astype("f4")
                         for ch in range(1, 20)], 2),
             ureg.K)
         if numpy.isscalar(bt_all.m.mask):
-            bt_all.m.mask = D["radiance_fid"].mask
+            bt_all.m.mask = D["radiance_fid_naive"].mask
         else:
-            bt_all.m.mask |= D["radiance_fid"].mask
+            bt_all.m.mask |= D["radiance_fid_naive"].mask
         return bt_all
    
     def estimate_noise(self, M, ch, typ="both"):

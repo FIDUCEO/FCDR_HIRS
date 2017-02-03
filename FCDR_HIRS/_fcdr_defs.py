@@ -42,4 +42,15 @@ FCDR_data_vars_props = dict(
         ("calibration_cycle",),
         {"long_name": "Slope (a_1) or 1/gain"}, # units set in _quantity_to_xarray
         _coding),
+    a2 = (
+        "a2",
+        (),
+        {"long_name": "Non-linearity (a_2)"},
+        _coding),
+    Rself = (
+        "Rself",
+        ("time", "scanpos", "calibrated_channel"),
+        {"long_name": "Correction to Earth radiance due to self-emission "
+                      "change since last calibration"},
+        _coding)
 )
