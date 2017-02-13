@@ -7,12 +7,14 @@ import copy
 
 import numpy
 import xarray
+import sympy
 
 from typing import (Tuple, Mapping, Set)
 
 from typhon.physics.units.common import (radiance_units, ureg)
 
 from . import measurement_equation as meq
+from . import _fcdr_defs
 
 CorrelationType = collections.namedtuple("CorrelationType",
     ["within_scanline", "between_scanlines", "between_orbits",
@@ -34,6 +36,8 @@ class Effect:
     - channels_affected: str, defaults "all"
     - correlation_type: what the form of the correlation is (4×)
     - channel_correlations: channel correlation matrix
+    - dimensions: list of dimension names or None, which means same as
+      parameter it relates to.
 
     Additionally needs to have (probably set only later):
 
@@ -52,9 +56,19 @@ class Effect:
     pdf_shape = "Gaussian"
     channels_affected = "all"
     channel_correlations = None
+    dimensions = None
 
     def __init__(self, **kwargs):
-        for (k, v) in kwargs.items():
+        later_pairs = []
+        while len(kwargs) > 0:
+            (k, v) = kwargs.popitem()
+            if isinstance(getattr(self.__class__, k), property):
+                # setter may depend on other values, do last
+                later_pairs.append((k, v))
+            else:
+                setattr(self, k, v)
+        while len(later_pairs) > 0:
+            (k, v) = later_pairs.pop()
             setattr(self, k, v)
         if not self.parameter in self._all_effects.keys():
             self._all_effects[self.parameter] = set()
@@ -66,7 +80,12 @@ class Effect:
         super().__setattr__(k, v)
 
     def __repr__(self):
-        return "<Effect {!s}:{:s}>".format(self.parameter, self.name)
+        return "<Effect {!s}:{:s}>\n".format(self.parameter, self.name) + (
+            "{description:s} {dims!s} [{unit!s}]\n".format(
+                description=self.description, dims=self.dimensions, unit=self.unit) +
+            "Correlations: {!s} {!s}\n".format(self.correlation_type,
+                self.correlation_scale) +
+            "Magnitude: {!s}".format(self.magnitude))
 
     _magnitude = None
     @property
@@ -102,22 +121,31 @@ class Effect:
         # make sure dimensions match
         # FIXME: make sure short names for effects always match the short
         # names used in _fcdr_defs so that the dictionary lookup works
-        da = da.rename(dict(zip(da.dims, _fcdr_defs[self.name][1])))
+        # EDIT 2017-02-13: Commenting this because I don't understand
+        # why this is needed.  If I uncomment it later I should explain
+        # clearly what is going on here.  It fails because uncertainty
+        # magnitudes may have less dimensions than the quantities they relate to, in
+        # particular when relating to systematic errors; for example, PRT
+        # type B uncertainty has magnitude 0.1 across all dimensions.
+        #da = da.rename(dict(zip(da.dims, _fcdr_defs.FCDR_data_vars_props[self.name][1])))
 
         da.attrs.setdefault("long_name", self.description)
         da.attrs["short_name"] = self.name
         da.attrs["parameter"] = str(self.parameter)
         da.attrs["pdf_shape"] = self.pdf_shape
         da.attrs["channels_affected"] = self.channels_affected
-        for (k, v) in self.correlation_type.asdict():
+        for (k, v) in self.correlation_type._asdict().items():
             da.attrs["correlation_type_" + k] = v
             # FIXME: can an attribute have dimensions?  Or does this need to
             # be stored as a variable?  See
             # https://github.com/FIDUCEO/FCDR_HIRS/issues/47
-            da.attrs["correlation_scale_" + k] = self.correlation_scale.asdict()[k]
+            da.attrs["correlation_scale_" + k] = getattr(self.correlation_scale, k)
         da.attrs["channel_correlations"] = self.channel_correlations
 
-        da.encoding.update(_fcdr_defs[self.name][3])
+        try:
+            da.encoding.update(_fcdr_defs.FCDR_data_vars_props[self.name][3])
+        except KeyError:
+            da.encoding.update(_fcdr_defs.FCDR_uncertainty_encodings[self.name])
 
         self._magnitude = da
 
@@ -175,7 +203,7 @@ class Effect:
 
         return meq.calc_sensitivity_coefficient(s, self.parameter)
 
-def effects() -> Mapping[sympy.symbol, Set[Effect]]:
+def effects() -> Mapping[sympy.Symbol, Set[Effect]]:
     """Initialise a new dictionary with all effects per symbol.
 
     Returns: Mapping[symbol, Set[Effect]]
@@ -195,21 +223,24 @@ earth_counts_noise = Effect(name="C_Earth",
     parameter=meq.symbols["C_E"],
     correlation_type=_random,
     unit=ureg.count,
-    channel_correlations=_I)
+    channel_correlations=_I,
+    dimensions=["calibration_cycle"]) # FIXME: update if interpolated (issue#10)
 
-space_counts_noise = Effect(name="C_Space",
+space_counts_noise = Effect(name="C_space",
     description="noise on Space counts",
     parameter=meq.symbols["C_s"],
     correlation_type=_calib,
     unit=ureg.count,
-    channel_correlations=_I)
+    channel_correlations=_I,
+    dimensions=["calibration_cycle"])
 
 IWCT_counts_noise = Effect(name="C_IWCT",
     description="noise on IWCT counts",
     parameter=meq.symbols["C_IWCT"],
     correlation_type=_calib,
     unit=ureg.count,
-    channel_correlations=_I)
+    channel_correlations=_I,
+    dimensions=["calibration_cycle"])
 
 SRF_calib = Effect(name="SRF_calib",
     description="Spectral response function calibration",
@@ -263,8 +294,10 @@ IWCT_type_b = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.K,
-    magnitude=xarray.DataArray(0.1, description="uncertainty"),
     channel_correlations=_ones)
+# set magnitude when I'm sure everything else has been set (order of
+# kwargs not preserved before Python 3.6)
+IWCT_type_b.magnitude=xarray.DataArray(0.1, name="uncertainty", attrs={"units": "K"})
 
 nonlinearity = Effect(
     name="nonlinearity",

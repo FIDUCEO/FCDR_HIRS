@@ -1,31 +1,17 @@
 """Datasets for TOVS/ATOVS
 """
 
-import io
-import tempfile
-import subprocess
-import datetime
 import logging
-import gzip
-import shutil
-import abc
-import pathlib
-import dbm
+import itertools
+import warnings
 
 import numpy
 import scipy.interpolate
-
-import netCDF4
-import dateutil
 import progressbar
-
-try:
-    import coda
-except ImportError:
-    logging.warn("Unable to import coda, won't read IASI EPS L1C")
+import xarray
+import sympy
     
 import typhon.datasets.dataset
-import typhon.utils.metaclass
 import typhon.physics.units
 from typhon.physics.units.common import ureg
 from typhon.datasets.tovs import (Radiometer, HIRS, HIRSPOD, HIRS2,
@@ -36,6 +22,7 @@ from pyatmlab import tools
 from . import models
 from . import effects
 from . import measurement_equation as me
+from . import _fcdr_defs
 
 class HIRSFCDR:
     """Produce, write, study, and read HIRS FCDR.
@@ -95,6 +82,8 @@ class HIRSFCDR:
         self.my_pseudo_fields["bt_fid_naive"] = (["radiance_fid_naive"],
             self.calculate_bt_all,
             cond)
+
+        self._data_vars_props.update(_fcdr_defs.FCDR_data_vars_props)
 
         #self.hirs = hirs
         #self.srfs = srfs
@@ -248,25 +237,27 @@ class HIRSFCDR:
 
         counts_space = ureg.Quantity(M_space["counts"][:,
             self.start_space_calib:, ch-1], ureg.count)
-        self._quantities[me.symbols["C_space"]] = self._quantity_to_xarray(
-            counts_space, name="C_space")
+        self._tuck_quantity_channel("C_s", counts_space, "C_space", ch)
         # For IWCT, at least EUMETSAT uses all 56…
         counts_iwct = ureg.Quantity(M_iwct["counts"][:,
             self.start_iwct_calib:, ch-1], ureg.count)
-        self._quantities[me.symbols["C_IWCT"]] = self._quantity_to_xarray(
-            counts_iwct, name="C_IWCT")
+        self._tuck_quantity_channel("C_IWCT", counts_iwct, "C_IWCT", ch)
 
         # FIXME wart: I should use the IWCT observation line, not the
         # space observation line, for the IWCT temperature measurement…
         T_iwct = ureg.Quantity(
             M_space["temp_iwt"].mean(-1).mean(-1).astype("f4"), ureg.K)
+        # store directly, not using R_IWCT, as this is the same across
+        # channels
+        # FIXME wart: I'm storing the same information 19 times (for each
+        # channel), could assert they are identical or move this out of a
+        # higher loop, or I could simply leave it
         self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
             T_iwct, name="T_IWCT_calib_mean")
 
         L_iwct = srf.blackbody_radiance(T_iwct)
-        self._quantities[me.symbols["R_IWCT"]] = self._quantity_to_xarray(
-            L_iwct, name="R_IWCT")
         L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
+        self._tuck_quantity_channel("R_IWCT", L_iwct, "R_IWCT", ch)
 
         extra = []
         # this implementation is slightly more sophisticated than in
@@ -275,14 +266,14 @@ class HIRSFCDR:
         # earth views were successful.
         u_counts_iwct = (typhon.math.stats.adev(counts_iwct, 1) /
             numpy.sqrt(counts_iwct.shape[1]))
-        self._effects_by_name["C_IWCT"].magnitude = u_counts_iwct
+        self._tuck_effect_channel("C_IWCT", u_counts_iwct, ch)
 
         u_counts_space = (typhon.math.stats.adev(counts_space, 1) /
             numpy.sqrt(counts_space.shape[1]))
-        self._effects_by_name["C_Space"].magnitude = u_counts_space
+        self._tuck_effect_channel("C_space", u_counts_space, ch)
+        self._tuck_effect_channel("C_Earth",
+            (u_counts_iwct + u_counts_space)/2, ch)
 
-        self._effects_by_name["C_Earth"].magnitude = (
-            u_counts_iwct + u_counts_space)/2
         if return_u:
             extra.extend([u_counts_iwct, u_counts_space])
         if return_ix:
@@ -290,21 +281,65 @@ class HIRSFCDR:
             
         return (M_space["time"], L_iwct, counts_iwct, counts_space) + tuple(extra)
 
-    def _quantity_to_xarray(self, quantity, *args, **kwargs):
+    def _quantity_to_xarray(self, quantity, name, dropdims=(), dims=None):
         """Convert quantity to xarray
 
         Quantity can be masked and with unit, which will be converted.
+        Can also pass either dropdims (dims subtracted from ones defined
+        for the quantity) or dims (hard list of dims to include).
         """
         
-        da = xarray.DataArray(numpy.asarray(quantity), name,
-            dims=self.data_vars_props[name][1],
-            attrs=self.data_vars_props[name][2],
-            encoding=self.data_vars_props[name][3],
-            dtype="f4") # DataArray only supports masking for floats
-        da.attrs.setdefault("units", str(getattr(da, "u", "UNDEFINED")))
-        da[quantity.mask] = numpy.nan
+        da = xarray.DataArray(
+            numpy.asarray(quantity,
+                dtype=("f4" if hasattr(quantity, "mask") else
+                    quantity.dtype)), # masking only for floats
+            dims=dims or [d for d in self._data_vars_props[name][1] if d not in dropdims],
+            attrs=self._data_vars_props[name][2],
+            encoding=self._data_vars_props[name][3])
+        # 1st choice: quantity.u
+        # 2nd choice: defined in attrs
+        # fallback: "UNDEFINED"
+        da.attrs["units"] = str(getattr(quantity, "u", da.attrs.get("units", "UNDEFINED")))
+        try:
+            da.values[quantity.mask] = numpy.nan
+        except AttributeError:
+            pass # not a masked array
         return da
 
+    def _tuck_quantity_channel(self, symbol_name, quantity, name, channel):
+        """Convert quantity to xarray and put into self._quantities
+        """
+
+        s = me.symbols[symbol_name]
+        q = self._quantity_to_xarray(quantity, name,
+                dropdims=["channel", "calibrated_channel"]).assign_coords(channel=channel)
+        if s in self._quantities:
+            da = self._quantities[s]
+            da = xarray.concat([da, q], dim="channel")
+            self._quantities[s] = da
+        else:
+            self._quantities[s] = q
+
+    def _tuck_effect_channel(self, name, quantity, channel):
+        """Convert quantity to xarray and put into self._effects
+        """
+
+        # NB: uncertainty does NOT always have the same dimensions as quantity
+        # it belongs to!  For example, C_IWCT has dimensions
+        # ('calibration_cycle', 'calibration_position', 'channel'), but
+        # u_C_IWCT has dimensions  ('calibration_cycle', 'channel').
+        # Therefore, effects have 'dims' attribute in case there is a
+        # difference.
+
+        q = self._quantity_to_xarray(quantity, name,
+                dropdims=["channel"],
+                dims=self._effects_by_name[name].dimensions).assign_coords(channel=channel)
+        if self._effects_by_name[name].magnitude is None:
+            self._effects_by_name[name].magnitude = q
+        else:
+            da = self._effects_by_name[name].magnitude
+            da = xarray.concat([da, q], dim="channel")
+            self._effects_by_name[name].magnitude = da
 
     def calculate_offset_and_slope(self, M, ch, srf=None):
         """Calculate offset and slope.
@@ -365,16 +400,16 @@ class HIRSFCDR:
         bad = bad_iwct | bad_space
         slope.mask |= bad[:, numpy.newaxis]
         offset.mask |= bad[:, numpy.newaxis]
-        self._quantities[me.symbols["a_0"]] = self._quantity_to_xarray(
-            offset, name="offset")
-        self._quantities[me.symbols["a_1"]] = self._quantity_to_xarray(
-            slope, name="slope")
+        self._tuck_quantity_channel("C_s", counts_space, "C_space", ch)
+        self._tuck_quantity_channel("a_0", offset, "offset", ch)
+        self._tuck_quantity_channel("a_1", slope, "slope", ch)
         return (time,
                 offset,
                 slope)
 
     _quantities = {}
-    _effects = {}
+    _effects = None
+    _effects_by_name = None
     def calculate_radiance(self, M, ch, interp_kind="zero", srf=None,
                 Rself_model=None):
         """Calculate radiance
@@ -389,20 +424,6 @@ class HIRSFCDR:
                 "must be done with a zero-order spline. Corrections on "
                 "top of that must be physics-based, such as through "
                 "the self-emission model. ".format(interp_kind))
-        # When calculating uncertainties I depend on the same quantities
-        # as when calculating radiances, so I really should keep track of
-        # the quantities I calculate so I can use them for the
-        # uncertainties after.
-        self._quantities.clear() # don't accidentally use old quantities…
-
-        # the two following dictionary do and should point to the same
-        # effect objects!  I want both because when I'm evaluating the
-        # effects it's easier to get them by name, but when I'm
-        # substituting them into the uncertainty-expression it's easier to
-        # get them by symbol.
-        self._effects = effects.effects()
-        self._effects_by_name = {e.name: e for e in
-                itertools.chain.from_iterable(self._effects.values())}
 
         srf = srf or self.srfs[ch-1]
         (time, offset, slope) = self.calculate_offset_and_slope(
@@ -432,18 +453,19 @@ class HIRSFCDR:
             return ureg.Quantity(
                 numpy.zeros(shape=M["radiance"][:, :, ch-1].shape, dtype="f4"),
                 typhon.physics.units.common.radiance_units["ir"])
-        a2 = ureg.Quantity(0,
-            typhon.physics.units.common.radiance_units["ir"]/(ureg.count**2))
-        self._quantities[me.symbols["a_2"]] = self._quantity_to_xarray(
-            a2, name="a_2")
+        a2 = ureg.Quantity(numpy.float16(0),
+            typhon.physics.units.common.radiance_units["si"]/(ureg.count**2))
+        self._tuck_quantity_channel("a_2", a2, "a_2", ch)
         if Rself_model is None:
-            Rself = ureg.Quantity(numpy.zeros_like(M["counts"]),
-                    typhon.physics.units.common.radiance_units["ir"])
+            # Disable this warning, it will show 19 times per file…
+            warnings.warn("No self-emission defined, assuming 0!",
+                UserWarning)
+            Rself = ureg.Quantity(numpy.zeros_like(M["counts"][:, :, ch-1]),
+                    typhon.physics.units.common.radiance_units["si"])
         else:
             raise NotImplementedError("Evaluation of self-emission model "
                 "not implemented yet")
-        self._quantities[me.symbols["Rself"]] = self._quantity_to_xarray(
-            Rself, name="Rself")
+        self._tuck_quantity_channel("R_selfE", Rself, "Rself", ch)
         rad_wn = self.custom_calibrate(
             ureg.Quantity(M["counts"][:, :, ch-1].astype("f4"), ureg.count),
             interp_slope, interp_offset, a2, Rself).to(
@@ -459,6 +481,21 @@ class HIRSFCDR:
         """Calculate radiances for all channels
 
         """
+
+        # When calculating uncertainties I depend on the same quantities
+        # as when calculating radiances, so I really should keep track of
+        # the quantities I calculate so I can use them for the
+        # uncertainties after.
+        self._quantities.clear() # don't accidentally use old quantities…
+
+        # the two following dictionary should and do point to the same
+        # effect objects!  I want both because when I'm evaluating the
+        # effects it's easier to get them by name, but when I'm
+        # substituting them into the uncertainty-expression it's easier to
+        # get them by symbol.
+        self._effects = effects.effects()
+        self._effects_by_name = {e.name: e for e in
+                itertools.chain.from_iterable(self._effects.values())}
 
         all_rad = [self.calculate_radiance(M, i, interp_kind=interp_kind)
             for i in range(1, 20)]
