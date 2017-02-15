@@ -1,14 +1,18 @@
 """Measurement equation and associated functionality
 """
 
+import scipy.constants
+
 import sympy
 from sympy.core.symbol import Symbol
 
 import typhon.physics.metrology
 
+version = "β"
+
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
-         "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φ "
-         "R_IWCT ε O_Re O_TIWCT O_TPRT")
+         "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φn "
+         "R_IWCT ε O_Re O_TIWCT O_TPRT α β T* λ* O_RIWCT")
 
 symbols = sym = dict(zip(names.split(), sympy.symbols(names)))
 
@@ -20,31 +24,39 @@ expressions[sym["a_0"]] = (
 expressions[sym["a_1"]] = (
     sym["R_IWCT"] + sym["R_selfIWCT"] - sym["R_selfs"] -
     sym["a_2"]*(sym["C_IWCT"]**2-sym["C_s"]**2))/(sym["C_IWCT"]-sym["C_s"])
-expressions[sym["R_IWCT"]] = (
-    (sympy.Integral(((sym["ε"] + sym["a_3"]) * sym["B"] +
-    (1+sym["ε"]-sym["a_3"])*sym["R_refl"]) * sym["φ"], sym["λ"])) /
-    sympy.Integral(sym["φ"], sym["λ"]))
+if version == "β":
+    expressions[sym["R_IWCT"]] = (
+        (sym["ε"] + sym["a_3"]) * sym["B"] +
+        (1 - sym["ε"] - sym["a_3"]) * sym["R_refl"]
+        + sym["O_RIWCT"])
+else:
+    expressions[sym["R_IWCT"]] = (
+        (sympy.Integral(((sym["ε"] + sym["a_3"]) * sym["B"] +
+        (1-sym["ε"]-sym["a_3"])*sym["R_refl"]) * sym["φn"], sym["λ"]))) # /
+#    sympy.Integral(sym["φ"], sym["λ"]))
 expressions[sym["B"]] = (
     (2*sym["h"]*sym["c"]**2)/((sym["λ"])**5) *
     1/(sympy.exp((sym["h"]*sym["c"])/((sym["λ"])*sym["k_b"]*sym["T_IWCT"]))-1))
+if version == "β":
+    expressions[sym["B"]] = expressions[sym["B"]].subs(
+        {sym["T_IWCT"]: sym["T*"], sym["λ"]: sym["λ*"]})
+    expressions[sym["T*"]] = sym["α"] + sym["β"]*sym["T_IWCT"]
 expressions[sym["T_IWCT"]] = (
     sympy.Sum(sympy.IndexedBase(sym["T_PRT"])[sym["n"]], (sym["n"], 0, sym["N"]))/sym["N"] + sym["O_TIWCT"])
 expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"]]] = (
     sympy.Sum(sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]] *
         sympy.IndexedBase(sym["C_PRT"])[sym["n"]]**sym["k"], (sym["k"], 0, sym["K"]-1))
     + sym["O_TPRT"])
-expressions[sym["φ"]] = (sympy.Function("φ")(sym["λ"]+sym["Δλ"]))
+expressions[sym["φn"]] = (sympy.Function("φn")(sym["λ"]+sym["Δλ"]))
+
+expressions[sym["c"]] = sympy.sympify(scipy.constants.speed_of_light)
+expressions[sym["h"]] = sympy.sympify(scipy.constants.Planck)
+expressions[sym["k_b"]] = sympy.sympify(scipy.constants.Boltzmann)
 
 aliases = {}
 aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
 aliases[sym["C_PRT"]] = sympy.IndexedBase(sym["C_PRT"])[sym["n"]]
 aliases[sym["d_PRT"]] = sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]]
-
-functions = {}
-for (sn, s) in symbols.items():
-    if s in expressions.keys():
-        e = expressions[s]
-        functions[s] = sympy.Function(sn)(*(aliases.get(sm, sm) for sm in e.free_symbols))
 
 def recursive_substitution(e, stop_at=None, return_intermediates=False):
     """For expression 'e', substitute all the way down.
@@ -82,6 +94,12 @@ for s in symbols.values():
                 expressions.get(aliases.get(s,s),s),
                 return_intermediates=True)
     dependencies[aliases.get(s, s)] = typhon.physics.metrology.recursive_args(e) | im
+
+functions = {}
+for (sn, s) in symbols.items():
+    if s in dependencies.keys():
+        if dependencies[s]:
+            functions[s] = sympy.Function(sn)(*(aliases.get(sm, sm) for sm in dependencies[s]))
 
 def substitute_until_explicit(expr, s2):
     oldexpr = None
@@ -130,7 +148,7 @@ def evaluate_quantity(v, quantities):
 
     values = {}
     for arg in typhon.physics.metrology.recursive_args(e,
-            stop_at=[sympy.Symbol, sympy.Indexed]):
+            stop_at=(sympy.Symbol, sympy.Indexed)):
         #
         try:
             values[arg] = quantities[arg]

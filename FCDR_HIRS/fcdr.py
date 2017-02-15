@@ -4,6 +4,8 @@
 import logging
 import itertools
 import warnings
+import functools
+import operator
 
 import numpy
 import scipy.interpolate
@@ -237,11 +239,9 @@ class HIRSFCDR:
 
         counts_space = ureg.Quantity(M_space["counts"][:,
             self.start_space_calib:, ch-1], ureg.count)
-        self._tuck_quantity_channel("C_s", counts_space, "C_space", ch)
         # For IWCT, at least EUMETSAT uses all 56…
         counts_iwct = ureg.Quantity(M_iwct["counts"][:,
             self.start_iwct_calib:, ch-1], ureg.count)
-        self._tuck_quantity_channel("C_IWCT", counts_iwct, "C_IWCT", ch)
 
         # FIXME wart: I should use the IWCT observation line, not the
         # space observation line, for the IWCT temperature measurement…
@@ -257,7 +257,6 @@ class HIRSFCDR:
 
         L_iwct = srf.blackbody_radiance(T_iwct)
         L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
-        self._tuck_quantity_channel("R_IWCT", L_iwct, "R_IWCT", ch)
 
         extra = []
         # this implementation is slightly more sophisticated than in
@@ -278,7 +277,10 @@ class HIRSFCDR:
             extra.extend([u_counts_iwct, u_counts_space])
         if return_ix:
             extra.append(space_followed_by_iwct.nonzero()[0])
-            
+
+        self._tuck_quantity_channel("C_s", counts_space, "C_space", ch)
+        self._tuck_quantity_channel("C_IWCT", counts_iwct, "C_IWCT", ch)
+        self._tuck_quantity_channel("R_IWCT", L_iwct, "R_IWCT", ch)
         return (M_space["time"], L_iwct, counts_iwct, counts_space) + tuple(extra)
 
     def _quantity_to_xarray(self, quantity, name, dropdims=(), dims=None):
@@ -397,21 +399,27 @@ class HIRSFCDR:
         bad_space = (scipy.stats.iqr(counts_space, 1, (10, 90)) > 3.3 *
             typhon.math.stats.adev(counts_space, 1))
 
+        # non-linearity is set to 0 for now
+        a2 = ureg.Quantity(numpy.float16(0),
+            typhon.physics.units.common.radiance_units["si"]/(ureg.count**2))
+
         bad = bad_iwct | bad_space
         slope.mask |= bad[:, numpy.newaxis]
         offset.mask |= bad[:, numpy.newaxis]
-        self._tuck_quantity_channel("C_s", counts_space, "C_space", ch)
         self._tuck_quantity_channel("a_0", offset, "offset", ch)
         self._tuck_quantity_channel("a_1", slope, "slope", ch)
+        self._tuck_quantity_channel("a_2", a2, "a_2", ch)
         return (time,
                 offset,
-                slope)
+                slope,
+                a2)
 
     _quantities = {}
     _effects = None
     _effects_by_name = None
     def calculate_radiance(self, M, ch, interp_kind="zero", srf=None,
-                Rself_model=None):
+                Rself_model=None,
+                Rrefl_model=None):
         """Calculate radiance
 
         Wants ndarray as returned by read, SRF, and channel.
@@ -426,7 +434,7 @@ class HIRSFCDR:
                 "the self-emission model. ".format(interp_kind))
 
         srf = srf or self.srfs[ch-1]
-        (time, offset, slope) = self.calculate_offset_and_slope(
+        (time, offset, slope, a2) = self.calculate_offset_and_slope(
             M, ch, srf)
         # NOTE: taking the median may not be an optimal solution.  See,
         # for example, plots produced by the script
@@ -449,31 +457,56 @@ class HIRSFCDR:
             interp_slope = ureg.Quantity(interp_slope, slope.u)
         elif M.shape[0] > 0:
             raise typhon.datasets.dataset.InvalidFileError("Found {:d} calibration cycles, too few!".format(offset.shape[0]))
-        else:
+        else: # zero scanlines…
             return ureg.Quantity(
                 numpy.zeros(shape=M["radiance"][:, :, ch-1].shape, dtype="f4"),
                 typhon.physics.units.common.radiance_units["ir"])
-        a2 = ureg.Quantity(numpy.float16(0),
-            typhon.physics.units.common.radiance_units["si"]/(ureg.count**2))
-        self._tuck_quantity_channel("a_2", a2, "a_2", ch)
+
+        views_Earth = M[self.scantype_fieldname] == self.typ_Earth
+        C_Earth = M["counts"][views_Earth, :, ch-1]
+
         if Rself_model is None:
-            # Disable this warning, it will show 19 times per file…
             warnings.warn("No self-emission defined, assuming 0!",
                 UserWarning)
-            Rself = ureg.Quantity(numpy.zeros_like(M["counts"][:, :, ch-1]),
+            Rself = ureg.Quantity(
+                    numpy.zeros_like(C_Earth),
+                    typhon.physics.units.common.radiance_units["si"])
+            RselfIWCT = Rselfspace = ureg.Quantity(
+                    numpy.zeros_like(offset),
                     typhon.physics.units.common.radiance_units["si"])
         else:
             raise NotImplementedError("Evaluation of self-emission model "
                 "not implemented yet")
-        self._tuck_quantity_channel("R_selfE", Rself, "Rself", ch)
-        rad_wn = self.custom_calibrate(
-            ureg.Quantity(M["counts"][:, :, ch-1].astype("f4"), ureg.count),
-            interp_slope, interp_offset, a2, Rself).to(
-                typhon.physics.units.common.radiance_units["ir"], "radiance")
+        if Rrefl_model is None:
+            warnings.warn("No Earthshine model defined, assuming 0!",
+                UserWarning)
+            Rrefl = ureg.Quantity(
+                numpy.zeros_like(offset),
+                typhon.physics.units.common.radiance_units["si"])
+            ε = numpy.float16(1)
+            a_3 = numpy.float16(0)
+        rad_wn = ureg.Quantity(
+            numpy.ma.masked_all(M["counts"][:, :, ch-1].shape),
+            typhon.physics.units.common.radiance_units["ir"])
+        rad_wn[views_Earth, :] = self.custom_calibrate(
+            ureg.Quantity(C_Earth.astype("f4"), ureg.count),
+            interp_slope[views_Earth], interp_offset[views_Earth], a2, Rself).to(
+                rad_wn.u, "radiance")
         rad_wn = ureg.Quantity(numpy.ma.array(rad_wn), rad_wn.u)
-        rad_wn.m.mask = M["counts"][:, :, ch-1].mask
+        rad_wn.m.mask = C_Earth.mask
         rad_wn.m.mask |= M["radiance"][:, :, ch-1].mask
         rad_wn.m.mask |= numpy.isnan(rad_wn)
+
+        self._tuck_quantity_channel("R_selfE", Rself, "Rself", ch)
+        self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, "RselfIWCT", ch)
+        self._tuck_quantity_channel("R_selfs", RselfIWCT, "Rselfspace", ch)
+        self._tuck_quantity_channel("C_E", RselfIWCT, "C_Earth", ch)
+        self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], "R_Earth", ch)
+        self._tuck_quantity_channel("R_refl", Rrefl, "R_refl", ch)
+        self._quantities[me.symbols["ε"]] = self._quantity_to_xarray(
+            ε, name="ε")
+        self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
+            a_3, name="a_3")
         return rad_wn
     Mtorad = calculate_radiance
 
@@ -567,7 +600,7 @@ class HIRSFCDR:
         # note, this can't be vectorised easily anyway because of the SRF
         # integration bit
         logging.info("Calibrating")
-        (time, offset, slope) = self.calculate_offset_and_slope(M, ch, srf)
+        (time, offset, slope, a2) = self.calculate_offset_and_slope(M, ch, srf)
         # NOTE:
         # See https://github.com/numpy/numpy/issues/7787 on numpy.median
         # losing the unit
@@ -624,6 +657,7 @@ class HIRSFCDR:
         # interpolate all of those to cover entire time period
         (L_iwct, C_iwct, C_space) = self.interpolate_between_calibs(
             M, time, L_iwct, C_iwct, C_space)
+        raise RuntimeError("What!  I'm interpolating Earth Counts?  NO!!!")
         (C_Earth,) = self.interpolate_between_calibs(
             M, M["time"][views_Earth], C_Earth)
         C_space = ureg.Quantity(numpy.median(C_space, 1), C_space.u)
@@ -746,6 +780,18 @@ class HIRSFCDR:
 
         # evaluate expression for this quantity
         e = me.expressions[me.symbols.get(var, var)]
+        # BUG: expressing u_e /before/ substitution in the presence of
+        # integrals can cause expressions to be taken out of the Planck
+        # function where they should remain inside — express_uncertainty
+        # has no knowledge of quantities / expressions / constants /
+        # functions; but replacing all by functions puts far too many
+        # dependencies into each, which gives confusing uncertainty
+        # estimates.  Will need to be something in-between, but keep the
+        # version I know to be incorrect under an integral as long as we
+        # apply implementation issue#55 rather than issue#56.
+#        u_e = typhon.physics.metrology.express_uncertainty(
+#            e.subs({sm: me.functions.get(sm, sm)
+#                    for sm in typhon.physics.metrology.recursive_args(e)}))
         u_e = typhon.physics.metrology.express_uncertainty(e)
         fu = sympy.Function("u")
         args = typhon.physics.metrology.recursive_args(u_e,
@@ -769,16 +815,18 @@ class HIRSFCDR:
                 if v.args[0] in cached_uncertainties.keys():
                     adict[v] = cached_uncertainties[v.args[0]]
                 else:
-                    adict[v] = self.calc_u_for_variable(v.args[0])
+                    adict[v] = self.calc_u_for_variable(v.args[0],
+                        quantities, all_effects, cached_uncertainties)
                     cached_uncertainties[v.args[0]] = adict[v]
             else:
                 # it's a quantity
                 if v not in quantities:
                     if v not in me.expressions.keys():
                         raise ValueError(
-                            "Calculation of {:s} needs defined value for "
-                            "quantity {:s} but this is not set.  I have values "
-                            "for: {:s}.".format(str(list(me.expressions.keys()))))
+                            "Calculation of u({!s})={!s} needs defined value or "
+                            "expression for "
+                            "quantity {!s} but this is not set.  I have values "
+                            "for: {:s}.".format(var, e, v, str(list(quantities.keys()))))
                     quantities[v] = me.evaluate_quantity(v, quantities)
 
                 adict[v] = quantities[v]

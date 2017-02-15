@@ -62,9 +62,44 @@ FCDR_data_vars_props = dict(
         {"long_name": "Correction to Earth radiance due to self-emission "
                       "change since last calibration"},
         _coding),
+    RselfIWCT = (
+        "RselfIWCT",
+        ("calibration_cycle", "calibration_position", "calibrated_channel"),
+        {"long_name": "Self-emission during IWCT view"},
+        _coding),
+    Rselfspace = (
+        "Rselfspace",
+        ("calibration_cycle", "calibration_position", "calibrated_channel"),
+        {"long_name": "Self-emission during space view"},
+        _coding),
+    R_Earth = (
+        "R_Earth",
+        ("scanline_earth", "scanpos", "channel"),
+        {"long_name": "Radiance for Earth views",
+         "units": rad_u["ir"]},
+        _coding),
+    R_refl = (
+        "R_refl",
+        ("calibration_cycle", "calibration_position", "channel"),
+        {"long_name": "Earthshine during calibration",
+         "units": rad_u["si"]},
+        _coding),
+    ε = (
+        "ε",
+        (),
+        {"long_name": "emissivity"},
+        _coding),
+    a_3 = (
+        "a_3",
+        (),
+        {"long_name": "emissivity correctio"},
+        _coding),
 )
 # FIXME: needs more uncertainties, or do I calculate this directly from
 # the effects and is this one unused and should it be removed?
+# In principle, no uncertainty needs more than one byte as we just express
+# uncertainty on the last two significant digits...
+# 12.345(12)
 FCDR_data_vars_props.update(
     u_C_IWCT = (
         "u_C_IWCT",

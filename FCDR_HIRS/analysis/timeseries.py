@@ -473,7 +473,7 @@ class NoiseAnalyser:
                 self.satname, t[0], t[-1]))
 
     def get_gain(self, M, ch):
-        (t_slope, _, slope) = self.hirs.calculate_offset_and_slope(M, ch)
+        (t_slope, _, slope, _) = self.hirs.calculate_offset_and_slope(M, ch)
         slope = slope.to(ureg.mW/(ureg.m**2 * ureg.sr *
             1/ureg.cm * ureg.counts), "radiance")
         u_slope = self.hirs.calc_uslope(M, ch)
