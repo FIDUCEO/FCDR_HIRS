@@ -497,12 +497,20 @@ class HIRSFCDR:
         rad_wn.m.mask |= M["radiance"][:, :, ch-1].mask
         rad_wn.m.mask |= numpy.isnan(rad_wn)
 
+        #(α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients()
+        (α, β, λ_eff, Δα, Δβ, Δλ_eff) = (numpy.float16(0),
+            numpy.float16(1), srf.centroid(), 0, 0, 0)
+
         self._tuck_quantity_channel("R_selfE", Rself, "Rself", ch)
         self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, "RselfIWCT", ch)
         self._tuck_quantity_channel("R_selfs", RselfIWCT, "Rselfspace", ch)
         self._tuck_quantity_channel("C_E", RselfIWCT, "C_Earth", ch)
         self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], "R_Earth", ch)
         self._tuck_quantity_channel("R_refl", Rrefl, "R_refl", ch)
+
+        self._tuck_quantity_channel("α", α, "α", ch)
+        self._tuck_quantity_channel("β", β, "β", ch)
+        self._tuck_quantity_channel("λ*", λ_eff, "λ_eff", ch)
         self._quantities[me.symbols["ε"]] = self._quantity_to_xarray(
             ε, name="ε")
         self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
@@ -802,7 +810,8 @@ class HIRSFCDR:
         # substituted to evaluate the magnitude of the uncertainty.
         # cached_uncertainties is a dictionary persistent between function
         # calls (until cleared) to avoid recalculating identical
-        # expressions
+        # expressions.  The keys are expressions (such as Symbol or
+        # u(Symbol)), the values are numbers or numpy arrays of numbers
         adict = {}
         for v in args:
             # check which one of the four aforementioned applies
@@ -833,6 +842,10 @@ class HIRSFCDR:
                     
         # now I have adict with values for uncertainties and other
         # quantities, that I need to substitute into the expression
+        if u_e == 0:
+            # FIXME: bookkeep where I have zero uncertainty
+            warnings.warn("Assigning u=0 to {!s}".format(var))
+            return u_e
         raise NotImplementedError("Tot hier heeft de heer ons geholpen")
 
 

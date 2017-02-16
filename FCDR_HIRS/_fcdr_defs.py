@@ -94,6 +94,24 @@ FCDR_data_vars_props = dict(
         (),
         {"long_name": "emissivity correctio"},
         _coding),
+    α = (
+        "α",
+        ("calibrated_channel",),
+        {"long_name": "Offset for effective temperature correction",
+         "units": "K"},
+        _coding),
+    β = (
+        "β",
+        ("calibrated_channel",),
+        {"long_name": "Slope for effective temperature correction",
+         "units": "1"},
+        _coding),
+    λ_eff = (
+        "λ_eff",
+        ("calibrated_channel",),
+        {"long_name": "Effective wavelength for channel",
+         "units": "µm"},
+        _coding),
 )
 # FIXME: needs more uncertainties, or do I calculate this directly from
 # the effects and is this one unused and should it be removed?

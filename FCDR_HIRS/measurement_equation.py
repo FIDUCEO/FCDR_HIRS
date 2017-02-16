@@ -1,6 +1,9 @@
 """Measurement equation and associated functionality
 """
 
+import numbers
+
+import numpy
 import scipy.constants
 
 import sympy
@@ -66,6 +69,8 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False):
     """
     o = None
     intermediates = set()
+    if isinstance(e, sympy.Symbol) and e in expressions.keys():
+        return recursive_substitution(expressions[e])
     while o != e:
         o = e
         for sym in typhon.physics.metrology.recursive_args(e):
@@ -133,7 +138,9 @@ def calc_sensitivity_coefficient(s1, s2):
         expr = expressions[aliases.get(s1, s1)]
     expr = substitute_until_explicit(expr, s2)
 
-def evaluate_quantity(v, quantities):
+# NB: see also https://github.com/sympy/sympy/issues/12134
+def evaluate_quantity(v, quantities,
+        stop_at=(numpy.ndarray, sympy.Number, numbers.Number)):
     """Evaluate numerical value of `v` using `quantities`
 
     Get the numerical value of variable `v`, using a dictionary of
@@ -144,7 +151,7 @@ def evaluate_quantity(v, quantities):
         v [Symbol]
         quantities [Mapping[Symbol, Expr]]
     """
-    e = expressions[v]
+    e = expressions.get(v, v)
 
     values = {}
     for arg in typhon.physics.metrology.recursive_args(e,
@@ -153,11 +160,16 @@ def evaluate_quantity(v, quantities):
         try:
             values[arg] = quantities[arg]
         except KeyError:
-            values[arg] = evaluate_quantity(arg) # if this fails `arg` should be added to quantities
+            values[arg] = evaluate_quantity(arg, quantities) # if this fails `arg` should be added to quantities
 
     # substitute numerical values into expression
-    sympy.lambdify
-    raise NotImplementedError("Actual substitution not implemented yet")
+    if isinstance(e, stop_at):
+        return e
+    elif not e.args:
+        raise ValueError("I don't know the value for: {!s}".format(e))
+    else:
+        smb = tuple(e.free_symbols)
+        return sympy.lambdify(smb, e, dummify=False)(*[values[x] for x in smb])
 
 
             
