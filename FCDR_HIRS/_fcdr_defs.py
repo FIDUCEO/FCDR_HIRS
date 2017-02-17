@@ -2,7 +2,7 @@
 """
 
 from typhon.physics.units.common import radiance_units as rad_u
-from typhon.datasets._tovs_defs import (_coding, _count_coding, _temp_coding)
+from typhon.datasets._tovs_defs import (_u1_coding, _coding, _count_coding, _temp_coding)
 
 # FIXME: uncertainty does NOT have the same dimensions as quantity it
 # belongs to...
@@ -112,6 +112,11 @@ FCDR_data_vars_props = dict(
         {"long_name": "Effective wavelength for channel",
          "units": "µm"},
         _coding),
+    prt_number_iwt = (
+        "prt_number_iwt",
+        (),
+        {"long_name": "Number of PRTs for IWCT temperature measurement"},
+        _u1_coding),
 )
 # FIXME: needs more uncertainties, or do I calculate this directly from
 # the effects and is this one unused and should it be removed?

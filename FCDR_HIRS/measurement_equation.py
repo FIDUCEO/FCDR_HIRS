@@ -15,7 +15,7 @@ version = "β"
 
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
          "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φn "
-         "R_IWCT ε O_Re O_TIWCT O_TPRT α β T* λ* O_RIWCT")
+         "R_IWCT ε O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT")
 
 symbols = sym = dict(zip(names.split(), sympy.symbols(names)))
 
@@ -42,8 +42,8 @@ expressions[sym["B"]] = (
     1/(sympy.exp((sym["h"]*sym["c"])/((sym["λ"])*sym["k_b"]*sym["T_IWCT"]))-1))
 if version == "β":
     expressions[sym["B"]] = expressions[sym["B"]].subs(
-        {sym["T_IWCT"]: sym["T*"], sym["λ"]: sym["λ*"]})
-    expressions[sym["T*"]] = sym["α"] + sym["β"]*sym["T_IWCT"]
+        {sym["T_IWCT"]: sym["Tstar"], sym["λ"]: sym["λstar"]})
+    expressions[sym["Tstar"]] = sym["α"] + sym["β"]*sym["T_IWCT"]
 expressions[sym["T_IWCT"]] = (
     sympy.Sum(sympy.IndexedBase(sym["T_PRT"])[sym["n"]], (sym["n"], 0, sym["N"]))/sym["N"] + sym["O_TIWCT"])
 expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"]]] = (
@@ -163,13 +163,15 @@ def evaluate_quantity(v, quantities,
             values[arg] = evaluate_quantity(arg, quantities) # if this fails `arg` should be added to quantities
 
     # substitute numerical values into expression
-    if isinstance(e, stop_at):
+    if isinstance(e, sympy.Number):
+        return float(e)
+    elif isinstance(e, stop_at):
         return e
     elif not e.args:
         raise ValueError("I don't know the value for: {!s}".format(e))
     else:
         smb = tuple(e.free_symbols)
-        return sympy.lambdify(smb, e, dummify=False)(*[values[x] for x in smb])
+        return sympy.lambdify(smb, e, dummify=False, modules=numpy)(*[values[x] for x in smb])
 
 
             

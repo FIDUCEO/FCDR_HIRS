@@ -254,7 +254,12 @@ class HIRSFCDR:
         # higher loop, or I could simply leave it
         self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
             T_iwct, name="T_IWCT_calib_mean")
+        self._quantities[me.symbols["N"]] = self._quantity_to_xarray(
+            numpy.uint8(M_space["temp_iwt"].shape[1]), name="prt_number_iwt")
 
+        # FIXME: for consistency, should replace this one also with
+        # band-corrections — at least temporarily.  Perhaps this wants to
+        # be implemented inside the blackbody_radiance method…
         L_iwct = srf.blackbody_radiance(T_iwct)
         L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
 
@@ -281,6 +286,7 @@ class HIRSFCDR:
         self._tuck_quantity_channel("C_s", counts_space, "C_space", ch)
         self._tuck_quantity_channel("C_IWCT", counts_iwct, "C_IWCT", ch)
         self._tuck_quantity_channel("R_IWCT", L_iwct, "R_IWCT", ch)
+        # store 'N', C_PRT[n], d_PRT[n, k], O_TPRT, O_TIWCT…
         return (M_space["time"], L_iwct, counts_iwct, counts_space) + tuple(extra)
 
     def _quantity_to_xarray(self, quantity, name, dropdims=(), dims=None):
@@ -510,7 +516,7 @@ class HIRSFCDR:
 
         self._tuck_quantity_channel("α", α, "α", ch)
         self._tuck_quantity_channel("β", β, "β", ch)
-        self._tuck_quantity_channel("λ*", λ_eff, "λ_eff", ch)
+        self._tuck_quantity_channel("λstar", λ_eff, "λ_eff", ch)
         self._quantities[me.symbols["ε"]] = self._quantity_to_xarray(
             ε, name="ε")
         self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
@@ -776,15 +782,33 @@ class HIRSFCDR:
             #all_effects = effects.effects()
 
             if s in all_effects.keys():
+                baddies = [eff for eff in all_effects[s]
+                    if eff.magnitude is None]
+                goodies = [eff for eff in all_effects[s]
+                    if eff.magnitude is not None]
+                if baddies:
+                    warnings.warn("Effects with unquantified "
+                        "uncertainty: {!s}".format(
+                            '; '.join(eff.name for eff in baddies)))
                 # Responsibility to put name and attributes onto effect
                 # belong to effects.Effect.magnitude setter property.
-                return functools.reduce(
-                    operator.add,
-                    (eff.magnitude for eff in all_effects[s]))
+                if goodies:
+                    u = functools.reduce(
+                        operator.add,
+                        (eff.magnitude for eff in goodies))
+                else:
+                    u = xarray.DataArray(0, name="u_{!s}".format(var),
+                        attrs={"quantity": str(var), "note":
+                            "No uncertainty quantified for: {:s}".format(
+                                ';'.join(eff.name for eff in baddies))})
+                cached_uncertainties[s] = u
+                return u
             else:
-                return xarray.DataArray(0, name="u_{!s}".format(var),
+                u = xarray.DataArray(0, name="u_{!s}".format(var),
                     attrs={"quantity": str(var), "note":
                         "No documented effect associated with this quantity"})
+                cached_uncertainties[s] = u
+                return u
 
         # evaluate expression for this quantity
         e = me.expressions[me.symbols.get(var, var)]
@@ -800,10 +824,42 @@ class HIRSFCDR:
 #        u_e = typhon.physics.metrology.express_uncertainty(
 #            e.subs({sm: me.functions.get(sm, sm)
 #                    for sm in typhon.physics.metrology.recursive_args(e)}))
-        u_e = typhon.physics.metrology.express_uncertainty(e)
+        u_e = typhon.physics.metrology.express_uncertainty(e,
+            on_failure="warn")
+
+        if u_e == 0: # constant
+            # FIXME: bookkeep where I have zero uncertainty
+            warnings.warn("Assigning u=0 to {!s}".format(var))
+            u = xarray.DataArray(0, name="u_{!s}".format(var),
+                attrs={"quantity": str(var), "note":
+                    "This appears to be a constant value with neglected quantity"})
+            cached_uncertainties[e] = u
+            return u
+
         fu = sympy.Function("u")
         args = typhon.physics.metrology.recursive_args(u_e,
             stop_at=(sympy.Symbol, sympy.Indexed, fu))
+
+        # Before I proceed, I want to check for zero arguments; this
+        # might mean that I need to evaluate less.  Hence two runs through
+        # args: first to check the zeroes, then to see what's left.
+        for v in args:
+            if isinstance(v, fu):
+                if numpy.all(cached_uncertainties.get(v.args[0]) == 0):
+                    u_e = u_e.subs(v, 0)
+                elif (v.args[0] not in me.expressions.keys() and
+                      v.args[0] not in all_effects.keys()):
+                    # make sure it gets into cached_uncertainties so that
+                    # it is "documented"
+                    ua = self.calc_u_for_variable(v.args[0],
+                        quantities, all_effects, cached_uncertainties)
+                    assert ua==0, "Impossible"
+                    u_e = u_e.subs(v, 0)
+                    
+        oldargs = args
+        args = typhon.physics.metrology.recursive_args(u_e,
+            stop_at=(sympy.Symbol, sympy.Indexed, fu))
+
 
         # NB: adict is the dictionary of everything (uncertainties and
         # quantities) that needs to be
@@ -835,18 +891,20 @@ class HIRSFCDR:
                             "Calculation of u({!s})={!s} needs defined value or "
                             "expression for "
                             "quantity {!s} but this is not set.  I have values "
-                            "for: {:s}.".format(var, e, v, str(list(quantities.keys()))))
+                            "or expressions for: {:s}.".format(
+                                var, e, v, str(list(quantities.keys()))))
                     quantities[v] = me.evaluate_quantity(v, quantities)
 
                 adict[v] = quantities[v]
                     
         # now I have adict with values for uncertainties and other
         # quantities, that I need to substitute into the expression
-        if u_e == 0:
-            # FIXME: bookkeep where I have zero uncertainty
-            warnings.warn("Assigning u=0 to {!s}".format(var))
-            return u_e
-        raise NotImplementedError("Tot hier heeft de heer ons geholpen")
+        # I expect I'll have to do some trick to substitute u(x) ?
+        ta = tuple(args)
+        f = sympy.lambdify(ta, u_e, numpy)
+        u = f(*[adict[x] for x in ta])
+        cached_uncertainties[var] = u
+        return u
 
 
     def calc_sens_coef(self, typ, M, ch, srf): 
