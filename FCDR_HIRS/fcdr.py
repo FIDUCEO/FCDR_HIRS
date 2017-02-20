@@ -556,7 +556,7 @@ class HIRSFCDR:
         self._tuck_quantity_channel("R_selfE", Rself, "Rself", ch)
         self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, "RselfIWCT", ch)
         self._tuck_quantity_channel("R_selfs", RselfIWCT, "Rselfspace", ch)
-        self._tuck_quantity_channel("C_E", RselfIWCT, "C_Earth", ch)
+        self._tuck_quantity_channel("C_E", C_Earth, "C_Earth", ch)
         self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], "R_Earth", ch)
         self._tuck_quantity_channel("R_refl", Rrefl, "R_refl", ch)
 
@@ -960,6 +960,7 @@ class HIRSFCDR:
         # I expect I'll have to do some trick to substitute u(x) ?
         ta = tuple(args)
         f = sympy.lambdify(ta, u_e, numpy)
+        # some reshaping is needed first/too…
         u = f(*[typhon.math.common.promote_maximally(adict[x]) for x in ta])
         cached_uncertainties[var] = u
         return u
