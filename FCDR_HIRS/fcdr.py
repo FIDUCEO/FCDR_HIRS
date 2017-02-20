@@ -505,7 +505,7 @@ class HIRSFCDR:
 
         #(α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients()
         (α, β, λ_eff, Δα, Δβ, Δλ_eff) = (numpy.float16(0),
-            numpy.float16(1), srf.centroid(), 0, 0, 0)
+            numpy.float16(1), srf.centroid().to(ureg.m, "sp"), 0, 0, 0)
 
         self._tuck_quantity_channel("R_selfE", Rself, "Rself", ch)
         self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, "RselfIWCT", ch)
@@ -833,7 +833,7 @@ class HIRSFCDR:
             u = xarray.DataArray(0, name="u_{!s}".format(var),
                 attrs={"quantity": str(var), "note":
                     "This appears to be a constant value with neglected quantity"})
-            cached_uncertainties[e] = u
+            cached_uncertainties[var] = u
             return u
 
         fu = sympy.Function("u")
@@ -847,7 +847,8 @@ class HIRSFCDR:
             if isinstance(v, fu):
                 if numpy.all(cached_uncertainties.get(v.args[0]) == 0):
                     u_e = u_e.subs(v, 0)
-                elif (v.args[0] not in me.expressions.keys() and
+                elif ((v.args[0] not in me.expressions.keys() or
+                       isinstance(me.expressions[v.args[0]], sympy.Number)) and
                       v.args[0] not in all_effects.keys()):
                     # make sure it gets into cached_uncertainties so that
                     # it is "documented"
@@ -902,7 +903,7 @@ class HIRSFCDR:
         # I expect I'll have to do some trick to substitute u(x) ?
         ta = tuple(args)
         f = sympy.lambdify(ta, u_e, numpy)
-        u = f(*[adict[x] for x in ta])
+        u = f(*[typhon.math.common.promote_maximally(adict[x]) for x in ta])
         cached_uncertainties[var] = u
         return u
 
