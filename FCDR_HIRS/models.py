@@ -73,3 +73,8 @@ class RSelf:
         """
         (X, Y_ref, Y_pred) = self.evaluate(M, ch)
         return (X, Y_ref.squeeze(), Y_pred.squeeze())
+
+
+class RRefl:
+    def __init__(self, *args, **kwargs):
+        raise NotImplementedError("Not implemented yet!")

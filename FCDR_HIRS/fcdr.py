@@ -170,7 +170,8 @@ class HIRSFCDR:
             M
 
                 ndarray such as returned by self.read, corresponding to
-                scanlines
+                scanlines.  Must have at least fields 'time', 'scantype' (HIRS/2)
+                or 'hrs_scntyp' (HIRS/3/4), 'counts', and 'temp_iwt'.
 
             ch
 
@@ -357,7 +358,8 @@ class HIRSFCDR:
             M [ndarray]
 
                 ndarray with dtype such as returned by self.read.  Must
-                contain enough fields.
+                contain at least fields 'time', 'scantype' (HIRS/2) or
+                'hrs_scntyp' (HIRS/3/4), 'counts', and 'temp_iwt'.
 
             ch [int]
 
@@ -406,7 +408,7 @@ class HIRSFCDR:
             typhon.math.stats.adev(counts_space, 1))
 
         # non-linearity is set to 0 for now
-        a2 = ureg.Quantity(numpy.float16(0),
+        a2 = ureg.Quantity(numpy.float32(0),
             typhon.physics.units.common.radiance_units["si"]/(ureg.count**2))
 
         bad = bad_iwct | bad_space
@@ -424,6 +426,7 @@ class HIRSFCDR:
     _effects = None
     _effects_by_name = None
     def calculate_radiance(self, M, ch, interp_kind="zero", srf=None,
+                context=None,
                 Rself_model=None,
                 Rrefl_model=None):
         """Calculate radiance
@@ -431,6 +434,47 @@ class HIRSFCDR:
         Wants ndarray as returned by read, SRF, and channel.
 
         Returns pint quantity with masked array underneath.
+
+        Arguments:
+            
+            M [ndarray]
+
+                Structured ndarray, dtype with at least fields 'time',
+                'scantype' (HIRS/2) or 'hrs_scntyp' (HIRS/3/4),
+                'temp_iwt', and 'counts'.  Those are the values for which
+                radiances will be calculated.
+
+            ch [int]
+
+                Channel to calculate radiance for.  If you want to
+                calculate the radiance for all channels, use
+                calculate_radiance_all.
+
+            interp_kind [str]
+
+                Legacy, must be equal to "zero".  Instead of
+                interpolation, pass a self-emission model.
+
+            srf [SRF]
+
+                SRF to use.  If not passed, use default (as measured
+                before launch).
+
+            context [ndarray]
+
+                Like M, but used for context.  For example, calibration
+                information may have to be found outside the range of `M`.
+                It is also needed for developing the Rself and Rrefl
+                models when not provided to the function already.
+
+            Rself_model [RSelf]
+
+                Model to use for self-emission.  See models.RSelf.
+
+            Rrefl_model [RRefl]
+
+                Model to use for Earthshine.  See models.RRefl.
+
         """
         if interp_kind != "zero":
             raise NotImplementedError("You asked for {:s} interpolation, "
@@ -440,8 +484,10 @@ class HIRSFCDR:
                 "the self-emission model. ".format(interp_kind))
 
         srf = srf or self.srfs[ch-1]
+        has_context = context is not None
+        context = context if has_context else M
         (time, offset, slope, a2) = self.calculate_offset_and_slope(
-            M, ch, srf)
+            context, ch, srf)
         # NOTE: taking the median may not be an optimal solution.  See,
         # for example, plots produced by the script
         # plot_hirs_calibcounts_per_scanpos in the FCDR_HIRS package
@@ -449,7 +495,7 @@ class HIRSFCDR:
         # the lowest scan positions are systematically offset compared to
         # the higher ones.  See also the note at
         # calculate_offset_and_slope. 
-        if offset.shape[0] > 1:
+        if offset.shape[0] > 1 or has_context:
             (interp_offset, interp_slope) = self.interpolate_between_calibs(M, time,
                 ureg.Quantity(numpy.ma.median(offset.m, 1), offset.u),
                 ureg.Quantity(numpy.ma.median(slope.m, 1), slope.u),
@@ -489,8 +535,8 @@ class HIRSFCDR:
             Rrefl = ureg.Quantity(
                 numpy.zeros_like(offset),
                 typhon.physics.units.common.radiance_units["si"])
-            ε = numpy.float16(1)
-            a_3 = numpy.float16(0)
+            ε = numpy.float32(1)
+            a_3 = numpy.float32(0)
         rad_wn = ureg.Quantity(
             numpy.ma.masked_all(M["counts"][:, :, ch-1].shape),
             typhon.physics.units.common.radiance_units["ir"])
@@ -504,8 +550,8 @@ class HIRSFCDR:
         rad_wn.m.mask |= numpy.isnan(rad_wn)
 
         #(α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients()
-        (α, β, λ_eff, Δα, Δβ, Δλ_eff) = (numpy.float16(0),
-            numpy.float16(1), srf.centroid().to(ureg.m, "sp"), 0, 0, 0)
+        (α, β, λ_eff, Δα, Δβ, Δλ_eff) = (numpy.float32(0),
+            numpy.float32(1), srf.centroid().to(ureg.m, "sp"), 0, 0, 0)
 
         self._tuck_quantity_channel("R_selfE", Rself, "Rself", ch)
         self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, "RselfIWCT", ch)
@@ -524,9 +570,13 @@ class HIRSFCDR:
         return rad_wn
     Mtorad = calculate_radiance
 
-    def calculate_radiance_all(self, M, interp_kind="zero", srf=None):
+    def calculate_radiance_all(self, M, interp_kind="zero", srf=None,
+                context=None,
+                Rself_model=None,
+                Rrefl_model=None):
         """Calculate radiances for all channels
 
+        See calculate_radiance for documentation on inputs.
         """
 
         # When calculating uncertainties I depend on the same quantities
@@ -544,7 +594,9 @@ class HIRSFCDR:
         self._effects_by_name = {e.name: e for e in
                 itertools.chain.from_iterable(self._effects.values())}
 
-        all_rad = [self.calculate_radiance(M, i, interp_kind=interp_kind)
+        all_rad = [self.calculate_radiance(M, i, interp_kind=interp_kind,
+                context=context, Rself_model=Rself_model,
+                Rrefl_model=Rrefl_model)
             for i in range(1, 20)]
         return ureg.Quantity(numpy.ma.concatenate([rad.m[...,
             numpy.newaxis] for rad in all_rad], 2), all_rad[0].u)
@@ -742,6 +794,11 @@ class HIRSFCDR:
                 uncertainties and effects (i.e. R_IWCT uncertainty results
                 from uncertainties in T_IWCT, ε, φ, etc.).  Note that this
                 dictionary will be changed by this function!
+
+            return_components [bool]
+
+                Optional.  If true, also return a xarray.Dataset with all
+                uncertainty components.
         """
 
         # Traversing down the uncertainty expression for the measurement

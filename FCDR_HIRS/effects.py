@@ -4,6 +4,7 @@
 import abc
 import collections
 import copy
+import numbers
 
 import numpy
 import xarray
@@ -142,10 +143,9 @@ class Effect:
             da.attrs["correlation_scale_" + k] = getattr(self.correlation_scale, k)
         da.attrs["channel_correlations"] = self.channel_correlations
 
-        try:
+        if not self.name.startswith("O_") or self.name in _fcdr_defs.FCDR_data_vars_props.keys():
             da.encoding.update(_fcdr_defs.FCDR_data_vars_props[self.name][3])
-        except KeyError:
-            da.encoding.update(_fcdr_defs.FCDR_uncertainty_encodings[self.name])
+        da.encoding.update(_fcdr_defs.FCDR_uncertainty_encodings.get(self.name, {}))
 
         self._magnitude = da
 
@@ -176,7 +176,7 @@ class Effect:
                         x, ", ".join(self._valid_correlation_types)))
         self._corr_type = v
             
-    _corr_scale = CorrelationScale(*[xarray.DataArray(0)]*4)
+    _corr_scale = CorrelationScale(*[0]*4)
     @property
     def correlation_scale(self):
         """Scale for correlation
@@ -188,8 +188,8 @@ class Effect:
         if not isinstance(v, CorrelationScale):
             v = CorrelationScale(*v)
         for x in v:
-            if not numpy.isinf(x) or isinstance(x, xarray.DataArray):
-                raise TypeError("correlation scale must be inf or DataArray, "
+            if not isinstance(x, (numbers.Number, numpy.ndarray)):
+                raise TypeError("correlation scale must be numeric, "
                     "found {:s}".format(type(v)))
         self._corr_scale = v
 
@@ -210,8 +210,8 @@ def effects() -> Mapping[sympy.Symbol, Set[Effect]]:
     """
     return copy.deepcopy(Effect._all_effects)
 
-_I = numpy.eye(19, dtype="f2")
-_ones = numpy.ones(shape=(19, 19), dtype="f2")
+_I = numpy.eye(19, dtype="f4")
+_ones = numpy.ones(shape=(19, 19), dtype="f4")
 _random = ("random",)*4
 _calib = ("rectangular_absolute", "rectangular_absolute",
           "random", "triangular_relative")

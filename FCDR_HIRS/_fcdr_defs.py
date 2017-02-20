@@ -4,8 +4,12 @@
 from typhon.physics.units.common import radiance_units as rad_u
 from typhon.datasets._tovs_defs import (_u1_coding, _coding, _count_coding, _temp_coding)
 
-# FIXME: uncertainty does NOT have the same dimensions as quantity it
-# belongs to...
+_u_count_coding = _count_coding.copy()
+_u_count_coding["dtype"] = "u2"
+_u_count_coding["scale_factor"] = 0.005
+
+# FIXME: uncertainty does NOT always have the same dimensions as quantity
+# it belongs to...
 
 FCDR_data_vars_props = dict(
     T_IWCT_calib_mean = (
@@ -122,13 +126,11 @@ FCDR_data_vars_props = dict(
 # the effects and is this one unused and should it be removed?
 # In principle, no uncertainty needs more than one byte as we just express
 # uncertainty on the last two significant digits...
-# 12.345(12)
-FCDR_data_vars_props.update(
-    u_C_IWCT = (
-        "u_C_IWCT",
-        FCDR_data_vars_props["C_IWCT"][1],
-        {"long_name": "Uncertainty on C_IWCT"},
-        _coding))
+# For example, 12.345(12)
+        
+FCDR_uncertainty_encodings = {}
 
-FCDR_uncertainty_encodings = dict(
-    O_TPRT = _temp_coding)
+FCDR_uncertainty_encodings["O_TPRT"] = _temp_coding
+for (k, v) in FCDR_data_vars_props.items():
+    if v[2].get("units") == "count":
+        FCDR_uncertainty_encodings[k] = _u_count_coding
