@@ -106,6 +106,28 @@ for (sn, s) in symbols.items():
         if dependencies[s]:
             functions[s] = sympy.Function(sn)(*(aliases.get(sm, sm) for sm in dependencies[s]))
 
+names = {
+    sym["R_selfE"]: "Rself",
+    sym["R_selfIWCT"]: "RselfIWCT",
+    sym["R_selfs"]: "Rselfspace",
+    sym["C_E"]: "C_Earth",
+    sym["R_e"]: "R_Earth",
+    sym["R_refl"]: "R_refl",
+    sym["α"]: "α",
+    sym["β"]: "β",
+    sym["λstar"]: "λ_eff",
+    sym["ε"]: "ε",
+    sym["a_3"]: "a_3",
+    sym["C_s"]: "C_space",
+    sym["C_IWCT"]: "C_IWCT",
+    sym["R_IWCT"]: "R_IWCT",
+    sym["a_0"]: "offset",
+    sym["a_1"]: "slope",
+    sym["a_2"]: "a_2",
+    sym["T_IWCT"]: "T_IWCT_calib_mean",
+    sym["N"]: "prt_number_iwt"}
+
+
 def substitute_until_explicit(expr, s2):
     oldexpr = None
     # expand expression until no more sub-expressions and s2 is explicit

@@ -254,9 +254,10 @@ class HIRSFCDR:
         # channel), could assert they are identical or move this out of a
         # higher loop, or I could simply leave it
         self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
-            T_iwct, name="T_IWCT_calib_mean")
+            T_iwct, name=me.names[me.symbols["T_IWCT"]])
         self._quantities[me.symbols["N"]] = self._quantity_to_xarray(
-            numpy.uint8(M_space["temp_iwt"].shape[1]), name="prt_number_iwt")
+            numpy.uint8(M_space["temp_iwt"].shape[1]), 
+                name=me.names[me.symbols["N"]])
 
         # FIXME: for consistency, should replace this one also with
         # band-corrections — at least temporarily.  Perhaps this wants to
@@ -284,9 +285,13 @@ class HIRSFCDR:
         if return_ix:
             extra.append(space_followed_by_iwct.nonzero()[0])
 
-        self._tuck_quantity_channel("C_s", counts_space, "C_space", ch)
-        self._tuck_quantity_channel("C_IWCT", counts_iwct, "C_IWCT", ch)
-        self._tuck_quantity_channel("R_IWCT", L_iwct, "R_IWCT", ch)
+        coords = {"calibration_cycle": M_space["time"]}
+        self._tuck_quantity_channel("C_s", counts_space, ch,
+            coords=coords)
+        self._tuck_quantity_channel("C_IWCT", counts_iwct, ch,
+            coords=coords)
+        self._tuck_quantity_channel("R_IWCT", L_iwct, ch,
+            coords=coords)
         # store 'N', C_PRT[n], d_PRT[n, k], O_TPRT, O_TIWCT…
         return (M_space["time"], L_iwct, counts_iwct, counts_space) + tuple(extra)
 
@@ -315,13 +320,21 @@ class HIRSFCDR:
             pass # not a masked array
         return da
 
-    def _tuck_quantity_channel(self, symbol_name, quantity, name, channel):
+    def _tuck_quantity_channel(self, symbol_name, quantity, channel,
+            coords=None):
         """Convert quantity to xarray and put into self._quantities
+
+        TODO: need to assign time coordinates so that I can later
+        extrapolate calibration_cycle dimension to scanline dimension.
         """
 
+        if coords is None:
+            coords = {}
         s = me.symbols[symbol_name]
+        name = me.names[s]
         q = self._quantity_to_xarray(quantity, name,
-                dropdims=["channel", "calibrated_channel"]).assign_coords(channel=channel)
+                dropdims=["channel", "calibrated_channel"]).assign_coords(
+                    channel=channel, **coords)
         if s in self._quantities:
             da = self._quantities[s]
             da = xarray.concat([da, q], dim="channel")
@@ -414,9 +427,10 @@ class HIRSFCDR:
         bad = bad_iwct | bad_space
         slope.mask |= bad[:, numpy.newaxis]
         offset.mask |= bad[:, numpy.newaxis]
-        self._tuck_quantity_channel("a_0", offset, "offset", ch)
-        self._tuck_quantity_channel("a_1", slope, "slope", ch)
-        self._tuck_quantity_channel("a_2", a2, "a_2", ch)
+        coords = {"calibration_cycle": time}
+        self._tuck_quantity_channel("a_0", offset, ch, coords=coords)
+        self._tuck_quantity_channel("a_1", slope, ch, coords=coords)
+        self._tuck_quantity_channel("a_2", a2, ch)
         return (time,
                 offset,
                 slope,
@@ -553,20 +567,22 @@ class HIRSFCDR:
         (α, β, λ_eff, Δα, Δβ, Δλ_eff) = (numpy.float32(0),
             numpy.float32(1), srf.centroid().to(ureg.m, "sp"), 0, 0, 0)
 
-        self._tuck_quantity_channel("R_selfE", Rself, "Rself", ch)
-        self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, "RselfIWCT", ch)
-        self._tuck_quantity_channel("R_selfs", RselfIWCT, "Rselfspace", ch)
-        self._tuck_quantity_channel("C_E", C_Earth, "C_Earth", ch)
-        self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], "R_Earth", ch)
-        self._tuck_quantity_channel("R_refl", Rrefl, "R_refl", ch)
+        coords = {"calibration_cycle": time}
+        self._tuck_quantity_channel("R_selfE", Rself, ch)
+        self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, ch, coords)
+        self._tuck_quantity_channel("R_selfs", Rselfspace, ch, coords)
+        self._tuck_quantity_channel("C_E", C_Earth, ch,
+            coords={"scanline_earth": M["time"][views_Earth]})
+        self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], ch)
+        self._tuck_quantity_channel("R_refl", Rrefl, ch, coords)
 
-        self._tuck_quantity_channel("α", α, "α", ch)
-        self._tuck_quantity_channel("β", β, "β", ch)
-        self._tuck_quantity_channel("λstar", λ_eff, "λ_eff", ch)
+        self._tuck_quantity_channel("α", α, ch)
+        self._tuck_quantity_channel("β", β, ch)
+        self._tuck_quantity_channel("λstar", λ_eff, ch)
         self._quantities[me.symbols["ε"]] = self._quantity_to_xarray(
-            ε, name="ε")
+            ε, name=me.names[me.symbols["ε"]])
         self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
-            a_3, name="a_3")
+            a_3, name=me.names[me.symbols["a_3"]])
         return rad_wn
     Mtorad = calculate_radiance
 
@@ -957,13 +973,68 @@ class HIRSFCDR:
                     
         # now I have adict with values for uncertainties and other
         # quantities, that I need to substitute into the expression
-        # I expect I'll have to do some trick to substitute u(x) ?
+        # I expect I'll have to do some trick to substitute u(x)? no?
         ta = tuple(args)
         f = sympy.lambdify(ta, u_e, numpy)
-        # some reshaping is needed first/too…
+        # multiple dimensions with time coordinates:
+        # - calibration_cycle
+        # - scanline_earth
+        # Any dimension other than calibration_cycle needs to be
+        # interpolated to have dimension scanline_earth before further
+        # processing.
+        src_dims = set().union(itertools.chain.from_iterable(
+            x.dims for x in adict.values() if hasattr(x, 'dims')))
+        dest_dims = set(self._data_vars_props[me.names[me.symbols[var]]][1])
+        if not dest_dims <= src_dims: # problem!
+            raise ValueError("Cannot estimate uncertainty u({!s}). "
+                "Destination has dimensions {!s} that none of the "
+                "arguments has!".format(var, dest_dims-src_dims))
+        if not src_dims <= dest_dims: # needs reducing
+            adict = self._make_dims_consistent(adict)
+        # verify/convert dimensions
         u = f(*[typhon.math.common.promote_maximally(adict[x]) for x in ta])
         cached_uncertainties[var] = u
         return u
+
+    @staticmethod
+    def _make_dims_consistent(adict):
+        """Ensure dims are consistent
+
+        The components of adict are the contents to calculate var.  Make
+        sure dimensions are consistent, through interpolation, averaging,
+        etc.  Requires that the desired dimensions of var occur in at
+        least one of the values for adict so that coordinates can be read
+        from it.
+
+        Currently hardcoded for:
+            
+            - calibration_cycle → interpolate → scanline_earth
+            - calibration_position → average → ()
+        """
+        new_adict = {}
+
+        dest_time = adict[me.symbols["C_E"]].scanline_earth.astype("u8")
+        src_time = adict[me.symbols["a_1"]]["calibration_cycle"].astype("u8")
+
+        for (k, v) in adict.items():
+            if "calibration_position" in v.dims:
+                v = v.mean(dim="calibration_position")
+            if "calibration_cycle" in v.dims:
+                fnc = scipy.interpolate.interp1d(
+                    src_time, v,
+                    kind="zero",
+                    bounds_error=True,
+                    axis=v.dims.index("calibration_cycle"))
+                new_adict[k] = xarray.DataArray(fnc(dest_time),
+                    dims=[x.replace("calibration_cycle", "scanline_earth") for
+                            x in v.dims],
+                    coords=adict[me.symbols["C_E"]].coords,
+                    attrs=v.attrs,
+                    encoding=v.encoding)
+            else:
+                new_adict[k] = v
+
+        return new_adict
 
 
     def calc_sens_coef(self, typ, M, ch, srf): 
