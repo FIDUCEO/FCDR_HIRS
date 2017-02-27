@@ -8,6 +8,7 @@ Generate HIRS FCDR for a particular satellite and period.
 
 from .. import common
 import argparse
+import warnings
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -74,8 +75,18 @@ class FCDRGenerator:
 
         Returns a single xarray.Dataset
         """
-        logging.warning("Not implemented, making empty")
-        return xarray.Dataset()
+        # FIXME: will almost certainly fail because calculate_radiance_all
+        # expects a structured ndarray, not an xarry dataset
+        subset = self.dd.data.sel(time=slice(from_, to))
+        R_E = self.fcdr.calculate_radiance_all(subset, context=self.dd.data)  
+        cu = {}
+        u = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
+            self.fcdr._effects, cu)
+        uc = xarray.Dataset({k: v.magnitude for (k, v) in self.fcdr._effects_by_name.items()})
+        qc = xarray.Dataset(self.fcdr._quantities)
+        ds = xarray.merge([uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
+                      qc, subset])
+        return ds
 
     def store_piece(self, piece):
         fn = self.get_filename_for_piece(piece)
@@ -92,6 +103,8 @@ class FCDRGenerator:
             
 
 def main():
+#    warnings.simplefilter("module")
+#    warnings.simplefilter("ignore", fcdr.FCDRWarning)
     fgen = FCDRGenerator(p.satname,
         datetime.datetime.strptime(p.from_date, p.datefmt),
         datetime.datetime.strptime(p.to_date, p.datefmt))

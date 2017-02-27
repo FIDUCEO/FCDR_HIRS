@@ -299,6 +299,13 @@ IWCT_type_b = Effect(
 # kwargs not preserved before Python 3.6)
 IWCT_type_b.magnitude=xarray.DataArray(0.1, name="uncertainty", attrs={"units": "K"})
 
+blockmat = numpy.vstack((
+            numpy.hstack((
+                numpy.ones(shape=(12,12)),
+                numpy.zeros(shape=(12,9)))),
+            numpy.hstack((
+                numpy.zeros(shape=(9,12)),
+                numpy.ones(shape=(9,9))))))
 nonlinearity = Effect(
     name="nonlinearity",
     description="Nonlinearity",
@@ -306,14 +313,7 @@ nonlinearity = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=radiance_units["ir"]/ureg.count**2,
-    channel_correlations=
-        numpy.vstack((
-            numpy.hstack((
-                numpy.ones(shape=(12,12)),
-                numpy.zeros(shape=(12,9)))),
-            numpy.hstack((
-                numpy.zeros(shape=(9,12)),
-                numpy.ones(shape=(9,9)))))))
+    channel_correlations=blockmat)
 
 nonnonlinearity = Effect(
     name="O_Re",
@@ -330,8 +330,40 @@ Earthshine = Effect(
     parameter=meq.symbols["R_refl"],
     correlation_type=("rectangular_absolute", "rectangular_absolute",
           "repeated_rectangles", "triangular_relative"),
+    channel_correlations=blockmat,
     unit=radiance_units["ir"])
 
-#Rself = Effect(
-#    description="self-emission",
-#    parameter=meq.symbols["Rself"],
+Rself = Effect(
+    name="Rself",
+    description="self-emission",
+    parameter=meq.symbols["R_selfE"],
+    correlation_type=("rectangular_absolute", "triangular_relative",
+        "triangular_relative", "repeated_rectangles"),
+    channel_correlations=blockmat,
+    unit=radiance_units["ir"])
+
+Rselfparams = Effect(
+    name="Rselfparams",
+    description="self-emission parameters",
+    parameter=Rself.parameter,
+    correlation_type=Rself.correlation_type,
+    channel_correlations=blockmat,
+    unit=Rself.unit)
+
+electronics = Effect(
+    name="electronics",
+    description="unknown electronics effects",
+    parameter=meq.symbols["O_Re"],
+    correlation_type=_systematic,
+    correlation_scale=_inf,
+    channel_correlations=blockmat,
+    unit=radiance_units["ir"])
+
+unknown_periodic = Effect(
+    name="extraneous_periodic",
+    description="extraneous periodic signal",
+    parameter=meq.symbols["O_Re"],
+    #correlation_type=_systematic,
+    #correlation_scale=_inf,
+    #channel_correlations=blockmat,
+    unit=radiance_units["ir"])

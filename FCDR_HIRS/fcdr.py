@@ -12,6 +12,7 @@ import scipy.interpolate
 import progressbar
 import xarray
 import sympy
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
     
 import typhon.datasets.dataset
 import typhon.physics.units
@@ -79,7 +80,8 @@ class HIRSFCDR:
             ["radiance", self.scantype_fieldname, "temp_iwt", "time"],
             lambda M, D:
             self.calculate_radiance_all(
-                M[1] if isinstance(M, tuple) else M, interp_kind="zero"),
+                M[1] if isinstance(M, tuple) else M, interp_kind="zero",
+                return_ndarray=True),
             cond)
         self.my_pseudo_fields["bt_fid_naive"] = (["radiance_fid_naive"],
             self.calculate_bt_all,
@@ -90,7 +92,7 @@ class HIRSFCDR:
         #self.hirs = hirs
         #self.srfs = srfs
 
-    def interpolate_between_calibs(self, M, calib_time, *args, kind="nearest"):
+    def interpolate_between_calibs(self, target_time, calib_time, *args, kind="nearest"):
         """Interpolate calibration parameters between calibration cycles
 
         This method is just beginning and likely to improve considerably
@@ -100,39 +102,56 @@ class HIRSFCDR:
 
         Arguments:
         
-            M [ndarray]
+            target_time [ndarray, dtype time]
             
-                ndarray with dtype such as returned by self.read.  Must
-                contain enough fields.
+                Dataset with enough fields
 
             calib_time [ndarray, dtype time]
 
                 times corresponding to offset and slope, such as returned
-                by HIRS.calculate_offset_and_slope.
+                by HIRS.calculate_offset_and_slope.  Will only be used for
+                arguments not carrying their own time.
 
             *args
                 
                 anything defined only at calib_time, such as slope,
-                offset, or noise_level
+                offset, or noise_level.  Can be ndarrays or
+                xarray.DataArrays.  If the latter come with their own
+                time, this is used instead of calib_time.
         
         Returns:
 
-            list, corresponding to args, interpolated to all times in M
+            list, corresponding to args, interpolated to all times in ds
         """
 
-        x = numpy.asarray(calib_time.astype("u8"))
-        xx = numpy.asarray(M["time"].astype("u8"))
+        if not numpy.issubdtype(target_time.dtype, numpy.datetime64):
+            raise TypeError("As of 2017-02-22, interpolate_between_calibs "
+                "takes time directly")
+
+        x = numpy.asarray(calib_time.astype("M8[ms]").astype("u8"))
+        xx = numpy.asarray(target_time.astype("M8[ms]").astype("u8"))
         out = []
         for y in args:
             try:
                 u = y.u
             except AttributeError:
-                u = None
-            y = numpy.ma.asarray(y)
+                try:
+                    u = y.attrs["units"]
+                except (AttributeError, KeyError):
+                    u = None
+            try:
+                xh = y["time"]
+            except (ValueError, IndexError):
+                xh = x
+            if not isinstance(y, (numpy.ndarray, xarray.DataArray)):
+                y = numpy.ma.asarray(y)
             # explicitly set masked data to nan, for scipy.interpolate
             # doesn't understand this
-            if not numpy.isscalar(y.mask):
-                y.data[y.mask] = numpy.nan
+            try:
+                if not numpy.isscalar(y.mask):
+                    y.data[y.mask] = numpy.nan
+            except AttributeError:
+                pass # not a masked array
             fnc = scipy.interpolate.interp1d(
                 x, y,
                 kind=kind,
@@ -142,7 +161,14 @@ class HIRSFCDR:
                 axis=0)
 
             yy = numpy.ma.masked_invalid(fnc(xx))
-            if u is None:
+            if isinstance(y, xarray.DataArray):
+                out.append(
+                    UADA(
+                        fnc(xx),
+                        dims=("time",),
+                        coords={"time": target_time},
+                        attrs={"units": y.attrs["units"]} if u else {}))
+            elif u is None:
                 out.append(yy)
             else:
                 out.append(ureg.Quantity(yy, u))
@@ -152,13 +178,16 @@ class HIRSFCDR:
     def custom_calibrate(self, counts, slope, offset, a2, Rself):
         """Calibrate with my own slope and offset
 
+        All arguments should be xarray.DataArray or preferably
+        UnitsAwareDataArrays.
         """
-        return (offset[:, numpy.newaxis]
-              + slope[:, numpy.newaxis] * counts
-              + a2 * counts**2
-              - Rself)
+        return offset + slope * counts + a2 * counts**2 - Rself
+#        return (offset[:, numpy.newaxis]
+#              + slope[:, numpy.newaxis] * counts
+#              + a2 * counts**2
+#              - Rself)
 
-    def extract_calibcounts_and_temp(self, M, ch, srf=None,
+    def extract_calibcounts_and_temp(self, ds, ch, srf=None,
             return_u=False, return_ix=False):
         """Calculate calibration counts and IWCT temperature
 
@@ -167,11 +196,11 @@ class HIRSFCDR:
 
         Arguments:
 
-            M
+            ds
 
-                ndarray such as returned by self.read, corresponding to
-                scanlines.  Must have at least fields 'time', 'scantype' (HIRS/2)
-                or 'hrs_scntyp' (HIRS/3/4), 'counts', and 'temp_iwt'.
+                ndarray such as returned by self.as_karray_dataset, corresponding to
+                scanlines.  Must have at least variables 'time',
+                'scantype', 'counts', and 'temperature_iwct'.
 
             ch
 
@@ -223,8 +252,15 @@ class HIRSFCDR:
 
         srf = srf or self.srfs[ch-1]
 
-        views_space = M[self.scantype_fieldname] == self.typ_space
-        views_iwct = M[self.scantype_fieldname] == self.typ_iwt
+        # 2017-02-22 backward compatibility
+        if not isinstance(ds, xarray.Dataset):
+            warnings.warn("Passing ndarray to extract_calibcounts_and_temp "
+                "is deprecated since 2017-02-22, should pass "
+                "xarray.Dataset ", DeprecationWarning)
+            ds = self.as_xarray_dataset(ds)
+
+        views_space = ds["scantype"] == self.typ_space
+        views_iwct = ds["scantype"] == self.typ_iwt
 
         # select instances where I have both in succession.  Should be
         # always, unless one of the two is missing or the start or end of
@@ -232,22 +268,38 @@ class HIRSFCDR:
         # self.dist_space_iwct because for HIRS/2 and HIRS/2I, there is a
         # views_icct in-between.
         dsi = self.dist_space_iwct
-        space_followed_by_iwct = (views_space[:-dsi] & views_iwct[dsi:])
-        #M15[1:][views_space[:-1]]["hrs_scntyp"]
+        space_followed_by_iwct = (views_space[:-dsi].variable &
+                                   views_iwct[dsi:].variable)
 
-        M_space = M[:-dsi][space_followed_by_iwct]
-        M_iwct = M[dsi:][space_followed_by_iwct]
+        ds_space = ds.isel(time=slice(None, -dsi)).isel(
+                    time=space_followed_by_iwct)
 
-        counts_space = ureg.Quantity(M_space["counts"][:,
-            self.start_space_calib:, ch-1], ureg.count)
+        #M_space = M[:-dsi][space_followed_by_iwct]
+
+        ds_iwct = ds.isel(time=slice(dsi, None)).isel(
+                    time=space_followed_by_iwct)
+        #M_iwct = M[dsi:][space_followed_by_iwct]
+
+        counts_space = ds_space["counts"].sel(
+            scanpos=slice(self.start_space_calib, None),
+            channel=ch)
+#        counts_space = ureg.Quantity(M_space["counts"][:,
+#            self.start_space_calib:, ch-1], ureg.count)
         # For IWCT, at least EUMETSAT uses all 56…
-        counts_iwct = ureg.Quantity(M_iwct["counts"][:,
-            self.start_iwct_calib:, ch-1], ureg.count)
+        counts_iwct = ds_iwct["counts"].sel(
+            scanpos=slice(self.start_iwct_calib, None),
+            channel=ch)
+#        counts_iwct = ureg.Quantity(M_iwct["counts"][:,
+#            self.start_iwct_calib:, ch-1], ureg.count)
 
-        # FIXME wart: I should use the IWCT observation line, not the
-        # space observation line, for the IWCT temperature measurement…
-        T_iwct = ureg.Quantity(
-            M_space["temp_iwt"].mean(-1).mean(-1).astype("f4"), ureg.K)
+        T_iwct = ds_iwct["temperature_iwct"].mean(
+                dim="prt_reading").mean(dim="prt_number_iwt")
+        T_iwct.attrs["units"] = ds_iwct["temperature_iwct"].attrs["units"]
+#        T_iwct = ureg.Quantity(ds_iwct["temperature_iwct"].mean(
+#                dim="prt_reading").mean(dim="prt_number_iwt"),
+#                ureg.K)
+#        T_iwct = ureg.Quantity(
+#            M_space["temp_iwt"].mean(-1).mean(-1).astype("f4"), ureg.K)
         # store directly, not using R_IWCT, as this is the same across
         # channels
         # FIXME wart: I'm storing the same information 19 times (for each
@@ -256,25 +308,34 @@ class HIRSFCDR:
         self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
             T_iwct, name=me.names[me.symbols["T_IWCT"]])
         self._quantities[me.symbols["N"]] = self._quantity_to_xarray(
-            numpy.uint8(M_space["temp_iwt"].shape[1]), 
+                numpy.array(ds.dims["prt_number_iwt"], "u1"),
                 name=me.names[me.symbols["N"]])
 
         # FIXME: for consistency, should replace this one also with
         # band-corrections — at least temporarily.  Perhaps this wants to
         # be implemented inside the blackbody_radiance method…
-        L_iwct = srf.blackbody_radiance(T_iwct)
-        L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
+        # NB: SRF does not understand DataArrays yet
+        # NB: pint seems to silently drop xarray.DataArray information,
+        # see https://github.com/hgrecco/pint/issues/479
+        # instead use UADA
+        L_iwct = srf.blackbody_radiance(
+            ureg.Quantity(T_iwct.values, ureg.K))
+        #L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
+        L_iwct = UADA(L_iwct,
+            dims=T_iwct.dims,
+            coords={**T_iwct.coords, "channel": ch},
+            attrs={"units": str(L_iwct.u)})
 
         extra = []
         # this implementation is slightly more sophisticated than in
         # self.estimate_noise although there is some code duplication.
         # Here, we only use real calibration lines, where both space and
         # earth views were successful.
-        u_counts_iwct = (typhon.math.stats.adev(counts_iwct, 1) /
+        u_counts_iwct = (typhon.math.stats.adev(counts_iwct, "scanpos") /
             numpy.sqrt(counts_iwct.shape[1]))
         self._tuck_effect_channel("C_IWCT", u_counts_iwct, ch)
 
-        u_counts_space = (typhon.math.stats.adev(counts_space, 1) /
+        u_counts_space = (typhon.math.stats.adev(counts_space, "scanpos") /
             numpy.sqrt(counts_space.shape[1]))
         self._tuck_effect_channel("C_space", u_counts_space, ch)
         self._tuck_effect_channel("C_Earth",
@@ -285,7 +346,8 @@ class HIRSFCDR:
         if return_ix:
             extra.append(space_followed_by_iwct.nonzero()[0])
 
-        coords = {"calibration_cycle": M_space["time"]}
+        coords = {"calibration_cycle": ds_space["time"].values}
+        #coords = {"calibration_cycle": M_space["time"]}
         self._tuck_quantity_channel("C_s", counts_space, ch,
             coords=coords)
         self._tuck_quantity_channel("C_IWCT", counts_iwct, ch,
@@ -293,7 +355,11 @@ class HIRSFCDR:
         self._tuck_quantity_channel("R_IWCT", L_iwct, ch,
             coords=coords)
         # store 'N', C_PRT[n], d_PRT[n, k], O_TPRT, O_TIWCT…
-        return (M_space["time"], L_iwct, counts_iwct, counts_space) + tuple(extra)
+        return (UADA(ds_space["time"]),
+                UADA(L_iwct),
+                UADA(counts_iwct),
+                UADA(counts_space)) + tuple(extra)
+        #return (M_space["time"], L_iwct, counts_iwct, counts_space) + tuple(extra)
 
     def _quantity_to_xarray(self, quantity, name, dropdims=(), dims=None):
         """Convert quantity to xarray
@@ -303,7 +369,7 @@ class HIRSFCDR:
         for the quantity) or dims (hard list of dims to include).
         """
         
-        da = xarray.DataArray(
+        da = UADA(
             numpy.asarray(quantity,
                 dtype=("f4" if hasattr(quantity, "mask") else
                     quantity.dtype)), # masking only for floats
@@ -363,16 +429,17 @@ class HIRSFCDR:
             da = xarray.concat([da, q], dim="channel")
             self._effects_by_name[name].magnitude = da
 
-    def calculate_offset_and_slope(self, M, ch, srf=None):
+    def calculate_offset_and_slope(self, ds, ch, srf=None):
         """Calculate offset and slope.
 
         Arguments:
 
-            M [ndarray]
+            ds [xarray.Dataset]
 
-                ndarray with dtype such as returned by self.read.  Must
-                contain at least fields 'time', 'scantype' (HIRS/2) or
-                'hrs_scntyp' (HIRS/3/4), 'counts', and 'temp_iwt'.
+                xarray dataset with fields such as returned by
+                self.as_xarray_dataset.  Must
+                contain at least variables 'time', 'scantype', 'counts',
+                and 'temperature_iwct'.
 
             ch [int]
 
@@ -400,14 +467,34 @@ class HIRSFCDR:
         """
 
         srf = srf or self.srfs[ch-1]
-        (time, L_iwct, counts_iwct, counts_space) = self.extract_calibcounts_and_temp(M, ch, srf)
-        L_space = ureg.Quantity(numpy.zeros_like(L_iwct), L_iwct.u)
+        
+        # 2017-02-22 backward compatibility
+        if not isinstance(ds, xarray.Dataset):
+            warnings.warn("Passing ndarray to calculate_offset_and_slope "
+                "is deprecated since 2017-02-22, should pass "
+                "xarray.Dataset ", DeprecationWarning)
+            ds = self.as_xarray_dataset(ds)
+        (time, L_iwct, counts_iwct, counts_space) = self.extract_calibcounts_and_temp(ds, ch, srf)
+        #L_space = ureg.Quantity(numpy.zeros_like(L_iwct), L_iwct.u)
+        L_space = UADA(xarray.zeros_like(L_iwct),
+            coords={k:v 
+                for (k, v) in counts_space.isel(scanpos=0).coords.items()
+                if k in L_iwct.coords.keys()})
 
-        slope = (
-            (L_iwct - L_space)[:, numpy.newaxis] /
-            (counts_iwct - counts_space))
+        ΔL = UADA(L_iwct.variable - L_space.variable,
+                  coords=L_space.coords,
+                  attrs=L_space.attrs)
+        Δcounts = UADA(
+            counts_iwct.variable - counts_space.variable,
+            coords=counts_space.coords, name="Δcounts",
+            attrs=counts_space.attrs)
+        slope = ΔL/Δcounts
 
-        offset = -slope * counts_space
+        # non-linearity is set to 0 for now
+        a2 = UADA(0, name="a2", coords={"channel": ch}, attrs={"units":
+            str(typhon.physics.units.common.radiance_units["si"]/(ureg.count**2))})
+
+        offset = -counts_space**2 * a2 -slope * counts_space
 
         # sometimes IWCT or space counts seem to drift over a “scan line”
         # of calibration.  Identify this by comparing the IQR to the
@@ -415,19 +502,25 @@ class HIRSFCDR:
         # (25, 75) … > 2: false positive 0.2%
         # (10, 90) … > 3.3: false positive 0.5%
         # …based on a simple simulated # experiment.
-        bad_iwct = (scipy.stats.iqr(counts_iwct, 1, (10, 90)) > 3.3 *
-            typhon.math.stats.adev(counts_iwct, 1))
-        bad_space = (scipy.stats.iqr(counts_space, 1, (10, 90)) > 3.3 *
-            typhon.math.stats.adev(counts_space, 1))
+        bad_iwct = (counts_iwct.reduce(
+            scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
+            typhon.math.stats.adev(counts_iwct, dim="scanpos"))
+#        bad_iwct = (scipy.stats.iqr(counts_iwct, 1, (10, 90)) > 3.3 *
+#            typhon.math.stats.adev(counts_iwct, 1))
+        bad_space = (counts_space.reduce(
+            scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
+            typhon.math.stats.adev(counts_space, dim="scanpos"))
+#        bad_space = (scipy.stats.iqr(counts_space, 1, (10, 90)) > 3.3 *
+#            typhon.math.stats.adev(counts_space, 1))
 
-        # non-linearity is set to 0 for now
-        a2 = ureg.Quantity(numpy.float32(0),
-            typhon.physics.units.common.radiance_units["si"]/(ureg.count**2))
-
-        bad = bad_iwct | bad_space
-        slope.mask |= bad[:, numpy.newaxis]
-        offset.mask |= bad[:, numpy.newaxis]
-        coords = {"calibration_cycle": time}
+        bad_calib = xarray.DataArray(bad_iwct.variable | bad_space.variable,
+                coords=bad_space.coords, name="bad_calib")
+        #bad = bad_iwct | bad_space
+        slope.sel(time=bad_calib)[...] = numpy.nan
+        #slope.mask |= bad[:, numpy.newaxis]
+        offset.sel(time=bad_calib)[...] = numpy.nan
+        #offset.mask |= bad[:, numpy.newaxis]
+        coords = {"calibration_cycle": time.values}
         self._tuck_quantity_channel("a_0", offset, ch, coords=coords)
         self._tuck_quantity_channel("a_1", slope, ch, coords=coords)
         self._tuck_quantity_channel("a_2", a2, ch)
@@ -439,7 +532,7 @@ class HIRSFCDR:
     _quantities = {}
     _effects = None
     _effects_by_name = None
-    def calculate_radiance(self, M, ch, interp_kind="zero", srf=None,
+    def calculate_radiance(self, ds, ch, interp_kind="zero", srf=None,
                 context=None,
                 Rself_model=None,
                 Rrefl_model=None):
@@ -451,11 +544,11 @@ class HIRSFCDR:
 
         Arguments:
             
-            M [ndarray]
+            ds [xarray.Dataset]
 
-                Structured ndarray, dtype with at least fields 'time',
-                'scantype' (HIRS/2) or 'hrs_scntyp' (HIRS/3/4),
-                'temp_iwt', and 'counts'.  Those are the values for which
+                xarray Dataset with at least variables 'time', 'scantype',
+                'temperature_iwct', and 'counts'.  Such is returned by
+                self.as_xarray_dataset.  Those are values for which
                 radiances will be calculated.
 
             ch [int]
@@ -474,10 +567,10 @@ class HIRSFCDR:
                 SRF to use.  If not passed, use default (as measured
                 before launch).
 
-            context [ndarray]
+            context [xarray.dataset]
 
-                Like M, but used for context.  For example, calibration
-                information may have to be found outside the range of `M`.
+                Like ds, but used for context.  For example, calibration
+                information may have to be found outside the range of `ds`.
                 It is also needed for developing the Rself and Rrefl
                 models when not provided to the function already.
 
@@ -497,9 +590,14 @@ class HIRSFCDR:
                 "top of that must be physics-based, such as through "
                 "the self-emission model. ".format(interp_kind))
 
+        if not isinstance(ds, xarray.Dataset):
+            warnings.warn("Passing ndarray to calculate_radiance "
+                "is deprecated since 2017-02-22, should pass "
+                "xarray.Dataset ", DeprecationWarning)
+            ds = self.as_xarray_dataset(ds)
         srf = srf or self.srfs[ch-1]
         has_context = context is not None
-        context = context if has_context else M
+        context = context if has_context else ds
         (time, offset, slope, a2) = self.calculate_offset_and_slope(
             context, ch, srf)
         # NOTE: taking the median may not be an optimal solution.  See,
@@ -510,70 +608,95 @@ class HIRSFCDR:
         # the higher ones.  See also the note at
         # calculate_offset_and_slope. 
         if offset.shape[0] > 1 or has_context:
-            (interp_offset, interp_slope) = self.interpolate_between_calibs(M, time,
-                ureg.Quantity(numpy.ma.median(offset.m, 1), offset.u),
-                ureg.Quantity(numpy.ma.median(slope.m, 1), slope.u),
+            (interp_offset, interp_slope) = self.interpolate_between_calibs(
+                ds["time"], time,
+                offset.median(dim="scanpos", keep_attrs=True),
+                #ureg.Quantity(numpy.ma.median(offset.m, 1), offset.u),
+                slope.median(dim="scanpos", keep_attrs=True),
+                #ureg.Quantity(numpy.ma.median(slope.m, 1), slope.u),
                 kind=interp_kind) # kind is always "zero" (see above)
         elif offset.shape[0] == 1:
-            interp_offset = numpy.ma.zeros(dtype=offset.dtype, shape=M.shape)
+            raise NotImplementedError("This part not converted to xarray")
+            interp_offset = numpy.ma.zeros(dtype=offset.dtype,
+                shape=ds["counts"].shape)
             interp_offset[:] = numpy.ma.median(offset.m, 1)
             interp_offset = ureg.Quantity(interp_offset, offset.u)
-            interp_slope = numpy.ma.zeros(dtype=offset.dtype, shape=M.shape)
+            interp_slope = numpy.ma.zeros(dtype=offset.dtype,
+                shape=ds["counts"].shape)
             interp_slope[:] = numpy.ma.median(slope.m, 1)
             interp_slope = ureg.Quantity(interp_slope, slope.u)
-        elif M.shape[0] > 0:
+        elif ds["counts"].dims["time"] > 0:
             raise typhon.datasets.dataset.InvalidFileError("Found {:d} calibration cycles, too few!".format(offset.shape[0]))
         else: # zero scanlines…
+            raise NotImplementedError("This part not converted to xarray")
             return ureg.Quantity(
-                numpy.zeros(shape=M["radiance"][:, :, ch-1].shape, dtype="f4"),
+                numpy.zeros(shape=ds["radiance"].sel(channel=ch).shape, dtype="f4"),
                 typhon.physics.units.common.radiance_units["ir"])
 
-        views_Earth = M[self.scantype_fieldname] == self.typ_Earth
-        C_Earth = M["counts"][views_Earth, :, ch-1]
+        views_Earth = ds["scantype"] == self.typ_Earth
+        C_Earth = UADA(ds["counts"].isel(time=views_Earth).sel(channel=ch))
 
         if Rself_model is None:
             warnings.warn("No self-emission defined, assuming 0!",
                 UserWarning)
-            Rself = ureg.Quantity(
-                    numpy.zeros_like(C_Earth),
-                    typhon.physics.units.common.radiance_units["si"])
-            RselfIWCT = Rselfspace = ureg.Quantity(
-                    numpy.zeros_like(offset),
-                    typhon.physics.units.common.radiance_units["si"])
+            Rself = UADA(numpy.zeros(shape=C_Earth.shape), coords=C_Earth.coords,
+                         name="Rself", attrs={"units":   
+                str(typhon.physics.units.common.radiance_units["si"])})
+#            Rself = ureg.Quantity(
+#                    numpy.zeros_like(C_Earth),
+#                    typhon.physics.units.common.radiance_units["si"])
+#            Rself.IWCT
+            RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset.shape),
+                    coords=offset.coords, attrs=Rself.attrs)
+#            RselfIWCT = Rselfspace = ureg.Quantity(
+#                    numpy.zeros_like(offset),
+#                    typhon.physics.units.common.radiance_units["si"])
         else:
             raise NotImplementedError("Evaluation of self-emission model "
                 "not implemented yet")
         if Rrefl_model is None:
             warnings.warn("No Earthshine model defined, assuming 0!",
                 UserWarning)
-            Rrefl = ureg.Quantity(
-                numpy.zeros_like(offset),
-                typhon.physics.units.common.radiance_units["si"])
-            ε = numpy.float32(1)
-            a_3 = numpy.float32(0)
-        rad_wn = ureg.Quantity(
-            numpy.ma.masked_all(M["counts"][:, :, ch-1].shape),
-            typhon.physics.units.common.radiance_units["ir"])
-        rad_wn[views_Earth, :] = self.custom_calibrate(
-            ureg.Quantity(C_Earth.astype("f4"), ureg.count),
-            interp_slope[views_Earth], interp_offset[views_Earth], a2, Rself).to(
-                rad_wn.u, "radiance")
-        rad_wn = ureg.Quantity(numpy.ma.array(rad_wn), rad_wn.u)
-        rad_wn.m.mask = C_Earth.mask
-        rad_wn.m.mask |= M["radiance"][:, :, ch-1].mask
-        rad_wn.m.mask |= numpy.isnan(rad_wn)
+            Rrefl = UADA(numpy.zeros(shape=offset.shape),
+                    coords=offset.coords,
+                    attrs={"units": str(typhon.physics.units.common.radiance_units["si"])})
+#            Rrefl = ureg.Quantity(
+#                numpy.zeros_like(offset),
+#                typhon.physics.units.common.radiance_units["si"])
+            ε = UADA(0, name="emissivity")
+            a_3 = UADA(0, name="nonlinearity")
+        else:
+            raise NotImplementedError("Evalutation of Earthshine "
+                "model not implemented yet")
+#        rad_wn = UADA(numpy.zeros(shape=C_Earth.shape),
+#            coords=C_Earth.coords,
+#            attrs={"units": str(typhon.physics.units.common.radiance_units["ir"])})
+#        rad_wn = ureg.Quantity(
+#            numpy.ma.masked_all(ds["counts"].sel(channel=ch).shape),
+#            typhon.physics.units.common.radiance_units["ir"])
+#        rad_wn[views_Earth, :] = self.custom_calibrate(
+#            ureg.Quantity(C_Earth.astype("f4"), ureg.count),
+#            interp_slope[views_Earth], interp_offset[views_Earth], a2, Rself).to(
+#                rad_wn.u, "radiance")
+        rad_wn = self.custom_calibrate(C_Earth, interp_slope,
+            interp_offset, a2, Rself)
+#        rad_wn = ureg.Quantity(numpy.ma.array(rad_wn), rad_wn.u)
+#        rad_wn.m.mask = C_Earth.mask
+#        rad_wn.m.mask |= numpy.isnan(["radiance"].sel(channel=ch))
+#        rad_wn.m.mask |= numpy.isnan(rad_wn)
 
         #(α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients()
         (α, β, λ_eff, Δα, Δβ, Δλ_eff) = (numpy.float32(0),
             numpy.float32(1), srf.centroid().to(ureg.m, "sp"), 0, 0, 0)
 
-        coords = {"calibration_cycle": time}
+        coords = {"calibration_cycle": time.values}
         self._tuck_quantity_channel("R_selfE", Rself, ch)
         self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, ch, coords)
         self._tuck_quantity_channel("R_selfs", Rselfspace, ch, coords)
         self._tuck_quantity_channel("C_E", C_Earth, ch,
-            coords={"scanline_earth": M["time"][views_Earth]})
-        self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], ch)
+            coords={"scanline_earth": C_Earth["time"].values})
+#        self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], ch)
+        self._tuck_quantity_channel("R_e", rad_wn, ch)
         self._tuck_quantity_channel("R_refl", Rrefl, ch, coords)
 
         self._tuck_quantity_channel("α", α, ch)
@@ -586,14 +709,20 @@ class HIRSFCDR:
         return rad_wn
     Mtorad = calculate_radiance
 
-    def calculate_radiance_all(self, M, interp_kind="zero", srf=None,
+    def calculate_radiance_all(self, ds, interp_kind="zero", srf=None,
                 context=None,
                 Rself_model=None,
-                Rrefl_model=None):
+                Rrefl_model=None,
+                return_ndarray=False):
         """Calculate radiances for all channels
 
         See calculate_radiance for documentation on inputs.
         """
+        if not isinstance(ds, xarray.Dataset):
+            warnings.warn("Passing ndarray to calculate_radiance_all "
+                "is deprecated since 2017-02-22, should pass "
+                "xarray.Dataset ", DeprecationWarning)
+            ds = self.as_xarray_dataset(ds)
 
         # When calculating uncertainties I depend on the same quantities
         # as when calculating radiances, so I really should keep track of
@@ -610,24 +739,44 @@ class HIRSFCDR:
         self._effects_by_name = {e.name: e for e in
                 itertools.chain.from_iterable(self._effects.values())}
 
-        all_rad = [self.calculate_radiance(M, i, interp_kind=interp_kind,
+        all_rad = [self.calculate_radiance(ds, ch, interp_kind=interp_kind,
                 context=context, Rself_model=Rself_model,
                 Rrefl_model=Rrefl_model)
-            for i in range(1, 20)]
-        return ureg.Quantity(numpy.ma.concatenate([rad.m[...,
-            numpy.newaxis] for rad in all_rad], 2), all_rad[0].u)
+            for ch in range(1, 20)]
+        da = xarray.concat(all_rad, dim="channel")
+        da = da.transpose(*ds["counts"].dims)
+        # until all of typhon can handle xarrays (see
+        # https://arts.mi.uni-hamburg.de/trac/rt/ticket/145) I will
+        # unfortunately sometimes need to move back to regular arrays
+        if return_ndarray:
+            dam = xarray.DataArray(numpy.zeros_like(ds["toa_brightness_temperature"].values), coords=ds["toa_brightness_temperature"].coords)
+            dam.loc[dict(time=da.time)] = da
+            return ureg.Quantity(
+                numpy.ma.masked_invalid(dam.values),
+                da.attrs["units"])
+        else:
+            return da
+#        return ureg.Quantity(numpy.ma.concatenate([rad.m[...,
+#            numpy.newaxis] for rad in all_rad], 2), all_rad[0].u)
 
     def calculate_bt_all(self, M, D): 
-        bt_all = ureg.Quantity(
-            numpy.ma.concatenate(
-                [self.srfs[ch-1].channel_radiance2bt(
-                    D["radiance_fid_naive"][:, :, ch-1])[..., numpy.newaxis]#.astype("f4")
-                        for ch in range(1, 20)], 2),
-            ureg.K)
-        if numpy.isscalar(bt_all.m.mask):
-            bt_all.m.mask = D["radiance_fid_naive"].mask
+        if isinstance(D["radiance_fid_naive"], xarray.DataArray):
+            bt_all = xarray.concat(
+                [D["radiance_fid_naive"].sel(channel=i).to(
+                    "K", "radiance", srf=self.srfs[i-1])
+                    for i in range(1, 20)],
+                "channel")
         else:
-            bt_all.m.mask |= D["radiance_fid_naive"].mask
+            bt_all = ureg.Quantity(
+                numpy.ma.concatenate(
+                    [self.srfs[ch-1].channel_radiance2bt(
+                        D["radiance_fid_naive"][:, :, ch-1])[..., numpy.newaxis]#.astype("f4")
+                            for ch in range(1, 20)], 2),
+                ureg.K)
+            if numpy.isscalar(bt_all.m.mask):
+                bt_all.m.mask = D["radiance_fid_naive"].mask
+            else:
+                bt_all.m.mask |= D["radiance_fid_naive"].mask
         return bt_all
    
     def estimate_noise(self, M, ch, typ="both"):
@@ -687,7 +836,7 @@ class HIRSFCDR:
         # See https://github.com/numpy/numpy/issues/7787 on numpy.median
         # losing the unit
         logging.info("Interpolating") 
-        (interp_offset, interp_slope) = self.interpolate_between_calibs(M,
+        (interp_offset, interp_slope) = self.interpolate_between_calibs(M["time"],
             time, 
             ureg.Quantity(numpy.median(offset, 1), offset.u),
             ureg.Quantity(numpy.median(slope, 1), slope.u))
@@ -738,10 +887,10 @@ class HIRSFCDR:
         C_Earth = M["counts"][views_Earth, :, ch-1]
         # interpolate all of those to cover entire time period
         (L_iwct, C_iwct, C_space) = self.interpolate_between_calibs(
-            M, time, L_iwct, C_iwct, C_space)
+            M["time"], time, L_iwct, C_iwct, C_space)
         raise RuntimeError("What!  I'm interpolating Earth Counts?  NO!!!")
         (C_Earth,) = self.interpolate_between_calibs(
-            M, M["time"][views_Earth], C_Earth)
+            M["time"], M["time"][views_Earth], C_Earth)
         C_space = ureg.Quantity(numpy.median(C_space, 1), C_space.u)
         C_iwct = ureg.Quantity(numpy.median(C_iwct, 1), C_iwct.u)
         C_Earth = ureg.Quantity(C_Earth, ureg.counts)
@@ -870,14 +1019,14 @@ class HIRSFCDR:
                         operator.add,
                         (eff.magnitude for eff in goodies))
                 else:
-                    u = xarray.DataArray(0, name="u_{!s}".format(var),
+                    u = UADA(0, name="u_{!s}".format(var),
                         attrs={"quantity": str(var), "note":
                             "No uncertainty quantified for: {:s}".format(
                                 ';'.join(eff.name for eff in baddies))})
                 cached_uncertainties[s] = u
                 return u
             else:
-                u = xarray.DataArray(0, name="u_{!s}".format(var),
+                u = UADA(0, name="u_{!s}".format(var),
                     attrs={"quantity": str(var), "note":
                         "No documented effect associated with this quantity"})
                 cached_uncertainties[s] = u
@@ -903,7 +1052,7 @@ class HIRSFCDR:
         if u_e == 0: # constant
             # FIXME: bookkeep where I have zero uncertainty
             warnings.warn("Assigning u=0 to {!s}".format(var))
-            u = xarray.DataArray(0, name="u_{!s}".format(var),
+            u = UADA(0, name="u_{!s}".format(var),
                 attrs={"quantity": str(var), "note":
                     "This appears to be a constant value with neglected quantity"})
             cached_uncertainties[var] = u
@@ -1025,7 +1174,7 @@ class HIRSFCDR:
                     kind="zero",
                     bounds_error=True,
                     axis=v.dims.index("calibration_cycle"))
-                new_adict[k] = xarray.DataArray(fnc(dest_time),
+                new_adict[k] = UADA(fnc(dest_time),
                     dims=[x.replace("calibration_cycle", "scanline_earth") for
                             x in v.dims],
                     coords=adict[me.symbols["C_E"]].coords,
@@ -1168,9 +1317,9 @@ class HIRSFCDR:
         s_space = self.calc_sens_coef_C_space_slope(L_iwct, C_iwct, C_space)
 #        (t_iwt_noise_level, u_C_iwct) = self.estimate_noise(M, ch, typ="iwt")
 #        (t_space_noise_level, u_C_space) = self.estimate_noise(M, ch, typ="space")
-#        (u_C_iwct,) = h.interpolate_between_calibs(M,
+#        (u_C_iwct,) = h.interpolate_between_calibs(M["time"],
 #            t_iwt_noise_level, u_C_iwct)
-#        (u_C_space,) = h.interpolate_between_calibs(M,
+#        (u_C_space,) = h.interpolate_between_calibs(M["time"],
 #            t_space_noise_level, u_C_space)
 
         return numpy.sqrt((s_iwct * u_C_iwct[:, numpy.newaxis])**2 +

@@ -887,7 +887,7 @@ class NoiseAnalyser:
                 typhon.physics.units.common.radiance_units["ir"])
             dL = Lhrs - self.Lhiasi[:, ch-1]
             ΔRselfint, = self.hirs.interpolate_between_calibs(
-                self.Mhrscmb, t_slope[1:], ΔRself,
+                self.Mhrscmb["time"], t_slope[1:], ΔRself,
                 kind="nearest")
             D = dict(
                 heating = ΔRselfint.m > scipy.stats.scoreatpercentile(ΔRself, 90),
