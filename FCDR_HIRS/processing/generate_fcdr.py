@@ -39,8 +39,14 @@ from .. import fcdr
 
 
 class FCDRGenerator:
-    window_size = datetime.timedelta(hours=48)
+    window_size = datetime.timedelta(hours=24)
     step_size = datetime.timedelta(hours=6)
+    # FIXME: do we have a filename convention?
+    # FIXME: this should be incorporated in the general HomemadeDataset
+    # class
+    basedir = "/group_workspaces/cems2/fiduceo/Data/FCDR/HIRS/pre-β/testing"
+    subdir = "{from_time:%Y/%m/%d}"
+    filename = "HIRS_FCDR_sketch_{satname:s}_{from_time:%Y%m%d%H%M}_{to_time:%H%M}.nc"
     def __init__(self, sat, start_date, end_date):
         self.satname = sat
         self.fcdr = fcdr.which_hirs_fcdr(sat)
@@ -75,8 +81,6 @@ class FCDRGenerator:
 
         Returns a single xarray.Dataset
         """
-        # FIXME: will almost certainly fail because calculate_radiance_all
-        # expects a structured ndarray, not an xarry dataset
         subset = self.dd.data.sel(time=slice(from_, to))
         R_E = self.fcdr.calculate_radiance_all(subset, context=self.dd.data)  
         cu = {}
@@ -84,6 +88,8 @@ class FCDRGenerator:
             self.fcdr._effects, cu)
         uc = xarray.Dataset({k: v.magnitude for (k, v) in self.fcdr._effects_by_name.items()})
         qc = xarray.Dataset(self.fcdr._quantities)
+        qc = xarray.Dataset(
+            {str(k): v for (k, v) in self.fcdr._quantities.items()})
         ds = xarray.merge([uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
                       qc, subset])
         return ds
@@ -91,20 +97,20 @@ class FCDRGenerator:
     def store_piece(self, piece):
         fn = self.get_filename_for_piece(piece)
         fn.parent.mkdir(exist_ok=True, parents=True)
+        logging.info("Storing to {!s}".format(fn))
         piece.to_netcdf(str(fn))
 
     _i = 0
     def get_filename_for_piece(self, piece):
-        logging.warning("Not implemented, inventing phony filename")
-        d = pathlib.Path("/work/scratch/gholl/test_fcdr_generation")
-        self._i += 1
-        return d / "{:s}_{:d}/{:d}.nc".format(self.satname, *divmod(self._i, 100))
+        fn = "/".join((self.basedir, self.subdir, self.filename))
+        fn = fn.format(satname=self.satname,
+            from_time=piece["time"][0].values.astype("M8[s]").astype(datetime.datetime),
+            to_time=piece["time"][-1].values.astype("M8[s]").astype(datetime.datetime))
+        return pathlib.Path(fn)
 #        raise NotImplementedError()
             
 
 def main():
-#    warnings.simplefilter("module")
-#    warnings.simplefilter("ignore", fcdr.FCDRWarning)
     fgen = FCDRGenerator(p.satname,
         datetime.datetime.strptime(p.from_date, p.datefmt),
         datetime.datetime.strptime(p.to_date, p.datefmt))

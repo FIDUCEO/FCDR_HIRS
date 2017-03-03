@@ -244,7 +244,7 @@ IWCT_counts_noise = Effect(name="C_IWCT",
 
 SRF_calib = Effect(name="SRF_calib",
     description="Spectral response function calibration",
-    parameter=meq.symbols["Δλ"],
+    parameter=meq.symbols["νstar"],
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.nm,

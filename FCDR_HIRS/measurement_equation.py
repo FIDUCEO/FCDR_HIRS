@@ -5,17 +5,21 @@ import numbers
 
 import numpy
 import scipy.constants
+import xarray
 
 import sympy
 from sympy.core.symbol import Symbol
 
 import typhon.physics.metrology
+from typhon.physics.units.common import ureg
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 
 version = "β"
 
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
          "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φn "
-         "R_IWCT ε O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT")
+         "R_IWCT ε O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT f Δf fstar "
+         "ν Δν νstar")
 
 symbols = sym = dict(zip(names.split(), sympy.symbols(names)))
 
@@ -37,12 +41,28 @@ else:
         (sympy.Integral(((sym["ε"] + sym["a_3"]) * sym["B"] +
         (1-sym["ε"]-sym["a_3"])*sym["R_refl"]) * sym["φn"], sym["λ"]))) # /
 #    sympy.Integral(sym["φ"], sym["λ"]))
+# NB 2017-03-02: B(λ) results in spectral radiance per wavelength, which
+# is a different quantity than spectral radiance per frequency or
+# wavenumber and cannot be directly converted.  Specrad per wavenumber can
+# be converted but when evaluating uncertainties we have squares of that,
+# for which I don't have a conversion rule, so let's just keep it per
+# frequency for now.
+# converted, but when evaluating 
+#expressions[sym["B"]] = (
+#    (2*sym["h"]*sym["c"]**2)/((sym["λ"])**5) *
+#    1/(sympy.exp((sym["h"]*sym["c"])/((sym["λ"])*sym["k_b"]*sym["T_IWCT"]))-1))
+#expressions[sym["B"]] = (
+#     (2 * sym["h"] * sym["c"]**2 * sym["ν"]**3) / (
+#     sympy.exp(sym["h"]*sym["c"]*sym["ν"]/(sym["k_b"]*sym["T_IWCT"])-1)))
 expressions[sym["B"]] = (
-    (2*sym["h"]*sym["c"]**2)/((sym["λ"])**5) *
-    1/(sympy.exp((sym["h"]*sym["c"])/((sym["λ"])*sym["k_b"]*sym["T_IWCT"]))-1))
+    (2 * sym["h"] * sym["f"]**3 / sym["c"]**2) *
+    (1 / (sympy.exp((sym["h"]*sym["f"])/(sym["k_b"]*sym["T_IWCT"]))-1)))
 if version == "β":
     expressions[sym["B"]] = expressions[sym["B"]].subs(
-        {sym["T_IWCT"]: sym["Tstar"], sym["λ"]: sym["λstar"]})
+        {sym["T_IWCT"]: sym["Tstar"],
+         sym["λ"]: sym["λstar"],
+         sym["f"]: sym["fstar"],
+         sym["ν"]: sym["νstar"]})
     expressions[sym["Tstar"]] = sym["α"] + sym["β"]*sym["T_IWCT"]
 expressions[sym["T_IWCT"]] = (
     sympy.Sum(sympy.IndexedBase(sym["T_PRT"])[sym["n"]], (sym["n"], 0, sym["N"]))/sym["N"] + sym["O_TIWCT"])
@@ -50,11 +70,18 @@ expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"]]] = (
     sympy.Sum(sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]] *
         sympy.IndexedBase(sym["C_PRT"])[sym["n"]]**sym["k"], (sym["k"], 0, sym["K"]-1))
     + sym["O_TPRT"])
-expressions[sym["φn"]] = (sympy.Function("φn")(sym["λ"]+sym["Δλ"]))
+#expressions[sym["φn"]] = (sympy.Function("φn")(sym["λ"]+sym["Δλ"]))
+#expressions[sym["φn"]] = (sympy.Function("φn")(sym["ν"]+sym["Δν"]))
+expressions[sym["φn"]] = (sympy.Function("φn")(sym["f"]+sym["Δf"]))
 
 expressions[sym["c"]] = sympy.sympify(scipy.constants.speed_of_light)
 expressions[sym["h"]] = sympy.sympify(scipy.constants.Planck)
 expressions[sym["k_b"]] = sympy.sympify(scipy.constants.Boltzmann)
+
+units = {}
+units[sym["c"]] = ureg.c
+units[sym["h"]] = ureg.h
+units[sym["k_b"]] = ureg.k
 
 aliases = {}
 aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
@@ -115,7 +142,9 @@ names = {
     sym["R_refl"]: "R_refl",
     sym["α"]: "α",
     sym["β"]: "β",
-    sym["λstar"]: "λ_eff",
+    #sym["λstar"]: "λ_eff",
+    #sym["νstar"]: "ν_eff",
+    sym["fstar"]: "f_eff",
     sym["ε"]: "ε",
     sym["a_3"]: "a_3",
     sym["C_s"]: "C_space",
@@ -125,7 +154,12 @@ names = {
     sym["a_1"]: "slope",
     sym["a_2"]: "a_2",
     sym["T_IWCT"]: "T_IWCT_calib_mean",
-    sym["N"]: "prt_number_iwt"}
+    sym["N"]: "prt_number_iwt",
+    sym["Tstar"]: "Tstar",
+    sym["B"]: "B",
+    sym["O_Re"]: "O_Re",
+    sym["O_TIWCT"]: "O_TIWCT",
+    sym["O_RIWCT"]: "O_RIWCT"}
 
 
 def substitute_until_explicit(expr, s2):
@@ -186,7 +220,10 @@ def evaluate_quantity(v, quantities,
 
     # substitute numerical values into expression
     if isinstance(e, sympy.Number):
-        return float(e)
+        return UADA(float(e),
+            name = names.get(v, str(v)),
+            dims = (),
+            attrs = {"units": str(units[v])})
     elif isinstance(e, stop_at):
         return e
     elif not e.args:

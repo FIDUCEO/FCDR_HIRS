@@ -259,8 +259,17 @@ class HIRSFCDR:
                 "xarray.Dataset ", DeprecationWarning)
             ds = self.as_xarray_dataset(ds)
 
-        views_space = ds["scantype"] == self.typ_space
-        views_iwct = ds["scantype"] == self.typ_iwt
+        # xarray.core.array.nputils.array_eq (and array_neq) use the
+        # context manager 'warnings.catch_warnings'.  This causes the
+        # warnings registry to be reset such that warnings that should be
+        # printed once get printed every time (see
+        # http://bugs.python.org/issue29672 and
+        # https://github.com/pydata/xarray/blob/master/xarray/core/nputils.py#L73)
+        # Therefore, avoid xarray array_eq for now. 
+#        views_space = ds["scantype"] == self.typ_space
+        views_space = xarray.DataArray(ds["scantype"].values == self.typ_space, coords=ds["scantype"].coords)
+#        views_iwct = ds["scantype"] == self.typ_iwt
+        views_iwct = xarray.DataArray(ds["scantype"].values == self.typ_iwt, coords=ds["scantype"].coords)
 
         # select instances where I have both in succession.  Should be
         # always, unless one of the two is missing or the start or end of
@@ -270,6 +279,8 @@ class HIRSFCDR:
         dsi = self.dist_space_iwct
         space_followed_by_iwct = (views_space[:-dsi].variable &
                                    views_iwct[dsi:].variable)
+#        space_followed_by_iwct = (views_space[:-dsi].variable &
+#                                   views_iwct[dsi:].variable)
 
         ds_space = ds.isel(time=slice(None, -dsi)).isel(
                     time=space_followed_by_iwct)
@@ -282,13 +293,13 @@ class HIRSFCDR:
 
         counts_space = ds_space["counts"].sel(
             scanpos=slice(self.start_space_calib, None),
-            channel=ch)
+            channel=ch).rename({"channel": "calibrated_channel"})
 #        counts_space = ureg.Quantity(M_space["counts"][:,
 #            self.start_space_calib:, ch-1], ureg.count)
         # For IWCT, at least EUMETSAT uses all 56…
         counts_iwct = ds_iwct["counts"].sel(
             scanpos=slice(self.start_iwct_calib, None),
-            channel=ch)
+            channel=ch).rename({"channel": "calibrated_channel"})
 #        counts_iwct = ureg.Quantity(M_iwct["counts"][:,
 #            self.start_iwct_calib:, ch-1], ureg.count)
 
@@ -323,7 +334,7 @@ class HIRSFCDR:
         #L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
         L_iwct = UADA(L_iwct,
             dims=T_iwct.dims,
-            coords={**T_iwct.coords, "channel": ch},
+            coords={**T_iwct.coords, "calibrated_channel": ch},
             attrs={"units": str(L_iwct.u)})
 
         extra = []
@@ -339,7 +350,8 @@ class HIRSFCDR:
             numpy.sqrt(counts_space.shape[1]))
         self._tuck_effect_channel("C_space", u_counts_space, ch)
         self._tuck_effect_channel("C_Earth",
-            (u_counts_iwct + u_counts_space)/2, ch)
+            UADA((u_counts_space.variable + u_counts_iwct.variable)/2,
+                  coords=u_counts_space.coords), ch)
 
         if return_u:
             extra.extend([u_counts_iwct, u_counts_space])
@@ -348,12 +360,12 @@ class HIRSFCDR:
 
         coords = {"calibration_cycle": ds_space["time"].values}
         #coords = {"calibration_cycle": M_space["time"]}
-        self._tuck_quantity_channel("C_s", counts_space, ch,
-            coords=coords)
-        self._tuck_quantity_channel("C_IWCT", counts_iwct, ch,
-            coords=coords)
-        self._tuck_quantity_channel("R_IWCT", L_iwct, ch,
-            coords=coords)
+        self._tuck_quantity_channel("C_s", counts_space,
+            calibrated_channel=ch, **coords)
+        self._tuck_quantity_channel("C_IWCT", counts_iwct,
+            calibrated_channel=ch, **coords)
+        self._tuck_quantity_channel("R_IWCT", L_iwct,
+            calibrated_channel=ch, **coords)
         # store 'N', C_PRT[n], d_PRT[n, k], O_TPRT, O_TIWCT…
         return (UADA(ds_space["time"]),
                 UADA(L_iwct),
@@ -386,24 +398,27 @@ class HIRSFCDR:
             pass # not a masked array
         return da
 
-    def _tuck_quantity_channel(self, symbol_name, quantity, channel,
-            coords=None):
+    def _tuck_quantity_channel(self, symbol_name, quantity, **coords):
         """Convert quantity to xarray and put into self._quantities
 
         TODO: need to assign time coordinates so that I can later
         extrapolate calibration_cycle dimension to scanline dimension.
         """
 
-        if coords is None:
-            coords = {}
         s = me.symbols[symbol_name]
         name = me.names[s]
         q = self._quantity_to_xarray(quantity, name,
                 dropdims=["channel", "calibrated_channel"]).assign_coords(
-                    channel=channel, **coords)
+                    **coords)
         if s in self._quantities:
             da = self._quantities[s]
-            da = xarray.concat([da, q], dim="channel")
+            in_coords = [x for x in ("channel", "calibrated_channel")
+                            if x in da.coords]
+            if len(in_coords) != 1:
+                raise ValueError("{:s} does not contain exactly one "
+                                 "channel coordinate, found {:d}.".format(
+                                    symbol_name, len(in_coords)))
+            da = xarray.concat([da, q], dim=in_coords[0])
             self._quantities[s] = da
         else:
             self._quantities[s] = q
@@ -420,13 +435,14 @@ class HIRSFCDR:
         # difference.
 
         q = self._quantity_to_xarray(quantity, name,
-                dropdims=["channel"],
-                dims=self._effects_by_name[name].dimensions).assign_coords(channel=channel)
+                dropdims=["channel", "calibrated_channel"],
+                dims=self._effects_by_name[name].dimensions).assign_coords(
+                    calibrated_channel=channel)
         if self._effects_by_name[name].magnitude is None:
             self._effects_by_name[name].magnitude = q
         else:
             da = self._effects_by_name[name].magnitude
-            da = xarray.concat([da, q], dim="channel")
+            da = xarray.concat([da, q], dim="calibrated_channel")
             self._effects_by_name[name].magnitude = da
 
     def calculate_offset_and_slope(self, ds, ch, srf=None):
@@ -491,7 +507,7 @@ class HIRSFCDR:
         slope = ΔL/Δcounts
 
         # non-linearity is set to 0 for now
-        a2 = UADA(0, name="a2", coords={"channel": ch}, attrs={"units":
+        a2 = UADA(0, name="a2", coords={"calibrated_channel": ch}, attrs={"units":
             str(typhon.physics.units.common.radiance_units["si"]/(ureg.count**2))})
 
         offset = -counts_space**2 * a2 -slope * counts_space
@@ -521,9 +537,12 @@ class HIRSFCDR:
         offset.sel(time=bad_calib)[...] = numpy.nan
         #offset.mask |= bad[:, numpy.newaxis]
         coords = {"calibration_cycle": time.values}
-        self._tuck_quantity_channel("a_0", offset, ch, coords=coords)
-        self._tuck_quantity_channel("a_1", slope, ch, coords=coords)
-        self._tuck_quantity_channel("a_2", a2, ch)
+        self._tuck_quantity_channel("a_0", offset,
+            calibrated_channel=ch, **coords)
+        self._tuck_quantity_channel("a_1", slope,
+            calibrated_channel=ch, **coords)
+        self._tuck_quantity_channel("a_2", a2,
+            calibrated_channel=ch)
         return (time,
                 offset,
                 slope,
@@ -633,8 +652,13 @@ class HIRSFCDR:
                 numpy.zeros(shape=ds["radiance"].sel(channel=ch).shape, dtype="f4"),
                 typhon.physics.units.common.radiance_units["ir"])
 
-        views_Earth = ds["scantype"] == self.typ_Earth
-        C_Earth = UADA(ds["counts"].isel(time=views_Earth).sel(channel=ch))
+        # see note near line 270
+        views_Earth = xarray.DataArray(ds["scantype"].values == self.typ_Earth, coords=ds["scantype"].coords)
+        #views_Earth = ds["scantype"] == self.typ_Earth
+        # NB: C_Earth has counts for all channels but only
+        # calibrated_channel will be used
+        C_Earth = UADA(ds["counts"].isel(time=views_Earth).sel(
+            channel=ch)).rename({"channel": "calibrated_channel"})
 
         if Rself_model is None:
             warnings.warn("No self-emission defined, assuming 0!",
@@ -686,22 +710,30 @@ class HIRSFCDR:
 #        rad_wn.m.mask |= numpy.isnan(rad_wn)
 
         #(α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients()
-        (α, β, λ_eff, Δα, Δβ, Δλ_eff) = (numpy.float32(0),
-            numpy.float32(1), srf.centroid().to(ureg.m, "sp"), 0, 0, 0)
+        (α, β, f_eff, Δα, Δβ, Δf_eff) = (numpy.float32(0),
+            numpy.float32(1), srf.centroid().to(ureg.THz, "sp"), 0, 0, 0)
 
         coords = {"calibration_cycle": time.values}
-        self._tuck_quantity_channel("R_selfE", Rself, ch)
-        self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, ch, coords)
-        self._tuck_quantity_channel("R_selfs", Rselfspace, ch, coords)
-        self._tuck_quantity_channel("C_E", C_Earth, ch,
-            coords={"scanline_earth": C_Earth["time"].values})
+        self._tuck_quantity_channel("R_selfE", Rself, 
+            calibrated_channel=ch)
+        self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, 
+            calibrated_channel=ch, **coords)
+        self._tuck_quantity_channel("R_selfs", Rselfspace,
+            calibrated_channel=ch, **coords)
+        self._tuck_quantity_channel("C_E", C_Earth, 
+            calibrated_channel=ch, scanline_earth=C_Earth["time"].values)
 #        self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], ch)
-        self._tuck_quantity_channel("R_e", rad_wn, ch)
-        self._tuck_quantity_channel("R_refl", Rrefl, ch, coords)
+        self._tuck_quantity_channel("R_e", rad_wn,
+            calibrated_channel=ch)
+        self._tuck_quantity_channel("R_refl", Rrefl,
+            calibrated_channel=ch, **coords)
 
-        self._tuck_quantity_channel("α", α, ch)
-        self._tuck_quantity_channel("β", β, ch)
-        self._tuck_quantity_channel("λstar", λ_eff, ch)
+        self._tuck_quantity_channel("α", α, 
+            calibrated_channel=ch)
+        self._tuck_quantity_channel("β", β,
+            calibrated_channel=ch)
+        self._tuck_quantity_channel("fstar", f_eff,
+            calibrated_channel=ch)
         self._quantities[me.symbols["ε"]] = self._quantity_to_xarray(
             ε, name=me.names[me.symbols["ε"]])
         self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
@@ -743,8 +775,8 @@ class HIRSFCDR:
                 context=context, Rself_model=Rself_model,
                 Rrefl_model=Rrefl_model)
             for ch in range(1, 20)]
-        da = xarray.concat(all_rad, dim="channel")
-        da = da.transpose(*ds["counts"].dims)
+        da = xarray.concat(all_rad, dim="calibrated_channel")
+        da = da.transpose(*ds["toa_brightness_temperature"].dims)
         # until all of typhon can handle xarrays (see
         # https://arts.mi.uni-hamburg.de/trac/rt/ticket/145) I will
         # unfortunately sometimes need to move back to regular arrays
@@ -1019,21 +1051,28 @@ class HIRSFCDR:
                         operator.add,
                         (eff.magnitude for eff in goodies))
                 else:
-                    u = UADA(0, name="u_{!s}".format(var),
-                        attrs={"quantity": str(var), "note":
-                            "No uncertainty quantified for: {:s}".format(
-                                ';'.join(eff.name for eff in baddies))})
+                    u = UADA(0, name="u_{!s}".format(s),
+                        attrs={
+                            "quantity": str(s),
+                            "note": "No uncertainty quantified for: {:s}".format(
+                                ';'.join(eff.name for eff in baddies)),
+                            "units": self._data_vars_props[
+                                        me.names[s]][2]["units"]})
                 cached_uncertainties[s] = u
                 return u
             else:
-                u = UADA(0, name="u_{!s}".format(var),
-                    attrs={"quantity": str(var), "note":
-                        "No documented effect associated with this quantity"})
+                u = UADA(0, name="u_{!s}".format(s),
+                    attrs={
+                        "quantity": str(s),
+                        "note": "No documented effect associated with this "
+                                "quantity",
+                        "units": self._data_vars_props[
+                                    me.names[s]][2]["units"]})
                 cached_uncertainties[s] = u
                 return u
 
         # evaluate expression for this quantity
-        e = me.expressions[me.symbols.get(var, var)]
+        e = me.expressions[s]
         # BUG: expressing u_e /before/ substitution in the presence of
         # integrals can cause expressions to be taken out of the Planck
         # function where they should remain inside — express_uncertainty
@@ -1046,16 +1085,21 @@ class HIRSFCDR:
 #        u_e = typhon.physics.metrology.express_uncertainty(
 #            e.subs({sm: me.functions.get(sm, sm)
 #                    for sm in typhon.physics.metrology.recursive_args(e)}))
+        failures = set()
         u_e = typhon.physics.metrology.express_uncertainty(e,
-            on_failure="warn")
+            on_failure="warn", collect_failures=failures)
 
         if u_e == 0: # constant
             # FIXME: bookkeep where I have zero uncertainty
-            warnings.warn("Assigning u=0 to {!s}".format(var))
-            u = UADA(0, name="u_{!s}".format(var),
-                attrs={"quantity": str(var), "note":
-                    "This appears to be a constant value with neglected quantity"})
-            cached_uncertainties[var] = u
+            warnings.warn("Assigning u=0 to {!s}".format(s))
+            u = UADA(0, name="u_{!s}".format(s),
+                attrs={
+                    "quantity": str(s),
+                    "note": "This appears to be a constant value with "
+                            "neglected uncertainty",
+                    "units": str(me.units[s])
+                })
+            cached_uncertainties[s] = u
             return u
 
         fu = sympy.Function("u")
@@ -1067,7 +1111,12 @@ class HIRSFCDR:
         # args: first to check the zeroes, then to see what's left.
         for v in args:
             if isinstance(v, fu):
-                if numpy.all(cached_uncertainties.get(v.args[0]) == 0):
+                # comparing .values to avoid entering
+                # xarray.core.nputils.array_eq which has a catch_warnings
+                # context manager destroying the context registry, see
+                # http://bugs.python.org/issue29672
+                if (v.args[0] in cached_uncertainties.keys() and
+                        numpy.all(cached_uncertainties.get(v.args[0]).values == 0)):
                     u_e = u_e.subs(v, 0)
                 elif ((v.args[0] not in me.expressions.keys() or
                        isinstance(me.expressions[v.args[0]], sympy.Number)) and
@@ -1115,8 +1164,9 @@ class HIRSFCDR:
                             "expression for "
                             "quantity {!s} but this is not set.  I have values "
                             "or expressions for: {:s}.".format(
-                                var, e, v, str(list(quantities.keys()))))
+                                s, e, v, str(list(quantities.keys()))))
                     quantities[v] = me.evaluate_quantity(v, quantities)
+                    quantities[v].name = me.names.get(v, str(v))
 
                 adict[v] = quantities[v]
                     
@@ -1133,16 +1183,18 @@ class HIRSFCDR:
         # processing.
         src_dims = set().union(itertools.chain.from_iterable(
             x.dims for x in adict.values() if hasattr(x, 'dims')))
-        dest_dims = set(self._data_vars_props[me.names[me.symbols[var]]][1])
+        dest_dims = set(self._data_vars_props[me.names[s]][1])
         if not dest_dims <= src_dims: # problem!
-            raise ValueError("Cannot estimate uncertainty u({!s}). "
-                "Destination has dimensions {!s} that none of the "
-                "arguments has!".format(var, dest_dims-src_dims))
+            warnings.warn("Cannot correctly estimate uncertainty u({!s}). "
+                "Destination has dimensions {!s}, arguments (between them) "
+                "have {!s}!".format(s, dest_dims, src_dims),
+                UserWarning)
         if not src_dims <= dest_dims: # needs reducing
             adict = self._make_dims_consistent(adict)
         # verify/convert dimensions
         u = f(*[typhon.math.common.promote_maximally(adict[x]) for x in ta])
-        cached_uncertainties[var] = u
+        u = u.rename("u_"+me.names[s])
+        cached_uncertainties[s] = u
         return u
 
     @staticmethod
@@ -1167,7 +1219,7 @@ class HIRSFCDR:
 
         for (k, v) in adict.items():
             if "calibration_position" in v.dims:
-                v = v.mean(dim="calibration_position")
+                v = v.mean(dim="calibration_position", keep_attrs=True)
             if "calibration_cycle" in v.dims:
                 fnc = scipy.interpolate.interp1d(
                     src_time, v,
@@ -1414,3 +1466,15 @@ def list_all_satellites():
         for sats in h.satellites.values():
             S |= sats
     return S
+
+
+# Patch xarray.core._ignore_warnings_if to avoid repeatedly hearing the
+# same warnings.  This function contains the catch_warnings contextmanager
+# which is buggy, see http://bugs.python.org/issue29672
+import contextlib
+import xarray.core.ops
+
+@contextlib.contextmanager
+def do_nothing(*args, **kwargs):
+    yield
+xarray.core.ops._ignore_warnings_if = do_nothing
