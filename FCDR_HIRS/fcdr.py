@@ -687,7 +687,7 @@ class HIRSFCDR:
 #            Rrefl = ureg.Quantity(
 #                numpy.zeros_like(offset),
 #                typhon.physics.units.common.radiance_units["si"])
-            ε = UADA(0, name="emissivity")
+            ε = UADA(1, name="emissivity")
             a_3 = UADA(0, name="nonlinearity")
         else:
             raise NotImplementedError("Evalutation of Earthshine "
