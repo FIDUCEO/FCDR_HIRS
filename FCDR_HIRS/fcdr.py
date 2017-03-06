@@ -419,6 +419,8 @@ class HIRSFCDR:
                                  "channel coordinate, found {:d}.".format(
                                     symbol_name, len(in_coords)))
             da = xarray.concat([da, q], dim=in_coords[0])
+            # NB: https://github.com/pydata/xarray/issues/1297
+            da.encoding = q.encoding
             self._quantities[s] = da
         else:
             self._quantities[s] = q
@@ -443,6 +445,8 @@ class HIRSFCDR:
         else:
             da = self._effects_by_name[name].magnitude
             da = xarray.concat([da, q], dim="calibrated_channel")
+            # NB: https://github.com/pydata/xarray/issues/1297
+            da.encoding = q.encoding
             self._effects_by_name[name].magnitude = da
 
     def calculate_offset_and_slope(self, ds, ch, srf=None):
@@ -776,6 +780,8 @@ class HIRSFCDR:
                 Rrefl_model=Rrefl_model)
             for ch in range(1, 20)]
         da = xarray.concat(all_rad, dim="calibrated_channel")
+        # NB: https://github.com/pydata/xarray/issues/1297
+        # but encoding set later
         da = da.transpose(*ds["toa_brightness_temperature"].dims)
         # until all of typhon can handle xarrays (see
         # https://arts.mi.uni-hamburg.de/trac/rt/ticket/145) I will
@@ -798,6 +804,8 @@ class HIRSFCDR:
                     "K", "radiance", srf=self.srfs[i-1])
                     for i in range(1, 20)],
                 "channel")
+            # NB: https://github.com/pydata/xarray/issues/1297
+            # but encoding set later
         else:
             bt_all = ureg.Quantity(
                 numpy.ma.concatenate(
@@ -1057,7 +1065,9 @@ class HIRSFCDR:
                             "note": "No uncertainty quantified for: {:s}".format(
                                 ';'.join(eff.name for eff in baddies)),
                             "units": self._data_vars_props[
-                                        me.names[s]][2]["units"]})
+                                        me.names[s]][2]["units"],
+                            "encoding": self._data_vars_props[
+                                        me.names[s]][3]})
                 cached_uncertainties[s] = u
                 return u
             else:
@@ -1067,7 +1077,9 @@ class HIRSFCDR:
                         "note": "No documented effect associated with this "
                                 "quantity",
                         "units": self._data_vars_props[
-                                    me.names[s]][2]["units"]})
+                                    me.names[s]][2]["units"],
+                        "encoding": self._data_vars_props[
+                                    me.names[s]][3]})
                 cached_uncertainties[s] = u
                 return u
 

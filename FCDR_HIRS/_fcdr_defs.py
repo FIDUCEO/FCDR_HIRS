@@ -167,7 +167,8 @@ for (var, corr) in {("R_Earth", "O_Re"),
         "corr_" + p[var][0],
         p[var][1],
         {"long_name": "correction to " + p[var][2]["long_name"],
-         "units": p[var][2]["units"]})
+         "units": p[var][2]["units"]},
+        _coding) # actually, always zero…
 # FIXME: needs more uncertainties, or do I calculate this directly from
 # the effects and is this one unused and should it be removed?
 # In principle, no uncertainty needs more than one byte as we just express
