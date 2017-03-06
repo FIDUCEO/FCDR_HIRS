@@ -91,7 +91,7 @@ class FCDRGenerator:
         qc = xarray.Dataset(
             {str(k): v for (k, v) in self.fcdr._quantities.items()})
         ds = xarray.merge([uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
-                      qc, subset])
+                      qc, subset, u])
         return ds
 
     def store_piece(self, piece):
