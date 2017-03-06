@@ -4,10 +4,9 @@ Generate HIRS FCDR for a particular satellite and period.
 
 """
 
-# need some kind of deque for processing
-
 from .. import common
 import argparse
+import subprocess
 import warnings
 
 def parse_cmdline():
@@ -92,6 +91,20 @@ class FCDRGenerator:
             {str(k): v for (k, v) in self.fcdr._quantities.items()})
         ds = xarray.merge([uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
                       qc, subset, u])
+        ds = self.add_attributes(ds)
+        return ds
+
+    def add_attributes(self, ds):
+        pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
+        ds.attrs.update(
+            author="Gerrit Holl",
+            email="g.holl@reading.ac.uk",
+            title="HIRS FCDR",
+            satellite=self.satname,
+            url="http://www.fiduceo.eu/",
+            verbose_version_info=pr.stdout.decode("utf-8"),
+            institution="University of Reading",
+            )
         return ds
 
     def store_piece(self, piece):
