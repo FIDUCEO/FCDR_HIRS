@@ -35,6 +35,8 @@ import datetime
 import xarray
 import typhon.datasets.dataset
 from .. import fcdr
+from .. import models
+from .. import effects
 
 
 class FCDRGenerator:
@@ -53,6 +55,8 @@ class FCDRGenerator:
         self.end_date = end_date
         self.dd = typhon.datasets.dataset.DatasetDeque(
             self.fcdr, self.window_size, start_date)
+
+        self.rself = None#models.RSelf(self.fcdr)
 
     def process(self, start=None, end_time=None):
         """Generate FCDR for indicated period
@@ -81,10 +85,12 @@ class FCDRGenerator:
         Returns a single xarray.Dataset
         """
         subset = self.dd.data.sel(time=slice(from_, to))
-        R_E = self.fcdr.calculate_radiance_all(subset, context=self.dd.data)  
+        R_E = self.fcdr.calculate_radiance_all(subset,
+            context=self.dd.data, Rself_model=self.rself)
         cu = {}
         u = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
             self.fcdr._effects, cu)
+        u.encoding = R_E.encoding
         uc = xarray.Dataset({k: v.magnitude for (k, v) in self.fcdr._effects_by_name.items()})
         qc = xarray.Dataset(self.fcdr._quantities)
         qc = xarray.Dataset(
@@ -104,6 +110,8 @@ class FCDRGenerator:
             url="http://www.fiduceo.eu/",
             verbose_version_info=pr.stdout.decode("utf-8"),
             institution="University of Reading",
+            data_version="0.0",
+            WARNING=effects.WARNING,
             )
         return ds
 

@@ -74,6 +74,13 @@ class RSelf:
         (X, Y_ref, Y_pred) = self.evaluate(M, ch)
         return (X, Y_ref.squeeze(), Y_pred.squeeze())
 
+    def __str__(self):
+        return (
+            "Self-emission model for {self.hirs!s}.\n"
+            "Model type: {self.model!s}.\n"
+            "Temperatures used: {self.temperatures!s}.\n"
+            ) 
+
 
 class RRefl:
     def __init__(self, *args, **kwargs):

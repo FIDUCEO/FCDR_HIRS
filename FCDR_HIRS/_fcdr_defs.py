@@ -97,13 +97,13 @@ FCDR_data_vars_props = dict(
     ε = (
         "ε",
         (),
-        {"long_name": "emissivity",
+        {"long_name": "IWCT emissivity assumed in calibration",
          "units": "1"},
         _coding),
     a_3 = (
         "a_3",
         (),
-        {"long_name": "emissivity correction",
+        {"long_name": "IWCT emissivity correction assumed in calibration",
          "units": "1"},
         _coding),
     α = (

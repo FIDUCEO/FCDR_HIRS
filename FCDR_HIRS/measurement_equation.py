@@ -193,6 +193,7 @@ def calc_sensitivity_coefficient(s1, s2):
     else:
         expr = expressions[aliases.get(s1, s1)]
     expr = substitute_until_explicit(expr, s2)
+    return expr.diff(s2)
 
 # NB: see also https://github.com/sympy/sympy/issues/12134
 def evaluate_quantity(v, quantities,

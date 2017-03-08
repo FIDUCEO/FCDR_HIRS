@@ -17,6 +17,8 @@ from typhon.physics.units.common import (radiance_units, ureg)
 from . import measurement_equation as meq
 from . import _fcdr_defs
 
+WARNING = ("DO NOT USE THIS PRODUCT FOR ANY PURPOSE UNDER ANY CIRCUMSTANCES!\n"
+            "This is purely a format demonstration!")
 CorrelationType = collections.namedtuple("CorrelationType",
     ["within_scanline", "between_scanlines", "between_orbits",
     "across_time"])
@@ -142,6 +144,8 @@ class Effect:
             # https://github.com/FIDUCEO/FCDR_HIRS/issues/47
             da.attrs["correlation_scale_" + k] = getattr(self.correlation_scale, k)
         da.attrs["channel_correlations"] = self.channel_correlations
+        da.attrs["sensitivity_coefficient"] = str(self.sensitivity())
+        da.attrs["WARNING"] = WARNING
 
         if not self.name.startswith("O_") or self.name in _fcdr_defs.FCDR_data_vars_props.keys():
             da.encoding.update(_fcdr_defs.FCDR_data_vars_props[self.name][3])

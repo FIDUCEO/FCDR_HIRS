@@ -403,6 +403,8 @@ class HIRSFCDR:
 
         TODO: need to assign time coordinates so that I can later
         extrapolate calibration_cycle dimension to scanline dimension.
+
+        Returns quantity as stored.
         """
 
         s = me.symbols[symbol_name]
@@ -422,8 +424,10 @@ class HIRSFCDR:
             # NB: https://github.com/pydata/xarray/issues/1297
             da.encoding = q.encoding
             self._quantities[s] = da
+            return da
         else:
             self._quantities[s] = q
+            return q
 
     def _tuck_effect_channel(self, name, quantity, channel):
         """Convert quantity to xarray and put into self._effects
@@ -680,6 +684,9 @@ class HIRSFCDR:
 #                    numpy.zeros_like(offset),
 #                    typhon.physics.units.common.radiance_units["si"])
         else:
+            Rself_model.fit(context, ch)
+            (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
+            (X, Y_ref, Y_pred) = Rself_model.evaluate(ds, ch)
             raise NotImplementedError("Evaluation of self-emission model "
                 "not implemented yet")
         if Rrefl_model is None:
@@ -727,8 +734,12 @@ class HIRSFCDR:
         self._tuck_quantity_channel("C_E", C_Earth, 
             calibrated_channel=ch, scanline_earth=C_Earth["time"].values)
 #        self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], ch)
-        self._tuck_quantity_channel("R_e", rad_wn,
+        # keep result but copy over only encoding, because
+        # _tuck_quantity_channel also renames dimensions and I don't want
+        # that yet
+        R_e = self._tuck_quantity_channel("R_e", rad_wn,
             calibrated_channel=ch)
+        rad_wn.encoding = R_e.encoding
         self._tuck_quantity_channel("R_refl", Rrefl,
             calibrated_channel=ch, **coords)
 
@@ -780,8 +791,10 @@ class HIRSFCDR:
                 Rrefl_model=Rrefl_model)
             for ch in range(1, 20)]
         da = xarray.concat(all_rad, dim="calibrated_channel")
+        da.encoding = all_rad[0].encoding
         # NB: https://github.com/pydata/xarray/issues/1297
-        # but encoding set later
+        # NB: using toa_brightness_temperature
+        # only for dimensions
         da = da.transpose(*ds["toa_brightness_temperature"].dims)
         # until all of typhon can handle xarrays (see
         # https://arts.mi.uni-hamburg.de/trac/rt/ticket/145) I will
