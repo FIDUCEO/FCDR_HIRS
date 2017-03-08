@@ -56,7 +56,7 @@ class FCDRGenerator:
         self.dd = typhon.datasets.dataset.DatasetDeque(
             self.fcdr, self.window_size, start_date)
 
-        self.rself = None#models.RSelf(self.fcdr)
+        self.rself = models.RSelf(self.fcdr)
 
     def process(self, start=None, end_time=None):
         """Generate FCDR for indicated period

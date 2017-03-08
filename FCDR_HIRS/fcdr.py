@@ -356,7 +356,7 @@ class HIRSFCDR:
         if return_u:
             extra.extend([u_counts_iwct, u_counts_space])
         if return_ix:
-            extra.append(space_followed_by_iwct.nonzero()[0])
+            extra.append(space_followed_by_iwct.values.nonzero()[0])
 
         coords = {"calibration_cycle": ds_space["time"].values}
         #coords = {"calibration_cycle": M_space["time"]}

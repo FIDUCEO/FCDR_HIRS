@@ -8,12 +8,14 @@ Work in progress!
 import scipy.stats
 import sklearn.cross_decomposition
 import numpy
+import xarray
 
 from typhon.physics.units.common import ureg
 
+
 class RSelf:
-    temperatures = ["scanmirror", "fwh", "iwt",
-                    "sectlscp", "baseplate", "elec"]
+    temperatures = ["scanmirror", "fwh", "iwct",
+                    "secondary_telescope", "baseplate", "electronics"]
 
     def __init__(self, hirs, temperatures=None):
         self.hirs = hirs
@@ -22,22 +24,23 @@ class RSelf:
         if temperatures is not None:
             self.temperatures = temperatures
     
-    def get_predictor(self, M, ch):
+    def get_predictor(self, ds, ch):
         # figure out what are the calibration positions
         ix = self.hirs.extract_calibcounts_and_temp(
-            M, ch, return_ix=True)[-1]
-        M = M[ix]
+            ds, ch, return_ix=True)[-1]
+        ds = ds.isel(time=ix)
 
         L = []
         for t_fld in self.temperatures:
-            x = M["temp_{:s}".format(t_fld)]
-            while x.ndim > 1:
-                x = x.mean(-1)
-            L.append(x[:, numpy.newaxis])
-        X = numpy.concatenate(tuple(L), 1)
+            x = ds["temperature_{:s}".format(t_fld)]
+            for dim in set(x.dims) - {"time"}:
+                x = x.mean(dim=dim, keep_attrs=True)
+            L.append(x.astype("f8")) # prevent X⁴ precision loss
+        #X = numpy.concatenate(tuple(L), 1)
+        X = xarray.merge(L)
         # fit in terms of X⁴ because that's closer to radiance than
-        # temperature is
-        Xn = ((X**4)-(X**4).mean(0))/(X**4).std(0)
+        # temperature is.
+        Xn = ((X**4)-(X**4).mean("time"))/(X**4).std("time")
 
         return Xn
 
@@ -45,17 +48,22 @@ class RSelf:
         offset = self.hirs.calculate_offset_and_slope(M, ch)[1]
         # Note: median may not be an optimal solution, see plots produced
         # by plot_hirs_calibcounts_per_scanpos
-        Y = ureg.Quantity(numpy.ma.median(offset.m, 1),
-                          offset.u)
+#        Y = ureg.Quantity(numpy.ma.median(offset.m, 1),
+#                          offset.u)
+        Y = offset.median("scanpos", keep_attrs=True)
         return Y
 
-    def fit(self, M, ch):
+    def fit(self, ds, ch):
         """Fit model
         """
-        X = self.get_predictor(M, ch)
-        Y = self.get_predictand(M, ch)
-        OK = ~(X.mask.any(1)) & ~(Y.mask)
-        self.model.fit(X[OK, :], Y[OK])
+        X = self.get_predictor(ds, ch)
+        Y = self.get_predictand(ds, ch)
+        #OK = ~(X.mask.any(1)) & ~(Y.mask)
+        OK = X.notnull()
+        OK = xarray.concat(OK.data_vars.values(), dim="dummy").all("dummy")
+        OK = OK & Y.notnull()
+
+        self.model.fit(X.isel(time=OK), Y.isel(time=OK))
 
     def evaluate(self, M, ch):
         X = self.get_predictor(M, ch)
