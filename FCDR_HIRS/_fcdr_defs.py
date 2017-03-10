@@ -65,20 +65,20 @@ FCDR_data_vars_props = dict(
         _coding),
     Rself = (
         "Rself",
-        ("scanline_earth", "scanpos", "calibrated_channel"),
+        ("scanline_earth", "calibrated_channel"),
         {"long_name": "Correction to Earth radiance due to self-emission "
                       "change since last calibration",
          "units": rad_u["si"]},
         _coding),
     RselfIWCT = (
         "RselfIWCT",
-        ("calibration_cycle", "calibration_position", "calibrated_channel"),
+        ("calibration_cycle", "calibrated_channel"),
         {"long_name": "Self-emission during IWCT view",
          "units": rad_u["si"]},
         _coding),
     Rselfspace = (
         "Rselfspace",
-        ("calibration_cycle", "calibration_position", "calibrated_channel"),
+        ("calibration_cycle", "calibrated_channel"),
         {"long_name": "Self-emission during space view",
          "units": rad_u["si"]},
         _coding),

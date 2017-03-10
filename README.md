@@ -1,5 +1,21 @@
-FCDR_HIRS
-Development code for HIRS FCDR uncertainties
+Development code for HIRS FCDR uncertainties.
+
+Upon installation with pip, all the Python-based dependencies should be
+installed automatically.  In addition, you will need:
+
+- HIRS L1B data in NOAA format, obtainable from the NOAA CLASS archive.
+- spectral response functions that come with
+  `ARTS <http://www.radiativetransfer.org>`_.
+- A configuration file indicating where different datasets and SRFs are located.
+  Set the environment variable TYPHONRC to its path.  See 
+  `typhon documentation <http://www.radiativetransfer.org/misc/typhon/doc/>`
+  for details.
+
+Before the first run you may have to update the firstline db::
+
+    import FCDR_HIRS.fcdr
+    hma = FCDR_HIRS.fcdr.HIRS4FCDR(name="metopa", satname="metopa")
+    hma.update_firstline_db()
 
 After installation, command-line utilities include:
 

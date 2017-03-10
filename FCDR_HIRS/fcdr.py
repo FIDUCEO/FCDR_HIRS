@@ -45,6 +45,9 @@ class HIRSFCDR:
     srfs = None
     satname = None
 
+    band_dir = None
+    band_file = None
+
     # NB: first 8 views of space counts deemed always unusable, see
     # NOAA or EUMETSAT calibration papers/documents.  I've personaly
     # witnessed (on NOAA-18) that later positions are sometimes also
@@ -188,7 +191,7 @@ class HIRSFCDR:
 #              - Rself)
 
     def extract_calibcounts_and_temp(self, ds, ch, srf=None,
-            return_u=False, return_ix=False):
+            return_u=False, return_ix=False, tuck=False):
         """Calculate calibration counts and IWCT temperature
 
         In the IR, space view temperature can be safely estimated as 0
@@ -316,11 +319,12 @@ class HIRSFCDR:
         # FIXME wart: I'm storing the same information 19 times (for each
         # channel), could assert they are identical or move this out of a
         # higher loop, or I could simply leave it
-        self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
-            T_iwct, name=me.names[me.symbols["T_IWCT"]])
-        self._quantities[me.symbols["N"]] = self._quantity_to_xarray(
-                numpy.array(ds.dims["prt_number_iwt"], "u1"),
-                name=me.names[me.symbols["N"]])
+        if tuck:
+            self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
+                T_iwct, name=me.names[me.symbols["T_IWCT"]])
+            self._quantities[me.symbols["N"]] = self._quantity_to_xarray(
+                    numpy.array(ds.dims["prt_number_iwt"], "u1"),
+                    name=me.names[me.symbols["N"]])
 
         # FIXME: for consistency, should replace this one also with
         # band-corrections — at least temporarily.  Perhaps this wants to
@@ -344,29 +348,32 @@ class HIRSFCDR:
         # earth views were successful.
         u_counts_iwct = (typhon.math.stats.adev(counts_iwct, "scanpos") /
             numpy.sqrt(counts_iwct.shape[1]))
-        self._tuck_effect_channel("C_IWCT", u_counts_iwct, ch)
+        if tuck:
+            self._tuck_effect_channel("C_IWCT", u_counts_iwct, ch)
 
         u_counts_space = (typhon.math.stats.adev(counts_space, "scanpos") /
             numpy.sqrt(counts_space.shape[1]))
-        self._tuck_effect_channel("C_space", u_counts_space, ch)
-        self._tuck_effect_channel("C_Earth",
-            UADA((u_counts_space.variable + u_counts_iwct.variable)/2,
-                  coords=u_counts_space.coords), ch)
+        if tuck:
+            self._tuck_effect_channel("C_space", u_counts_space, ch)
+            self._tuck_effect_channel("C_Earth",
+                UADA((u_counts_space.variable + u_counts_iwct.variable)/2,
+                      coords=u_counts_space.coords), ch)
 
         if return_u:
             extra.extend([u_counts_iwct, u_counts_space])
         if return_ix:
             extra.append(space_followed_by_iwct.values.nonzero()[0])
 
-        coords = {"calibration_cycle": ds_space["time"].values}
-        #coords = {"calibration_cycle": M_space["time"]}
-        self._tuck_quantity_channel("C_s", counts_space,
-            calibrated_channel=ch, **coords)
-        self._tuck_quantity_channel("C_IWCT", counts_iwct,
-            calibrated_channel=ch, **coords)
-        self._tuck_quantity_channel("R_IWCT", L_iwct,
-            calibrated_channel=ch, **coords)
-        # store 'N', C_PRT[n], d_PRT[n, k], O_TPRT, O_TIWCT…
+        if tuck:
+            coords = {"calibration_cycle": ds_space["time"].values}
+            #coords = {"calibration_cycle": M_space["time"]}
+            self._tuck_quantity_channel("C_s", counts_space,
+                calibrated_channel=ch, **coords)
+            self._tuck_quantity_channel("C_IWCT", counts_iwct,
+                calibrated_channel=ch, **coords)
+            self._tuck_quantity_channel("R_IWCT", L_iwct,
+                calibrated_channel=ch, **coords)
+            # store 'N', C_PRT[n], d_PRT[n, k], O_TPRT, O_TIWCT…
         return (UADA(ds_space["time"]),
                 UADA(L_iwct),
                 UADA(counts_iwct),
@@ -385,7 +392,7 @@ class HIRSFCDR:
             numpy.asarray(quantity,
                 dtype=("f4" if hasattr(quantity, "mask") else
                     quantity.dtype)), # masking only for floats
-            dims=dims or [d for d in self._data_vars_props[name][1] if d not in dropdims],
+            dims=dims if dims is not None else [d for d in self._data_vars_props[name][1] if d not in dropdims],
             attrs=self._data_vars_props[name][2],
             encoding=self._data_vars_props[name][3])
         # 1st choice: quantity.u
@@ -420,6 +427,7 @@ class HIRSFCDR:
                 raise ValueError("{:s} does not contain exactly one "
                                  "channel coordinate, found {:d}.".format(
                                     symbol_name, len(in_coords)))
+            # FIXME: need to check if we're tucking the same channel twice
             da = xarray.concat([da, q], dim=in_coords[0])
             # NB: https://github.com/pydata/xarray/issues/1297
             da.encoding = q.encoding
@@ -448,12 +456,22 @@ class HIRSFCDR:
             self._effects_by_name[name].magnitude = q
         else:
             da = self._effects_by_name[name].magnitude
+            # check if we're tucking it for the same channel twice...
+            if channel in da.calibrated_channel.values:
+                if da.calibrated_channel.size == 1:
+                    if numpy.array_equal(da.values, q.values):
+                        return # nothing to do
+                    else:
+                        raise ValueError("Inconsistent values for same channel!")
+                else:
+                    raise NotImplementedError("TBD")
+
             da = xarray.concat([da, q], dim="calibrated_channel")
             # NB: https://github.com/pydata/xarray/issues/1297
             da.encoding = q.encoding
             self._effects_by_name[name].magnitude = da
 
-    def calculate_offset_and_slope(self, ds, ch, srf=None):
+    def calculate_offset_and_slope(self, ds, ch, srf=None, tuck=False):
         """Calculate offset and slope.
 
         Arguments:
@@ -498,7 +516,7 @@ class HIRSFCDR:
                 "is deprecated since 2017-02-22, should pass "
                 "xarray.Dataset ", DeprecationWarning)
             ds = self.as_xarray_dataset(ds)
-        (time, L_iwct, counts_iwct, counts_space) = self.extract_calibcounts_and_temp(ds, ch, srf)
+        (time, L_iwct, counts_iwct, counts_space) = self.extract_calibcounts_and_temp(ds, ch, srf, tuck=tuck)
         #L_space = ureg.Quantity(numpy.zeros_like(L_iwct), L_iwct.u)
         L_space = UADA(xarray.zeros_like(L_iwct),
             coords={k:v 
@@ -545,12 +563,13 @@ class HIRSFCDR:
         offset.sel(time=bad_calib)[...] = numpy.nan
         #offset.mask |= bad[:, numpy.newaxis]
         coords = {"calibration_cycle": time.values}
-        self._tuck_quantity_channel("a_0", offset,
-            calibrated_channel=ch, **coords)
-        self._tuck_quantity_channel("a_1", slope,
-            calibrated_channel=ch, **coords)
-        self._tuck_quantity_channel("a_2", a2,
-            calibrated_channel=ch)
+        if tuck:
+            self._tuck_quantity_channel("a_0", offset,
+                calibrated_channel=ch, **coords)
+            self._tuck_quantity_channel("a_1", slope,
+                calibrated_channel=ch, **coords)
+            self._tuck_quantity_channel("a_2", a2,
+                calibrated_channel=ch)
         return (time,
                 offset,
                 slope,
@@ -562,7 +581,7 @@ class HIRSFCDR:
     def calculate_radiance(self, ds, ch, interp_kind="zero", srf=None,
                 context=None,
                 Rself_model=None,
-                Rrefl_model=None):
+                Rrefl_model=None, tuck=False):
         """Calculate radiance
 
         Wants ndarray as returned by read, SRF, and channel.
@@ -626,7 +645,7 @@ class HIRSFCDR:
         has_context = context is not None
         context = context if has_context else ds
         (time, offset, slope, a2) = self.calculate_offset_and_slope(
-            context, ch, srf)
+            context, ch, srf, tuck=tuck)
         # NOTE: taking the median may not be an optimal solution.  See,
         # for example, plots produced by the script
         # plot_hirs_calibcounts_per_scanpos in the FCDR_HIRS package
@@ -671,24 +690,33 @@ class HIRSFCDR:
         if Rself_model is None:
             warnings.warn("No self-emission defined, assuming 0!",
                 UserWarning)
-            Rself = UADA(numpy.zeros(shape=C_Earth.shape), coords=C_Earth.coords,
+            Rself = UADA(numpy.zeros(shape=C_Earth["time"].shape),
+                         coords=C_Earth["time"].coords,
                          name="Rself", attrs={"units":   
                 str(typhon.physics.units.common.radiance_units["si"])})
 #            Rself = ureg.Quantity(
 #                    numpy.zeros_like(C_Earth),
 #                    typhon.physics.units.common.radiance_units["si"])
 #            Rself.IWCT
-            RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset.shape),
-                    coords=offset.coords, attrs=Rself.attrs)
+            RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
+                    coords=offset["time"].coords, attrs=Rself.attrs)
 #            RselfIWCT = Rselfspace = ureg.Quantity(
 #                    numpy.zeros_like(offset),
 #                    typhon.physics.units.common.radiance_units["si"])
+            u_Rself = UADA(0)
         else:
             Rself_model.fit(context, ch)
             (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
-            (X, Y_ref, Y_pred) = Rself_model.evaluate(ds, ch)
-            raise NotImplementedError("Evaluation of self-emission model "
-                "not implemented yet")
+            (X, Y_pred) = Rself_model.evaluate(ds, ch)
+            # Y_pred is rather the offset than the self-emission
+            Rself = (interp_offset - Y_pred).isel(time=views_Earth)
+            Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
+                "RselfIWCT = Rselfspace = 0.")
+            RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
+                    coords=offset["time"].coords,
+                    attrs={**Rself.attrs,
+                           "note": "Rself is implemented as ΔRself in pre-β"})
+            u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(keep_attrs=True))
         if Rrefl_model is None:
             warnings.warn("No Earthshine model defined, assuming 0!",
                 UserWarning)
@@ -720,39 +748,45 @@ class HIRSFCDR:
 #        rad_wn.m.mask |= numpy.isnan(["radiance"].sel(channel=ch))
 #        rad_wn.m.mask |= numpy.isnan(rad_wn)
 
-        #(α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients()
-        (α, β, f_eff, Δα, Δβ, Δf_eff) = (numpy.float32(0),
-            numpy.float32(1), srf.centroid().to(ureg.THz, "sp"), 0, 0, 0)
+        (α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients(
+            self.satname, "hirs", ch)
+#        (α, β, f_eff, Δα, Δβ, Δf_eff) = (numpy.float32(0),
+#            numpy.float32(1), srf.centroid().to(ureg.THz, "sp"), 0, 0, 0)
 
         coords = {"calibration_cycle": time.values}
-        self._tuck_quantity_channel("R_selfE", Rself, 
-            calibrated_channel=ch)
-        self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, 
-            calibrated_channel=ch, **coords)
-        self._tuck_quantity_channel("R_selfs", Rselfspace,
-            calibrated_channel=ch, **coords)
-        self._tuck_quantity_channel("C_E", C_Earth, 
-            calibrated_channel=ch, scanline_earth=C_Earth["time"].values)
-#        self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], ch)
-        # keep result but copy over only encoding, because
-        # _tuck_quantity_channel also renames dimensions and I don't want
-        # that yet
-        R_e = self._tuck_quantity_channel("R_e", rad_wn,
-            calibrated_channel=ch)
-        rad_wn.encoding = R_e.encoding
-        self._tuck_quantity_channel("R_refl", Rrefl,
-            calibrated_channel=ch, **coords)
+        if tuck:
+            self._tuck_quantity_channel("R_selfE", Rself, 
+                calibrated_channel=ch)
+            self._tuck_effect_channel("Rself", u_Rself, ch)
+            self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, 
+                calibrated_channel=ch, **coords)
+            self._tuck_quantity_channel("R_selfs", Rselfspace,
+                calibrated_channel=ch, **coords)
+            self._tuck_quantity_channel("C_E", C_Earth, 
+                calibrated_channel=ch, scanline_earth=C_Earth["time"].values)
+    #        self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], ch)
+            # keep result but copy over only encoding, because
+            # _tuck_quantity_channel also renames dimensions and I don't want
+            # that yet
+            R_e = self._tuck_quantity_channel("R_e", rad_wn,
+                calibrated_channel=ch)
+            rad_wn.encoding = R_e.encoding
+            self._tuck_quantity_channel("R_refl", Rrefl,
+                calibrated_channel=ch, **coords)
 
-        self._tuck_quantity_channel("α", α, 
-            calibrated_channel=ch)
-        self._tuck_quantity_channel("β", β,
-            calibrated_channel=ch)
-        self._tuck_quantity_channel("fstar", f_eff,
-            calibrated_channel=ch)
-        self._quantities[me.symbols["ε"]] = self._quantity_to_xarray(
-            ε, name=me.names[me.symbols["ε"]])
-        self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
-            a_3, name=me.names[me.symbols["a_3"]])
+            self._tuck_quantity_channel("α", α, 
+                calibrated_channel=ch)
+            self._tuck_effect_channel("α", Δα, ch)
+            self._tuck_quantity_channel("β", β,
+                calibrated_channel=ch)
+            self._tuck_effect_channel("β", Δβ, ch)
+            self._tuck_quantity_channel("fstar", λ_eff.to(ureg.THz, "sp"),
+                calibrated_channel=ch)
+            self._tuck_effect_channel("f_eff", Δλ_eff.to(ureg.GHz, "sp"), ch)
+            self._quantities[me.symbols["ε"]] = self._quantity_to_xarray(
+                ε, name=me.names[me.symbols["ε"]])
+            self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
+                a_3, name=me.names[me.symbols["a_3"]])
         return rad_wn
     Mtorad = calculate_radiance
 
@@ -788,7 +822,7 @@ class HIRSFCDR:
 
         all_rad = [self.calculate_radiance(ds, ch, interp_kind=interp_kind,
                 context=context, Rself_model=Rself_model,
-                Rrefl_model=Rrefl_model)
+                Rrefl_model=Rrefl_model, tuck=True)
             for ch in range(1, 20)]
         da = xarray.concat(all_rad, dim="calibrated_channel")
         da.encoding = all_rad[0].encoding

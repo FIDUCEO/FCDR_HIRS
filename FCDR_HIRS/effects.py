@@ -339,6 +339,7 @@ Earthshine = Effect(
 
 Rself = Effect(
     name="Rself",
+    dimensions=(),
     description="self-emission",
     parameter=meq.symbols["R_selfE"],
     correlation_type=("rectangular_absolute", "triangular_relative",
@@ -371,3 +372,30 @@ unknown_periodic = Effect(
     #correlation_scale=_inf,
     #channel_correlations=blockmat,
     unit=radiance_units["ir"])
+
+Δα = Effect(
+    name="α",
+    description="uncertainty in band correction factor α (ad-hoc)",
+    parameter=meq.symbols["α"],
+    correlation_type=_systematic,
+    correlation_scale=_inf,
+    channel_correlations=_I,
+    unit="1")
+
+Δβ = Effect(
+    name="β",
+    description="uncertainty in band correction factor β (ad-hoc)",
+    parameter=meq.symbols["β"],
+    correlation_type=_systematic,
+    correlation_scale=_inf,
+    channel_correlations=_I,
+    unit="1/K"),
+
+Δf_eff = Effect(
+    name="f_eff",
+    description="uncertainty in band correction centroid",
+    parameter=meq.symbols["fstar"],
+    correlation_type=_systematic,
+    correlation_scale=_inf,
+    channel_correlations=_I,
+    unit="THz")

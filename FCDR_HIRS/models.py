@@ -11,11 +11,15 @@ import numpy
 import xarray
 
 from typhon.physics.units.common import ureg
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 
 
 class RSelf:
     temperatures = ["scanmirror", "fwh", "iwct",
                     "secondary_telescope", "baseplate", "electronics"]
+
+    X_ref = None
+    Y_ref = None
 
     def __init__(self, hirs, temperatures=None):
         self.hirs = hirs
@@ -25,11 +29,6 @@ class RSelf:
             self.temperatures = temperatures
     
     def get_predictor(self, ds, ch):
-        # figure out what are the calibration positions
-        ix = self.hirs.extract_calibcounts_and_temp(
-            ds, ch, return_ix=True)[-1]
-        ds = ds.isel(time=ix)
-
         L = []
         for t_fld in self.temperatures:
             x = ds["temperature_{:s}".format(t_fld)]
@@ -44,6 +43,20 @@ class RSelf:
 
         return Xn
 
+    @staticmethod
+    def _ds2ndarray(X, Y=None):
+        OK = X.notnull()
+        OK = xarray.concat(OK.data_vars.values(), dim="dummy").all("dummy")
+        if Y is not None:
+            OK = OK & Y.notnull()
+
+        # self.model needs ndarray not xarray
+        Xx = numpy.concatenate([x.values[OK, numpy.newaxis]
+                for x in X.data_vars.values()], 1)
+        if Y is not None:
+            Yy = Y.values[OK]
+        return (Xx, Yy) if Y is not None else Xx
+
     def get_predictand(self, M, ch):
         offset = self.hirs.calculate_offset_and_slope(M, ch)[1]
         # Note: median may not be an optimal solution, see plots produced
@@ -56,30 +69,46 @@ class RSelf:
     def fit(self, ds, ch):
         """Fit model
         """
-        X = self.get_predictor(ds, ch)
+        #ds = self._subsel_calib(ds, ch)
+        ix = self.hirs.extract_calibcounts_and_temp(
+            ds, ch, return_ix=True)[-1]
+        X = self.get_predictor(ds.isel(time=ix), ch)
         Y = self.get_predictand(ds, ch)
-        #OK = ~(X.mask.any(1)) & ~(Y.mask)
-        OK = X.notnull()
-        OK = xarray.concat(OK.data_vars.values(), dim="dummy").all("dummy")
-        OK = OK & Y.notnull()
+#        #OK = ~(X.mask.any(1)) & ~(Y.mask)
+#        OK = X.notnull()
+#        OK = xarray.concat(OK.data_vars.values(), dim="dummy").all("dummy")
+#        OK = OK & Y.notnull()
+#
+#        # self.model needs ndarray not xarray
+#        Xx = numpy.concatenate([x.values[OK, numpy.newaxis]
+#                for x in X.data_vars.values()], 1)
+#        Yy = Y.values[OK]
+        (Xx, Yy) = self._ds2ndarray(X, Y)
+        self.model.fit(Xx, Yy)
+        self.X_ref = X
+        self.Y_ref = Y
 
-        self.model.fit(X.isel(time=OK), Y.isel(time=OK))
+    def evaluate(self, ds, ch):
+        X = self.get_predictor(ds, ch)
+#        Y_ref = self.get_predictand(M, ch)
+#        (Xx, Yy) = self._ds2ndarray(X, Y_ref)
+        Xx = self._ds2ndarray(X)
+        Yy_pred = self.model.predict(Xx).squeeze()
+        Y_pred = UADA(Yy_pred,
+            coords=X.coords, attrs=self.Y_ref.attrs)
+        return (X, Y_pred)
 
-    def evaluate(self, M, ch):
-        X = self.get_predictor(M, ch)
-        Y_ref = self.get_predictand(M, ch)
-        Y_pred = ureg.Quantity(self.model.predict(X),
-            Y_ref.u)
-        return (X, Y_ref, Y_pred)
-
-    def test(self, M, ch):
+    def test(self, ds, ch):
         """Test model for reference data.
 
         Use this to estimate uncertainties!
 
         FIXME expand
         """
-        (X, Y_ref, Y_pred) = self.evaluate(M, ch)
+        Y_ref = self.get_predictand(ds, ch)
+        ix = self.hirs.extract_calibcounts_and_temp(
+            ds, ch, return_ix=True)[-1]
+        (X, Y_pred) = self.evaluate(ds.isel(time=ix), ch)
         return (X, Y_ref.squeeze(), Y_pred.squeeze())
 
     def __str__(self):
