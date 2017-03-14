@@ -5,7 +5,9 @@ installed automatically.  In addition, you will need:
 
 - HIRS L1B data in NOAA format, obtainable from the NOAA CLASS archive.
 - spectral response functions that come with
-  `ARTS <http://www.radiativetransfer.org>`_.
+  `ARTS <http://www.radiativetransfer.org>`_.  Not that a current version
+  temporarily uses band correction factors that are not included with
+  ARTS.  Contact Gerrit Holl <g.holl@reading.ac.uk> to get those.
 - A configuration file indicating where different datasets and SRFs are located.
   Set the environment variable TYPHONRC to its path.  See 
   `typhon documentation <http://www.radiativetransfer.org/misc/typhon/doc/>`

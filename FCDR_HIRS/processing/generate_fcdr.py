@@ -32,6 +32,8 @@ logging.basicConfig(
 
 import pathlib
 import datetime
+
+import numpy
 import xarray
 import typhon.datasets.dataset
 from .. import fcdr
@@ -132,6 +134,7 @@ class FCDRGenerator:
             
 
 def main():
+    warnings.filterwarnings("error", category=numpy.VisibleDeprecationWarning)
     fgen = FCDRGenerator(p.satname,
         datetime.datetime.strptime(p.from_date, p.datefmt),
         datetime.datetime.strptime(p.to_date, p.datefmt))

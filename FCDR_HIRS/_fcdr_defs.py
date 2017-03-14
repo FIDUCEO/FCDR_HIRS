@@ -158,6 +158,24 @@ FCDR_data_vars_props = dict(
                  "a channel property this has a channel dimension.",
          "units": rad_u["si"]},
          _coding),
+    planck_constant = (
+        "planck_constant",
+        (),
+        {"long_name": "Max Planck constant",
+         "units": "J s"},
+        _coding),
+    speed_of_light = (
+        "speed_of_light",
+        (),
+        {"long_name": "Speed of light in vacuum",
+         "units": "m/s"},
+        _coding),
+    boltzmann_constant = (
+        "boltzmann_constant",
+        (),
+        {"long_name": "Boltzmann constant",
+         "units": "J/K"},
+        _coding),
 )
 p = FCDR_data_vars_props
 for (var, corr) in {("R_Earth", "O_Re"),

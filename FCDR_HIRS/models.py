@@ -44,12 +44,16 @@ class RSelf:
         return Xn
 
     @staticmethod
-    def _ds2ndarray(X, Y=None):
+    def _dsOK(X):
         OK = X.notnull()
         OK = xarray.concat(OK.data_vars.values(), dim="dummy").all("dummy")
+        return OK
+
+
+    def _ds2ndarray(self, X, Y=None):
+        OK = self._dsOK(X)
         if Y is not None:
             OK = OK & Y.notnull()
-
         # self.model needs ndarray not xarray
         Xx = numpy.concatenate([x.values[OK, numpy.newaxis]
                 for x in X.data_vars.values()], 1)
@@ -95,7 +99,7 @@ class RSelf:
         Xx = self._ds2ndarray(X)
         Yy_pred = self.model.predict(Xx).squeeze()
         Y_pred = UADA(Yy_pred,
-            coords=X.coords, attrs=self.Y_ref.attrs)
+            coords=X.isel(time=self._dsOK(X)).coords, attrs=self.Y_ref.attrs)
         return (X, Y_pred)
 
     def test(self, ds, ch):

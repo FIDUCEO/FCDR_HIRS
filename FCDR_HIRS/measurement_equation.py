@@ -159,7 +159,11 @@ names = {
     sym["B"]: "B",
     sym["O_Re"]: "O_Re",
     sym["O_TIWCT"]: "O_TIWCT",
-    sym["O_RIWCT"]: "O_RIWCT"}
+    sym["O_RIWCT"]: "O_RIWCT",
+    sym["h"]: "planck_constant",
+    sym["c"]: "speed_of_light",
+    sym["k_b"]: "boltzmann_constant",
+}
 
 
 def substitute_until_explicit(expr, s2):

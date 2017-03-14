@@ -709,7 +709,8 @@ class HIRSFCDR:
             (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
             (X, Y_pred) = Rself_model.evaluate(ds, ch)
             # Y_pred is rather the offset than the self-emission
-            Rself = (interp_offset - Y_pred).isel(time=views_Earth)
+            Rself = (interp_offset - Y_pred).sel(time=views_Earth["time"].isel(time=views_Earth))
+            #Rself = (interp_offset - Y_pred).isel(time=views_Earth)
             Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
                 "RselfIWCT = Rselfspace = 0.")
             RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
@@ -1225,7 +1226,12 @@ class HIRSFCDR:
                             "or expressions for: {:s}.".format(
                                 s, e, v, str(list(quantities.keys()))))
                     quantities[v] = me.evaluate_quantity(v, quantities)
-                    quantities[v].name = me.names.get(v, str(v))
+                    vname = me.names.get(v, str(v))
+                    quantities[v].name = vname
+                    quantities[v].attrs.update(
+                        self._data_vars_props[me.names[v]][2])
+                    quantities[v].encoding.update(
+                        self._data_vars_props[me.names[v]][3])
 
                 adict[v] = quantities[v]
                     
