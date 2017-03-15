@@ -6,6 +6,7 @@ import itertools
 import warnings
 import functools
 import operator
+import datetime
 
 import numpy
 import scipy.interpolate
@@ -26,6 +27,9 @@ from . import models
 from . import effects
 from . import measurement_equation as me
 from . import _fcdr_defs
+
+class FCDRError(typhon.datasets.dataset.InvalidDataError):
+    pass
 
 class HIRSFCDR:
     """Produce, write, study, and read HIRS FCDR.
@@ -544,24 +548,20 @@ class HIRSFCDR:
         # (25, 75) … > 2: false positive 0.2%
         # (10, 90) … > 3.3: false positive 0.5%
         # …based on a simple simulated # experiment.
-        bad_iwct = (counts_iwct.reduce(
-            scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
-            typhon.math.stats.adev(counts_iwct, dim="scanpos"))
-#        bad_iwct = (scipy.stats.iqr(counts_iwct, 1, (10, 90)) > 3.3 *
-#            typhon.math.stats.adev(counts_iwct, 1))
-        bad_space = (counts_space.reduce(
-            scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
-            typhon.math.stats.adev(counts_space, dim="scanpos"))
-#        bad_space = (scipy.stats.iqr(counts_space, 1, (10, 90)) > 3.3 *
-#            typhon.math.stats.adev(counts_space, 1))
+        if counts_iwct.coords["time"].size > 0:
+            # NB: need to encapsulate this or it will fail with
+            # ValueError, see https://github.com/scipy/scipy/issues/7178
+            bad_iwct = (counts_iwct.reduce(
+                scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
+                typhon.math.stats.adev(counts_iwct, dim="scanpos"))
+            bad_space = (counts_space.reduce(
+                scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
+                typhon.math.stats.adev(counts_space, dim="scanpos"))
 
-        bad_calib = xarray.DataArray(bad_iwct.variable | bad_space.variable,
-                coords=bad_space.coords, name="bad_calib")
-        #bad = bad_iwct | bad_space
-        slope.sel(time=bad_calib)[...] = numpy.nan
-        #slope.mask |= bad[:, numpy.newaxis]
-        offset.sel(time=bad_calib)[...] = numpy.nan
-        #offset.mask |= bad[:, numpy.newaxis]
+            bad_calib = xarray.DataArray(bad_iwct.variable | bad_space.variable,
+                    coords=bad_space.coords, name="bad_calib")
+            slope.sel(time=bad_calib)[...] = numpy.nan
+            offset.sel(time=bad_calib)[...] = numpy.nan
         coords = {"calibration_cycle": time.values}
         if tuck:
             self._tuck_quantity_channel("a_0", offset,
@@ -705,11 +705,21 @@ class HIRSFCDR:
 #                    typhon.physics.units.common.radiance_units["si"])
             u_Rself = UADA(0)
         else:
-            Rself_model.fit(context, ch)
+            try:
+                Rself_model.fit(context, ch)
+            except ValueError as e:
+                if e.args[0].startswith("Found array with 0 sample(s)"):
+                    raise FCDRError(
+                        "Unable to train self-emission model, no valid "
+                        "training data in {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}".format(
+                            context["time"].values[0].astype("M8[s]").astype(datetime.datetime),
+                            context["time"].values[-1].astype("M8[s]").astype(datetime.datetime)))
+                else:
+                    raise
             (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
             (X, Y_pred) = Rself_model.evaluate(ds, ch)
             # Y_pred is rather the offset than the self-emission
-            Rself = (interp_offset - Y_pred).sel(time=views_Earth["time"].isel(time=views_Earth))
+            Rself = interp_offset.isel(time=views_Earth) - Y_pred#.sel(time=views_Earth["time"].isel(time=views_Earth))
             #Rself = (interp_offset - Y_pred).isel(time=views_Earth)
             Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
                 "RselfIWCT = Rselfspace = 0.")

@@ -50,15 +50,30 @@ class RSelf:
         return OK
 
 
-    def _ds2ndarray(self, X, Y=None):
+    def _ds2ndarray(self, X, Y=None, dropna=False):
         OK = self._dsOK(X)
         if Y is not None:
             OK = OK & Y.notnull()
         # self.model needs ndarray not xarray
-        Xx = numpy.concatenate([x.values[OK, numpy.newaxis]
+        # FIXME: when I fit, I may want to REMOVE invalid entries
+        # completely as I won't want to use them in the training.  But
+        # when I evaluate, I want to keep them or the dimensions of the
+        # self-emission estimate data array will be inconsistent with
+        # others, i.e. I need to fill the rest up somehow, probably best
+        # to do that here.
+        Xx = numpy.zeros(shape=(X.coords["time"].size, len(X.data_vars.keys())),
+            dtype="f4")
+        Xx.fill(numpy.nan)
+        Xx[OK, :] = numpy.concatenate([x.values[OK, numpy.newaxis]
                 for x in X.data_vars.values()], 1)
+        if dropna:
+            Xx = Xx[OK, :]
         if Y is not None:
-            Yy = Y.values[OK]
+            Yy = numpy.zeros(shape=(X.coords["time"].size,), dtype="f4")
+            Yy.fill(numpy.nan)
+            Yy[OK] = Y.values[OK]
+            if dropna:
+                Yy = Yy[OK]
         return (Xx, Yy) if Y is not None else Xx
 
     def get_predictand(self, M, ch):
@@ -87,7 +102,7 @@ class RSelf:
 #        Xx = numpy.concatenate([x.values[OK, numpy.newaxis]
 #                for x in X.data_vars.values()], 1)
 #        Yy = Y.values[OK]
-        (Xx, Yy) = self._ds2ndarray(X, Y)
+        (Xx, Yy) = self._ds2ndarray(X, Y, dropna=True)
         self.model.fit(Xx, Yy)
         self.X_ref = X
         self.Y_ref = Y
@@ -96,10 +111,13 @@ class RSelf:
         X = self.get_predictor(ds, ch)
 #        Y_ref = self.get_predictand(M, ch)
 #        (Xx, Yy) = self._ds2ndarray(X, Y_ref)
-        Xx = self._ds2ndarray(X)
-        Yy_pred = self.model.predict(Xx).squeeze()
+        Xx = self._ds2ndarray(X, dropna=False)
+        Yy_pred = numpy.zeros(shape=(X.coords["time"].size,), dtype="f4")
+        Yy_pred.fill(numpy.nan)
+        OK = numpy.isfinite(Xx).all(1)
+        Yy_pred[OK] = self.model.predict(Xx[OK, :]).squeeze()
         Y_pred = UADA(Yy_pred,
-            coords=X.isel(time=self._dsOK(X)).coords, attrs=self.Y_ref.attrs)
+            coords=X["time"].coords, attrs=self.Y_ref.attrs)
         return (X, Y_pred)
 
     def test(self, ds, ch):

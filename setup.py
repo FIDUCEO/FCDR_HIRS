@@ -22,7 +22,7 @@ setup(
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
-    version='0.0.14',
+    version='0.0.15',
 
     description='Library and scripts for HIRS FCDR analysis and production',
     long_description=long_description,
@@ -85,7 +85,7 @@ setup(
                       "xarray",#>=0.9",
                       "seaborn>=0.7",
                       "sympy>=1.0",
-                      "pint>=0.7"],
+                      "pint==0.8.dev0"], # FIXME: update when next pint released
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,

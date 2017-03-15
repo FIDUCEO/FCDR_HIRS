@@ -67,8 +67,11 @@ class FCDRGenerator:
         end_time = end_time or self.end_date
         self.dd.reset(start)
         while self.dd.center_time < end_time:
-            self.make_and_store_piece(self.dd.center_time,
-                self.dd.center_time + self.step_size)
+            try:
+                self.make_and_store_piece(self.dd.center_time,
+                    self.dd.center_time + self.step_size)
+            except fcdr.FCDRError as e:
+                warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
             self.dd.move(self.step_size)
 
     def make_and_store_piece(self, from_, to):
