@@ -31,7 +31,10 @@ from . import _fcdr_defs
 class FCDRError(typhon.datasets.dataset.InvalidDataError):
     pass
 
-class HIRSFCDR:
+class FCDRWarning(UserWarning):
+    pass
+
+class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     """Produce, write, study, and read HIRS FCDR.
 
     Some of the methods need context-information.  A class that helps in
@@ -43,7 +46,15 @@ class HIRSFCDR:
     Relevant papers:
     - NOAA: cao07_improved_jaot.pdf
     - PDF_TEN_990007-EPS-HIRS4-PGS.pdf
+
+    Construct with 'read' which can be "L1B" or "L1C".
     """
+
+    name = section = "fcdr_hirs"
+    stored_name = ("FCDR_HIRS_{satname:s}_v{version:s}_"
+                         "{from_time:%Y%m%d%H%M}_"
+                         "{to_time:%H%M}.nc")
+    write_subdir = "{satname:s}/{from_time:%Y/%m/%d}"
 
     realisations = 100
     srfs = None
@@ -51,6 +62,7 @@ class HIRSFCDR:
 
     band_dir = None
     band_file = None
+    read_mode = "L1B"
 
     # NB: first 8 views of space counts deemed always unusable, see
     # NOAA or EUMETSAT calibration papers/documents.  I've personaly
@@ -63,11 +75,20 @@ class HIRSFCDR:
     # Estimate noise levels from space and IWCT views
     # Use noise levels to propagate through calibration and BT conversion
 
-    def __init__(self, *args, satname, **kwargs):
+    def __init__(self, read="L1B", *args, satname, **kwargs):
+        if read == "L1B":
+            pass # no need to change from parents
+        elif read == "L1C":
+            self.name = self.section = self.write_name
+            self.stored_name = self.write_stored_name
+            self.subdir = self.write_subdir
+        else:
+            raise ValueError("'read' must be 'L1B' or 'L1C', "
+                             "got {!s}".format(read))
         for nm in {satname}|self.satellites[satname]:
             try:
                 self.srfs = [typhon.physics.units.em.SRF.fromArtsXML(
-                             nm, "hirs", i) for i in range(1, 20)]
+                             nm, self.section, i) for i in range(1, 20)]
             except FileNotFoundError:
                 pass # try the next one
             else:
@@ -75,6 +96,7 @@ class HIRSFCDR:
         else:
             raise ValueError("Could not find SRF for any of: {:s}".format(
                 ','.join({satname}|self.satellites[satname])))
+        self.read_mode = read
         super().__init__(*args, satname=satname, **kwargs)
         # if the user has asked for headers to be returned, M is a tuple
         # (head, lines) so we need to extract the lines.  Otherwise M is
@@ -98,6 +120,15 @@ class HIRSFCDR:
 
         #self.hirs = hirs
         #self.srfs = srfs
+
+    def _read(self, *args, **kwargs):
+        if self.read_mode == "L1C":
+            return super()._read(*args, **kwargs)
+        elif self.read_mode == "L1B":
+            return super(typhon.datasets.dataset.HomemadeDataset, self)._read(
+                *args, **kwargs)
+        else:
+            raise RuntimeError("Messed up!  Totally bad!")
 
     def interpolate_between_calibs(self, target_time, calib_time, *args, kind="nearest"):
         """Interpolate calibration parameters between calibration cycles
@@ -671,7 +702,7 @@ class HIRSFCDR:
                 shape=ds["counts"].shape)
             interp_slope[:] = numpy.ma.median(slope.m, 1)
             interp_slope = ureg.Quantity(interp_slope, slope.u)
-        elif ds["counts"].dims["time"] > 0:
+        elif ds["counts"].coords["time"].size > 0:
             raise typhon.datasets.dataset.InvalidFileError("Found {:d} calibration cycles, too few!".format(offset.shape[0]))
         else: # zero scanlines…
             raise NotImplementedError("This part not converted to xarray")
@@ -689,7 +720,7 @@ class HIRSFCDR:
 
         if Rself_model is None:
             warnings.warn("No self-emission defined, assuming 0!",
-                UserWarning)
+                FCDRWarning)
             Rself = UADA(numpy.zeros(shape=C_Earth["time"].shape),
                          coords=C_Earth["time"].coords,
                          name="Rself", attrs={"units":   
@@ -730,7 +761,7 @@ class HIRSFCDR:
             u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(keep_attrs=True))
         if Rrefl_model is None:
             warnings.warn("No Earthshine model defined, assuming 0!",
-                UserWarning)
+                FCDRWarning)
             Rrefl = UADA(numpy.zeros(shape=offset.shape),
                     coords=offset.coords,
                     attrs={"units": str(typhon.physics.units.common.radiance_units["si"])})
@@ -760,7 +791,7 @@ class HIRSFCDR:
 #        rad_wn.m.mask |= numpy.isnan(rad_wn)
 
         (α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients(
-            self.satname, "hirs", ch)
+            self.satname, self.section, ch)
 #        (α, β, f_eff, Δα, Δβ, Δf_eff) = (numpy.float32(0),
 #            numpy.float32(1), srf.centroid().to(ureg.THz, "sp"), 0, 0, 0)
 
@@ -1263,7 +1294,7 @@ class HIRSFCDR:
             warnings.warn("Cannot correctly estimate uncertainty u({!s}). "
                 "Destination has dimensions {!s}, arguments (between them) "
                 "have {!s}!".format(s, dest_dims, src_dims),
-                UserWarning)
+                FCDRWarning)
         if not src_dims <= dest_dims: # needs reducing
             adict = self._make_dims_consistent(adict)
         # verify/convert dimensions
@@ -1523,13 +1554,13 @@ class HIRS3FCDR(HIRSFCDR, HIRS3):
 class HIRS4FCDR(HIRSFCDR, HIRS4):
     pass
 
-def which_hirs_fcdr(satname):
+def which_hirs_fcdr(satname, *args, **kwargs):
     """Given a satellite, return right HIRS object
     """
     for h in {HIRS2FCDR, HIRS3FCDR, HIRS4FCDR}:
         for (k, v) in h.satellites.items():
             if satname in {k}|v:
-                return h(satname=k)
+                return h(*args, satname=k, **kwargs)
     else:
         raise ValueError("Unknown HIRS satellite: {:s}".format(satname))
 

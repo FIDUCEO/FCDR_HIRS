@@ -22,7 +22,7 @@ setup(
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
-    version='0.0.15',
+    version='0.0.16',
 
     description='Library and scripts for HIRS FCDR analysis and production',
     long_description=long_description,
@@ -77,7 +77,7 @@ setup(
                       "scipy>=0.18",
                       "matplotlib>=1.5",
                       "numexpr>=2.6",
-                      "typhon>=0.3.4",
+                      "typhon>=0.3.6",
                       "pyatmlab>=0.1.1",
                       "progressbar2>=3.10",
                       "netCDF4>=1.2",

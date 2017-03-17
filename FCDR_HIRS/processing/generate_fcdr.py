@@ -4,6 +4,7 @@ Generate HIRS FCDR for a particular satellite and period.
 
 """
 
+import sys
 from .. import common
 import argparse
 import subprocess
@@ -47,12 +48,12 @@ class FCDRGenerator:
     # FIXME: do we have a filename convention?
     # FIXME: this should be incorporated in the general HomemadeDataset
     # class
-    basedir = "/group_workspaces/cems2/fiduceo/Data/FCDR/HIRS/pre-β/testing"
-    subdir = "{from_time:%Y/%m/%d}"
-    filename = "HIRS_FCDR_sketch_{satname:s}_{from_time:%Y%m%d%H%M}_{to_time:%H%M}.nc"
+#    basedir = "/group_workspaces/cems2/fiduceo/Data/FCDR/HIRS/pre-β/testing"
+#    subdir = "{from_time:%Y/%m/%d}"
+#    filename = "HIRS_FCDR_sketch_{satname:s}_{from_time:%Y%m%d%H%M}_{to_time:%H%M}.nc"
     def __init__(self, sat, start_date, end_date):
         self.satname = sat
-        self.fcdr = fcdr.which_hirs_fcdr(sat)
+        self.fcdr = fcdr.which_hirs_fcdr(sat, read="L1B")
         self.start_date = start_date
         self.end_date = end_date
         self.dd = typhon.datasets.dataset.DatasetDeque(
@@ -67,12 +68,28 @@ class FCDRGenerator:
         end_time = end_time or self.end_date
         self.dd.reset(start)
         while self.dd.center_time < end_time:
+            self.dd.move(self.step_size)
             try:
-                self.make_and_store_piece(self.dd.center_time,
-                    self.dd.center_time + self.step_size)
+                self.make_and_store_piece(self.dd.center_time - self.step_size,
+                    self.dd.center_time)
             except fcdr.FCDRError as e:
                 warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
-            self.dd.move(self.step_size)
+    
+    def fragmentate(self, piece):
+        """Yield fragments per orbit
+        """
+        ssp = piece["lat"].sel(scanpos=28)
+        crossing = xarray.DataArray(
+            numpy.r_[
+                True,
+                ((ssp.values[1:] > 0) & (ssp.values[:-1] < 0))],
+            coords=ssp.coords)
+        segments = numpy.r_[
+            crossing.values.nonzero()[0],
+            piece.coords["time"].size]
+
+        for (s, e) in zip(segments[:-1], segments[1:]):
+            yield piece.isel(time=slice(s, e))
 
     def make_and_store_piece(self, from_, to):
         """Generate and store one “piece” of FCDR
@@ -82,7 +99,9 @@ class FCDRGenerator:
         """
 
         piece = self.get_piece(from_, to)
-        self.store_piece(piece)
+#        self.store_piece(piece)
+        for piece in self.fragmentate(piece):
+            self.store_piece(piece)
 
     def get_piece(self, from_, to):
         """Get FCDR piece for period.
@@ -121,6 +140,7 @@ class FCDRGenerator:
         return ds
 
     def store_piece(self, piece):
+        # FIXME: concatenate when appropriate
         fn = self.get_filename_for_piece(piece)
         fn.parent.mkdir(exist_ok=True, parents=True)
         logging.info("Storing to {!s}".format(fn))
@@ -128,15 +148,22 @@ class FCDRGenerator:
 
     _i = 0
     def get_filename_for_piece(self, piece):
-        fn = "/".join((self.basedir, self.subdir, self.filename))
-        fn = fn.format(satname=self.satname,
+        fn = self.fcdr.find_granule_for_time(
+#        fn = "/".join((self.basedir, self.subdir, self.filename)).format(
+            satname=self.satname,
             from_time=piece["time"][0].values.astype("M8[s]").astype(datetime.datetime),
-            to_time=piece["time"][-1].values.astype("M8[s]").astype(datetime.datetime))
+            to_time=piece["time"][-1].values.astype("M8[s]").astype(datetime.datetime),
+            version="0.0",
+            mode="write")
         return pathlib.Path(fn)
 #        raise NotImplementedError()
             
 
+def _no_exit(code):
+    raise RuntimeError("Who is calling sys.exit() and why?")
+
 def main():
+    sys.exit = _no_exit
     warnings.filterwarnings("error", category=numpy.VisibleDeprecationWarning)
     fgen = FCDRGenerator(p.satname,
         datetime.datetime.strptime(p.from_date, p.datefmt),
