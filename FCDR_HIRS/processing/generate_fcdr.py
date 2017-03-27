@@ -43,8 +43,12 @@ from .. import effects
 
 
 class FCDRGenerator:
+    # for now, step_size should be smaller than segment_size and I will
+    # only store whole orbits within each segment
     window_size = datetime.timedelta(hours=24)
-    step_size = datetime.timedelta(hours=6)
+    segment_size = datetime.timedelta(hours=6)
+    step_size = datetime.timedelta(hours=4)
+    data_version = "0.1"
     # FIXME: do we have a filename convention?
     # FIXME: this should be incorporated in the general HomemadeDataset
     # class
@@ -70,7 +74,7 @@ class FCDRGenerator:
         while self.dd.center_time < end_time:
             self.dd.move(self.step_size)
             try:
-                self.make_and_store_piece(self.dd.center_time - self.step_size,
+                self.make_and_store_piece(self.dd.center_time - self.segment_size,
                     self.dd.center_time)
             except fcdr.FCDRError as e:
                 warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
@@ -86,10 +90,25 @@ class FCDRGenerator:
             coords=ssp.coords)
         segments = numpy.r_[
             crossing.values.nonzero()[0],
-            piece.coords["time"].size]
+            -1]
+        time_segments = [piece["lat"]["time"][s] for s in segments]
+        time_segments[-1] = numpy.datetime64("99999-12-31") # always in the future
+#            piece.coords["time"].size]
 
-        for (s, e) in zip(segments[:-1], segments[1:]):
-            yield piece.isel(time=slice(s, e))
+        # make sure I split by all time-coordinates… 
+        time_coords = {k for (k, v) in piece.coords.items()
+                           if v.dtype.kind=="M"}
+        # don't write partial orbits; skip first and last piece within
+        # each segment.  Compensated by stepping 4 hours after processing
+        # each 6 hour segment.  This is a suboptimal solution.
+        for (s, e) in list(zip(segments[:-1], segments[1:]))[1:-1]:
+            p = piece
+            for tc in time_coords:
+                p = p[{tc: 
+                        (p[tc] >= piece["lat"]["time"][s]) &
+                        (p[tc] < piece["lat"]["time"][e])}]
+            yield p
+            #yield piece.isel(time=slice(s, e))
 
     def make_and_store_piece(self, from_, to):
         """Generate and store one “piece” of FCDR
@@ -109,6 +128,18 @@ class FCDRGenerator:
         Returns a single xarray.Dataset
         """
         subset = self.dd.data.sel(time=slice(from_, to))
+        # NB: by calibrating the entire subset at once, I get a single set
+        # of parameters for the  Rself model.  That may be undesirable.
+        # Worse, it means that in most of my files, the dimension for
+        # rself_update_time is zero, which is not only undesirable, but
+        # also currently triggers the bug at
+        # https://github.com/pydata/xarray/issues/1329
+        # either I calibrate smaller pieces or I decouple the
+        # self-emission model+context evaluation therefrom!
+        # OR repeat the same self-emission model parameters but pretend,
+        # a.k.a. lie, that they are updated, as a placeholder until I
+        # really update them frequently enough such that the aforementioned
+        # xarray bug is not triggered
         R_E = self.fcdr.calculate_radiance_all(subset,
             context=self.dd.data, Rself_model=self.rself)
         cu = {}
@@ -119,8 +150,20 @@ class FCDRGenerator:
         qc = xarray.Dataset(self.fcdr._quantities)
         qc = xarray.Dataset(
             {str(k): v for (k, v) in self.fcdr._quantities.items()})
-        ds = xarray.merge([uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
-                      qc, subset, u])
+        # uncertainty scanline coordinate conflicts with subset scanline
+        # coordinate, drop the former
+        ds = xarray.merge(
+            [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}
+                            ).drop("scanline"), qc, subset, u])
+        # NB: when quantities are gathered, offset and slope and others
+        # per calibration_cycle are calculated for the entire context
+        # period rather than the core dataset period.  I don't want to
+        # store the entire context period.  I do this after the merger
+        # because it affects both qc and uc.
+        ds = ds.isel(
+            calibration_cycle=
+                (ds["calibration_cycle"] >= subset["time"][0]) &
+                (ds["calibration_cycle"] <= subset["time"][-1]))
         ds = self.add_attributes(ds)
         return ds
 
@@ -134,7 +177,7 @@ class FCDRGenerator:
             url="http://www.fiduceo.eu/",
             verbose_version_info=pr.stdout.decode("utf-8"),
             institution="University of Reading",
-            data_version="0.0",
+            data_version=self.data_version,
             WARNING=effects.WARNING,
             )
         return ds
@@ -148,12 +191,25 @@ class FCDRGenerator:
 
     _i = 0
     def get_filename_for_piece(self, piece):
+        # instead of using datetime-formatting codes directly, pass all
+        # seperately so that the same format can be more easily used in
+        # reading mode as well
+        from_time=piece["time"][0].values.astype("M8[s]").astype(datetime.datetime)
+        to_time=piece["time"][-1].values.astype("M8[s]").astype(datetime.datetime)
         fn = self.fcdr.find_granule_for_time(
 #        fn = "/".join((self.basedir, self.subdir, self.filename)).format(
             satname=self.satname,
-            from_time=piece["time"][0].values.astype("M8[s]").astype(datetime.datetime),
-            to_time=piece["time"][-1].values.astype("M8[s]").astype(datetime.datetime),
-            version="0.0",
+            year=from_time.year,
+            month=from_time.month,
+            day=from_time.day,
+            hour=from_time.hour,
+            minute=from_time.minute,
+            year_end=to_time.year,
+            month_end=to_time.month,
+            day_end=to_time.day,
+            hour_end=to_time.hour,
+            minute_end=to_time.minute,
+            fcdr_version=self.data_version,
             mode="write")
         return pathlib.Path(fn)
 #        raise NotImplementedError()

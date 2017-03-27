@@ -11,6 +11,7 @@ import datetime
 import numpy
 import scipy.interpolate
 import progressbar
+import pandas
 import xarray
 import sympy
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
@@ -41,7 +42,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     passing in the requirement information is at
     FCDR_HIRS.processing.generate_fcdr.FCDRGenerator.
 
-    Mixin for kiddies HIRS?FCDR
+    Mixin for kiddies HIRS?FCDR.  Not to be constructed directly.
 
     Relevant papers:
     - NOAA: cao07_improved_jaot.pdf
@@ -51,10 +52,15 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     """
 
     name = section = "fcdr_hirs"
-    stored_name = ("FCDR_HIRS_{satname:s}_v{version:s}_"
-                         "{from_time:%Y%m%d%H%M}_"
-                         "{to_time:%H%M}.nc")
-    write_subdir = "{satname:s}/{from_time:%Y/%m/%d}"
+    stored_name = ("FCDR_HIRS_{satname:s}_v{fcdr_version:s}_"
+                         "{year:04d}{month:02d}{day:02d}{hour:02d}{minute:02d}_"
+                         "{year_end:04d}{month_end:02d}{day_end:02d}{hour_end:02d}{minute_end:02d}.nc")
+    write_subdir = "{satname:s}/{year:04d}/{month:02d}/{day:02d}"
+    stored_re = (r'FCDR_HIRS_(?P<satname>.{6})_(?P<fcdr_version>.{4})_'
+                 r'(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})'
+                 r'(?P<hour>\d{2})(?P<minute>\d{2})_'
+                 r'(?P<year_end>\d{4})(?P<month_end>\d{2})(?P<day_end>\d{2})'
+                 r'(?P<hour_end>\d{2})(?P<minute_end>\d{2})\.nc')
 
     realisations = 100
     srfs = None
@@ -63,6 +69,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     band_dir = None
     band_file = None
     read_mode = "L1B"
+
+    read_returns = "xarray" # for NetCDFDataset in my inheritance tree
+
+    l1b_base = None # set in child
 
     # NB: first 8 views of space counts deemed always unusable, see
     # NOAA or EUMETSAT calibration papers/documents.  I've personaly
@@ -76,15 +86,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     # Use noise levels to propagate through calibration and BT conversion
 
     def __init__(self, read="L1B", *args, satname, **kwargs):
-        if read == "L1B":
-            pass # no need to change from parents
-        elif read == "L1C":
-            self.name = self.section = self.write_name
-            self.stored_name = self.write_stored_name
-            self.subdir = self.write_subdir
-        else:
-            raise ValueError("'read' must be 'L1B' or 'L1C', "
-                             "got {!s}".format(read))
         for nm in {satname}|self.satellites[satname]:
             try:
                 self.srfs = [typhon.physics.units.em.SRF.fromArtsXML(
@@ -97,24 +98,37 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             raise ValueError("Could not find SRF for any of: {:s}".format(
                 ','.join({satname}|self.satellites[satname])))
         self.read_mode = read
+        if read == "L1C":
+            self.re = self.stored_re # before super()
         super().__init__(*args, satname=satname, **kwargs)
+        if read == "L1B":
+            pass # no need to change from parents
+        elif read == "L1C":
+            #self.name = self.section = self.write_name
+            #self.stored_name = self.write_stored_name
+            self.basedir = self.write_basedir
+            self.subdir = self.write_subdir
+        else:
+            raise ValueError("'read' must be 'L1B' or 'L1C', "
+                             "got {!s}".format(read))
         # if the user has asked for headers to be returned, M is a tuple
         # (head, lines) so we need to extract the lines.  Otherwise M is
         # just lines.
         # the following line means the pseudo field is only calculated if
         # the value of the keyword "calibrate" (passed to
         # read/read_period/…) is equal to any of the values in the tuple
-        cond = {"calibrate": (None, True)}
-        self.my_pseudo_fields["radiance_fid_naive"] = (
-            ["radiance", self.scantype_fieldname, "temp_iwt", "time"],
-            lambda M, D:
-            self.calculate_radiance_all(
-                M[1] if isinstance(M, tuple) else M, interp_kind="zero",
-                return_ndarray=True),
-            cond)
-        self.my_pseudo_fields["bt_fid_naive"] = (["radiance_fid_naive"],
-            self.calculate_bt_all,
-            cond)
+        if read == "L1B":
+            cond = {"calibrate": (None, True)}
+            self.my_pseudo_fields["radiance_fid_naive"] = (
+                ["radiance", self.scantype_fieldname, "temp_iwt", "time"],
+                lambda M, D:
+                self.calculate_radiance_all(
+                    M[1] if isinstance(M, tuple) else M, interp_kind="zero",
+                    return_ndarray=True),
+                cond)
+            self.my_pseudo_fields["bt_fid_naive"] = (["radiance_fid_naive"],
+                self.calculate_bt_all,
+                cond)
 
         self._data_vars_props.update(_fcdr_defs.FCDR_data_vars_props)
 
@@ -125,8 +139,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         if self.read_mode == "L1C":
             return super()._read(*args, **kwargs)
         elif self.read_mode == "L1B":
-            return super(typhon.datasets.dataset.HomemadeDataset, self)._read(
-                *args, **kwargs)
+            return self.l1b_base._read(self, *args, **kwargs)
+#            return super(typhon.datasets.dataset.HomemadeDataset, self)._read(
+#                *args, **kwargs)
         else:
             raise RuntimeError("Messed up!  Totally bad!")
 
@@ -329,15 +344,19 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     time=space_followed_by_iwct)
         #M_iwct = M[dsi:][space_followed_by_iwct]
 
-        counts_space = ds_space["counts"].sel(
-            scanpos=slice(self.start_space_calib, None),
-            channel=ch).rename({"channel": "calibrated_channel"})
+        counts_space = UADA(ds_space["counts"].sel(
+                scanpos=slice(self.start_space_calib, None),
+                channel=ch).rename({"channel": "calibrated_channel"}),
+            name="counts_space")
+        counts_space.attrs.update(units="counts")
 #        counts_space = ureg.Quantity(M_space["counts"][:,
 #            self.start_space_calib:, ch-1], ureg.count)
         # For IWCT, at least EUMETSAT uses all 56…
-        counts_iwct = ds_iwct["counts"].sel(
-            scanpos=slice(self.start_iwct_calib, None),
-            channel=ch).rename({"channel": "calibrated_channel"})
+        counts_iwct = UADA(ds_iwct["counts"].sel(
+                scanpos=slice(self.start_iwct_calib, None),
+                channel=ch).rename({"channel": "calibrated_channel"}),
+            name="counts_iwct")
+        counts_iwct.attrs.update(units="counts")
 #        counts_iwct = ureg.Quantity(M_iwct["counts"][:,
 #            self.start_iwct_calib:, ch-1], ureg.count)
 
@@ -381,15 +400,22 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # self.estimate_noise although there is some code duplication.
         # Here, we only use real calibration lines, where both space and
         # earth views were successful.
-        u_counts_iwct = (typhon.math.stats.adev(counts_iwct, "scanpos") /
-            numpy.sqrt(counts_iwct.shape[1]))
-        if tuck:
-            self._tuck_effect_channel("C_IWCT", u_counts_iwct, ch)
-
         u_counts_space = (typhon.math.stats.adev(counts_space, "scanpos") /
             numpy.sqrt(counts_space.shape[1]))
         if tuck:
             self._tuck_effect_channel("C_space", u_counts_space, ch)
+
+        u_counts_iwct = (typhon.math.stats.adev(counts_iwct, "scanpos") /
+            numpy.sqrt(counts_iwct.shape[1]))
+        if tuck:
+            # before 'tucking', I want to make sure the time coordinate
+            # corresponds to the calibration cycle, i.e. the same as for
+            # space.  This is ultimately used by passing a dictionary to
+            # a lambda generated by sympy.lambdify so we need to reassign
+            # coordinates in advance
+            self._tuck_effect_channel("C_IWCT", 
+                u_counts_iwct.assign_coords(time=u_counts_space["time"]),
+                ch)
             self._tuck_effect_channel("C_Earth",
                 UADA((u_counts_space.variable + u_counts_iwct.variable)/2,
                       coords=u_counts_space.coords), ch)
@@ -483,10 +509,21 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # Therefore, effects have 'dims' attribute in case there is a
         # difference.
 
-        q = self._quantity_to_xarray(quantity, name,
+        # NEE!  Dit gaat helemaal mis want ik heb dan verschillende
+        # coordinates voor verschillende variables en als ik dan de
+        # expression evaluate met xarray krĳg ik results met 0 dimension
+        # want xarray tries to realign the coordinates...  earlier I
+        # accidentally removed the coordinates and that is why it worked
+        # at all!
+        if isinstance(quantity, xarray.DataArray):
+            q = quantity.rename(
+                dict(zip(quantity.dims,
+                self._effects_by_name[name].dimensions)))
+        else:
+            q = self._quantity_to_xarray(quantity, name,
                 dropdims=["channel", "calibrated_channel"],
-                dims=self._effects_by_name[name].dimensions).assign_coords(
-                    calibrated_channel=channel)
+                dims=self._effects_by_name[name].dimensions)
+        q = q.assign_coords(calibrated_channel=channel)
         if self._effects_by_name[name].magnitude is None:
             self._effects_by_name[name].magnitude = q
         else:
@@ -675,6 +712,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         srf = srf or self.srfs[ch-1]
         has_context = context is not None
         context = context if has_context else ds
+        # NB: passing `context` here means that quantities and effects are
+        # stored with dimension for entire context period, rather than
+        # just the ds period.  Should take this into account with later
+        # processing.
         (time, offset, slope, a2) = self.calculate_offset_and_slope(
             context, ch, srf, tuck=tuck)
         # NOTE: taking the median may not be an optimal solution.  See,
@@ -734,7 +775,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #            RselfIWCT = Rselfspace = ureg.Quantity(
 #                    numpy.zeros_like(offset),
 #                    typhon.physics.units.common.radiance_units["si"])
-            u_Rself = UADA(0)
+            u_Rself = UADA([0], dims=["rself_update_time"],
+                           coords={"rself_update_time": [ds["time"].values[0]]})
         else:
             try:
                 Rself_model.fit(context, ch)
@@ -758,7 +800,29 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     coords=offset["time"].coords,
                     attrs={**Rself.attrs,
                            "note": "Rself is implemented as ΔRself in pre-β"})
-            u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(keep_attrs=True))
+            u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
+                keep_attrs=True, dim="time"))
+            # trick to make sure there is a time dimension…
+            # http://stackoverflow.com/a/42999562/974555
+            u_Rself = xarray.concat((u_Rself,), dim="rself_update_time")
+            # and, for now, establish fake time based u_Rself to ensure
+            # there's always u_Rself info in every orbit file even though
+            # it's updated more rarely than that.  Take a range that is
+            # too large (context), another lie, so we can later
+            # interpolate to the right segment (lie will not propagate)
+            # interpolation will happen in _make_dims_consistent
+            times = pandas.date_range(
+                context["time"].values[0],
+                context["time"].values[-1],
+                freq='10min')
+            u_Rself = u_Rself[numpy.tile([0], times.size)]
+            u_Rself = u_Rself.assign_coords(
+                rself_update_time=times.values)# [ds["time"].values[0]])
+            u_Rself.attrs["U_RSELF_WARNING"] = (
+                "Self-emission uncertainty repeated "
+                "every ten minutes as a stop-gap measure to ensure even "
+                "short slices contain this info, but not a sustainable "
+                "solution.  Coordinates are lying!")
         if Rrefl_model is None:
             warnings.warn("No Earthshine model defined, assuming 0!",
                 FCDRWarning)
@@ -1321,19 +1385,22 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         new_adict = {}
 
         dest_time = adict[me.symbols["C_E"]].scanline_earth.astype("u8")
-        src_time = adict[me.symbols["a_1"]]["calibration_cycle"].astype("u8")
 
         for (k, v) in adict.items():
             if "calibration_position" in v.dims:
                 v = v.mean(dim="calibration_position", keep_attrs=True)
-            if "calibration_cycle" in v.dims:
+            if "calibration_cycle" in v.dims or "rself_update_time" in v.dims:
+                d = ("calibration_cycle"
+                     if "calibration_cycle" in v.dims
+                     else "rself_update_time")
+                src_time = v[d].astype("u8")#adict[me.symbols["a_1"]][d].astype("u8")
                 fnc = scipy.interpolate.interp1d(
                     src_time, v,
                     kind="zero",
                     bounds_error=True,
-                    axis=v.dims.index("calibration_cycle"))
+                    axis=v.dims.index(d))
                 new_adict[k] = UADA(fnc(dest_time),
-                    dims=[x.replace("calibration_cycle", "scanline_earth") for
+                    dims=[x.replace(d, "scanline_earth") for
                             x in v.dims],
                     coords=adict[me.symbols["C_E"]].coords,
                     attrs=v.attrs,
@@ -1546,13 +1613,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         raise NotImplementedError("Not implemented yet!")
 
 class HIRS2FCDR(HIRSFCDR, HIRS2):
-    pass
+    l1b_base = HIRS2
 
 class HIRS3FCDR(HIRSFCDR, HIRS3):
-    pass
+    l1b_base = HIRS3
 
 class HIRS4FCDR(HIRSFCDR, HIRS4):
-    pass
+    l1b_base = HIRS4
 
 def which_hirs_fcdr(satname, *args, **kwargs):
     """Given a satellite, return right HIRS object

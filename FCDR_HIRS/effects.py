@@ -252,6 +252,7 @@ SRF_calib = Effect(name="SRF_calib",
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.nm,
+    dimensions=(),
     channel_correlations=_I)
 
 # This one does not fit in measurement equation, how to code?
@@ -268,6 +269,7 @@ PRT_counts_noise = Effect(name="C_PRT",
     parameter=meq.symbols["C_PRT"],
     correlation_type=_calib,
     unit=ureg.count,
+    dimensions=(),
     channel_correlations=_ones)
 
 IWCT_PRT_representation = Effect(
@@ -277,6 +279,7 @@ IWCT_PRT_representation = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.K,
+    dimensions=(),
     channel_correlations=_ones)
 
 IWCT_PRT_counts_to_temp = Effect(
@@ -289,6 +292,7 @@ IWCT_PRT_counts_to_temp = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.counts/ureg.K, # FIXME WARNING: see https://github.com/FIDUCEO/FCDR_HIRS/issues/43
+    dimensions=(),
     channel_correlations=_ones)
 
 IWCT_type_b = Effect(
@@ -298,6 +302,7 @@ IWCT_type_b = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.K,
+    dimensions=(),
     channel_correlations=_ones)
 # set magnitude when I'm sure everything else has been set (order of
 # kwargs not preserved before Python 3.6)
@@ -317,6 +322,7 @@ nonlinearity = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=radiance_units["ir"]/ureg.count**2,
+    dimensions=(),
     channel_correlations=blockmat)
 
 nonnonlinearity = Effect(
@@ -326,6 +332,7 @@ nonnonlinearity = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=radiance_units["ir"],
+    dimensions=(),
     channel_correlations=nonlinearity.channel_correlations)
 
 Earthshine = Effect(
@@ -335,11 +342,12 @@ Earthshine = Effect(
     correlation_type=("rectangular_absolute", "rectangular_absolute",
           "repeated_rectangles", "triangular_relative"),
     channel_correlations=blockmat,
+    dimensions=(),
     unit=radiance_units["ir"])
 
 Rself = Effect(
     name="Rself",
-    dimensions=(),
+    dimensions=("rself_update_time",),
     description="self-emission",
     parameter=meq.symbols["R_selfE"],
     correlation_type=("rectangular_absolute", "triangular_relative",
@@ -353,6 +361,7 @@ Rselfparams = Effect(
     parameter=Rself.parameter,
     correlation_type=Rself.correlation_type,
     channel_correlations=blockmat,
+    dimensions=(),
     unit=Rself.unit)
 
 electronics = Effect(
@@ -362,6 +371,7 @@ electronics = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     channel_correlations=blockmat,
+    dimensions=(),
     unit=radiance_units["ir"])
 
 unknown_periodic = Effect(
@@ -371,6 +381,7 @@ unknown_periodic = Effect(
     #correlation_type=_systematic,
     #correlation_scale=_inf,
     #channel_correlations=blockmat,
+    dimensions=(),
     unit=radiance_units["ir"])
 
 Δα = Effect(
@@ -380,6 +391,7 @@ unknown_periodic = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     channel_correlations=_I,
+    dimensions=(),
     unit="1")
 
 Δβ = Effect(
@@ -389,6 +401,7 @@ unknown_periodic = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     channel_correlations=_I,
+    dimensions=(),
     unit="1/K"),
 
 Δf_eff = Effect(
@@ -398,4 +411,5 @@ unknown_periodic = Effect(
     correlation_type=_systematic,
     correlation_scale=_inf,
     channel_correlations=_I,
+    dimensions=(),
     unit="THz")

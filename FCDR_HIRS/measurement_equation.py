@@ -18,7 +18,7 @@ version = "β"
 
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
          "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φn "
-         "R_IWCT ε O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT f Δf fstar "
+         "R_IWCT O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT f Δf fstar "
          "ν Δν νstar")
 
 symbols = sym = dict(zip(names.split(), sympy.symbols(names)))
