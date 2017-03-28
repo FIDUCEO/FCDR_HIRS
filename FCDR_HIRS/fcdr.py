@@ -456,10 +456,19 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             dims=dims if dims is not None else [d for d in self._data_vars_props[name][1] if d not in dropdims],
             attrs=self._data_vars_props[name][2],
             encoding=self._data_vars_props[name][3])
-        # 1st choice: quantity.u
-        # 2nd choice: defined in attrs
+        # 1st choice: quantity.u (pint unit)
+        # 2nd choice: defined in quantity.attrs (UADA)
+        # 3rd choice: defined in da.attrs
         # fallback: "UNDEFINED"
-        da.attrs["units"] = str(getattr(quantity, "u", da.attrs.get("units", "UNDEFINED")))
+        try:
+            u = quantity.u
+        except AttributeError:
+            try:
+                u = quantity.attrs["units"]
+            except (AttributeError, KeyError):
+                u = da.attrs.get("units", "UNDEFINED")
+
+        da.attrs["units"] = str(u)
         try:
             da.values[quantity.mask] = numpy.nan
         except AttributeError:
@@ -1122,7 +1131,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
 
     def calc_u_for_variable(self, var, quantities, all_effects,
-                            cached_uncertainties):
+                            cached_uncertainties, return_more=False):
         """Calculate total uncertainty
 
         This just gathers previously calculated quantities; this should be
@@ -1222,7 +1231,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                             "encoding": self._data_vars_props[
                                         me.names[s]][3]})
                 cached_uncertainties[s] = u
-                return u
+                return (u, {}, {}) if return_more else u
             else:
                 u = UADA(0, name="u_{!s}".format(s),
                     attrs={
@@ -1234,7 +1243,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         "encoding": self._data_vars_props[
                                     me.names[s]][3]})
                 cached_uncertainties[s] = u
-                return u
+                return (u, {}, {}) if return_more else u
 
         # evaluate expression for this quantity
         e = me.expressions[s]
@@ -1251,8 +1260,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #            e.subs({sm: me.functions.get(sm, sm)
 #                    for sm in typhon.physics.metrology.recursive_args(e)}))
         failures = set()
-        u_e = typhon.physics.metrology.express_uncertainty(e,
-            on_failure="warn", collect_failures=failures)
+        (u_e, sensitivities, components) = typhon.physics.metrology.express_uncertainty(
+            e, on_failure="warn", collect_failures=failures,
+            return_sensitivities=True,
+            return_components=True)
 
         if u_e == 0: # constant
             # FIXME: bookkeep where I have zero uncertainty
@@ -1265,7 +1276,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     "units": str(me.units[s])
                 })
             cached_uncertainties[s] = u
-            return u
+            return (u, {}, {}) if return_more else u
 
         fu = sympy.Function("u")
         args = typhon.physics.metrology.recursive_args(u_e,
@@ -1287,13 +1298,15 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                        isinstance(me.expressions[v.args[0]], sympy.Number)) and
                       v.args[0] not in all_effects.keys()):
                     # make sure it gets into cached_uncertainties so that
-                    # it is "documented"
+                    # it is "documented".  That is a side-effect for
+                    # calc_u_for_variable so I don't otherwise need the
+                    # result.
                     ua = self.calc_u_for_variable(v.args[0],
                         quantities, all_effects, cached_uncertainties)
                     assert ua==0, "Impossible"
                     u_e = u_e.subs(v, 0)
                     
-        oldargs = args
+        #oldargs = args
         args = typhon.physics.metrology.recursive_args(u_e,
             stop_at=(sympy.Symbol, sympy.Indexed, fu))
 
@@ -1306,6 +1319,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # expressions.  The keys are expressions (such as Symbol or
         # u(Symbol)), the values are numbers or numpy arrays of numbers
         adict = {}
+        sub_sensitivities = {}
+        sub_components = {}
         for v in args:
             # check which one of the four aforementioned applies
             if isinstance(v, fu):
@@ -1317,8 +1332,15 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 if v.args[0] in cached_uncertainties.keys():
                     adict[v] = cached_uncertainties[v.args[0]]
                 else:
-                    adict[v] = self.calc_u_for_variable(v.args[0],
-                        quantities, all_effects, cached_uncertainties)
+                    (adict[v], subsens, subcomp) = self.calc_u_for_variable(
+                        v.args[0], quantities, all_effects,
+                        cached_uncertainties, return_more=True)
+                    # NB: We should have sensitivities.keys() ==
+                    # components.keys() == our current loop
+                    sub_sensitivities[v.args[0]] = (
+                        sensitivities[v.args[0]], subsens)
+                    sub_components[v.args[0]] = (
+                        components[v.args[0]], subcomp)
                     cached_uncertainties[v.args[0]] = adict[v]
             else:
                 # it's a quantity
@@ -1339,6 +1361,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         self._data_vars_props[me.names[v]][3])
 
                 adict[v] = quantities[v]
+
+        assert (sensitivities.keys() == components.keys() ==
+                sub_sensitivities.keys() == sub_components.keys(),
+                "Found inconsistencies between bookkeeping dicts!")
                     
         # now I have adict with values for uncertainties and other
         # quantities, that I need to substitute into the expression
@@ -1357,7 +1383,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         if not dest_dims <= src_dims: # problem!
             warnings.warn("Cannot correctly estimate uncertainty u({!s}). "
                 "Destination has dimensions {!s}, arguments (between them) "
-                "have {!s}!".format(s, dest_dims, src_dims),
+                "have {!s}!".format(s, dest_dims, src_dims or "none"),
                 FCDRWarning)
         if not src_dims <= dest_dims: # needs reducing
             adict = self._make_dims_consistent(adict)
@@ -1365,7 +1391,22 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         u = f(*[typhon.math.common.promote_maximally(adict[x]) for x in ta])
         u = u.rename("u_"+me.names[s])
         cached_uncertainties[s] = u
-        return u
+        if return_more:
+            for k in sub_sensitivities.keys():
+                # I already verified that sub_sensitivities and
+                # sub_components have the same keys
+                args = typhon.physics.metrology.recursive_args(u_e,
+                    stop_at=(sympy.Symbol, sympy.Indexed, fu))
+                ta = tuple(args)
+                for dd in (sub_sensitivities, sub_components):
+                    f = sympy.lambdify(ta, dd[k][0], numpy)
+                    dd[k] = (f(
+                        *[typhon.math.common.promote_maximally(adict[x])
+                            for x in ta]),
+                            dd[k][1])
+            return (u, sub_sensitivities, sub_components)
+        else:
+            return u
 
     @staticmethod
     def _make_dims_consistent(adict):

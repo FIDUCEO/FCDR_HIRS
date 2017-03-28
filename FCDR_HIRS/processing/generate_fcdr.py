@@ -143,8 +143,8 @@ class FCDRGenerator:
         R_E = self.fcdr.calculate_radiance_all(subset,
             context=self.dd.data, Rself_model=self.rself)
         cu = {}
-        u = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
-            self.fcdr._effects, cu)
+        (u, sens, comp) = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
+            self.fcdr._effects, cu, return_more=True)
         u.encoding = R_E.encoding
         uc = xarray.Dataset({k: v.magnitude for (k, v) in self.fcdr._effects_by_name.items()})
         qc = xarray.Dataset(self.fcdr._quantities)
