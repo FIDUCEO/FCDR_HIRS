@@ -7,6 +7,7 @@ import warnings
 import functools
 import operator
 import datetime
+import numbers
 
 import numpy
 import scipy.interpolate
@@ -1294,6 +1295,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 if (v.args[0] in cached_uncertainties.keys() and
                         numpy.all(cached_uncertainties.get(v.args[0]).values == 0)):
                     u_e = u_e.subs(v, 0)
+                    del sensitivities[v.args[0]]
+                    del components[v.args[0]]
                 elif ((v.args[0] not in me.expressions.keys() or
                        isinstance(me.expressions[v.args[0]], sympy.Number)) and
                       v.args[0] not in all_effects.keys()):
@@ -1305,11 +1308,15 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         quantities, all_effects, cached_uncertainties)
                     assert ua==0, "Impossible"
                     u_e = u_e.subs(v, 0)
+                    del sensitivities[v.args[0]]
+                    del components[v.args[0]]
                     
-        #oldargs = args
+        # This may be different from before because I have substituted out
+        # arguments that evaluate to zero, so there are less args now
+        oldargs = args # not used in code but may want to inspect in
+                       # debugging
         args = typhon.physics.metrology.recursive_args(u_e,
             stop_at=(sympy.Symbol, sympy.Indexed, fu))
-
 
         # NB: adict is the dictionary of everything (uncertainties and
         # quantities) that needs to be
@@ -1331,17 +1338,41 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 # effects tables (see above)
                 if v.args[0] in cached_uncertainties.keys():
                     adict[v] = cached_uncertainties[v.args[0]]
+                    # I must have already calculated subsens and subcomp,
+                    # but I don't have access to the value.  Either it is
+                    # already in sub_sensitivities/sub_components, or the
+                    # caller has access to it.  In the latter case, the
+                    # caller will assign it (see just below) but first I
+                    # will do a search.
+                    subsens = _recursively_search_for(
+                        sub_sensitivities,
+                        v.args[0])
+                    subcomp = _recursively_search_for(
+                        sub_components,
+                        v.args[0])
                 else:
                     (adict[v], subsens, subcomp) = self.calc_u_for_variable(
                         v.args[0], quantities, all_effects,
                         cached_uncertainties, return_more=True)
-                    # NB: We should have sensitivities.keys() ==
-                    # components.keys() == our current loop
-                    sub_sensitivities[v.args[0]] = (
-                        sensitivities[v.args[0]], subsens)
-                    sub_components[v.args[0]] = (
-                        components[v.args[0]], subcomp)
+                    # Callee may have taken some uncertainties from cache;
+                    # the associated subsens/subcomp are probably the ones
+                    # /I/ calculated… see just above!
+                    for (ddto, ddfrom) in (
+                            (subsens, sub_sensitivities),
+                            (subcomp, sub_components)):
+                        for (kk, vv) in ddto.items():
+                            if vv[1] is None:
+                                ddto[kk] = (ddto[kk][0],
+                                    _recursively_search_for(ddfrom, kk))
+                                assert ddto[kk] is not None, \
+                                       "Should not be None now :("
                     cached_uncertainties[v.args[0]] = adict[v]
+                # NB: We should have sensitivities.keys() ==
+                # components.keys() == our current loop
+                sub_sensitivities[v.args[0]] = (
+                    sensitivities[v.args[0]], subsens)
+                sub_components[v.args[0]] = (
+                    components[v.args[0]], subcomp)
             else:
                 # it's a quantity
                 if v not in quantities:
@@ -1362,9 +1393,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
                 adict[v] = quantities[v]
 
-        assert (sensitivities.keys() == components.keys() ==
-                sub_sensitivities.keys() == sub_components.keys(),
-                "Found inconsistencies between bookkeeping dicts!")
+        # NB: syntax, cannot use parentheses as it will test an always-True
+        # tuple!
+        if len(failures) == 0:
+            assert sensitivities.keys() == components.keys() == \
+                    sub_sensitivities.keys() == sub_components.keys(), \
+                    "Found inconsistencies between bookkeeping dicts!"
                     
         # now I have adict with values for uncertainties and other
         # quantities, that I need to substitute into the expression
@@ -1389,9 +1423,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             adict = self._make_dims_consistent(adict)
         # verify/convert dimensions
         u = f(*[typhon.math.common.promote_maximally(adict[x]) for x in ta])
+        u = u.to(self._data_vars_props[me.names[s]][2]["units"])
         u = u.rename("u_"+me.names[s])
         cached_uncertainties[s] = u
         if return_more:
+            var_unit = self._data_vars_props[me.names[s]][2]["units"]
+            # turn expressions into data for the dictionairies
+            # sub_sensitivities and sub_components
             for k in sub_sensitivities.keys():
                 # I already verified that sub_sensitivities and
                 # sub_components have the same keys
@@ -1404,6 +1442,32 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         *[typhon.math.common.promote_maximally(adict[x])
                             for x in ta]),
                             dd[k][1])
+            # make units nicer.  This may prevent loss of precision
+            # problems when values become impractically large or small
+            for (k, v) in sub_sensitivities.items():
+                if isinstance(sub_sensitivities[k][0], numbers.Number):
+                    # sensitivity is a scalar / constant
+                    k_unit = self._data_vars_props[me.names[k]][2]["units"]
+                    if not k_unit == var_unit:
+                        raise ValueError("∂{s!s}/∂{k!s} = {sens:g} should be "
+                            "dimensionless, but {s!s} is in "
+                            "{var_unit!s} and {k!s} is in "
+                            "{k_unit!s}".format(sens=sub_sensitivities[k][0],
+                                **vars()))
+                    # nothing else to do
+                else: # must be xarray.DataArray
+                    sub_sensitivities[k] = (
+                        sub_sensitivities[k][0].to(
+                            ureg.Unit(self._data_vars_props[me.names[s]][2]["units"])/
+                            ureg.Unit(self._data_vars_props[me.names[k]][2]["units"])),
+                        sub_sensitivities[k][1])
+            for (k, v) in sub_components.items():
+                sub_components[k] = (
+                    sub_components[k][0].to(
+                        self._data_vars_props[me.names[s]][2]["units"]),
+                   sub_components[k][1])
+            # FIXME: perhaps I need to add prefixes such that the
+            # magnitude becomes close to 1?
             return (u, sub_sensitivities, sub_components)
         else:
             return u
@@ -1680,6 +1744,19 @@ def list_all_satellites():
         for sats in h.satellites.values():
             S |= sats
     return S
+
+def _recursively_search_for(sub, var):
+    """Search if 'var' already exists in the tree for
+    sub_sensitivities or sub_components
+    """
+
+    for (k, v) in sub.items():
+        if k is var:
+            return sub[k][1]
+        elif sub[k][1] is not None:
+            res = _recursively_search_for(sub[k][1], var)
+            if res is not None:
+                return res
 
 
 # Patch xarray.core._ignore_warnings_if to avoid repeatedly hearing the

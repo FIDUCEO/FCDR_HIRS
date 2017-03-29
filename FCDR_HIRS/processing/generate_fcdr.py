@@ -9,6 +9,8 @@ from .. import common
 import argparse
 import subprocess
 import warnings
+import functools
+import operator
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -40,6 +42,7 @@ import typhon.datasets.dataset
 from .. import fcdr
 from .. import models
 from .. import effects
+from .. import measurement_equation as me
 
 
 class FCDRGenerator:
@@ -145,7 +148,15 @@ class FCDRGenerator:
         cu = {}
         (u, sens, comp) = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
             self.fcdr._effects, cu, return_more=True)
-        u.encoding = R_E.encoding
+        # "sum" doesn't work because it's initialised with 0 and then the
+        # units don't match!
+        u_syst = numpy.sqrt(functools.reduce(operator.add,
+            (v[0]**2 for (k, v) in comp.items() if k is not me.symbols["C_E"])))
+        u_rand = comp[me.symbols["C_E"]][0]
+
+        u_rand.encoding = u_syst.encoding = u.encoding = R_E.encoding
+        u_rand.name = u.name + "_random"
+        u_syst.name = u.name + "_systematic"
         uc = xarray.Dataset({k: v.magnitude for (k, v) in self.fcdr._effects_by_name.items()})
         qc = xarray.Dataset(self.fcdr._quantities)
         qc = xarray.Dataset(
@@ -154,7 +165,8 @@ class FCDRGenerator:
         # coordinate, drop the former
         ds = xarray.merge(
             [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}
-                            ).drop("scanline"), qc, subset, u])
+                            ).drop("scanline"), qc, subset, u,
+                            u_syst, u_rand])
         # NB: when quantities are gathered, offset and slope and others
         # per calibration_cycle are calculated for the entire context
         # period rather than the core dataset period.  I don't want to
