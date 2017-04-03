@@ -23,6 +23,10 @@ def parse_cmdline():
         include_channels=False,
         include_temperatures=False)
 
+    parser.add_argument("modes", action="store", type=str,
+        nargs="+", choices=["easy", "debug"],
+        help="What FCDR(s) to write?")
+
     return parser.parse_args()
 p = parse_cmdline()
 
@@ -39,11 +43,18 @@ import datetime
 import numpy
 import xarray
 import typhon.datasets.dataset
+from typhon.physics.units.common import radiance_units as rad_u
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from .. import fcdr
 from .. import models
 from .. import effects
 from .. import measurement_equation as me
 
+# ad-hoc method until TB sets up setuptools
+# available from https://github.com/FIDUCEO/FCDRTools adapt line below as
+# needed
+sys.path.append("/home/users/gholl/checkouts_local/FCDRTools")
+import writer.fcdr_writer
 
 class FCDRGenerator:
     # for now, step_size should be smaller than segment_size and I will
@@ -53,12 +64,7 @@ class FCDRGenerator:
     step_size = datetime.timedelta(hours=4)
     data_version = "0.1"
     # FIXME: do we have a filename convention?
-    # FIXME: this should be incorporated in the general HomemadeDataset
-    # class
-#    basedir = "/group_workspaces/cems2/fiduceo/Data/FCDR/HIRS/pre-β/testing"
-#    subdir = "{from_time:%Y/%m/%d}"
-#    filename = "HIRS_FCDR_sketch_{satname:s}_{from_time:%Y%m%d%H%M}_{to_time:%H%M}.nc"
-    def __init__(self, sat, start_date, end_date):
+    def __init__(self, sat, start_date, end_date, modes):
         self.satname = sat
         self.fcdr = fcdr.which_hirs_fcdr(sat, read="L1B")
         self.start_date = start_date
@@ -67,12 +73,18 @@ class FCDRGenerator:
             self.fcdr, self.window_size, start_date)
 
         self.rself = models.RSelf(self.fcdr)
+        self.modes = modes
 
     def process(self, start=None, end_time=None):
         """Generate FCDR for indicated period
         """
         start = start or self.start_date
         end_time = end_time or self.end_date
+        logging.info("Generating FCDR for {self.satname:s} HIRS, "
+            "{start:%Y-%m-%d %H:%M:%S}-{end_time:%Y-%m-%d %H:%M:%S}.  Software:")
+        pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
+        info = pr.stdout.decode("utf-8")
+        logging.info(pr)
         self.dd.reset(start)
         while self.dd.center_time < end_time:
             self.dd.move(self.step_size)
@@ -81,6 +93,8 @@ class FCDRGenerator:
                     self.dd.center_time)
             except fcdr.FCDRError as e:
                 warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
+        logging.info("Successfully completed, completed successfully.")
+        logging.info("Everything seems fine.")
     
     def fragmentate(self, piece):
         """Yield fragments per orbit
@@ -196,13 +210,86 @@ class FCDRGenerator:
 
     def store_piece(self, piece):
         # FIXME: concatenate when appropriate
-        fn = self.get_filename_for_piece(piece)
-        fn.parent.mkdir(exist_ok=True, parents=True)
-        logging.info("Storing to {!s}".format(fn))
+        for mode in self.modes:
+            fn = self.get_filename_for_piece(piece, fcdr_type=mode)
+            fn.parent.mkdir(exist_ok=True, parents=True)
+            logging.info("Storing to {!s}".format(fn))
+            getattr(self, "store_piece_{:s}".format(mode))(piece, fn)
+
+    def store_piece_debug(self, piece, fn):
         piece.to_netcdf(str(fn))
 
+    def store_piece_easy(self, piece, fn):
+        piece_easy = self.debug2easy(piece)
+        piece_easy.attrs["institution"] = "Reading University"
+        piece_easy.attrs["title"] = "HIRS Easy FCDR"
+        piece_easy.attrs["warning"] = ("TRIAL VERSION, DO NOT USE UNDER "
+            "ANY CIRCUMSTANCES FOR ANY PURPOSE EVER")
+        piece_easy.attrs["source"] = "Produced with HIRS_FCDR code"
+        piece_easy.attrs["history"] = "Produced on {:%Y-%m-%dT%H:%M:%SZ}".format(
+            datetime.datetime.utcnow())
+        piece_easy.attrs["references"] = "Holl et al. (2018a, b, c, d, e)"
+        piece_easy.attrs["url"] = "http://www.fiduceo.eu"
+        piece_easy.attrs["author"] = "Gerrit Holl <g.holl@reading.ac.uk>"
+        piece_easy.attrs["comment"] = "Not for the faint of heart.  See warning!"
+        writer.fcdr_writer.FCDRWriter.write(piece_easy, str(fn))
+
+    map_debug_to_easy = {
+        "scanline_earth": "y",
+        "time": "y",
+        "scanpos": "x",
+        "channel": "rad_channel",
+        "calibrated_channel": "channel",
+
+        }
+    def debug2easy(self, piece):
+        """Convert debug FCDR to easy FCDR
+
+        Follows Tom Blocks format
+        """
+
+        N = piece["scanline_earth"].size
+        easy = writer.fcdr_writer.FCDRWriter.createTemplateEasy(
+            "HIRS", N)
+        t_earth = piece["scanline_earth"]
+        t_earth_i = piece.get_index("scanline_earth")
+        mp = self.map_debug_to_easy
+
+        newcont = dict(
+            time=t_earth,
+            latitude=piece["lat"].sel(time=t_earth),
+            longitude=piece["lon"].sel(time=t_earth),
+            c_earth=piece["counts"].sel(time=t_earth),
+            L_earth=UADA(piece["R_e"]).to(rad_u["ir"], "radiance"),
+            sat_za=piece["platform_zenith_angle"].sel(time=t_earth),
+            sat_aa=piece["local_azimuth_angle"].sel(time=t_earth),
+            solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
+            scanline=piece["scanline"].sel(time=t_earth),
+            scnlintime=UADA((
+                t_earth_i.hour*24*60 +
+                t_earth_i.minute+60+t_earth_i.second +
+                t_earth_i.microsecond/1e6)*1e3,
+                dims=("time",),
+                coords={"time": t_earth.values}),
+            qualind=piece["quality_flags"].sel(time=t_earth),
+            linqualflags=piece["line_quality_flags"].sel(time=t_earth),
+            chqualflags=piece["channel_quality_flags"].sel(time=t_earth),
+            mnfrqualflags=piece["minorframe_quality_flags"].sel(time=t_earth),
+            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
+            u_non_random=UADA(piece["u_R_Earth_systematic"]).to(rad_u["ir"], "radiance"))
+        easy = easy.assign(
+            **{k: ([mp.get(d,d) for d in v.dims],
+                    v.astype(easy[k].dtype))
+                for (k, v) in newcont.items()})
+        easy = easy.assign_coords(
+            x=numpy.arange(1, 57),
+            y=easy["time"],
+            channel=numpy.arange(1, 20),
+            rad_channel=numpy.arange(1, 21))
+        return easy
+
     _i = 0
-    def get_filename_for_piece(self, piece):
+    def get_filename_for_piece(self, piece, fcdr_type):
         # instead of using datetime-formatting codes directly, pass all
         # seperately so that the same format can be more easily used in
         # reading mode as well
@@ -222,18 +309,16 @@ class FCDRGenerator:
             hour_end=to_time.hour,
             minute_end=to_time.minute,
             fcdr_version=self.data_version,
+            fcdr_type=fcdr_type,
             mode="write")
         return pathlib.Path(fn)
 #        raise NotImplementedError()
             
 
-def _no_exit(code):
-    raise RuntimeError("Who is calling sys.exit() and why?")
-
 def main():
-    sys.exit = _no_exit
     warnings.filterwarnings("error", category=numpy.VisibleDeprecationWarning)
     fgen = FCDRGenerator(p.satname,
         datetime.datetime.strptime(p.from_date, p.datefmt),
-        datetime.datetime.strptime(p.to_date, p.datefmt))
+        datetime.datetime.strptime(p.to_date, p.datefmt),
+        p.modes)
     fgen.process()

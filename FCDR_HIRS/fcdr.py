@@ -53,10 +53,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     """
 
     name = section = "fcdr_hirs"
-    stored_name = ("FCDR_HIRS_{satname:s}_v{fcdr_version:s}_"
+    stored_name = ("FCDR_HIRS_{satname:s}_v{fcdr_version:s}_{fcdr_type:s}_"
                          "{year:04d}{month:02d}{day:02d}{hour:02d}{minute:02d}_"
                          "{year_end:04d}{month_end:02d}{day_end:02d}{hour_end:02d}{minute_end:02d}.nc")
-    write_subdir = "{satname:s}/{year:04d}/{month:02d}/{day:02d}"
+    write_subdir = "{fcdr_type:s}/{satname:s}/{year:04d}/{month:02d}/{day:02d}"
     stored_re = (r'FCDR_HIRS_(?P<satname>.{6})_(?P<fcdr_version>.{4})_'
                  r'(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})'
                  r'(?P<hour>\d{2})(?P<minute>\d{2})_'
