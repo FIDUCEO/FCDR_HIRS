@@ -88,6 +88,18 @@ FCDR_data_vars_props = dict(
         {"long_name": "Radiance for Earth views",
          "units": rad_u["si"]},
         _coding),
+    T_b = (
+        "T_b",
+        ("scanline_earth", "scanpos", "calibrated_channel"),
+        {"long_name": "Brightness temperature for Earth views",
+         "units": "K"},
+         _temp_coding),
+    T_bstar = (
+        "T_bstar",
+        ("scanline_earth", "scanpos", "calibrated_channel"),
+        {"long_name": "Uncorrected monochromatic brightness temperature for Earth views",
+         "units": "K"},
+         _temp_coding),
     R_refl = (
         "R_refl",
         ("calibration_cycle", "calibration_position", "calibrated_channel"),

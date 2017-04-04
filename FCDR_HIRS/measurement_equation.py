@@ -19,7 +19,7 @@ version = "β"
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
          "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φn "
          "R_IWCT O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT f Δf fstar "
-         "ν Δν νstar")
+         "ν Δν νstar T_bstar T_b")
 
 symbols = sym = dict(zip(names.split(), sympy.symbols(names)))
 
@@ -73,6 +73,12 @@ expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"]]] = (
 #expressions[sym["φn"]] = (sympy.Function("φn")(sym["λ"]+sym["Δλ"]))
 #expressions[sym["φn"]] = (sympy.Function("φn")(sym["ν"]+sym["Δν"]))
 expressions[sym["φn"]] = (sympy.Function("φn")(sym["f"]+sym["Δf"]))
+
+# not strictly part of measurement equation, but to convert from radiance
+# to BT at the end
+expressions[sym["T_bstar"]] = sym["fstar"]*sym["h"]/(sym["k_b"]*sympy.log(
+    1 + 2*sym["fstar"]**3*sym["h"]/(sym["R_e"]*sym["c"]**2)))
+expressions[sym["T_b"]] = (sym["T_bstar"] - sym["α"])/sym["β"]
 
 expressions[sym["c"]] = sympy.sympify(scipy.constants.speed_of_light)
 expressions[sym["h"]] = sympy.sympify(scipy.constants.Planck)
@@ -163,6 +169,8 @@ names = {
     sym["h"]: "planck_constant",
     sym["c"]: "speed_of_light",
     sym["k_b"]: "boltzmann_constant",
+    sym["T_b"]: "T_b",
+    sym["T_bstar"]: "T_bstar",
 }
 
 
@@ -235,17 +243,5 @@ def evaluate_quantity(v, quantities,
         raise ValueError("I don't know the value for: {!s}".format(e))
     else:
         smb = tuple(e.free_symbols)
-        return sympy.lambdify(smb, e, dummify=False, modules=numpy)(*[values[x] for x in smb])
-
-
-            
-#    oldexpr = None
-#    # expand expression until no more sub-expressions and s2 is explicit
-#    while expr != oldexpr:
-#        oldexpr = expr
-#        for sym in expr.free_symbols - {s2}:
-#            if aliases.get(s2, s2) in dependencies[aliases.get(sym,sym)]:
-#                here = aliases.get(sym, sym)
-#                expr = getattr(expr, ("replace" if sym in aliases else
-#                    "subs"))(here, expressions.get(here, here))
-    return expr.diff(aliases.get(s2,s2))
+        return sympy.lambdify(smb, e, dummify=False, modules=numpy)(
+            *[values[x].to_root_units() for x in smb])

@@ -4,6 +4,17 @@ Generate HIRS FCDR for a particular satellite and period.
 
 """
 
+VERSION_HISTORY_EASY="""
+0.1
+
+First version with seperate random and systematic uncertainty.
+
+0.2
+
+Added brightness temperatures (preliminary).
+Fixed some bugs.
+"""
+
 import sys
 from .. import common
 import argparse
@@ -62,9 +73,16 @@ class FCDRGenerator:
     window_size = datetime.timedelta(hours=24)
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
-    data_version = "0.1"
+    data_version = "0.2"
     # FIXME: do we have a filename convention?
     def __init__(self, sat, start_date, end_date, modes):
+        logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
+            "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. "
+            "Software:".format(
+            sat=sat, start=start_date, end_time=end_date))
+        pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
+        info = pr.stdout.decode("utf-8")
+        logging.info(info)
         self.satname = sat
         self.fcdr = fcdr.which_hirs_fcdr(sat, read="L1B")
         self.start_date = start_date
@@ -80,11 +98,9 @@ class FCDRGenerator:
         """
         start = start or self.start_date
         end_time = end_time or self.end_date
-        logging.info("Generating FCDR for {self.satname:s} HIRS, "
-            "{start:%Y-%m-%d %H:%M:%S}-{end_time:%Y-%m-%d %H:%M:%S}.  Software:")
-        pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
-        info = pr.stdout.decode("utf-8")
-        logging.info(pr)
+        logging.info("Now processing FCDR for {self.satname:s} HIRS, "
+            "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. ".format(
+            self=self, start=start, end_time=end_time))
         self.dd.reset(start)
         while self.dd.center_time < end_time:
             self.dd.move(self.step_size)
@@ -160,17 +176,27 @@ class FCDRGenerator:
         R_E = self.fcdr.calculate_radiance_all(subset,
             context=self.dd.data, Rself_model=self.rself)
         cu = {}
-        (u, sens, comp) = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
+        (uRe, sensRe, compRe) = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
             self.fcdr._effects, cu, return_more=True)
         # "sum" doesn't work because it's initialised with 0 and then the
         # units don't match!
-        u_syst = numpy.sqrt(functools.reduce(operator.add,
-            (v[0]**2 for (k, v) in comp.items() if k is not me.symbols["C_E"])))
-        u_rand = comp[me.symbols["C_E"]][0]
+        uRe_syst = numpy.sqrt(functools.reduce(operator.add,
+            (v[0]**2 for (k, v) in compRe.items() if k is not me.symbols["C_E"])))
+        uRe_rand = compRe[me.symbols["C_E"]][0]
 
-        u_rand.encoding = u_syst.encoding = u.encoding = R_E.encoding
-        u_rand.name = u.name + "_random"
-        u_syst.name = u.name + "_systematic"
+        (uTb, sensTb, compTb) = self.fcdr.calc_u_for_variable("T_b",
+            self.fcdr._quantities, self.fcdr._effects, cu,
+            return_more=True)
+        # this is approximate, not accurate, but will do for now
+        uTb_syst = uRe_syst/(uRe_syst+uRe_rand) * uTb
+        uTb_rand = uRe_rand/(uRe_syst+uRe_rand) * uTb
+
+        uRe_rand.encoding = uRe_syst.encoding = uRe.encoding = R_E.encoding
+        uTb_rand.encoding = uTb_syst.encoding = uTb.encoding = self.fcdr._quantities[me.symbols["T_b"]].encoding
+        uRe_rand.name = uRe.name + "_random"
+        uTb_rand.name = uTb.name + "_random"
+        uRe_syst.name = uRe.name + "_systematic"
+        uTb_syst.name = uTb.name + "_systematic"
         uc = xarray.Dataset({k: v.magnitude for (k, v) in self.fcdr._effects_by_name.items()})
         qc = xarray.Dataset(self.fcdr._quantities)
         qc = xarray.Dataset(
@@ -179,8 +205,9 @@ class FCDRGenerator:
         # coordinate, drop the former
         ds = xarray.merge(
             [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}
-                            ).drop("scanline"), qc, subset, u,
-                            u_syst, u_rand])
+                            ).drop("scanline"), qc, subset, uRe,
+                            uRe_syst, uRe_rand,
+                            uTb_syst, uTb_rand])
         # NB: when quantities are gathered, offset and slope and others
         # per calibration_cycle are calculated for the entire context
         # period rather than the core dataset period.  I don't want to
@@ -227,12 +254,15 @@ class FCDRGenerator:
             "ANY CIRCUMSTANCES FOR ANY PURPOSE EVER")
         piece_easy.attrs["source"] = "Produced with HIRS_FCDR code"
         piece_easy.attrs["history"] = "Produced on {:%Y-%m-%dT%H:%M:%SZ}".format(
-            datetime.datetime.utcnow())
-        piece_easy.attrs["references"] = "Holl et al. (2018a, b, c, d, e)"
+            datetime.datetime.utcnow()) + VERSION_HISTORY_EASY
+        piece_easy.attrs["references"] = "In preparation"
         piece_easy.attrs["url"] = "http://www.fiduceo.eu"
         piece_easy.attrs["author"] = "Gerrit Holl <g.holl@reading.ac.uk>"
         piece_easy.attrs["comment"] = "Not for the faint of heart.  See warning!"
-        writer.fcdr_writer.FCDRWriter.write(piece_easy, str(fn))
+        try:
+            writer.fcdr_writer.FCDRWriter.write(piece_easy, str(fn))
+        except FileExistsError as e:
+            logging.info("Already exists: {!s}".format(e.args[0]))
 
     map_debug_to_easy = {
         "scanline_earth": "y",
@@ -240,7 +270,6 @@ class FCDRGenerator:
         "scanpos": "x",
         "channel": "rad_channel",
         "calibrated_channel": "channel",
-
         }
     def debug2easy(self, piece):
         """Convert debug FCDR to easy FCDR
@@ -275,8 +304,10 @@ class FCDRGenerator:
             linqualflags=piece["line_quality_flags"].sel(time=t_earth),
             chqualflags=piece["channel_quality_flags"].sel(time=t_earth),
             mnfrqualflags=piece["minorframe_quality_flags"].sel(time=t_earth),
-            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
-            u_non_random=UADA(piece["u_R_Earth_systematic"]).to(rad_u["ir"], "radiance"))
+            u_random=piece["u_T_b_random"],
+            u_non_random=piece["u_T_b_systematic"])
+#            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
+#            u_non_random=UADA(piece["u_R_Earth_systematic"]).to(rad_u["ir"], "radiance"))
         easy = easy.assign(
             **{k: ([mp.get(d,d) for d in v.dims],
                     v.astype(easy[k].dtype))

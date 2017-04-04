@@ -58,6 +58,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                          "{year_end:04d}{month_end:02d}{day_end:02d}{hour_end:02d}{minute_end:02d}.nc")
     write_subdir = "{fcdr_type:s}/{satname:s}/{year:04d}/{month:02d}/{day:02d}"
     stored_re = (r'FCDR_HIRS_(?P<satname>.{6})_(?P<fcdr_version>.{4})_'
+                 r'(?P<fcdr_type>[a-zA-Z]*)_'
                  r'(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})'
                  r'(?P<hour>\d{2})(?P<minute>\d{2})_'
                  r'(?P<year_end>\d{4})(?P<month_end>\d{2})(?P<day_end>\d{2})'
@@ -419,7 +420,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 ch)
             self._tuck_effect_channel("C_Earth",
                 UADA((u_counts_space.variable + u_counts_iwct.variable)/2,
-                      coords=u_counts_space.coords), ch)
+                      coords=u_counts_space.coords,
+                      attrs=u_counts_space.attrs), ch)
 
         if return_u:
             extra.extend([u_counts_iwct, u_counts_space])
@@ -659,7 +661,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def calculate_radiance(self, ds, ch, interp_kind="zero", srf=None,
                 context=None,
                 Rself_model=None,
-                Rrefl_model=None, tuck=False):
+                Rrefl_model=None, tuck=False, return_bt=False):
         """Calculate radiance
 
         Wants ndarray as returned by read, SRF, and channel.
@@ -744,22 +746,18 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 #ureg.Quantity(numpy.ma.median(slope.m, 1), slope.u),
                 kind=interp_kind) # kind is always "zero" (see above)
         elif offset.shape[0] == 1:
-            raise NotImplementedError("This part not converted to xarray")
-            interp_offset = numpy.ma.zeros(dtype=offset.dtype,
-                shape=ds["counts"].shape)
-            interp_offset[:] = numpy.ma.median(offset.m, 1)
-            interp_offset = ureg.Quantity(interp_offset, offset.u)
-            interp_slope = numpy.ma.zeros(dtype=offset.dtype,
-                shape=ds["counts"].shape)
-            interp_slope[:] = numpy.ma.median(slope.m, 1)
-            interp_slope = ureg.Quantity(interp_slope, slope.u)
+            interp_offset = xarray.zeros_like(ds["counts"].sel(
+                scanpos=1, channel=ch))
+            interp_offset.values[:] = UADA(offset.median("scanpos"))
+            interp_offset.attrs["units"] = offset.units
+            interp_slope = xarray.zeros_like(ds["counts"].sel(
+                scanpos=1, channel=ch))
+            interp_slope.values[:] = UADA(slope.median("scanpos"))
+            interp_slope.attrs["units"] = slope.units
         elif ds["counts"].coords["time"].size > 0:
             raise typhon.datasets.dataset.InvalidFileError("Found {:d} calibration cycles, too few!".format(offset.shape[0]))
         else: # zero scanlines…
-            raise NotImplementedError("This part not converted to xarray")
-            return ureg.Quantity(
-                numpy.zeros(shape=ds["radiance"].sel(channel=ch).shape, dtype="f4"),
-                typhon.physics.units.common.radiance_units["ir"])
+            raise FCDRError("Dataset has zero scanlines, nothing to do")
 
         # see note near line 270
         views_Earth = xarray.DataArray(ds["scantype"].values == self.typ_Earth, coords=ds["scantype"].coords)
@@ -887,6 +885,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             R_e = self._tuck_quantity_channel("R_e", rad_wn,
                 calibrated_channel=ch)
             rad_wn.encoding = R_e.encoding
+            if return_bt:
+                self._tuck_quantity_channel("T_b",
+                    rad_wn.to("K", "radiance", srf=srf),
+                    calibrated_channel=ch)
             self._tuck_quantity_channel("R_refl", Rrefl,
                 calibrated_channel=ch, **coords)
 
@@ -903,7 +905,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 ε, name=me.names[me.symbols["ε"]])
             self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
                 a_3, name=me.names[me.symbols["a_3"]])
-        return rad_wn
+        if return_bt:
+            return (rad_wn, rad_wn.to("K", "radiance", srf=srf))
+        else:
+            return rad_wn
     Mtorad = calculate_radiance
 
     def calculate_radiance_all(self, ds, interp_kind="zero", srf=None,
@@ -936,10 +941,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         self._effects_by_name = {e.name: e for e in
                 itertools.chain.from_iterable(self._effects.values())}
 
-        all_rad = [self.calculate_radiance(ds, ch, interp_kind=interp_kind,
+        (all_rad, all_bt) = zip(*(self.calculate_radiance(ds, ch, interp_kind=interp_kind,
                 context=context, Rself_model=Rself_model,
-                Rrefl_model=Rrefl_model, tuck=True)
-            for ch in range(1, 20)]
+                Rrefl_model=Rrefl_model, tuck=True, return_bt=True)
+            for ch in range(1, 20)))
         da = xarray.concat(all_rad, dim="calibrated_channel")
         da.encoding = all_rad[0].encoding
         # NB: https://github.com/pydata/xarray/issues/1297
@@ -1422,7 +1427,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         if not src_dims <= dest_dims: # needs reducing
             adict = self._make_dims_consistent(adict)
         # verify/convert dimensions
-        u = f(*[typhon.math.common.promote_maximally(adict[x]) for x in ta])
+        u = f(*[typhon.math.common.promote_maximally(
+                    adict[x]).to_root_units() for x in ta])
         u = u.to(self._data_vars_props[me.names[s]][2]["units"])
         u = u.rename("u_"+me.names[s])
         cached_uncertainties[s] = u
