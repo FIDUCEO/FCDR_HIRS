@@ -19,6 +19,7 @@ Fixed some bugs.
 Added Metop-B
 Changed propagation uncertainty to BT from analytical to numerical
 Higher precision in debug version
+Removed some fields we will not use
 """
 
 import sys
@@ -300,8 +301,8 @@ class FCDRGenerator:
             time=t_earth,
             latitude=piece["lat"].sel(time=t_earth),
             longitude=piece["lon"].sel(time=t_earth),
-            c_earth=piece["counts"].sel(time=t_earth),
-            L_earth=UADA(piece["R_e"]).to(rad_u["ir"], "radiance"),
+            #c_earth=piece["counts"].sel(time=t_earth),
+            bt=UADA(piece["T_b"]),
             sat_za=piece["platform_zenith_angle"].sel(time=t_earth),
             sat_aa=piece["local_azimuth_angle"].sel(time=t_earth),
             solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
@@ -329,6 +330,7 @@ class FCDRGenerator:
             y=easy["time"],
             channel=numpy.arange(1, 20),
             rad_channel=numpy.arange(1, 21))
+        easy.drop(("c_earth", "L_earth"))
         return easy
 
     _i = 0
