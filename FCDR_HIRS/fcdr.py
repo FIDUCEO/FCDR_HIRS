@@ -905,6 +905,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 ε, name=me.names[me.symbols["ε"]])
             self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
                 a_3, name=me.names[me.symbols["a_3"]])
+        rad_wn = rad_wn.rename({"time": "scanline_earth"})
         if return_bt:
             return (rad_wn, rad_wn.to("K", "radiance", srf=srf))
         else:
@@ -948,15 +949,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         da = xarray.concat(all_rad, dim="calibrated_channel")
         da.encoding = all_rad[0].encoding
         # NB: https://github.com/pydata/xarray/issues/1297
-        # NB: using toa_brightness_temperature
-        # only for dimensions
-        da = da.transpose(*ds["toa_brightness_temperature"].dims)
+        da = da.transpose("scanline_earth", "scanpos", "calibrated_channel") 
         # until all of typhon can handle xarrays (see
         # https://arts.mi.uni-hamburg.de/trac/rt/ticket/145) I will
         # unfortunately sometimes need to move back to regular arrays
         if return_ndarray:
             dam = xarray.DataArray(numpy.zeros_like(ds["toa_brightness_temperature"].values), coords=ds["toa_brightness_temperature"].coords)
-            dam.loc[dict(time=da.time)] = da
+            dam.loc[dict(time=da.scanline_earth)] = da
             return ureg.Quantity(
                 numpy.ma.masked_invalid(dam.values),
                 da.attrs["units"])
@@ -1409,7 +1408,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # quantities, that I need to substitute into the expression
         # I expect I'll have to do some trick to substitute u(x)? no?
         ta = tuple(args)
-        f = sympy.lambdify(ta, u_e, numpy)
+        # dummify=True because some args are not valid identifiers
+        f = sympy.lambdify(ta, u_e, numpy, dummify=True)
         # multiple dimensions with time coordinates:
         # - calibration_cycle
         # - scanline_earth
@@ -1443,9 +1443,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     stop_at=(sympy.Symbol, sympy.Indexed, fu))
                 ta = tuple(args)
                 for dd in (sub_sensitivities, sub_components):
-                    f = sympy.lambdify(ta, dd[k][0], numpy)
+                    # dummify=True because some args are not valid
+                    # identifiers
+                    f = sympy.lambdify(ta, dd[k][0], numpy, dummify=True)
                     dd[k] = (f(
-                        *[typhon.math.common.promote_maximally(adict[x])
+                        *[typhon.math.common.promote_maximally(adict[x]).to_root_units()
                             for x in ta]),
                             dd[k][1])
             # make units nicer.  This may prevent loss of precision
@@ -1521,6 +1523,26 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         return new_adict
 
+
+    def numerically_propagate_ΔL(self, L, ΔL):
+        """Temporary method to numerically propagate L to Tb
+
+        Until I find a proper solution for the exploding Tb uncertainties
+        (see https://github.com/FIDUCEO/FCDR_HIRS/issues/78 ) approximate
+        these numerically
+        """
+        ΔTb = xarray.zeros_like(L).drop(("scanline", "lat", "lon"))
+        ΔTb.attrs["units"] = "K"
+        for ch in range(1, 20):
+            srf = self.srfs[ch-1]
+            Lch = L.sel(calibrated_channel=ch)
+            ΔLch = ΔL.sel(calibrated_channel=ch)
+            low = (Lch-ΔLch).to("K", "radiance", srf=srf)
+            high = (Lch+ΔLch).to("K", "radiance", srf=srf)
+            ΔTb.loc[{"calibrated_channel": ch}] = (high-low)/2
+        return ΔTb
+
+    # The remaining methods are no longer used.
 
     def calc_sens_coef(self, typ, M, ch, srf): 
         """Calculate sensitivity coefficient.

@@ -4,6 +4,12 @@
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.datasets._tovs_defs import (_u1_coding, _coding, _count_coding, _temp_coding)
 
+# as per https://github.com/FIDUCEO/FCDR_HIRS/issues/69
+
+_temp_coding = _temp_coding.copy()
+_temp_coding["dtype"] = "f4"
+del _temp_coding["scale_factor"]
+
 _u_count_coding = _count_coding.copy()
 _u_count_coding["dtype"] = "u2"
 _u_count_coding["scale_factor"] = 0.005

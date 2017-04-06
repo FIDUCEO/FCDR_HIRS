@@ -13,6 +13,12 @@ First version with seperate random and systematic uncertainty.
 
 Added brightness temperatures (preliminary).
 Fixed some bugs.
+
+0.3
+
+Added Metop-B
+Changed propagation uncertainty to BT from analytical to numerical
+Higher precision in debug version
 """
 
 import sys
@@ -73,7 +79,7 @@ class FCDRGenerator:
     window_size = datetime.timedelta(hours=24)
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
-    data_version = "0.2"
+    data_version = "0.3"
     # FIXME: do we have a filename convention?
     def __init__(self, sat, start_date, end_date, modes):
         logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
@@ -184,9 +190,15 @@ class FCDRGenerator:
             (v[0]**2 for (k, v) in compRe.items() if k is not me.symbols["C_E"])))
         uRe_rand = compRe[me.symbols["C_E"]][0]
 
-        (uTb, sensTb, compTb) = self.fcdr.calc_u_for_variable("T_b",
-            self.fcdr._quantities, self.fcdr._effects, cu,
-            return_more=True)
+        # This goes wrong.  I believe this is due to
+        # https://github.com/FIDUCEO/FCDR_HIRS/issues/78
+        # Estimate numerically instead.
+#        (uTb, sensTb, compTb) = self.fcdr.calc_u_for_variable("T_b",
+#            self.fcdr._quantities, self.fcdr._effects, cu,
+#            return_more=True)
+        uTb = self.fcdr.numerically_propagate_ΔL(R_E, uRe)
+        uTb.name = "u_T_b"
+        
         # this is approximate, not accurate, but will do for now
         uTb_syst = uRe_syst/(uRe_syst+uRe_rand) * uTb
         uTb_rand = uRe_rand/(uRe_syst+uRe_rand) * uTb
@@ -348,6 +360,8 @@ class FCDRGenerator:
 
 def main():
     warnings.filterwarnings("error", category=numpy.VisibleDeprecationWarning)
+#    warnings.filterwarnings("error",
+#        message="invalid value encountered in log", category=RuntimeWarning)
     fgen = FCDRGenerator(p.satname,
         datetime.datetime.strptime(p.from_date, p.datefmt),
         datetime.datetime.strptime(p.to_date, p.datefmt),
