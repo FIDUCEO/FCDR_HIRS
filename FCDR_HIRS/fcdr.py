@@ -57,7 +57,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                          "{year:04d}{month:02d}{day:02d}{hour:02d}{minute:02d}_"
                          "{year_end:04d}{month_end:02d}{day_end:02d}{hour_end:02d}{minute_end:02d}.nc")
     write_subdir = "{fcdr_type:s}/{satname:s}/{year:04d}/{month:02d}/{day:02d}"
-    stored_re = (r'FCDR_HIRS_(?P<satname>.{6})_(?P<fcdr_version>.{4})_'
+    stored_re = (r'FCDR_HIRS_(?P<satname>.{6})_(?P<fcdr_version>.+)_'
                  r'(?P<fcdr_type>[a-zA-Z]*)_'
                  r'(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})'
                  r'(?P<hour>\d{2})(?P<minute>\d{2})_'
@@ -942,10 +942,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         self._effects_by_name = {e.name: e for e in
                 itertools.chain.from_iterable(self._effects.values())}
 
-        (all_rad, all_bt) = zip(*(self.calculate_radiance(ds, ch, interp_kind=interp_kind,
+        (all_rad, all_bt) = zip(*[self.calculate_radiance(ds, ch, interp_kind=interp_kind,
                 context=context, Rself_model=Rself_model,
                 Rrefl_model=Rrefl_model, tuck=True, return_bt=True)
-            for ch in range(1, 20)))
+            for ch in range(1, 20)])
         da = xarray.concat(all_rad, dim="calibrated_channel")
         da.encoding = all_rad[0].encoding
         # NB: https://github.com/pydata/xarray/issues/1297

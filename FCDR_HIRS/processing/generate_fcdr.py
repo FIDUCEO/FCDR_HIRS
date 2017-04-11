@@ -19,7 +19,15 @@ Fixed some bugs.
 Added Metop-B
 Changed propagation uncertainty to BT from analytical to numerical
 Higher precision in debug version
-Removed some fields we will not use
+Removed some fields we will not use (easy)
+
+0.4
+
+Fixed bug in too large uncertainty on SRFs, in particular for
+small-wavelength channels
+Renamed systematic to nonrandom
+Improved storage for coordinates and other values (debug+easy)
+Applied encodings and dtypes for easy
 """
 
 import sys
@@ -67,6 +75,7 @@ from .. import fcdr
 from .. import models
 from .. import effects
 from .. import measurement_equation as me
+from .. import _fcdr_defs
 
 # ad-hoc method until TB sets up setuptools
 # available from https://github.com/FIDUCEO/FCDRTools adapt line below as
@@ -80,7 +89,7 @@ class FCDRGenerator:
     window_size = datetime.timedelta(hours=24)
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
-    data_version = "0.3"
+    data_version = "0.4"
     # FIXME: do we have a filename convention?
     def __init__(self, sat, start_date, end_date, modes):
         logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
@@ -208,8 +217,8 @@ class FCDRGenerator:
         uTb_rand.encoding = uTb_syst.encoding = uTb.encoding = self.fcdr._quantities[me.symbols["T_b"]].encoding
         uRe_rand.name = uRe.name + "_random"
         uTb_rand.name = uTb.name + "_random"
-        uRe_syst.name = uRe.name + "_systematic"
-        uTb_syst.name = uTb.name + "_systematic"
+        uRe_syst.name = uRe.name + "_nonrandom"
+        uTb_syst.name = uTb.name + "_nonrandom"
         uc = xarray.Dataset({k: v.magnitude for (k, v) in self.fcdr._effects_by_name.items()})
         qc = xarray.Dataset(self.fcdr._quantities)
         qc = xarray.Dataset(
@@ -230,6 +239,9 @@ class FCDRGenerator:
             calibration_cycle=
                 (ds["calibration_cycle"] >= subset["time"][0]) &
                 (ds["calibration_cycle"] <= subset["time"][-1]))
+        # make sure encoding set on coordinates
+        for cn in ds.coords.keys():
+            ds[cn].encoding.update(self.fcdr._data_vars_props[cn][3])
         ds = self.add_attributes(ds)
         return ds
 
@@ -273,16 +285,27 @@ class FCDRGenerator:
         piece_easy.attrs["author"] = "Gerrit Holl <g.holl@reading.ac.uk>"
         piece_easy.attrs["comment"] = "Not for the faint of heart.  See warning!"
         try:
-            writer.fcdr_writer.FCDRWriter.write(piece_easy, str(fn))
+            # Don't use this one for now, because it doesn't apply scaling
+            # and ofsets and such
+            #writer.fcdr_writer.FCDRWriter.write(piece_easy, str(fn))
+            piece_easy.to_netcdf(str(fn))
         except FileExistsError as e:
             logging.info("Already exists: {!s}".format(e.args[0]))
 
-    map_debug_to_easy = {
+    map_dims_debug_to_easy = {
         "scanline_earth": "y",
         "time": "y",
         "scanpos": "x",
         "channel": "rad_channel",
         "calibrated_channel": "channel",
+        }
+
+    map_names_debug_to_easy = {
+        "latitude": "lat",
+        "longitude": "lon",
+        "bt": "T_b",
+        "sat_za": "platform_zenith_angle",
+        "sat_aa": "local_azimuth_angle",
         }
     def debug2easy(self, piece):
         """Convert debug FCDR to easy FCDR
@@ -293,9 +316,12 @@ class FCDRGenerator:
         N = piece["scanline_earth"].size
         easy = writer.fcdr_writer.FCDRWriter.createTemplateEasy(
             "HIRS", N)
+        # Remove following line as soon as Toms writer no longer includes
+        # them in the template
+        easy = easy.drop(("c_earth", "L_earth", "scnlintime", "scnlinf"))
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
-        mp = self.map_debug_to_easy
+        mpd = self.map_dims_debug_to_easy
 
         newcont = dict(
             time=t_earth,
@@ -307,30 +333,44 @@ class FCDRGenerator:
             sat_aa=piece["local_azimuth_angle"].sel(time=t_earth),
             solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
             scanline=piece["scanline"].sel(time=t_earth),
-            scnlintime=UADA((
-                t_earth_i.hour*24*60 +
-                t_earth_i.minute+60+t_earth_i.second +
-                t_earth_i.microsecond/1e6)*1e3,
-                dims=("time",),
-                coords={"time": t_earth.values}),
+##            scnlintime=UADA((
+#                t_earth_i.hour*24*60 +
+#                t_earth_i.minute+60+t_earth_i.second +
+#                t_earth_i.microsecond/1e6)*1e3,
+#                dims=("time",),
+#                coords={"time": t_earth.values}),
             qualind=piece["quality_flags"].sel(time=t_earth),
             linqualflags=piece["line_quality_flags"].sel(time=t_earth),
             chqualflags=piece["channel_quality_flags"].sel(time=t_earth),
             mnfrqualflags=piece["minorframe_quality_flags"].sel(time=t_earth),
             u_random=piece["u_T_b_random"],
-            u_non_random=piece["u_T_b_systematic"])
+            u_non_random=piece["u_T_b_nonrandom"])
 #            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
-#            u_non_random=UADA(piece["u_R_Earth_systematic"]).to(rad_u["ir"], "radiance"))
+#            u_non_random=UADA(piece["u_R_Earth_nonrandom"]).to(rad_u["ir"], "radiance"))
+    
+        # if we are going to respect Toms template this should contain
+        # v.astype(easy[k].dtype)
         easy = easy.assign(
-            **{k: ([mp.get(d,d) for d in v.dims],
-                    v.astype(easy[k].dtype))
+            **{k: ([mpd.get(d,d) for d in v.dims],
+                    v)
                 for (k, v) in newcont.items()})
         easy = easy.assign_coords(
             x=numpy.arange(1, 57),
             y=easy["time"],
             channel=numpy.arange(1, 20),
             rad_channel=numpy.arange(1, 21))
-        easy.drop(("c_earth", "L_earth"))
+
+        for k in easy.keys():
+            easy[k].encoding = _fcdr_defs.FCDR_easy_encodings[k]
+            # when _FillValue is set both in attrs and encoding, writing
+            # to disk fails with: ValueError: Failed hard to prevent
+            # overwriting key '_FillValue'
+            if ("_FillValue" in easy[k].encoding.keys() and
+                "_FillValue" in easy[k].attrs.keys()):
+                del easy[k].attrs["_FillValue"]
+                
+        easy.attrs.update(piece.attrs)
+            
         return easy
 
     _i = 0

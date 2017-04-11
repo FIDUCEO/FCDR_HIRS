@@ -2,12 +2,15 @@
 """
 
 from typhon.physics.units.common import ureg, radiance_units as rad_u
-from typhon.datasets._tovs_defs import (_u1_coding, _coding, _count_coding, _temp_coding)
+from typhon.datasets._tovs_defs import (_u1_coding, _u2_coding, _coding,
+            _count_coding, _temp_coding, _cal_coding, _latlon_coding,
+            _ang_coding, _u4_coding)
 
 # as per https://github.com/FIDUCEO/FCDR_HIRS/issues/69
 
-_temp_coding = _temp_coding.copy()
-_temp_coding["dtype"] = "f4"
+_debug_bt_coding = _temp_coding.copy()
+_debug_bt_coding["dtype"] = "f4"
+_debug_bt_coding["least_significant_digit"] = 4
 del _temp_coding["scale_factor"]
 
 _u_count_coding = _count_coding.copy()
@@ -99,13 +102,13 @@ FCDR_data_vars_props = dict(
         ("scanline_earth", "scanpos", "calibrated_channel"),
         {"long_name": "Brightness temperature for Earth views",
          "units": "K"},
-         _temp_coding),
+         _debug_bt_coding),
     T_bstar = (
         "T_bstar",
         ("scanline_earth", "scanpos", "calibrated_channel"),
         {"long_name": "Uncorrected monochromatic brightness temperature for Earth views",
          "units": "K"},
-         _temp_coding),
+         _debug_bt_coding),
     R_refl = (
         "R_refl",
         ("calibration_cycle", "calibration_position", "calibrated_channel"),
@@ -136,7 +139,7 @@ FCDR_data_vars_props = dict(
         {"long_name": "Corrected temperature for explicitly formulated "
             "estimate for SRF integration and reverse",
          "units": "K"},
-        _temp_coding),
+        _debug_bt_coding),
     β = (
         "β",
         ("calibrated_channel",),
@@ -194,6 +197,42 @@ FCDR_data_vars_props = dict(
         {"long_name": "Boltzmann constant",
          "units": "J/K"},
         _coding),
+    # … and the coordinates not earlier defined …
+    calibration_cycle = (
+        "calibration_cycle",
+        ("calibration_cycle",),
+        {"long_name": "Time for calibration cycle"},
+        _cal_coding),
+    calibrated_channel = (
+        "calibrated_channel",
+        ("calibrated_channel",),
+        {"long_name": "Calibrated channel"},
+        _u1_coding),
+    rself_update_time = (
+        "rself_update_time",
+        ("rself_update_time",),
+        {"long_name": "Time of last update of self-emission params"},
+        _cal_coding),
+    channel = (
+        "channel",
+        ("channel",),
+        {"long_name": "Channel"},
+        _u1_coding),
+    scanpos = (
+        "scanpos",
+        ("scanpos",),
+        {"scanpos": "Scan position"},
+        _u1_coding),
+    scanline_earth = (
+        "scanline_earth",
+        ("scanline_earth",),
+        {"long_name": "Time for Earth viewing scanlines"},
+        _cal_coding),
+    scanline = (
+        "scanline",
+        ("scanline",),
+        {"long_name": "Scanline number (in original data)"},
+        _u2_coding),
 )
 p = FCDR_data_vars_props
 for (var, corr) in {("R_Earth", "O_Re"),
@@ -217,3 +256,26 @@ FCDR_uncertainty_encodings["O_TPRT"] = _temp_coding
 for (k, v) in FCDR_data_vars_props.items():
     if v[2].get("units") == "count":
         FCDR_uncertainty_encodings[k] = _u_count_coding
+
+FCDR_easy_encodings = dict(
+    latitude = _latlon_coding,
+    longitude = _latlon_coding,
+    bt = _temp_coding,
+    sat_za = _ang_coding,
+    sat_aa = _ang_coding,
+    solar_zenith_angle = _ang_coding,
+    sol_aa = _ang_coding,
+    scanline = _u2_coding,
+    time = _cal_coding, # identical to y?
+    qualind = _u4_coding,
+    linqualflags = _u4_coding,
+    chqualflags = _u2_coding,
+    mnfrqualflags = _u1_coding,
+    u_random = _temp_coding,
+    u_non_random = _temp_coding,
+    # and the dimensions/coordinates
+    channel = _u1_coding,
+    rad_channel = _u1_coding,
+    x = _u1_coding,
+    y = _cal_coding, # identical to time?
+)
