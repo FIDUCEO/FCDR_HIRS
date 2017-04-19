@@ -297,23 +297,8 @@ class NoiseAnalyser:
 #@profile
     def __init__(self, start_date, end_date, satname, temp_fields={"iwt",
                         "fwh", "fwm"}):
-        #self.hirs = pyatmlab.datasets.tovs.which_hirs_fcdr(satname)
         self.hirs = fcdr.which_hirs_fcdr(satname)
-#        for h in (typhon.datasets.tovs.HIRS4,
-#                  typhon.datasets.tovs.HIRS3,
-#                  typhon.datasets.tovs.HIRS2):
-#            if satname in h.satellites:
-#                self.hirs = h()
-#                break
-#        else:
-#            raise ValueError("Unknown satellite: {:s}".format(satname))
         self.satname = satname
-#        self.ch = ch
-
-#        self.srfs = [typhon.physics.units.em.SRF.fromArtsXML(
-#                    satname.upper().replace("NOAA0", "NOAA"), "hirs", i) for i in range(1, 20)]
-
-#        srf1 = pyatmlab.physics.SRF(*self.srfs[1])
         hrsargs=dict(
                 fields=["hrs_scnlin", self.hirs.scantype_fieldname, "time",
                         "counts", "calcof_sorted", "radiance"] +
@@ -329,16 +314,7 @@ class NoiseAnalyser:
             pseudo_fields=
                 {"tsc": self.hirs.calc_time_since_last_calib,
                  "lsc": self.hirs.count_lines_since_last_calib},
-#                 "radiance_fid": lambda M:
-#                    self.hirs.calculate_radiance(M, ch, interp_kind="zero").m},
             NO_CACHE=True, **hrsargs)
-#        Mhrsallnew = numpy.ma.zeros(shape=Mhrsall.shape,
-#            dtype=Mhrsall.dtype.descr + [("tsc", "u2")])
-#        for fld in Mhrsall.dtype.names:
-#            Mhrsallnew[fld][...] = Mhrsall[fld][...]
-#            Mhrsallnew.mask[fld][...] = Mhrsallnew.mask[fld][...]
-#        Mhrsallnew["tsc"][...] = self.hirs.calc_time_since_last_calib(Mhrsall)
-#        Mhrsall = Mhrsallnew
         self.Mhrsall = Mhrsall
         self.hiasi = typhon.datasets.tovs.HIASI()
         # Split IASI reading in smaller parts to save memory
@@ -350,7 +326,6 @@ class NoiseAnalyser:
             while dt < end_date: 
                 step = datetime.timedelta(days=1)
                 try:
-                    #Miasi = self.hiasi.read_period(start_date, end_date)
                     Miasi = self.hiasi.read_period(dt, dt+step, NO_CACHE=True)
                 except typhon.datasets.dataset.DataFileError:
                     logging.info("No IASI found in "
@@ -379,12 +354,6 @@ class NoiseAnalyser:
             self.Lhiasi = ureg.Quantity(
                 numpy.ma.masked_equal(numpy.concatenate(Lhiasi, 1).T, 0), 
                 typhon.physics.units.common.radiance_units["ir"])
-            # BUG!  The time-since-calibration calculated here is totally
-            # wrong, because calc_time_since_last_calib can only work on
-            # the pure HIRS, not on any slicing/subselection!
-            #self.tsc = self.hirs.calc_time_since_last_calib(self.Mhrscmb)
-            #Lhrs = self.hirs.calculate_radiance(self.M, srf, ch)
-            #self.tsc = self.Mhrsall["tsc"]
         else:
             self.Mhrscmb = None
             self.Lhiasi = None

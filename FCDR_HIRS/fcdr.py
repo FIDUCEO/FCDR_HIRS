@@ -110,6 +110,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             #self.stored_name = self.write_stored_name
             self.basedir = self.write_basedir
             self.subdir = self.write_subdir
+            self.mandatory_fields.clear()
+            self.mandatory_fields.add("time")
         else:
             raise ValueError("'read' must be 'L1B' or 'L1C', "
                              "got {!s}".format(read))
@@ -1797,3 +1799,4 @@ import xarray.core.ops
 def do_nothing(*args, **kwargs):
     yield
 xarray.core.ops._ignore_warnings_if = do_nothing
+xarray.core.duck_array_ops._ignore_warnings_if = do_nothing
