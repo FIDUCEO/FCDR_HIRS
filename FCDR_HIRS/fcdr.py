@@ -53,16 +53,33 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     """
 
     name = section = "fcdr_hirs"
-    stored_name = ("FCDR_HIRS_{satname:s}_v{fcdr_version:s}_{fcdr_type:s}_"
-                         "{year:04d}{month:02d}{day:02d}{hour:02d}{minute:02d}_"
-                         "{year_end:04d}{month_end:02d}{day_end:02d}{hour_end:02d}{minute_end:02d}.nc")
+    # See spreadsheet attached to e-mail from Tom Block to fiduceo-project
+    # mailing list, 2017-03-31
+    stored_name = ("FIDUCEO_FCDR_L1C_HIRS{version:d}_{satname:s}_"
+                   "{year:04d}{month:02d}{day:02d}{hour:02d}{minute:02d}{second:02d}_"
+                   "{year_end:04d}{month_end:02d}{day_end:02d}{hour_end:02d}{minute_end:02d}{second_end:02d}_"
+                   "{fcdr_type:s}_v{data_version:s}_fv{format_version:s}.nc")
     write_subdir = "{fcdr_type:s}/{satname:s}/{year:04d}/{month:02d}/{day:02d}"
-    stored_re = (r'FCDR_HIRS_(?P<satname>.{6})_(?P<fcdr_version>.+)_'
+    stored_re = (r"FIDUCEO_FCDR_L1C_HIRS(?P<version>[2-4])_"
+                 r"(?P<satname>.{6})_"
+                 r"(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})"
+                 r"(?P<hour>\d{2})(?P<minute>\d{2})(?P<second>\d{2})_"
+                 r"(?P<year_end>\d{4})(?P<month_end>\d{2})(?P<day_end>\d{2})"
+                 r"(?P<hour_end>\d{2})(?P<minute_end>\d{2})(?P<second_end>\d{2})_"
+                 r"(?P<fcdr_type>[a-zA-Z]*)_"
+                 r"(?Pv<data_version>.+)_"
+                 r"(?Pfv<format_version>.+)\.nc")
+    
+    # before data_version v0.5
+    old_stored_re = (
+                 r'FCDR_HIRS_(?P<satname>.{6})_(?P<fcdr_version>.+)_'
                  r'(?P<fcdr_type>[a-zA-Z]*)_'
                  r'(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})'
                  r'(?P<hour>\d{2})(?P<minute>\d{2})_'
                  r'(?P<year_end>\d{4})(?P<month_end>\d{2})(?P<day_end>\d{2})'
                  r'(?P<hour_end>\d{2})(?P<minute_end>\d{2})\.nc')
+
+    format_version="0.1"
 
     realisations = 100
     srfs = None

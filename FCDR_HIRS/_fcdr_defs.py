@@ -10,7 +10,7 @@ from typhon.datasets._tovs_defs import (_u1_coding, _u2_coding, _coding,
 
 _debug_bt_coding = _temp_coding.copy()
 _debug_bt_coding["dtype"] = "f4"
-_debug_bt_coding["least_significant_digit"] = 4
+#_debug_bt_coding["least_significant_digit"] = 4
 del _temp_coding["scale_factor"]
 
 _u_count_coding = _count_coding.copy()
@@ -261,10 +261,10 @@ FCDR_easy_encodings = dict(
     latitude = _latlon_coding,
     longitude = _latlon_coding,
     bt = _temp_coding,
-    sat_za = _ang_coding,
-    sat_aa = _ang_coding,
+    satellite_zenith_angle = _ang_coding,
+    satellite_azimuth_angle = _ang_coding,
     solar_zenith_angle = _ang_coding,
-    sol_aa = _ang_coding,
+    solar_azimuth_angle = _ang_coding,
     scanline = _u2_coding,
     time = _cal_coding, # identical to y?
     qualind = _u4_coding,

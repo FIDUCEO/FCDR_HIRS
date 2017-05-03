@@ -45,7 +45,7 @@ import numpy
 import pandas
 import scipy.stats
 
-from typhon.datasets.dataset import HomemadeDataset
+from typhon.datasets.dataset import (DataFileError, HomemadeDataset)
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 #import pyatmlab.graphics
@@ -89,10 +89,13 @@ class FCDRSummary(HomemadeDataset):
             coords={"date": dates[:-1], "ptile": self.ptiles, "channel": channels}
             )
         for (sd, ed) in zip(dates[:-1], dates[1:]):
-            ds = self.hirs.read_period(sd, ed,
-                locator_args={"fcdr_version": self.version,
-                              "fcdr_type": "debug"},
-                fields=fields)
+            try:
+                ds = self.hirs.read_period(sd, ed,
+                    locator_args={"fcdr_version": self.version,
+                                  "fcdr_type": "debug"},
+                    fields=fields)
+            except DataFileError:
+                continue
             bad = (2*ds["u_R_Earth_nonrandom"] > ds["R_e"])
             for v in {"T_b", "u_T_b_random", "u_T_b_nonrandom", "R_e",
                       "u_R_Earth_random", "u_R_Earth_nonrandom"}:

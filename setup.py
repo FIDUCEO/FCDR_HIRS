@@ -22,7 +22,7 @@ setup(
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
-    version='0.0.26',
+    version='0.0.26+',
 
     description='Library and scripts for HIRS FCDR analysis and production',
     long_description=long_description,
@@ -126,7 +126,8 @@ setup(
             "generate_fcdr=FCDR_HIRS.processing.generate_fcdr:main",
             "convert_hirs_srfs=FCDR_HIRS.analysis.convert_srfs_with_shift:main",
             "plot_hirs_fcdr=FCDR_HIRS.analysis.monitor_fcdr:main",
-            "summarise_hirs_fcdr=FCDR_HIRS.analysis.summarise_fcdr:summarise"
+            "summarise_hirs_fcdr=FCDR_HIRS.analysis.summarise_fcdr:summarise",
+            "determine_hirs_latlon_compression_ratio=FCDR_HIRS.analysis.determine_latlon_compression_ratio:main"
         ],
     },
 )

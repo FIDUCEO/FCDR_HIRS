@@ -32,6 +32,7 @@ After installation, command-line utilities include:
     generate_fcdr
     plot_hirs_fcdr
     summarise_hirs_fcdr
+    determine_hirs_latlon_compression_ratio
 
 Each of those have an online help, i.e. plot_hirs_field_timeseries --help,
 listing all the options and capabilities.

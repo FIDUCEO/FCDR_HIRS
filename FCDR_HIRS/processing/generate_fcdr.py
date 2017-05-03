@@ -4,7 +4,7 @@ Generate HIRS FCDR for a particular satellite and period.
 
 """
 
-VERSION_HISTORY_EASY="""
+DATA_CHANGELOG="""
 0.1
 
 First version with seperate random and systematic uncertainty.
@@ -28,7 +28,17 @@ small-wavelength channels
 Renamed systematic to nonrandom
 Improved storage for coordinates and other values (debug+easy)
 Applied encodings and dtypes for easy
+
+0.5
+
+Variable attributes were missing in easy FCDR.
+Added support for HIRS/2.
+Added starting time to global attributes.
 """
+
+VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
+release notes for details on versions used."""
+
 
 import sys
 from .. import common
@@ -77,19 +87,16 @@ from .. import effects
 from .. import measurement_equation as me
 from .. import _fcdr_defs
 
-# ad-hoc method until TB sets up setuptools
-# available from https://github.com/FIDUCEO/FCDRTools adapt line below as
-# needed
-sys.path.append("/home/users/gholl/checkouts_local/FCDRTools")
-import writer.fcdr_writer
+import fiduceo.fcdr.writer.fcdr_writer
 
 class FCDRGenerator:
     # for now, step_size should be smaller than segment_size and I will
     # only store whole orbits within each segment
+    epoch = datetime.datetime(1970, 1, 1, 0, 0, 0)
     window_size = datetime.timedelta(hours=24)
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
-    data_version = "0.4"
+    data_version = "0.5pre"
     # FIXME: do we have a filename convention?
     def __init__(self, sat, start_date, end_date, modes):
         logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
@@ -243,6 +250,11 @@ class FCDRGenerator:
         for cn in ds.coords.keys():
             ds[cn].encoding.update(self.fcdr._data_vars_props[cn][3])
         ds = self.add_attributes(ds)
+        for k in [k for (k, v) in ds.items() if v.dtype.kind.startswith("M")]:
+            ds[k].encoding["units"] = "seconds since {:%Y-%m-%d %H:%M:%S}".format(self.epoch)
+            ds[k].encoding["add_offset"] = (
+                ds["time"][0].values.astype("M8[ms]").astype(datetime.datetime)
+                - self.epoch).total_seconds()
         return ds
 
     def add_attributes(self, ds):
@@ -257,6 +269,7 @@ class FCDRGenerator:
             institution="University of Reading",
             data_version=self.data_version,
             WARNING=effects.WARNING,
+            orbit_start_time=ds["time"][0].values.astype("M8[ms]").astype(datetime.datetime).isoformat(),
             )
         return ds
 
@@ -304,8 +317,8 @@ class FCDRGenerator:
         "latitude": "lat",
         "longitude": "lon",
         "bt": "T_b",
-        "sat_za": "platform_zenith_angle",
-        "sat_aa": "local_azimuth_angle",
+        "satellite_zenith_angle": "platform_zenith_angle",
+        "satellite_azimuth_angle": "local_azimuth_angle",
         }
     def debug2easy(self, piece):
         """Convert debug FCDR to easy FCDR
@@ -314,11 +327,11 @@ class FCDRGenerator:
         """
 
         N = piece["scanline_earth"].size
-        easy = writer.fcdr_writer.FCDRWriter.createTemplateEasy(
+        easy = fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.createTemplateEasy(
             "HIRS", N)
         # Remove following line as soon as Toms writer no longer includes
         # them in the template
-        easy = easy.drop(("c_earth", "L_earth", "scnlintime", "scnlinf"))
+        easy = easy.drop(("scnlintime", "scnlinf", "scantype"))
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
@@ -329,8 +342,8 @@ class FCDRGenerator:
             longitude=piece["lon"].sel(time=t_earth),
             #c_earth=piece["counts"].sel(time=t_earth),
             bt=UADA(piece["T_b"]),
-            sat_za=piece["platform_zenith_angle"].sel(time=t_earth),
-            sat_aa=piece["local_azimuth_angle"].sel(time=t_earth),
+            satellite_zenith_angle=piece["platform_zenith_angle"].sel(time=t_earth),
+            satellite_azimuth_angle=piece["local_azimuth_angle"].sel(time=t_earth),
             solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
             scanline=piece["scanline"].sel(time=t_earth),
 ##            scnlintime=UADA((
@@ -350,10 +363,10 @@ class FCDRGenerator:
     
         # if we are going to respect Toms template this should contain
         # v.astype(easy[k].dtype)
-        easy = easy.assign(
-            **{k: ([mpd.get(d,d) for d in v.dims],
+        transfer = {k: ([mpd.get(d,d) for d in v.dims],
                     v)
-                for (k, v) in newcont.items()})
+                for (k, v) in newcont.items()}
+        easy = easy.assign(**transfer)
         easy = easy.assign_coords(
             x=numpy.arange(1, 57),
             y=easy["time"],
@@ -362,12 +375,23 @@ class FCDRGenerator:
 
         for k in easy.keys():
             easy[k].encoding = _fcdr_defs.FCDR_easy_encodings[k]
-            # when _FillValue is set both in attrs and encoding, writing
-            # to disk fails with: ValueError: Failed hard to prevent
-            # overwriting key '_FillValue'
-            if ("_FillValue" in easy[k].encoding.keys() and
-                "_FillValue" in easy[k].attrs.keys()):
-                del easy[k].attrs["_FillValue"]
+            # when any of those keys is set in
+            # both in attrs and encoding, writing to disk fails with:
+            # ValueError: Failed hard to prevent overwriting key '_FillValue'
+            for var in {"_FillValue", "add_offset", "encoding", "scale_factor"}:
+                if (var in easy[k].encoding.keys() and
+                    var in easy[k].attrs.keys()):
+                    if easy[k].encoding[var] != easy[k].attrs[var]:
+                        warnings.warn("Easy FCDR {:s} attribute {:s} has value {!s} "
+                        "in attributes.  Using {!s} from encoding instead!".format(
+                            k, var, easy[k].attrs[var],
+                            easy[k].encoding[var]))
+                    del easy[k].attrs[var]
+
+        # .assign does not copy variable attributes or encoding...
+        for (k, v) in transfer.items():
+            easy[k].attrs.update(v[1].attrs)
+            easy[k].encoding.update(v[1].encoding)
                 
         easy.attrs.update(piece.attrs)
             
@@ -388,12 +412,14 @@ class FCDRGenerator:
             day=from_time.day,
             hour=from_time.hour,
             minute=from_time.minute,
+            second=to_time.second,
             year_end=to_time.year,
             month_end=to_time.month,
             day_end=to_time.day,
             hour_end=to_time.hour,
             minute_end=to_time.minute,
-            fcdr_version=self.data_version,
+            second_end=to_time.second,
+            data_version=self.data_version,
             fcdr_type=fcdr_type,
             mode="write")
         return pathlib.Path(fn)
