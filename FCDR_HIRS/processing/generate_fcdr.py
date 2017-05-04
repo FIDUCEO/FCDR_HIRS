@@ -176,6 +176,7 @@ class FCDRGenerator:
         piece = self.get_piece(from_, to)
 #        self.store_piece(piece)
         for piece in self.fragmentate(piece):
+            piece = self.add_orbit_info_to_piece(piece)
             self.store_piece(piece)
 
     def get_piece(self, from_, to):
@@ -201,8 +202,9 @@ class FCDRGenerator:
         cu = {}
         (uRe, sensRe, compRe) = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
             self.fcdr._effects, cu, return_more=True)
+        S = self.fcdr.estimate_channel_correlation_matrix(self.dd.data)
         # "sum" doesn't work because it's initialised with 0 and then the
-        # units don't match!
+        # units don't match!  Use reduce with operator.add instead.
         uRe_syst = numpy.sqrt(functools.reduce(operator.add,
             (v[0]**2 for (k, v) in compRe.items() if k is not me.symbols["C_E"])))
         uRe_rand = compRe[me.symbols["C_E"]][0]
@@ -236,7 +238,8 @@ class FCDRGenerator:
             [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}
                             ).drop("scanline"), qc, subset, uRe,
                             uRe_syst, uRe_rand,
-                            uTb_syst, uTb_rand])
+                            uTb_syst, uTb_rand,
+                            S])
         # NB: when quantities are gathered, offset and slope and others
         # per calibration_cycle are calculated for the entire context
         # period rather than the core dataset period.  I don't want to
@@ -258,6 +261,13 @@ class FCDRGenerator:
         return ds
 
     def add_attributes(self, ds):
+        """Add attributes to piece.
+
+        Some attributes must only be added later, in
+        self.add_orbit_info_to_piece, because information may become
+        incorrect if the piece is split (such as start time or granules
+        covered).
+        """
         pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
         ds.attrs.update(
             author="Gerrit Holl",
@@ -269,9 +279,26 @@ class FCDRGenerator:
             institution="University of Reading",
             data_version=self.data_version,
             WARNING=effects.WARNING,
-            orbit_start_time=ds["time"][0].values.astype("M8[ms]").astype(datetime.datetime).isoformat(),
             )
         return ds
+
+    def add_orbit_info_to_piece(self, piece):
+        """Add orbital information to piece
+
+        This should be done after calling self.fragmentate because it
+        tells about the time coverage.
+        """
+        at_start = self.fcdr.find_most_recent_granule_before(
+            piece["time"][0].values.astype("M8[s]").astype(datetime.datetime)).stem
+        at_end = self.fcdr.find_most_recent_granule_before(
+            piece["time"][-1].values.astype("M8[s]").astype(datetime.datetime)).stem
+        piece.attrs.update(
+            orbit_start_time=piece["time"][0].values.astype("M8[ms]").astype(datetime.datetime).isoformat(),
+            orbit_end_time=piece["time"][-1].values.astype("M8[ms]").astype(datetime.datetime).isoformat(),
+            orbit_start_granule=at_start,
+            orbit_end_granule=at_end,
+        )
+        return piece
 
     def store_piece(self, piece):
         # FIXME: concatenate when appropriate
@@ -364,7 +391,8 @@ class FCDRGenerator:
                 minor_frame=slice(56)).rename(
                 {"minor_frame": "scanpos"}), # see #73 (TODO: #74, #97)
             u_random=piece["u_T_b_random"],
-            u_non_random=piece["u_T_b_nonrandom"])
+            u_non_random=piece["u_T_b_nonrandom"],
+            channel_correlation_matrix=piece["channel_correlation_matrix"])
 #            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
 #            u_non_random=UADA(piece["u_R_Earth_nonrandom"]).to(rad_u["ir"], "radiance"))
     
@@ -396,8 +424,13 @@ class FCDRGenerator:
 
         # .assign does not copy variable attributes or encoding...
         for (k, v) in transfer.items():
-            easy[k].attrs.update(v[1].attrs)
-            easy[k].encoding.update(v[1].encoding)
+            # but we don't want to overwrite attributes already there
+            for (kk, vv) in v[1].attrs.items():
+                if kk not in easy[k].attrs:
+                    easy[k].attrs[kk] = vv
+            for (kk, vv) in v[1].encoding.items():
+                if kk not in easy[k].encoding:
+                    easy[k].encoding[kk] = vv
                 
         easy.attrs.update(piece.attrs)
 

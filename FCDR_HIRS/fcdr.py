@@ -1561,6 +1561,26 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             ΔTb.loc[{"calibrated_channel": ch}] = (high-low)/2
         return ΔTb
 
+    def estimate_channel_correlation_matrix(self, ds_context, calpos=20):
+        """Estimate channel correlation matrix
+
+        Calculates correlation coefficients between space view anomalies
+        accross channels.  
+
+        As per #87.  
+        """
+        Cs = ds_context["counts"].isel(time=ds_context["scantype"] == self.typ_space)
+
+        ΔCs = (Cs - Cs.mean("scanpos"))
+        S = numpy.corrcoef(ΔCs.sel(scanpos=calpos).T)
+        da = xarray.DataArray(S,
+            coords={"channel": ds_context.coords["channel"]},
+            dims=("channel", "channel"))
+        da.name = "channel_correlation_matrix"
+        da.attrs = self._data_vars_props[da.name][2]
+        da.encoding = self._data_vars_props[da.name][3]
+        return da
+
     # The remaining methods are no longer used.
 
     def calc_sens_coef(self, typ, M, ch, srf): 

@@ -17,6 +17,11 @@ _u_count_coding = _count_coding.copy()
 _u_count_coding["dtype"] = "u2"
 _u_count_coding["scale_factor"] = 0.005
 
+_corr_coding = _coding.copy()
+_corr_coding["dtype"] = "u2"
+_corr_coding["scale_factor"] = 0.001
+_corr_coding["_FillValue"] = _u2_coding["_FillValue"]
+
 # FIXME: uncertainty does NOT always have the same dimensions as quantity
 # it belongs to...
 
@@ -233,7 +238,15 @@ FCDR_data_vars_props = dict(
         ("scanline",),
         {"long_name": "Scanline number (in original data)"},
         _u2_coding),
+    channel_correlation_matrix = (
+        "channel_correlation_matrix",
+        ("channel", "channel"),
+        {"long_name": "Channel error correlation matrix",
+         "units": "dimensionless",
+         "valid_range": [0, 1]},
+         _corr_coding),
 )
+
 p = FCDR_data_vars_props
 for (var, corr) in {("R_Earth", "O_Re"),
                     ("T_IWCT_calib_mean", "O_TIWCT"),
@@ -277,7 +290,8 @@ FCDR_easy_encodings = dict(
     channel = _u1_coding,
     #rad_channel = _u1_coding,
     x = _u1_coding,
-    y = _u2_coding
+    y = _u2_coding,
+    channel_correlation_matrix = _corr_coding,
 )
 
 # this should ensure #70 as long as u>0.01K
