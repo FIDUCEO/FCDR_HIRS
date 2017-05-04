@@ -266,7 +266,7 @@ FCDR_easy_encodings = dict(
     solar_zenith_angle = _ang_coding,
     solar_azimuth_angle = _ang_coding,
     scanline = _u2_coding,
-    time = _cal_coding, # identical to y?
+    time = _cal_coding, # identical to y? See #94
     qualind = _u4_coding,
     linqualflags = _u4_coding,
     chqualflags = _u2_coding,
@@ -275,7 +275,30 @@ FCDR_easy_encodings = dict(
     u_non_random = _temp_coding,
     # and the dimensions/coordinates
     channel = _u1_coding,
-    rad_channel = _u1_coding,
+    #rad_channel = _u1_coding,
     x = _u1_coding,
-    y = _cal_coding, # identical to time?
+    y = _cal_coding, # identical to time? See #94
 )
+
+# attributes not defined elsewhere for whatever reason, such as only
+# being coordinates or only occurring temporarily or in easy or being
+# otherwise calculated later
+FCDR_extra_attrs = dict(
+    x = {"long_name": "scan position",
+         "units": "dimensionless",
+         "valid_range": [1, 56]},
+    y = {"long_name": "scanline number",
+         "units": "dimensionless"},
+    channel =
+        {"long_name": "channel number",
+         "units": "dimensionless",
+         "valid_range": [1, 20],
+         "note": "channel 20 not calibrated by FIDUCEO"},
+    u_random =
+        {"long_name": "uncertainty from random errors"},
+    u_non_random =
+        {"long_name": "uncertainty from non-random errors",
+         "note": ("contains uncertainties from fully systematic, "
+                  "and structured random effects.  For a more complete "
+                  "treatment, please use full FCDR.")}
+    )

@@ -354,8 +354,14 @@ class FCDRGenerator:
 #                coords={"time": t_earth.values}),
             qualind=piece["quality_flags"].sel(time=t_earth),
             linqualflags=piece["line_quality_flags"].sel(time=t_earth),
-            chqualflags=piece["channel_quality_flags"].sel(time=t_earth),
-            mnfrqualflags=piece["minorframe_quality_flags"].sel(time=t_earth),
+            chqualflags=piece["channel_quality_flags"].sel(
+                time=t_earth,
+                channel=slice(19)).rename(
+                {"channel": "calibrated_channel"}), # TODO: #75
+            mnfrqualflags=piece["minorframe_quality_flags"].sel(
+                time=t_earth,
+                minor_frame=slice(56)).rename(
+                {"minor_frame": "scanpos"}), # see #73 (TODO: #74, #97)
             u_random=piece["u_T_b_random"],
             u_non_random=piece["u_T_b_nonrandom"])
 #            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
@@ -369,9 +375,8 @@ class FCDRGenerator:
         easy = easy.assign(**transfer)
         easy = easy.assign_coords(
             x=numpy.arange(1, 57),
-            y=easy["time"],
-            channel=numpy.arange(1, 20),
-            rad_channel=numpy.arange(1, 21))
+            y=easy["scanline"],
+            channel=numpy.arange(1, 20))
 
         for k in easy.keys():
             easy[k].encoding = _fcdr_defs.FCDR_easy_encodings[k]
@@ -394,7 +399,11 @@ class FCDRGenerator:
             easy[k].encoding.update(v[1].encoding)
                 
         easy.attrs.update(piece.attrs)
+
+        for (k, v) in _fcdr_defs.FCDR_extra_attrs.items():
+            easy[k].attrs.update(v)
             
+        easy = easy.drop(("scanline",)) # see #94
         return easy
 
     _i = 0
