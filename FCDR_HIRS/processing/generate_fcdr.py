@@ -297,6 +297,7 @@ class FCDRGenerator:
         piece_easy.attrs["url"] = "http://www.fiduceo.eu"
         piece_easy.attrs["author"] = "Gerrit Holl <g.holl@reading.ac.uk>"
         piece_easy.attrs["comment"] = "Not for the faint of heart.  See warning!"
+        piece_easy.attrs["typical_nonrandom_correlation_scale"] = "40 scanlines"
         try:
             # Don't use this one for now, because it doesn't apply scaling
             # and ofsets and such
