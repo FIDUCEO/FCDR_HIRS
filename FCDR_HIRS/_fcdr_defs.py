@@ -11,7 +11,7 @@ from typhon.datasets._tovs_defs import (_u1_coding, _u2_coding, _coding,
 _debug_bt_coding = _temp_coding.copy()
 _debug_bt_coding["dtype"] = "f4"
 #_debug_bt_coding["least_significant_digit"] = 4
-del _temp_coding["scale_factor"]
+del _debug_bt_coding["scale_factor"]
 
 _u_count_coding = _count_coding.copy()
 _u_count_coding["dtype"] = "u2"
@@ -271,14 +271,19 @@ FCDR_easy_encodings = dict(
     linqualflags = _u4_coding,
     chqualflags = _u2_coding,
     mnfrqualflags = _u1_coding,
-    u_random = _temp_coding,
-    u_non_random = _temp_coding,
+    u_random = _temp_coding.copy(),
+    u_non_random = _temp_coding.copy(),
     # and the dimensions/coordinates
     channel = _u1_coding,
     #rad_channel = _u1_coding,
     x = _u1_coding,
-    y = _cal_coding, # identical to time? See #94
+    y = _u2_coding
 )
+
+# this should ensure #70 as long as u>0.01K
+for v in ("u_random", "u_non_random"):
+    FCDR_easy_encodings[v]["dtype"] = "u4"
+    FCDR_easy_encodings[v]["scale_factor"] = 0.001
 
 # attributes not defined elsewhere for whatever reason, such as only
 # being coordinates or only occurring temporarily or in easy or being
