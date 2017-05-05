@@ -203,6 +203,7 @@ class FCDRGenerator:
         (uRe, sensRe, compRe) = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
             self.fcdr._effects, cu, return_more=True)
         S = self.fcdr.estimate_channel_correlation_matrix(self.dd.data)
+        (LUT_BT, LUT_L) = self.fcdr.get_BT_to_L_LUT()
         # "sum" doesn't work because it's initialised with 0 and then the
         # units don't match!  Use reduce with operator.add instead.
         uRe_syst = numpy.sqrt(functools.reduce(operator.add,
@@ -239,7 +240,7 @@ class FCDRGenerator:
                             ).drop("scanline"), qc, subset, uRe,
                             uRe_syst, uRe_rand,
                             uTb_syst, uTb_rand,
-                            S])
+                            S, LUT_BT, LUT_L])
         # NB: when quantities are gathered, offset and slope and others
         # per calibration_cycle are calculated for the entire context
         # period rather than the core dataset period.  I don't want to
@@ -382,7 +383,10 @@ class FCDRGenerator:
             u_random=piece["u_T_b_random"],
             u_non_random=piece["u_T_b_nonrandom"],
             channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
-                channel=slice(19)).rename({"channel": "calibrated_channel"}))
+                channel=slice(19)).rename({"channel": "calibrated_channel"}),
+            LUT_BT=piece["LUT_BT"],
+            LUT_radiance=piece["LUT_radiance"]
+                )
 #            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
 #            u_non_random=UADA(piece["u_R_Earth_nonrandom"]).to(rad_u["ir"], "radiance"))
         

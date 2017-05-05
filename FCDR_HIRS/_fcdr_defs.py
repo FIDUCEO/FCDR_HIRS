@@ -245,6 +245,18 @@ FCDR_data_vars_props = dict(
          "units": "dimensionless",
          "valid_range": [0, 1]},
          _corr_coding),
+    LUT_bt = (
+        "LUT_bt",
+        ("LUT_index", "calibrated_channel"),
+        {"long_name": "Brightness temperatures for look-up table",
+         "units": "K"},
+        _temp_coding),
+    LUT_radiance = (
+        "LUT_radiance",
+        ("LUT_index", "calibrated_channel"),
+        {"long_name": "Radiance for look-up table",
+         "units": "cm*mW/m**2/sr"},
+        _coding)
 )
 
 p = FCDR_data_vars_props
@@ -292,6 +304,8 @@ FCDR_easy_encodings = dict(
     x = _u1_coding,
     y = _u2_coding,
     channel_correlation_matrix = _corr_coding,
+    LUT_BT = _temp_coding,
+    LUT_radiance = _coding,
 )
 
 # this should ensure #70 as long as u>0.01K

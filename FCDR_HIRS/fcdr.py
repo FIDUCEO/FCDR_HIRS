@@ -19,7 +19,7 @@ from typhon.physics.units.tools import UnitsAwareDataArray as UADA
     
 import typhon.datasets.dataset
 import typhon.physics.units
-from typhon.physics.units.common import ureg
+from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.datasets.tovs import (Radiometer, HIRS, HIRSPOD, HIRS2,
     HIRSKLM, HIRS3, HIRS4)
 
@@ -1580,6 +1580,30 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         da.attrs = self._data_vars_props[da.name][2]
         da.encoding = self._data_vars_props[da.name][3]
         return da
+
+    def get_BT_to_L_LUT(self):
+        """Returns LUT to translate BT to LUT
+        """
+
+        n = 100
+        LUT_BT = xarray.DataArray(
+            numpy.tile(numpy.linspace(200, 300, 101)[:, numpy.newaxis],
+                       19),
+            coords={"calibrated_channel": range(1, 20)},
+            dims=("LUT_index", "calibrated_channel"),
+            name="LUT_BT")
+        LUT_radiance = xarray.DataArray(
+            numpy.zeros(shape=(101, 19), dtype="f4"),
+            coords=LUT_BT.coords,
+            dims=LUT_BT.dims,
+            name="LUT_radiance")
+        for ch in LUT_BT.calibrated_channel.values:
+            srf = typhon.physics.units.em.SRF.fromArtsXML(
+                self.satname.upper(), "hirs", ch)
+            LUT_radiance.loc[{"calibrated_channel": ch}] = (
+                srf.blackbody_radiance(LUT_BT.sel(calibrated_channel=ch)).to(
+                    rad_u["ir"], "radiance"))
+        return (LUT_BT, LUT_radiance)
 
     # The remaining methods are no longer used.
 
