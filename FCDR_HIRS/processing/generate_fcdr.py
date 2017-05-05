@@ -371,8 +371,6 @@ class FCDRGenerator:
             #c_earth=piece["counts"].sel(time=t_earth),
             bt=UADA(piece["T_b"]),
             satellite_zenith_angle=piece["platform_zenith_angle"].sel(time=t_earth),
-            satellite_azimuth_angle=piece["local_azimuth_angle"].sel(time=t_earth),
-            solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
             scanline=piece["scanline"].sel(time=t_earth),
 ##            scnlintime=UADA((
 #                t_earth_i.hour*24*60 +
@@ -381,21 +379,36 @@ class FCDRGenerator:
 #                dims=("time",),
 #                coords={"time": t_earth.values}),
             qualind=piece["quality_flags"].sel(time=t_earth),
-            linqualflags=piece["line_quality_flags"].sel(time=t_earth),
-            chqualflags=piece["channel_quality_flags"].sel(
-                time=t_earth,
-                channel=slice(19)).rename(
-                {"channel": "calibrated_channel"}), # TODO: #75
-            mnfrqualflags=piece["minorframe_quality_flags"].sel(
-                time=t_earth,
-                minor_frame=slice(56)).rename(
-                {"minor_frame": "scanpos"}), # see #73 (TODO: #74, #97)
             u_random=piece["u_T_b_random"],
             u_non_random=piece["u_T_b_nonrandom"],
-            channel_correlation_matrix=piece["channel_correlation_matrix"])
+            channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
+                channel=slice(19)).rename({"channel": "calibrated_channel"}))
 #            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
 #            u_non_random=UADA(piece["u_R_Earth_nonrandom"]).to(rad_u["ir"], "radiance"))
-    
+        
+        if self.fcdr.version >= 3:
+            newcont.update(
+                linqualflags=piece["line_quality_flags"].sel(time=t_earth),
+                chqualflags=piece["channel_quality_flags"].sel(
+                    time=t_earth,
+                    channel=slice(19)).rename(
+                    {"channel": "calibrated_channel"}), # TODO: #75
+                mnfrqualflags=piece["minorframe_quality_flags"].sel(
+                    time=t_earth,
+                    minor_frame=slice(56)).rename(
+                    {"minor_frame": "scanpos"}), # see #73 (TODO: #74, #97)
+                satellite_azimuth_angle=piece["local_azimuth_angle"].sel(time=t_earth),
+                solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
+                )
+        else:
+            easy = easy.drop(("linqualflags",
+                              "chqualflags",
+                              "mnfrqualflags",
+                              "solar_zenith_angle",
+                              "solar_azimuth_angle",
+                              "satellite_azimuth_angle"))
+            #newcont["local_azimuth_angle"] = None
+            #newcont["solar_zenith_angle"] = None
         # if we are going to respect Toms template this should contain
         # v.astype(easy[k].dtype)
         transfer = {k: ([mpd.get(d,d) for d in v.dims],
