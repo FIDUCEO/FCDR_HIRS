@@ -33,6 +33,7 @@ After installation, command-line utilities include:
     plot_hirs_fcdr
     summarise_hirs_fcdr
     determine_hirs_latlon_compression_ratio
+    determine_hirs_unc_storage
 
-Each of those have an online help, i.e. plot_hirs_field_timeseries --help,
+Most of those have an online help, i.e. plot_hirs_field_timeseries --help,
 listing all the options and capabilities.

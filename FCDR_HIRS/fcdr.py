@@ -67,8 +67,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                  r"(?P<year_end>\d{4})(?P<month_end>\d{2})(?P<day_end>\d{2})"
                  r"(?P<hour_end>\d{2})(?P<minute_end>\d{2})(?P<second_end>\d{2})_"
                  r"(?P<fcdr_type>[a-zA-Z]*)_"
-                 r"(?Pv<data_version>.+)_"
-                 r"(?Pfv<format_version>.+)\.nc")
+                 r"(?P<data_version>v.+)_"
+                 r"(?P<format_version>fv.+)\.nc")
     
     # before data_version v0.5
     old_stored_re = (

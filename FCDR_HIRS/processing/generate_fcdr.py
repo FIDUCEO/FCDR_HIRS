@@ -278,7 +278,7 @@ class FCDRGenerator:
             satellite=self.satname,
             url="http://www.fiduceo.eu/",
             #verbose_version_info=pr.stdout.decode("utf-8"),
-            fcdr_version=pkg_resources.get_distribution("FCDR_HIRS").version,
+            fcdr_software_version=pkg_resources.get_distribution("FCDR_HIRS").version,
             institution="University of Reading",
             data_version=self.data_version,
             WARNING=effects.WARNING,
