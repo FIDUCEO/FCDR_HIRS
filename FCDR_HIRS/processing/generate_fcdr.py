@@ -73,6 +73,7 @@ logging.basicConfig(
     filename=p.log,
     level=logging.DEBUG if p.verbose else logging.INFO)
 
+import pkg_resources
 import pathlib
 import datetime
 
@@ -269,14 +270,15 @@ class FCDRGenerator:
         incorrect if the piece is split (such as start time or granules
         covered).
         """
-        pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
+        #pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
         ds.attrs.update(
             author="Gerrit Holl",
             email="g.holl@reading.ac.uk",
             title="HIRS FCDR",
             satellite=self.satname,
             url="http://www.fiduceo.eu/",
-            verbose_version_info=pr.stdout.decode("utf-8"),
+            #verbose_version_info=pr.stdout.decode("utf-8"),
+            fcdr_version=pkg_resources.get_distribution("FCDR_HIRS").version,
             institution="University of Reading",
             data_version=self.data_version,
             WARNING=effects.WARNING,
@@ -316,15 +318,18 @@ class FCDRGenerator:
         piece_easy = self.debug2easy(piece)
         piece_easy.attrs["institution"] = "Reading University"
         piece_easy.attrs["title"] = "HIRS Easy FCDR"
-        piece_easy.attrs["warning"] = ("TRIAL VERSION, DO NOT USE UNDER "
-            "ANY CIRCUMSTANCES FOR ANY PURPOSE EVER")
-        piece_easy.attrs["source"] = "Produced with HIRS_FCDR code"
+        # already included with add_attributes
+#        piece_easy.attrs["warning"] = ("TRIAL VERSION, DO NOT USE UNDER "
+#            "ANY CIRCUMSTANCES FOR ANY PURPOSE EVER")
+        piece_easy.attrs["source"] = ("Produced with HIRS_FCDR code, "
+            "version {!s}".format(
+                pkg_resources.get_distribution("FCDR_HIRS").version))
         piece_easy.attrs["history"] = "Produced on {:%Y-%m-%dT%H:%M:%SZ}".format(
             datetime.datetime.utcnow()) + VERSION_HISTORY_EASY
         piece_easy.attrs["references"] = "In preparation"
         piece_easy.attrs["url"] = "http://www.fiduceo.eu"
         piece_easy.attrs["author"] = "Gerrit Holl <g.holl@reading.ac.uk>"
-        piece_easy.attrs["comment"] = "Not for the faint of heart.  See warning!"
+        piece_easy.attrs["comment"] = "Early version.  Please note warning."
         piece_easy.attrs["typical_nonrandom_correlation_scale"] = "40 scanlines"
         try:
             # Don't use this one for now, because it doesn't apply scaling

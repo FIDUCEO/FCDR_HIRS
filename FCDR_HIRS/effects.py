@@ -17,8 +17,9 @@ from typhon.physics.units.common import (radiance_units, ureg)
 from . import measurement_equation as meq
 from . import _fcdr_defs
 
-WARNING = ("DO NOT USE THIS PRODUCT FOR ANY PURPOSE UNDER ANY CIRCUMSTANCES!\n"
-            "This is purely a format demonstration!")
+WARNING = ("VERY EARLY TRIAL VERSION! "
+           "DO NOT USE THE CONTENTS OF THIS PRODUCT FOR ANY PURPOSE UNDER ANY CIRCUMSTANCES! "
+            "This serves exclusively as a file format demonstration!")
 CorrelationType = collections.namedtuple("CorrelationType",
     ["within_scanline", "between_scanlines", "between_orbits",
     "across_time"])
