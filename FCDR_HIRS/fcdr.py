@@ -79,7 +79,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                  r'(?P<year_end>\d{4})(?P<month_end>\d{2})(?P<day_end>\d{2})'
                  r'(?P<hour_end>\d{2})(?P<minute_end>\d{2})\.nc')
 
-    format_version="0.1"
+    format_version="0.2"
 
     realisations = 100
     srfs = None

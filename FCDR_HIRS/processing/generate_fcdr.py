@@ -34,6 +34,14 @@ Applied encodings and dtypes for easy
 Variable attributes were missing in easy FCDR.
 Added support for HIRS/2.
 Added starting time to global attributes.
+Less verbose global attributes.
+Added LUT betwen BT and L.
+Added channel correlation matrix.
+Ensure enough significant digits for uncertainties.
+Added typical nonrandom correlation scale.
+Improved coordinates.
+Renamed angles.
+Changed filename structure to follow FIDUCEO standard.
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -97,7 +105,7 @@ class FCDRGenerator:
     window_size = datetime.timedelta(hours=24)
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
-    data_version = "0.5pre"
+    data_version = "0.5"
     # FIXME: do we have a filename convention?
     def __init__(self, sat, start_date, end_date, modes):
         logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
