@@ -19,13 +19,14 @@ version = "β"
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
          "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φn "
          "R_IWCT O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT f Δf fstar "
-         "ν Δν νstar T_bstar T_b")
+         "ν Δν νstar T_bstar T_b a_4")
 
 symbols = sym = dict(zip(names.split(), sympy.symbols(names)))
 
 expressions = {}
 expressions[sym["R_e"]] = (
-    sym["a_0"] + sym["a_1"]*sym["C_E"] + sym["a_2"]*sym["C_E"]**2 - sym["R_selfE"] + sym["O_Re"])
+    sym["a_0"] + sym["a_1"]*sym["C_E"] + sym["a_2"]*sym["C_E"]**2 -
+    sym["R_selfE"] + sym["O_Re"] + sym["a_4"])
 expressions[sym["a_0"]] = (
     -sym["a_2"] * sym["C_s"]**2 - sym["a_1"]*sym["C_s"])
 expressions[sym["a_1"]] = (
@@ -153,6 +154,7 @@ names = {
     sym["fstar"]: "f_eff",
     sym["ε"]: "ε",
     sym["a_3"]: "a_3",
+    sym["a_4"]: "a_4",
     sym["C_s"]: "C_space",
     sym["C_IWCT"]: "C_IWCT",
     sym["R_IWCT"]: "R_IWCT",

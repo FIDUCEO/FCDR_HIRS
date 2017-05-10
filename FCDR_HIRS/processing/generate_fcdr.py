@@ -42,6 +42,11 @@ Added typical nonrandom correlation scale.
 Improved coordinates.
 Renamed angles.
 Changed filename structure to follow FIDUCEO standard.
+
+0.6
+
+Change estimate for ε=1 to ε=0.98 (or rather, a_3=0 to a_3=-0.02)
+Added bias term a_4 (debug only)
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -105,7 +110,8 @@ class FCDRGenerator:
     window_size = datetime.timedelta(hours=24)
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
-    data_version = "0.5"
+    skip_problem_step = datetime.timedelta(seconds=900)
+    data_version = "0.6pre"
     # FIXME: do we have a filename convention?
     def __init__(self, sat, start_date, end_date, modes):
         logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
@@ -194,6 +200,33 @@ class FCDRGenerator:
         Returns a single xarray.Dataset
         """
         subset = self.dd.data.sel(time=slice(from_, to))
+        context = self.dd.data
+        if not (context["time"].values[0] < subset["time"].values[0] <
+                subset["time"].values[-1] < context["time"].values[-1]):
+            warnings.warn("Cannot generate FCDR for "
+                "{0:%Y-%m-%d %H:%M:%S} – {1:%Y-%m-%d %H:%M:%S}.  Context is "
+                "needed for interpolation of calibration and self-emission "
+                "model (among others), but context only available "
+                "between {2:%Y-%m-%d %H:%M:%S} – {3:%Y-%m-%d %H:%M:%S}.  I "
+                "will skip {4:.0f} seconds and hope for the best.".format(
+                    subset["time"].values[0].astype("M8[ms]").astype(datetime.datetime),
+                    subset["time"].values[-1].astype("M8[ms]").astype(datetime.datetime),
+                    context["time"].values[0].astype("M8[ms]").astype(datetime.datetime),
+                    context["time"].values[-1].astype("M8[ms]").astype(datetime.datetime),
+                    self.skip_problem_step.total_seconds()),
+                fcdr.FCDRWarning)
+            from_ = subset["time"].values[0]
+            to = subset["time"].values[-1]
+            while context["time"].values[0] >= subset["time"].values[0]:
+                from_ += numpy.timedelta64(self.skip_problem_step)
+                subset = subset.sel(time=slice(
+                    from_.astype("M8[ms]").astype(datetime.datetime),
+                    to.astype("M8[ms]").astype(datetime.datetime)))
+            while context["time"].values[-1] <= subset["time"].values[1]:
+                to -= numpy.timedelta64(self.skip_problem_step)
+                subset = subset.sel(time=slice(
+                    from_.astype("M8[ms]").astype(datetime.datetime),
+                    to.astype("M8[ms]").astype(datetime.datetime)))
         # NB: by calibrating the entire subset at once, I get a single set
         # of parameters for the  Rself model.  That may be undesirable.
         # Worse, it means that in most of my files, the dimension for
@@ -207,7 +240,7 @@ class FCDRGenerator:
         # really update them frequently enough such that the aforementioned
         # xarray bug is not triggered
         R_E = self.fcdr.calculate_radiance_all(subset,
-            context=self.dd.data, Rself_model=self.rself)
+            context=context, Rself_model=self.rself)
         cu = {}
         (uRe, sensRe, compRe) = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
             self.fcdr._effects, cu, return_more=True)

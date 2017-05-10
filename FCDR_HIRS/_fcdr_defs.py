@@ -132,6 +132,18 @@ FCDR_data_vars_props = dict(
         {"long_name": "IWCT emissivity correction assumed in calibration",
          "units": "1"},
         _coding),
+    a_4 = (
+        "a_4",
+        (),
+        {"long_name": "Bias harmonisation term",
+         "note": ("Self-emission model can only be trained with subsequent "
+                  "space views at different thermal environments, but "
+                  "in reality the geometry during Earth or IWCT views is "
+                  "somewhat different, so the self-emission is, too.  The "
+                  "bias term contains a harmonisation estimate of this "
+                  "difference."),
+         "units": rad_u["si"]},
+        _coding),
     α = (
         "α",
         ("calibrated_channel",),

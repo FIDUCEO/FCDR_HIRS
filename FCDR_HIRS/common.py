@@ -15,17 +15,17 @@ def add_to_argparse(parser,
         parser.add_argument("satname", action="store", type=str,
             help="Satellite name",
             metavar="satname",
-            choices=list_all_satellites())
+            choices=sorted(list_all_satellites()))
     elif include_sat == 2:
         parser.add_argument("satname1", action="store", type=str,
             help="Satellite name, primary",
             metavar="SAT1",
-            choices=list_all_satellites())
+            choices=sorted(list_all_satellites()))
 
         parser.add_argument("satname2", action="store", type=str,
             help="Satellite name, secondary",
             metavar="SAT2",
-            choices=list_all_satellites())
+            choices=sorted(list_all_satellites()))
     elif include_sat!=0:
         raise ValueError("include_sat should be False, 0, 1, True, or 2. "
             "Got {!s}.".format(include_sat))

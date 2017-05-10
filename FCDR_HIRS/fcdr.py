@@ -100,6 +100,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     start_space_calib = 8
     start_iwct_calib = 8
 
+    ε = 0.98 # from Wang, Cao, and Ciren (2007, JAOT), who give so further
+             # source for this number
+
     # Read in some HIRS data, including nominal calibration
     # Estimate noise levels from space and IWCT views
     # Use noise levels to propagate through calibration and BT conversion
@@ -299,9 +302,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             L_iwct
 
                 radiance corresponding to IWCT views.  Calculated by
-                assuming ε=1 (blackbody), an arithmetic mean of all
+                assuming ε from self.ε, an arithmetic mean of all
                 temperature sensors on the IWCT, and the SRF passed to the
-                method.
+                method.  Earthshine / reflection through the blackbody is
+                not yet implemented (see #18)
 
             counts_iwct
 
@@ -408,7 +412,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # NB: pint seems to silently drop xarray.DataArray information,
         # see https://github.com/hgrecco/pint/issues/479
         # instead use UADA
-        L_iwct = srf.blackbody_radiance(
+        L_iwct = self.ε * srf.blackbody_radiance(
             ureg.Quantity(T_iwct.values, ureg.K))
         #L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
         L_iwct = UADA(L_iwct,
@@ -637,7 +641,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         # non-linearity is set to 0 for now
         a2 = UADA(0, name="a2", coords={"calibrated_channel": ch}, attrs={"units":
-            str(typhon.physics.units.common.radiance_units["si"]/(ureg.count**2))})
+            str(rad_u["si"]/(ureg.count**2))})
 
         offset = -counts_space**2 * a2 -slope * counts_space
 
@@ -792,16 +796,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             Rself = UADA(numpy.zeros(shape=C_Earth["time"].shape),
                          coords=C_Earth["time"].coords,
                          name="Rself", attrs={"units":   
-                str(typhon.physics.units.common.radiance_units["si"])})
-#            Rself = ureg.Quantity(
-#                    numpy.zeros_like(C_Earth),
-#                    typhon.physics.units.common.radiance_units["si"])
-#            Rself.IWCT
+                str(rad_u["si"])})
             RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
                     coords=offset["time"].coords, attrs=Rself.attrs)
-#            RselfIWCT = Rselfspace = ureg.Quantity(
-#                    numpy.zeros_like(offset),
-#                    typhon.physics.units.common.radiance_units["si"])
             u_Rself = UADA([0], dims=["rself_update_time"],
                            coords={"rself_update_time": [ds["time"].values[0]]})
         else:
@@ -850,36 +847,23 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "every ten minutes as a stop-gap measure to ensure even "
                 "short slices contain this info, but not a sustainable "
                 "solution.  Coordinates are lying!")
+        # according to Wang, Cao, and Ciren (2007), ε=0.98, no further
+        # source or justification givel
+        ε = UADA(1, name="emissivity")
+        a_3 = UADA(self.ε-1, name="correction to emissivity")
         if Rrefl_model is None:
             warnings.warn("No Earthshine model defined, assuming 0!",
                 FCDRWarning)
             Rrefl = UADA(numpy.zeros(shape=offset.shape),
                     coords=offset.coords,
-                    attrs={"units": str(typhon.physics.units.common.radiance_units["si"])})
-#            Rrefl = ureg.Quantity(
-#                numpy.zeros_like(offset),
-#                typhon.physics.units.common.radiance_units["si"])
-            ε = UADA(1, name="emissivity")
-            a_3 = UADA(0, name="nonlinearity")
+                    attrs={"units": str(rad_u["si"])})
         else:
             raise NotImplementedError("Evalutation of Earthshine "
                 "model not implemented yet")
-#        rad_wn = UADA(numpy.zeros(shape=C_Earth.shape),
-#            coords=C_Earth.coords,
-#            attrs={"units": str(typhon.physics.units.common.radiance_units["ir"])})
-#        rad_wn = ureg.Quantity(
-#            numpy.ma.masked_all(ds["counts"].sel(channel=ch).shape),
-#            typhon.physics.units.common.radiance_units["ir"])
-#        rad_wn[views_Earth, :] = self.custom_calibrate(
-#            ureg.Quantity(C_Earth.astype("f4"), ureg.count),
-#            interp_slope[views_Earth], interp_offset[views_Earth], a2, Rself).to(
-#                rad_wn.u, "radiance")
+        a_4 = UADA(0, name="harmonisation bias",
+            attrs={"units": rad_u["si"]})
         rad_wn = self.custom_calibrate(C_Earth, interp_slope,
             interp_offset, a2, Rself)
-#        rad_wn = ureg.Quantity(numpy.ma.array(rad_wn), rad_wn.u)
-#        rad_wn.m.mask = C_Earth.mask
-#        rad_wn.m.mask |= numpy.isnan(["radiance"].sel(channel=ch))
-#        rad_wn.m.mask |= numpy.isnan(rad_wn)
 
         (α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients(
             self.satname, self.section, ch)
@@ -924,6 +908,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 ε, name=me.names[me.symbols["ε"]])
             self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
                 a_3, name=me.names[me.symbols["a_3"]])
+            self._quantities[me.symbols["a_4"]] = self._quantity_to_xarray(
+                a_4, name=me.names[me.symbols["a_4"]])
         rad_wn = rad_wn.rename({"time": "scanline_earth"})
         if return_bt:
             return (rad_wn, rad_wn.to("K", "radiance", srf=srf))
@@ -1072,7 +1058,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         logging.info("Allocating")
         rad_wn = ureg.Quantity(numpy.empty(
             shape=M["counts"].shape[:2] + (realisations,),
-            dtype="f4"), typhon.physics.units.common.radiance_units["ir"])
+            dtype="f4"), rad_u["ir"])
         bt = ureg.Quantity(numpy.empty_like(rad_wn), ureg.K)
         logging.info("Estimating {:d} realisations for "
             "{:,} radiances".format(realisations,
@@ -1329,7 +1315,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     # result.
                     ua = self.calc_u_for_variable(v.args[0],
                         quantities, all_effects, cached_uncertainties)
-                    assert ua==0, "Impossible"
+                    # ua==0 triggers __eq__ which triggers catch_warnings
+                    # which causes warnings to be printed over and over
+                    # again…
+                    #assert ua==0, "Impossible"
+                    assert ua.values==0, "Impossible"
                     u_e = u_e.subs(v, 0)
                     del sensitivities[v.args[0]]
                     del components[v.args[0]]
