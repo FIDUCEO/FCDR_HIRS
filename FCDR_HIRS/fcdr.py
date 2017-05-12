@@ -1559,7 +1559,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         As per #87.  
         """
-        Cs = ds_context["counts"].isel(time=ds_context["scantype"] == self.typ_space)
+        Cs = ds_context["counts"].isel(time=ds_context["scantype"].values == self.typ_space)
 
         ΔCs = (Cs - Cs.mean("scanpos"))
         S = numpy.corrcoef(ΔCs.sel(scanpos=calpos).T)

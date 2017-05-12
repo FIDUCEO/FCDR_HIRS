@@ -2,6 +2,8 @@
 
 Take HIRS-HIRS matchups and add telemetry and other information as needed
 for the harmonisation effort.
+
+See issue #22
 """
 
 
@@ -37,11 +39,22 @@ from .. import matchups
 
 class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     def as_xarray_dataset(self):
-        (p_ds, s_ds) = (tp.as_xarray_dataset(src,
-            skip_dimensions=["scanpos"],
-            rename_dimensions={"scanline": "collocation"})
-                for (tp, src) in ((self.hirs_prim, self.Mcp),
-                                  (self.hirs_sec, self.Mcs)))
+        """Returns SINGLE xarray dataset for matchups
+        """
+
+        is_xarray = isinstance(self.Mcp, xarray.Dataset)
+        is_ndarray = not is_xarray
+        if is_ndarray:
+            (p_ds, s_ds) = (tp.as_xarray_dataset(src,
+                skip_dimensions=["scanpos"],
+                rename_dimensions={"scanline": "collocation"})
+                    for (tp, src) in ((self.hirs_prim, self.Mcp),
+                                      (self.hirs_sec, self.Mcs)))
+        elif is_xarray:
+            p_ds = self.Mcp
+            s_ds = self.Mcs
+        else:
+            raise RuntimeError("Onmogelĳk.  Impossible.  Unmöglich.")
         #
         keep = {"collocation", "channel", "calibrated_channel"}
         p_ds.rename(
@@ -64,7 +77,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 inplace=True)
         ds = xarray.merge([p_ds, s_ds,
             xarray.DataArray(
-                self.M["matchup_spherical_distance"], 
+                self.ds["matchup_spherical_distance"], 
                 dims=["collocation"],
                 name="matchup_spherical_distance")
             ])
