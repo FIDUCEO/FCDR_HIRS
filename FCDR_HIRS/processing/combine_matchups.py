@@ -110,7 +110,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         Note that one would want to merge a collection of those.
         """
 
-        take_for_each = ["α", "β", "fstar", "C_E", "C_IWCT", "C_s", "T_IWCT", "R_selfE"]
+        take_for_each = ["C_s", "C_IWCT", "C_E", "T_IWCT", "α", "β", "fstar", "R_selfE"]
         take_total = list('_'.join(x) for x in itertools.product(
                 (self.prim, self.sec),
                 take_for_each) if not x[1].startswith("u_"))
@@ -124,7 +124,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     [da_all[i]]*ds.dims["matchup_count"],
                     "matchup_count").assign_coords(
                         **next(d.coords for d in da_all if (self.prim+"_scanline") in d.coords))
-        H = xarray.concat(da_all, dim="m")
+        H = xarray.concat(da_all, dim="m").transpose("matchup_count", "m")
 #        H.name = "H_matrix"
 #        H = H.assign_coords(H_labels=take_total)
 
@@ -140,7 +140,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     self.sec)})
         harm["H"].attrs["description"] = "Inputs for harmonisation functions"
         harm["H"].attrs["units"] = "Various"
-        
+
         harm["lm"] = (("L", "nl"),
             numpy.array([[
                 typhon.datasets._tovs_defs.NOAA_numbers[self.hirs_prim.satname],
@@ -208,7 +208,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm = harm.assign_coords(nsrfAux=["α", "β", "fstar"])
 
         harm["corrData"] = (("ncorr",), [40])
-        harm["corrData"].attrs["description"] = "length of normal correlation cycle"
+        harm["corrData"].attrs["description"] = "length of normal calibration cycle"
         harm["corrData"].attrs["units"] = "Scanlines"
 
         # to estimate K, use BT with both SRFs for ΔL
@@ -228,8 +228,25 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm["Kr"].attrs["description"] = ("Local standard deviation "
             "in 5×5 square of HIRS around collocation")
         harm["Kr"].attrs["units"] = "K"
+
         # propagate from band correction
-        harm["Ks"] = (("M",), numpy.zeros(shape=harm.dims["M"], dtype="f4"))
+        Δ = self.hirs_sec.srfs[channel-1].estimate_band_coefficients(
+            self.hirs_sec.satname, "fcdr_hirs", channel)[-1]
+        Δ = ureg.Quantity(Δ.values, Δ.units)
+        slave_bt_perturbed = self.hirs_sec.srfs[channel-1].shift(
+            Δ).channel_radiance2bt(ureg.Quantity(
+                ds["{:s}_R_e".format(self.prim)].sel(
+                    calibrated_channel=channel).values,
+                rad_u["si"]))
+        slave_bt_perturbed_2 = self.hirs_sec.srfs[channel-1].shift(
+            Δ).channel_radiance2bt(ureg.Quantity(
+                ds["{:s}_R_e".format(self.prim)].sel(
+                    calibrated_channel=channel).values,
+                rad_u["si"]))
+        Δslave_bt = (abs(slave_bt_perturbed - slave_bt)
+                   + abs(slave_bt_perturbed_2 - slave_bt))/2
+
+        harm["Ks"] = (("M",), Δslave_bt)
         harm["Ks"].attrs["description"] = ("Propagated systematic "
             "uncertainty due to band correction factors.")
         harm["Ks"].attrs["note"] = ("Not implemented yet, need to transfer "
@@ -267,6 +284,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm.attrs["reference_satellite"] = self.prim
         harm.attrs["slave_satellite"] = self.sec
 
+        harm = common.time_epoch_to(
+            harm,
+            datetime.datetime(1970, 1, 1, 0, 0, 0))
+
         return harm
 
     def write(self, outfile):
@@ -278,7 +299,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         ds.to_netcdf(outfile)
 
     def write_harm(self, harm):
-        out = self.basedir + "/" + "{:s}_{:s}.nc".format(self.prim, self.sec)
+        out = (self.basedir + 
+               "{:s}_{:s}_ch{:d}_{:%Y%m%d}-{:%Y%m%d}.nc".format(
+                    self.prim,
+                    self.sec,
+                    int(harm["calibrated_channel"]),
+                    harm["{:s}_time".format(self.prim)].values[0].astype("M8[s]").astype(datetime.datetime),
+                    harm["{:s}_time".format(self.prim)].values[-1].astype("M8[s]").astype(datetime.datetime),
+                    ))
         logging.info("Writing {:s}".format(out))
         harm.to_netcdf(out)
 

@@ -3,6 +3,8 @@
 
 from .fcdr import list_all_satellites
 
+import datetime
+
 def add_to_argparse(parser,
         include_period=True,
         include_sat=0,
@@ -76,3 +78,15 @@ def add_to_argparse(parser,
         help="Logfile to write to.  Leave out for stdout.")
 
     return parser
+
+
+def time_epoch_to(ds, epoch):
+    """Convert all time variables/coordinates to count from epoch
+    """
+
+    for k in [k for (k, v) in ds.items() if v.dtype.kind.startswith("M")]:
+        ds[k].encoding["units"] = "seconds since {:%Y-%m-%d %H:%M:%S}".format(epoch)
+        ds[k].encoding["add_offset"] = (
+            ds[k][0].values.astype("M8[ms]").astype(datetime.datetime)
+            - epoch).total_seconds()
+    return ds

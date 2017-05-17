@@ -296,11 +296,7 @@ class FCDRGenerator:
         for cn in ds.coords.keys():
             ds[cn].encoding.update(self.fcdr._data_vars_props[cn][3])
         ds = self.add_attributes(ds)
-        for k in [k for (k, v) in ds.items() if v.dtype.kind.startswith("M")]:
-            ds[k].encoding["units"] = "seconds since {:%Y-%m-%d %H:%M:%S}".format(self.epoch)
-            ds[k].encoding["add_offset"] = (
-                ds["time"][0].values.astype("M8[ms]").astype(datetime.datetime)
-                - self.epoch).total_seconds()
+        ds = common.time_epoch_to(ds, self.epoch)
         return ds
 
     def add_attributes(self, ds):
