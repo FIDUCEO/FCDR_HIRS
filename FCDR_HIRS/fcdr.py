@@ -848,7 +848,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "short slices contain this info, but not a sustainable "
                 "solution.  Coordinates are lying!")
         # according to Wang, Cao, and Ciren (2007), ε=0.98, no further
-        # source or justification givel
+        # source or justification given
         ε = UADA(1, name="emissivity")
         a_3 = UADA(self.ε-1, name="correction to emissivity")
         if Rrefl_model is None:
