@@ -47,6 +47,7 @@ Changed filename structure to follow FIDUCEO standard.
 
 Change estimate for ε=1 to ε=0.98 (or rather, a_3=0 to a_3=-0.02)
 Added bias term a_4 (debug only)
+Added handling of flags
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -111,7 +112,7 @@ class FCDRGenerator:
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
     skip_problem_step = datetime.timedelta(seconds=900)
-    data_version = "0.6pre"
+    data_version = "0.6"
     # FIXME: do we have a filename convention?
     def __init__(self, sat, start_date, end_date, modes):
         logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
