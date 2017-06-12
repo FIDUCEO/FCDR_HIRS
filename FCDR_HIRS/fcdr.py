@@ -1596,7 +1596,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             name="LUT_radiance")
         for ch in LUT_BT.calibrated_channel.values:
             srf = typhon.physics.units.em.SRF.fromArtsXML(
-                self.satname.upper(), "hirs", ch)
+                self.satname.upper().replace("A0","A"), "hirs", ch)
             LUT_radiance.loc[{"calibrated_channel": ch}] = (
                 srf.blackbody_radiance(LUT_BT.sel(calibrated_channel=ch)).to(
                     rad_u["ir"], "radiance"))
@@ -1931,7 +1931,7 @@ def list_all_satellites():
     for h in {HIRS2FCDR, HIRS3FCDR, HIRS4FCDR}:
         for sats in h.satellites.values():
             S |= sats
-    return S
+    return {x.lower() for x in S}
 
 def _recursively_search_for(sub, var):
     """Search if 'var' already exists in the tree for
