@@ -408,11 +408,12 @@ class FCDRGenerator:
 
         N = piece["scanline_earth"].size
         easy = fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.createTemplateEasy(
-            "HIRS", N)
+            f"HIRS{self.fcdr.version:d}", N)
         # Remove following line as soon as Toms writer no longer includes
         # them in the template
-        easy = easy.drop(("scnlintime", "scnlinf", "scantype", "qualind",
-                          "linqualflags", "chqualflags", "mnfrqualflags"))
+        easy = easy.drop(easy.data_vars.keys() &
+            {"scnlintime", "scnlinf", "scantype", "qualind",
+             "linqualflags", "chqualflags", "mnfrqualflags"})
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
@@ -459,9 +460,9 @@ class FCDRGenerator:
                 solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
                 )
         else:
-            easy = easy.drop(("solar_zenith_angle",
-                              "solar_azimuth_angle",
-                              "satellite_azimuth_angle"))
+            easy = easy.drop(easy.data_vars.keys() &
+                {"solar_zenith_angle", "solar_azimuth_angle",
+                 "satellite_azimuth_angle"})
             #newcont["local_azimuth_angle"] = None
             #newcont["solar_zenith_angle"] = None
         # if we are going to respect Toms template this should contain
