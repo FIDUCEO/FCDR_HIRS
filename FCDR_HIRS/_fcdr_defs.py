@@ -1,6 +1,7 @@
 """Definitions related to HIRS FCDR
 """
 
+import enum
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.datasets._tovs_defs import (_u1_coding, _u2_coding, _coding,
             _count_coding, _temp_coding, _cal_coding, _latlon_coding,
@@ -268,7 +269,17 @@ FCDR_data_vars_props = dict(
         ("LUT_index", "calibrated_channel"),
         {"long_name": "Radiance for look-up table",
          "units": "cm*mW/m**2/sr"},
-        _coding)
+        _coding),
+    quality_scanline_bitmask = (
+        "quality_scanline_bitmask",
+        ("scanline",),
+        {"long_name": "Bitmask for quality per scanline"},
+        _u1_coding),
+    quality_channel_bitmask = (
+        "quality_channel_bitmask",
+        ("scanline",),
+        {"long_name": "Bitmask for quality per channel"},
+        _u1_coding),
 )
 
 p = FCDR_data_vars_props
@@ -304,10 +315,12 @@ FCDR_easy_encodings = dict(
     solar_azimuth_angle = _ang_coding,
     scanline = _u2_coding,
     time = _cal_coding, # identical to y? See #94
-    qualind = _u4_coding,
-    linqualflags = _u4_coding,
-    chqualflags = _u2_coding,
-    mnfrqualflags = _u1_coding,
+#    qualind = _u4_coding,
+#    linqualflags = _u4_coding,
+#    chqualflags = _u2_coding,
+#    mnfrqualflags = _u1_coding,
+    quality_scanline_bitmask = _u1_coding,
+    quality_channel_bitmask = _u1_coding,
     u_random = _temp_coding.copy(),
     u_non_random = _temp_coding.copy(),
     # and the dimensions/coordinates
@@ -347,3 +360,22 @@ FCDR_extra_attrs = dict(
                   "and structured random effects.  For a more complete "
                   "treatment, please use full FCDR.")}
     )
+
+@enum.unique
+class FlagsScanline(enum.IntFlag):
+    DO_NOT_USE = enum.auto()
+    SUSPECT_GEO = enum.auto()
+    SUSPECT_TIME = enum.auto()
+    SUSPECT_CALIB = enum.auto()
+    REDUCED_CONTEXT = enum.auto()
+
+@enum.unique
+class FlagsChannel(enum.IntFlag):
+    DO_NOT_USE = enum.auto()
+    UNCERTAINTY_SUSPICIOUS = enum.auto()
+
+FCDR_data_vars_props["quality_scanline_bitmask"][2]["flag_masks"] = ", ".join(str(int(v)) for v in FlagsScanline.__members__.values())
+FCDR_data_vars_props["quality_scanline_bitmask"][2]["flag_meanings"] = ", ".join(FlagsScanline.__members__.keys()) 
+
+FCDR_data_vars_props["quality_channel_bitmask"][2]["flag_masks"] = ", ".join(str(int(v)) for v in FlagsChannel.__members__.values())
+FCDR_data_vars_props["quality_channel_bitmask"][2]["flag_meanings"] = ", ".join(FlagsChannel.__members__.keys())

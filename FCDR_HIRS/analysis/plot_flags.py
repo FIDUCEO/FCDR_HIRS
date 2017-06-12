@@ -3,6 +3,8 @@
 
 import matplotlib
 matplotlib.use("Agg")
+import pathlib
+pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 import argparse
 from .. import common
 

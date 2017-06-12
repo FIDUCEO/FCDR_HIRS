@@ -242,10 +242,18 @@ class FCDRGenerator:
         R_E = self.fcdr.calculate_radiance_all(subset,
             context=context, Rself_model=self.rself)
         cu = {}
-        (uRe, sensRe, compRe) = self.fcdr.calc_u_for_variable("R_e", self.fcdr._quantities,
-            self.fcdr._effects, cu, return_more=True)
-        S = self.fcdr.estimate_channel_correlation_matrix(self.dd.data)
+        (uRe, sensRe, compRe) = self.fcdr.calc_u_for_variable(
+            "R_e", self.fcdr._quantities, self.fcdr._effects, cu,
+            return_more=True)
+        S = self.fcdr.estimate_channel_correlation_matrix(context)
         (LUT_BT, LUT_L) = self.fcdr.get_BT_to_L_LUT()
+
+        (flags_scanline, flags_channel) = self.fcdr.get_flags(
+            subset, context, R_E)
+        if ((self.dd.data["time"][-1] - self.dd.data["time"][0]).values.astype("m8[s]").astype(datetime.timedelta) / self.window_size) < 0.9:
+            logging.warn("Reduced context available, flagging data")
+            flags_scanline |= _fcdr_defs.FlagsScanline.REDUCED_CONTEXT
+        
         # "sum" doesn't work because it's initialised with 0 and then the
         # units don't match!  Use reduce with operator.add instead.
         uRe_syst = numpy.sqrt(functools.reduce(operator.add,
@@ -282,7 +290,8 @@ class FCDRGenerator:
                             ).drop("scanline"), qc, subset, uRe,
                             uRe_syst, uRe_rand,
                             uTb_syst, uTb_rand,
-                            S, LUT_BT, LUT_L])
+                            S, LUT_BT, LUT_L,
+                            flags_scanline, flags_channel])
         # NB: when quantities are gathered, offset and slope and others
         # per calibration_cycle are calculated for the entire context
         # period rather than the core dataset period.  I don't want to
@@ -402,7 +411,8 @@ class FCDRGenerator:
             "HIRS", N)
         # Remove following line as soon as Toms writer no longer includes
         # them in the template
-        easy = easy.drop(("scnlintime", "scnlinf", "scantype"))
+        easy = easy.drop(("scnlintime", "scnlinf", "scantype", "qualind",
+                          "linqualflags", "chqualflags", "mnfrqualflags"))
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
@@ -421,7 +431,9 @@ class FCDRGenerator:
 #                t_earth_i.microsecond/1e6)*1e3,
 #                dims=("time",),
 #                coords={"time": t_earth.values}),
-            qualind=piece["quality_flags"].sel(time=t_earth),
+            quality_scanline_bitmask = piece["quality_scanline_bitmask"],
+            quality_channel_bitmask = piece["quality_channel_bitmask"],
+#            qualind=piece["quality_flags"].sel(time=t_earth),
             u_random=piece["u_T_b_random"],
             u_non_random=piece["u_T_b_nonrandom"],
             channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
@@ -434,23 +446,20 @@ class FCDRGenerator:
         
         if self.fcdr.version >= 3:
             newcont.update(
-                linqualflags=piece["line_quality_flags"].sel(time=t_earth),
-                chqualflags=piece["channel_quality_flags"].sel(
-                    time=t_earth,
-                    channel=slice(19)).rename(
-                    {"channel": "calibrated_channel"}), # TODO: #75
-                mnfrqualflags=piece["minorframe_quality_flags"].sel(
-                    time=t_earth,
-                    minor_frame=slice(56)).rename(
-                    {"minor_frame": "scanpos"}), # see #73 (TODO: #74, #97)
+#                linqualflags=piece["line_quality_flags"].sel(time=t_earth),
+#                chqualflags=piece["channel_quality_flags"].sel(
+#                    time=t_earth,
+#                    channel=slice(19)).rename(
+#                    {"channel": "calibrated_channel"}), # TODO: #75
+#                mnfrqualflags=piece["minorframe_quality_flags"].sel(
+#                    time=t_earth,
+#                    minor_frame=slice(56)).rename(
+#                    {"minor_frame": "scanpos"}), # see #73 (TODO: #74, #97)
                 satellite_azimuth_angle=piece["local_azimuth_angle"].sel(time=t_earth),
                 solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
                 )
         else:
-            easy = easy.drop(("linqualflags",
-                              "chqualflags",
-                              "mnfrqualflags",
-                              "solar_zenith_angle",
+            easy = easy.drop(("solar_zenith_angle",
                               "solar_azimuth_angle",
                               "satellite_azimuth_angle"))
             #newcont["local_azimuth_angle"] = None

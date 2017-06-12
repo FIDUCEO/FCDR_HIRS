@@ -79,7 +79,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                  r'(?P<year_end>\d{4})(?P<month_end>\d{2})(?P<day_end>\d{2})'
                  r'(?P<hour_end>\d{2})(?P<minute_end>\d{2})\.nc')
 
-    format_version="0.2"
+    # format changelog:
+    #
+    # v0.3: removed copied flags, added own flag fields
+    format_version="0.3"
 
     realisations = 100
     srfs = None
@@ -124,7 +127,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self.re = self.stored_re # before super()
         super().__init__(*args, satname=satname, **kwargs)
         if read == "L1B":
-            pass # no need to change from parents
+            self.read_returns = "ndarray"
         elif read == "L1C":
             #self.name = self.section = self.write_name
             #self.stored_name = self.write_stored_name
@@ -132,6 +135,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self.subdir = self.write_subdir
             self.mandatory_fields.clear()
             self.mandatory_fields.add("time")
+            self.read_returns = "xarray"
         else:
             raise ValueError("'read' must be 'L1B' or 'L1C', "
                              "got {!s}".format(read))
@@ -681,6 +685,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     _quantities = {}
     _effects = None
     _effects_by_name = None
+    _flags = {"scanline": {}, "channel": {}}
     def calculate_radiance(self, ds, ch, interp_kind="zero", srf=None,
                 context=None,
                 Rself_model=None,
@@ -937,6 +942,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # the quantities I calculate so I can use them for the
         # uncertainties after.
         self._quantities.clear() # don't accidentally use old quantities…
+        self._flags["scanline"].clear()
+        self._flags["channel"].clear()
 
         # the two following dictionary should and do point to the same
         # effect objects!  I want both because when I'm evaluating the
@@ -1595,6 +1602,62 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     rad_u["ir"], "radiance"))
         return (LUT_BT, LUT_radiance)
 
+    def get_flags(self, ds, context, R_E):
+        """Get flags for FCDR
+
+        Only those for which I have the information I need are set, in
+        practice those that have been copied.
+        """
+
+        flags_scanline = xarray.DataArray(
+            numpy.zeros(
+                shape=R_E["scanline_earth"].size,
+                dtype=self._data_vars_props["quality_scanline_bitmask"][3]["dtype"]),
+            dims=("scanline_earth",),
+            coords={"scanline_earth": R_E.coords["scanline_earth"]},
+            name="quality_scanline_bitmask",
+            attrs=self._data_vars_props["quality_scanline_bitmask"][2]
+            )
+
+        flags_channel = xarray.DataArray(
+            numpy.zeros(
+                shape=(R_E["scanline_earth"].size, R_E["calibrated_channel"].size),
+                dtype=self._data_vars_props["quality_scanline_bitmask"][3]["dtype"]),
+            dims=("scanline_earth", "calibrated_channel"),
+            coords={"scanline_earth": R_E.coords["scanline_earth"],
+                    "calibrated_channel": R_E.coords["calibrated_channel"]},
+            name="quality_channel_bitmask",
+            attrs=self._data_vars_props["quality_channel_bitmask"][2]
+            )
+        
+        da_qfb = ds["quality_flags_bitfield"].sel(
+            time=R_E.coords["scanline_earth"])
+#        da_lqfb = ds["line_quality_flags_bitfield"].sel(
+#            time=R_E.coords["scanline_earth"])
+        fd_qif = typhon.datasets._tovs_defs.QualIndFlagsHIRS[self.version]
+#        fd_qfb = typhon.datasets._tovs_defs.LinQualFlagsHIRS[self.version]
+        fs = _fcdr_defs.FlagsScanline
+#        fc = _fcdr_defs.FlagsChannel
+
+#        probs = {st:
+#            functools.reduce(operator.or_,
+#                (v for (k, v) in fd_qfb.__members__.items() if k.startswith(st)))
+#                    for st in {"tm", "el", "ca"}}
+#        probs["tm"] |= (da_qfb & fd_qif.qitimeseqerr)
+
+        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qidonotuse)!=0)}] |= fs.DO_NOT_USE
+        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qitimeseqerr)!=0)}] |= fs.SUSPECT_TIME
+        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qinofullcalib)!=0)}] |= fs.SUSPECT_CALIB
+        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qinoearthloc)!=0)}] |= fs.SUSPECT_GEO
+#        flags_scanline[{"scanline_earth":((da_lqfb & probs["el"])!=0)}] |= fs.SUSPECT_GEO
+#        flags_scanline[{"scanline_earth":((da_lqfb & probs["tm"])!=0)}] |= fs.SUSPECT_TIME
+#        flags_scanline[{"scanline_earth":((da_lqfb & probs["ca"])!=0)}] |= fs.SUSPECT_CALIB
+
+#        flags_channel[{"scanline_earth":((da_qfb & fd_qif.qidonotuse)!=0)}] |= fc.DO_NOT_USE
+
+        return (flags_scanline, flags_channel)
+
+
     # The remaining methods are no longer used.
 
     def calc_sens_coef(self, typ, M, ch, srf): 
@@ -1798,13 +1861,57 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         
         raise NotImplementedError("Not implemented yet!")
 
-class HIRS2FCDR(HIRSFCDR, HIRS2):
+class HIRSPODFCDR:
+    """Mixin for HIRS POD FCDRs
+    """
+    def get_flags(self, ds, context, R_E):
+        (flags_scanline, flags_channel) = super().get_flags(ds, context, R_E)
+
+        # might add stuff here later
+
+        return (flags_scanline, flags_channel)
+
+class HIRSKLMFCDR:
+    """Mixin for HIRS KLM FCDRs
+    """
+    def get_flags(self, ds, context, R_E):
+        """Get flags for FCDR
+
+        Only those for which I have the information I need are set, in
+        practice those that have been copied.
+        """
+
+        (flags_scanline, flags_channel) = super().get_flags(ds, context, R_E)
+
+        da_qfb = ds["quality_flags_bitfield"].sel(
+            time=R_E.coords["scanline_earth"])
+        da_lqfb = ds["line_quality_flags_bitfield"].sel(
+            time=R_E.coords["scanline_earth"])
+        fd_qif = typhon.datasets._tovs_defs.QualIndFlagsHIRS[self.version]
+        fd_qfb = typhon.datasets._tovs_defs.LinQualFlagsHIRS[self.version]
+        fs = _fcdr_defs.FlagsScanline
+        fc = _fcdr_defs.FlagsChannel
+
+        probs = {st:
+            functools.reduce(operator.or_,
+                (v for (k, v) in fd_qfb.__members__.items() if k.startswith(st)))
+                    for st in {"tm", "el", "ca"}}
+
+        flags_scanline[{"scanline_earth":((da_lqfb & probs["el"])!=0)}] |= fs.SUSPECT_GEO
+        flags_scanline[{"scanline_earth":((da_lqfb & probs["tm"])!=0)}] |= fs.SUSPECT_TIME
+        flags_scanline[{"scanline_earth":((da_lqfb & probs["ca"])!=0)}] |= fs.SUSPECT_CALIB
+
+        flags_channel[{"scanline_earth":((da_qfb & fd_qif.qidonotuse)!=0)}] |= fc.DO_NOT_USE
+
+        return (flags_scanline, flags_channel)
+
+class HIRS2FCDR(HIRSPODFCDR, HIRSFCDR, HIRS2):
     l1b_base = HIRS2
 
-class HIRS3FCDR(HIRSFCDR, HIRS3):
+class HIRS3FCDR(HIRSKLMFCDR, HIRSFCDR, HIRS3):
     l1b_base = HIRS3
 
-class HIRS4FCDR(HIRSFCDR, HIRS4):
+class HIRS4FCDR(HIRSKLMFCDR, HIRSFCDR, HIRS4):
     l1b_base = HIRS4
 
 def which_hirs_fcdr(satname, *args, **kwargs):
