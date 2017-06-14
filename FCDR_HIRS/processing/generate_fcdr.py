@@ -55,6 +55,8 @@ release notes for details on versions used."""
 
 
 import sys
+import pathlib
+pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 from .. import common
 import argparse
 import subprocess
@@ -88,7 +90,6 @@ logging.basicConfig(
     level=logging.DEBUG if p.verbose else logging.INFO)
 
 import pkg_resources
-import pathlib
 import datetime
 
 import numpy

@@ -1,6 +1,8 @@
 """Summarise FCDR for period, extracting statistics or plot from them
 """
 
+import matplotlib
+matplotlib.use("Agg")
 from .. import common
 import argparse
 
@@ -12,7 +14,7 @@ def parse_cmdline():
     parser = common.add_to_argparse(parser,
         include_period=True,
         include_sat=True,
-        include_channels=False,
+        include_channels=False, # False for summarise, True for plot?
         include_temperatures=False)
 
     parser.add_argument("--mode", action="store", type=str,
@@ -48,7 +50,7 @@ import scipy.stats
 from typhon.datasets.dataset import (DataFileError, HomemadeDataset)
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
-#import pyatmlab.graphics
+import pyatmlab.graphics
 from .. import fcdr
 
 class FCDRSummary(HomemadeDataset):
@@ -68,12 +70,18 @@ class FCDRSummary(HomemadeDataset):
     hirs = None
 
     ptiles = numpy.linspace(0, 100, 101, dtype="u1")
-    version = "0.4"
+    data_version = "0.6"
+    time_field = "date"
+    read_returns = "xarray"
+    plot_file = ("hirs_summary/"
+        "FCDR_hirs_summary_{satname:s}_ch{channel:d}_{start:%Y%m%d}-{end:%Y%m%d}.png")
 
     def __init__(self, *args, satname, **kwargs):
         super().__init__(*args, satname=satname, **kwargs)
 
         self.hirs = fcdr.which_hirs_fcdr(satname, read="L1C")
+        self.start_date = self.hirs.start_date
+        self.end_date = self.hirs.end_date
 
     def create_summary(self, start_date, end_date):
         dates = pandas.date_range(start_date, end_date+datetime.timedelta(days=1), freq="D")
@@ -84,14 +92,14 @@ class FCDRSummary(HomemadeDataset):
             {field: 
                   (("date", "ptile", "channel"),
                     numpy.zeros((dates.size-1, self.ptiles.size,
-                                 channels.size), dtype="f4"))
+                                 channels.size), dtype="f4")*numpy.nan)
                 for field in fields},
             coords={"date": dates[:-1], "ptile": self.ptiles, "channel": channels}
             )
         for (sd, ed) in zip(dates[:-1], dates[1:]):
             try:
                 ds = self.hirs.read_period(sd, ed,
-                    locator_args={"fcdr_version": self.version,
+                    locator_args={"data_version": self.data_version,
                                   "fcdr_type": "debug"},
                     fields=fields)
             except DataFileError:
@@ -118,15 +126,34 @@ class FCDRSummary(HomemadeDataset):
             year_end=dates[-2].year,
             month_end=dates[-2].month,
             day_end=dates[-2].day,
-            fcdr_version=self.version))
+            fcdr_version=self.data_version))
         of.parent.mkdir(parents=True, exist_ok=True)
         summary.to_netcdf(str(of))
 
+    def plot_period(self, start, end, channel):
+        (f, a_all) = matplotlib.pyplot.subplots(figsize=(12, 12),
+            nrows=3, ncols=1)
+        summary = self.read_period(start, end)
+        fields = ["T_b", "u_T_b_random", "u_T_b_nonrandom"]
+        for (i, (fld, a)) in enumerate(zip(fields, a_all)):
+            summary[fld].sel(channel=channel).T.plot.pcolormesh(
+                ax=a, vmin=200 if fld=="T_b" else 0)
+            a.set_title(f"{fld:s}")
+        f.suptitle(f"HIRS {self.satname:s} ch {channel:d} "
+            f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
+        f.autofmt_xdate()
+        pyatmlab.graphics.print_or_show(f, None, 
+            self.plot_file.format(satname=self.satname, start=start,
+            end=end, channel=channel))
+
 def summarise():
     p = parsed_cmdline
-    if p.mode != "summarise":
-        raise NotImplementedError("Only summarising implemented yet")
+#    if p.mode != "summarise":
+#        raise NotImplementedError("Only summarising implemented yet")
     summary = FCDRSummary(satname=p.satname)
-    summary.create_summary(
-        datetime.datetime.strptime(p.from_date, p.datefmt),
-        datetime.datetime.strptime(p.to_date, p.datefmt))
+    start = datetime.datetime.strptime(p.from_date, p.datefmt)
+    end = datetime.datetime.strptime(p.to_date, p.datefmt)
+    if p.mode == "summarise":
+        summary.create_summary(start, end)
+    elif p.mode == "plot":
+        sumdat = summary.plot_period(start, end, 5)

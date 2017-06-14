@@ -1,6 +1,8 @@
 """Plot some monitoring info on FCDR
 """
 
+import matplotlib
+matplotlib.use("Agg")
 from .. import common
 import argparse
 
@@ -30,8 +32,6 @@ import pathlib
 import itertools
 import datetime
 import xarray
-import matplotlib
-matplotlib.use("Agg")
 pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 import matplotlib.pyplot
 import matplotlib.gridspec
@@ -49,12 +49,12 @@ class FCDRMonitor:
     figtit = ("HIRS FCDR with uncertainties {self.satname:s} ch. {ch:d}, "
               "{tb:%Y-%m-%d %H:%M}--{te:%Y-%m-%d %H:%M} (scanpos {sp:d})")
     def __init__(self, start_date, end_date, satname,
-            version="0.4",):
+            version="0.6",):
         self.hirsfcdr = fcdr.which_hirs_fcdr(satname, read="L1C")
         self.ds = self.hirsfcdr.read_period(
             start_date,
             end_date,
-            locator_args={"fcdr_version": version, "fcdr_type": "debug"},
+            locator_args={"data_version": version, "fcdr_type": "debug"},
             fields=["T_b", "u_T_b_random", "u_T_b_nonrandom",
                 "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom"])
         self.satname = satname
@@ -73,6 +73,11 @@ class FCDRMonitor:
         for v in {"T_b", "u_T_b_random", "u_T_b_nonrandom",
                   "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom"}:
             ds[v][bad] = numpy.nan 
+
+        if not numpy.isfinite(ds["T_b"]).any():
+            logging.warning("Found no valid BTs for "
+                f"channel {ch:d}, skipping")
+            return
 
         c = next(counter)
         a_tb = fig.add_subplot(gs[c, :3])
