@@ -62,16 +62,18 @@ def parse_cmdline():
 parsed_cmdline = parse_cmdline()
 
 import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-            "%(lineno)s: %(message)s"),
-    filename=parsed_cmdline.log,
-    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
+#logging.basicConfig(
+#    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
+#            "%(lineno)s: %(message)s"),
+#    filename=parsed_cmdline.log,
+#    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
 
 import matplotlib
-matplotlib.use("Agg")
+# matplotlib.use("Agg") # now in matplotlibrc
 import pathlib
-pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+# now in "inmyvenv"
+# pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+
 
 import datetime
 import scipy.stats
@@ -81,12 +83,12 @@ import matplotlib.pyplot
 import matplotlib.ticker
 import matplotlib.gridspec
 import typhon.plots
-matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
 import typhon.plots.plots
 import pyatmlab.graphics
 
 from typhon.physics.units.common import ureg
-from .. import fcdr
+#from .. import fcdr
+from typhon.datasets import tovs
 
 def plot_field_matrix(MM, ranges, title, filename, units):
     f = typhon.plots.plots.scatter_density_plot_matrix(
@@ -110,11 +112,14 @@ class MatrixPlotter:
     """
 
     def __init__(self, sat, from_date, to_date):
-        h = fcdr.which_hirs_fcdr(sat)
+        self.reset(sat, from_date, to_date)
+
+    def reset(self, sat, from_date, to_date):
+        h = tovs.which_hirs(sat)
         self.hirs = h
         M = h.read_period(from_date, to_date,
             fields=["temp_{:s}".format(t) for t in h.temperature_fields] + 
-                   ["counts", "time"])
+                   ["counts", "time", h.scantype_fieldname])
         self.M = M
         self.start_date = from_date
         self.end_date = to_date
@@ -229,39 +234,67 @@ class MatrixPlotter:
     def plot_noise_value_channel_corr(self, channels,
             noise_typ="iwt",
             calibpos=20):
-        accnt = self._get_accnt(noise_typ)
+        """Plot noise value channel correlation
+
+        For channels, noise_typ (iwt, ict, space), and calibration
+        position.
+
+        No return; writes file.
+        """
         (f, ax_all) = matplotlib.pyplot.subplots(1, 3, figsize=(16, 8),
             gridspec_kw={"width_ratios": (14, 14, 1)})
         channels = numpy.asarray(channels)
-        # although there is a scipy.stats.mstats module,
-        # scipy.stats.mstats.spearman can only calculate individual
-        # covariances, not covariance matrices (it's not vectorised) and
-        # explicit looping is too slow
-        unmasked = ~(accnt[:, calibpos, :].mask.any(1))
-        S = numpy.corrcoef(accnt[:, calibpos,  channels-1].T[:, unmasked])
-        im1 = ax_all[0].imshow(S, cmap="PuOr", interpolation="none")
-        ρ = scipy.stats.spearmanr(accnt[:, calibpos, channels-1][unmasked, :])[0]
-        im2 = ax_all[1].imshow(ρ, cmap="PuOr", interpolation="none")
-        for (a, im) in zip(ax_all[:2], (im1, im2)):
-            im.set_clim([-1, 1])
-            a.set_xticks(numpy.arange(len(channels)))
-            a.set_yticks(numpy.arange(len(channels)))
-            a.set_xticklabels([str(ch) for ch in channels])
-            a.set_yticklabels([str(ch) for ch in channels])
-            a.set_xlabel("Channel no.")
-            a.set_ylabel("Channel no.")
+        (S, ρ, no) = self._get_ch_corrmat(channels, noise_typ, calibpos)
+#        im1 = ax_all[0].imshow(S, cmap="PuOr", interpolation="none")
+        im1 = self._plot_ch_corrmat(S, ax_all[0], channels)
+#        im2 = ax_all[1].imshow(ρ, cmap="PuOr", interpolation="none")
+        im2 = self._plot_ch_corrmat(ρ, ax_all[1], channels)
+#        for (a, im) in zip(ax_all[:2], (im1, im2)):
+#            im.set_clim([-1, 1])
+#            a.set_xticks(numpy.arange(len(channels)))
+#            a.set_yticks(numpy.arange(len(channels)))
+#            a.set_xticklabels([str(ch) for ch in channels])
+#            a.set_yticklabels([str(ch) for ch in channels])
+#            a.set_xlabel("Channel no.")
+#            a.set_ylabel("Channel no.")
         cb = f.colorbar(im2, cax=ax_all[2])
         cb.set_label("Correlation")
         ax_all[0].set_title("Pearson correlation")
         ax_all[1].set_title("Spearman correlation")
         f.suptitle("HIRS noise correlations, {:s}, {:s} pos {:d}\n"
             "({:d} cycles)".format(
-            self.title_sat_date, noise_typ, calibpos, unmasked.sum()))
+            self.title_sat_date, noise_typ, calibpos, no))
         pyatmlab.graphics.print_or_show(f, False,
                 "hirs_noise_correlations_channels_{:s}_ch_{:s}_{:s}{:d}.png".format(
             self.filename_sat_date,
             ",".join(str(ch) for ch in channels),
             noise_typ, calibpos))
+
+    def _get_ch_corrmat(self, channels, noise_typ, calibpos):
+        # although there is a scipy.stats.mstats module,
+        # scipy.stats.mstats.spearman can only calculate individual
+        # covariances, not covariance matrices (it's not vectorised) and
+        # explicit looping is too slow
+        accnt = self._get_accnt(noise_typ)
+        unmasked = ~(accnt[:, calibpos, :].mask.any(1))
+        S = numpy.corrcoef(accnt[:, calibpos,  channels-1].T[:, unmasked])
+        ρ = scipy.stats.spearmanr(accnt[:, calibpos, channels-1][unmasked, :])[0]
+        return (S, ρ, unmasked.sum())
+
+    @staticmethod
+    def _plot_ch_corrmat(S, a, channels):
+        """Helper for plot_noise_value_channel_corr
+        """
+        im = a.imshow(S, cmap="PuOr", interpolation="none")
+        im.set_clim([-1, 1])
+        a.set_xticks(numpy.arange(len(channels)))
+        a.set_yticks(numpy.arange(len(channels)))
+        a.set_xticklabels([str(ch) for ch in channels])
+        a.set_yticklabels([str(ch) for ch in channels])
+        a.set_xlabel("Channel no.")
+        a.set_ylabel("Channel no.")
+        return im
+
 
     def plot_noise_value_scanpos_corr(self, channels,
             noise_typ="iwt"):
@@ -339,28 +372,12 @@ def read_and_plot_field_matrices():
             if p.plot_noise_value_scanpos_corr:
                 mp.plot_noise_value_scanpos_corr(p.channels, typ)
 
-#    M = h.read_period(from_date, to_date,
-#        fields=temp_fields_full + ["counts", "time"])
-#    title = "HIRS {{what:s}} {sat:s} {from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}".format(
-#        **locals())
-#    filename="hirs_{{what:s}}_{sat:s}_{from_date:%Y%m%d%H%M}--{to_date:%Y%m%d%H%M}".format(
-#        **locals())
-#    plot_temperature_matrix(M, temp_fields,
-#        title=title.format(what="temperatures"),
-#        filename=filename.format(what="tempmat") +
-#            "_T_{:s}.png".format(",".join(temp_fields)))
-#    for typ in ("iwt", "space"):
-#        plot_noise_level_matrix(h, M, channels, noise_typ=typ,
-#            title=title.format(what="{:s} noise levels".format(typ)),
-#            filename=filename.format(what="{:s}noiselevel".format(typ)) + 
-#                "_ch_{:s}.png".format(','.join([str(x) for x in channels])))
-#        plot_noise_value_matrix(h, M, channels, noise_typ=typ,
-#            title=title.format(what="{:s} noise values".format(typ)) +
-#                " ch. {chstr:s}",
-#            filename=filename.format(what="{:s}noisevalue".format(typ)) + 
-#                "_ch_{chstr:s}.png",
-#            npos=6)
-
 
 def main():
+    logging.basicConfig(
+        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
+                "%(lineno)s: %(message)s"),
+        filename=parsed_cmdline.log,
+        level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
+    matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
     read_and_plot_field_matrices()
