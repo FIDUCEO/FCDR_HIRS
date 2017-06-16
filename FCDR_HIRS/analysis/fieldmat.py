@@ -56,6 +56,10 @@ def parse_cmdline():
         nargs="+",
         help="What source of noise to plot for")
 
+    parser.add_argument("--plot_all_corr", action="store_true",
+        help="Plot all channel correlations for beginning and end of "
+             "satellite lifetime for all satellites")
+
     p = parser.parse_args()
     return p
 
@@ -87,8 +91,9 @@ import typhon.plots.plots
 import pyatmlab.graphics
 
 from typhon.physics.units.common import ureg
-#from .. import fcdr
+from .. import fcdr
 from typhon.datasets import tovs
+from typhon.datasets.dataset import DataFileError
 
 def plot_field_matrix(MM, ranges, title, filename, units):
     f = typhon.plots.plots.scatter_density_plot_matrix(
@@ -111,8 +116,8 @@ class MatrixPlotter:
 
     """
 
-    def __init__(self, sat, from_date, to_date):
-        self.reset(sat, from_date, to_date)
+#    def __init__(self, sat, from_date, to_date):
+#        self.reset(sat, from_date, to_date)
 
     def reset(self, sat, from_date, to_date):
         h = tovs.which_hirs(sat)
@@ -344,13 +349,79 @@ class MatrixPlotter:
                 "hirs_noise_correlations_scanpos_{:s}_ch{:d}_{:s}.png".format(
                     self.filename_sat_date, ch, noise_typ))
 
+
+    def plot_ch_corrmat_all_sats(self, channels, noise_typ, calibpos,
+            sats="all"):
+        """Plot channel noise covariance matrix for all sats.
+
+        Plots lower half for first full month, upper half for last full
+        month.
+        """
+
+        channels = numpy.asarray(channels)
+        if sats == "all":
+            sats = ["tirosn"] + [f"noaa{no:02d}" for no in range(6, 19) if no!=13] + ["metopa", "metopb"]
+
+        (f, ax_all) = matplotlib.pyplot.subplots(3, 5, figsize=(18, 30))
+        for (i, sat) in enumerate(sats):
+            h = tovs.which_hirs(sat)
+            # early month in lower
+            em = h.start_date + datetime.timedelta(days=31)
+            ep = (datetime.datetime(em.year, em.month, 1),
+                  datetime.datetime(em.year, em.month, 11))
+            try:
+                self.reset(sat, *ep)
+            except DataFileError:
+                S = numpy.zeros((channels.size, channels.size))
+                ecnt = 0
+            else:
+                (S, ρ, ecnt) = self._get_ch_corrmat(channels, noise_typ,
+                    calibpos)
+            S_low = numpy.tril(S, k=-1)
+            # late month in upper
+            lm = h.end_date - datetime.timedelta(days=31)
+            lp = (datetime.datetime(lm.year, lm.month, 1),
+                  datetime.datetime(lm.year, lm.month, 11))
+            try:
+                self.reset(sat, *lp)
+            except DataFileError:
+                S = numpy.zeros((channels.size, channels.size))
+                lcnt = 0
+            else:
+                (S, ρ, lcnt) = self._get_ch_corrmat(channels, noise_typ,
+                    calibpos)
+            S_hi = numpy.triu(S, k=1)
+            #
+            ax = ax_all.ravel()[i]
+            im = self._plot_ch_corrmat(S_low+S_hi+numpy.diag(numpy.zeros(channels.size)*numpy.nan),
+                                  ax, channels)
+            ax.set_title(f"{sat:s}\n"
+                         f"{ep[0]:%Y-%m}, {ecnt:d} cycles, "
+                         f"{ep[1]:%Y-%m}, {lcnt:d} cycles")
+
+        f.suptitle("HIRS noise correlations for all HIRS, pos "
+                  f"{calibpos:d} ")
+        pyatmlab.graphics.print_or_show(f, False,
+            f"hirs_noise_correlations_allsats_pos{calibpos:d}.png")
+
+
+
+
+
+
 def read_and_plot_field_matrices():
 #    h = fcdr.which_hirs_fcdr(sat)
     p = parsed_cmdline
+        
+    #temp_fields_full = ["temp_{:s}".format(t) for t in p.temp_fields]
+    mp = MatrixPlotter()
+    if p.plot_all_corr:
+        mp.plot_ch_corrmat_all_sats(p.channels, p.noise_typ[0], p.calibpos[0])
+    return
+
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)
-    #temp_fields_full = ["temp_{:s}".format(t) for t in p.temp_fields]
-    mp = MatrixPlotter(p.satname, from_date, to_date)
+    mp.reset(p.satname, from_date, to_date)
     if p.plot_temperature_sdm:
         mp.plot_temperature_sdm(p.temperatures)
 
