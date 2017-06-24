@@ -247,6 +247,10 @@ class FCDRGenerator:
         (uRe, sensRe, compRe) = self.fcdr.calc_u_for_variable(
             "R_e", self.fcdr._quantities, self.fcdr._effects, cu,
             return_more=True)
+        unc_components = dict(self.fcdr.propagate_uncertainty_components(
+            sensRe, compRe))
+        u_from = xarray.Dataset(dict([(f"u_from_{k!s}", v) for (k, v) in
+                    unc_components.items()]))
         S = self.fcdr.estimate_channel_correlation_matrix(context)
         (LUT_BT, LUT_L) = self.fcdr.get_BT_to_L_LUT()
 
@@ -287,13 +291,19 @@ class FCDRGenerator:
             {str(k): v for (k, v) in self.fcdr._quantities.items()})
         # uncertainty scanline coordinate conflicts with subset scanline
         # coordinate, drop the former
-        ds = xarray.merge(
-            [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}
-                            ).drop("scanline"), qc, subset, uRe,
+        stuff_to_merge = [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
+                            qc, subset, uRe,
                             uRe_syst, uRe_rand,
                             uTb_syst, uTb_rand,
                             S, LUT_BT, LUT_L,
-                            flags_scanline, flags_channel])
+                            flags_scanline, flags_channel,
+                            u_from]
+        ds = xarray.merge(
+            [da.drop("scanline").rename(
+                {"lat": "lat_earth", "lon": "lon_earth"})
+                    if "scanline_earth" in da.coords
+                    and "scanline" in da.coords
+                    else da for da in stuff_to_merge])
         # NB: when quantities are gathered, offset and slope and others
         # per calibration_cycle are calculated for the entire context
         # period rather than the core dataset period.  I don't want to
@@ -305,7 +315,8 @@ class FCDRGenerator:
                 (ds["calibration_cycle"] <= subset["time"][-1]))
         # make sure encoding set on coordinates
         for cn in ds.coords.keys():
-            ds[cn].encoding.update(self.fcdr._data_vars_props[cn][3])
+            if cn in self.fcdr._data_vars_props.keys():
+                ds[cn].encoding.update(self.fcdr._data_vars_props[cn][3])
         ds = self.add_attributes(ds)
         ds = common.time_epoch_to(ds, self.epoch)
         return ds

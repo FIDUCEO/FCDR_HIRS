@@ -82,6 +82,7 @@ import pathlib
 import datetime
 import scipy.stats
 import numpy
+import itertools
 
 import matplotlib.pyplot
 import matplotlib.ticker
@@ -94,6 +95,29 @@ from typhon.physics.units.common import ureg
 from .. import fcdr
 from typhon.datasets import tovs
 from typhon.datasets.dataset import DataFileError
+
+month_pairs = dict(
+    tirosn = ((1978, 11), (1979, 12)),
+    noaa06 = ((1979, 7), (1983, 3)),
+    noaa07 = ((1981, 8), (1984, 12)),
+    noaa08 = ((1983, 5), (1984, 6)),
+    noaa09 = ((1985, 2), (1988, 11)),
+    noaa10 = ((1986, 11), (1991, 9)),
+    noaa11 = ((1988, 11), (1998, 12)),
+    noaa12 = ((1991, 9), (1998, 12)),
+    noaa14 = ((1995, 1), (2005, 12)),
+    noaa15 = ((1999, 1), (2009, 6)),
+    noaa16 = ((2001, 1), (2014, 6)),
+    noaa17 = ((2002, 7), (2013, 4)),
+    noaa18 = ((2006, 11), (2011, 3)),
+    noaa19 = ((2009, 4), (2013, 7)),
+    metopa = ((2006, 12), (2016, 10)),
+    metopb = ((2013, 2), (2017, 5)))
+
+period_pairs = {sat:
+    ((datetime.datetime(*start, 1), datetime.datetime(*start, 28)),
+     (datetime.datetime(*end, 1), datetime.datetime(*end, 28)))
+        for (sat, (start, end)) in month_pairs.items()}
 
 def plot_field_matrix(MM, ranges, title, filename, units):
     f = typhon.plots.plots.scatter_density_plot_matrix(
@@ -287,17 +311,23 @@ class MatrixPlotter:
         return (S, ρ, unmasked.sum())
 
     @staticmethod
-    def _plot_ch_corrmat(S, a, channels):
+    def _plot_ch_corrmat(S, a, channels, add_x=False, add_y=False, each=2):
         """Helper for plot_noise_value_channel_corr
         """
-        im = a.imshow(S, cmap="PuOr", interpolation="none")
+        im = a.imshow(S, cmap="PuOr", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
-        a.set_xticks(numpy.arange(len(channels)))
-        a.set_yticks(numpy.arange(len(channels)))
-        a.set_xticklabels([str(ch) for ch in channels])
-        a.set_yticklabels([str(ch) for ch in channels])
-        a.set_xlabel("Channel no.")
-        a.set_ylabel("Channel no.")
+        if add_x or a.is_last_row():
+            a.set_xticks(numpy.arange(len(channels)))
+            a.set_xticklabels([str(ch) if ch%each==0 else "" for ch in channels])
+            a.set_xlabel("Channel no.")
+        else:
+            a.set_xticks([])
+        if add_y or a.is_first_col():
+            a.set_yticks(numpy.arange(len(channels)))
+            a.set_yticklabels([str(ch) if ch%each==0 else "" for ch in channels])
+            a.set_ylabel("Channel no.")
+        else:
+            a.set_yticks([])
         return im
 
 
@@ -360,49 +390,63 @@ class MatrixPlotter:
 
         channels = numpy.asarray(channels)
         if sats == "all":
-            sats = ["tirosn"] + [f"noaa{no:02d}" for no in range(6, 19) if no!=13] + ["metopa", "metopb"]
+            sats = ["tirosn"] + [f"noaa{no:02d}" for no in range(6, 20) if no!=13] + ["metopa", "metopb"]
 
-        (f, ax_all) = matplotlib.pyplot.subplots(3, 5, figsize=(18, 30))
-        for (i, sat) in enumerate(sats):
+#        (f, ax_all) = matplotlib.pyplot.subplots(5, 4, figsize=(22, 20))
+        f = matplotlib.pyplot.figure(figsize=(22, 24))
+        gs = matplotlib.gridspec.GridSpec(20, 21)
+        for ((r, c), sat) in zip(itertools.product(range(4), range(4)), sats):
+#        for (i, sat) in enumerate(sats):
             h = tovs.which_hirs(sat)
             # early month in lower
-            em = h.start_date + datetime.timedelta(days=31)
-            ep = (datetime.datetime(em.year, em.month, 1),
-                  datetime.datetime(em.year, em.month, 11))
-            try:
-                self.reset(sat, *ep)
-            except DataFileError:
-                S = numpy.zeros((channels.size, channels.size))
-                ecnt = 0
-            else:
-                (S, ρ, ecnt) = self._get_ch_corrmat(channels, noise_typ,
-                    calibpos)
+#            em = h.start_date + datetime.timedelta(days=30)
+#            ep = (datetime.datetime(em.year, em.month, 5),
+#                  datetime.datetime(em.year, em.month, 6, 12))
+            ep = period_pairs[sat][0]
+            lp = period_pairs[sat][1]
+
+#            try:
+            self.reset(sat, *ep)
+#            except DataFileError:
+#                S = numpy.zeros((channels.size, channels.size))
+#                ecnt = 0
+#            else:
+            (S, ρ, ecnt) = self._get_ch_corrmat(channels, noise_typ,
+                calibpos)
             S_low = numpy.tril(S, k=-1)
             # late month in upper
-            lm = h.end_date - datetime.timedelta(days=31)
-            lp = (datetime.datetime(lm.year, lm.month, 1),
-                  datetime.datetime(lm.year, lm.month, 11))
-            try:
-                self.reset(sat, *lp)
-            except DataFileError:
-                S = numpy.zeros((channels.size, channels.size))
-                lcnt = 0
-            else:
-                (S, ρ, lcnt) = self._get_ch_corrmat(channels, noise_typ,
-                    calibpos)
+            # …but this should be late month with any valid data…
+#            lm = h.end_date - datetime.timedelta(days=30)
+#            lp = (datetime.datetime(lm.year, lm.month, 5),
+#                  datetime.datetime(lm.year, lm.month, 6, 12))
+#            try:
+            self.reset(sat, *lp)
+#            except DataFileError:
+#                S = numpy.zeros((channels.size, channels.size))
+#                lcnt = 0
+#            else:
+            (S, ρ, lcnt) = self._get_ch_corrmat(channels, noise_typ,
+                calibpos)
             S_hi = numpy.triu(S, k=1)
             #
-            ax = ax_all.ravel()[i]
+            ax = f.add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
+#            ax = ax_all.ravel()[i]
             im = self._plot_ch_corrmat(S_low+S_hi+numpy.diag(numpy.zeros(channels.size)*numpy.nan),
-                                  ax, channels)
+                                  ax, channels, add_x=r==3, add_y=c==0)
+            if r==c==0:
+                cax = f.add_subplot(gs[:-1, -1])
+                cb = f.colorbar(im, cax=cax)
+                cb.set_label("Pearson product-moment correlation coefficient")
             ax.set_title(f"{sat:s}\n"
-                         f"{ep[0]:%Y-%m}, {ecnt:d} cycles, "
-                         f"{ep[1]:%Y-%m}, {lcnt:d} cycles")
+                         f"{ep[0]:%Y-%m}, {ecnt:d} cycles\n"
+                         f"{lp[0]:%Y-%m}, {lcnt:d} cycles")
 
+        #f.subplots_adjust(wspace=0.10, hspace=0.4)
+        gs.update(wspace=0.10, hspace=0.4)
         f.suptitle("HIRS noise correlations for all HIRS, pos "
-                  f"{calibpos:d} ")
+                  f"{calibpos:d} ", fontsize=40)
         pyatmlab.graphics.print_or_show(f, False,
-            f"hirs_noise_correlations_allsats_pos{calibpos:d}.png")
+            f"hirs_noise_correlations_allsats_pos{calibpos:d}.")
 
 
 
@@ -417,7 +461,7 @@ def read_and_plot_field_matrices():
     mp = MatrixPlotter()
     if p.plot_all_corr:
         mp.plot_ch_corrmat_all_sats(p.channels, p.noise_typ[0], p.calibpos[0])
-    return
+        return
 
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)

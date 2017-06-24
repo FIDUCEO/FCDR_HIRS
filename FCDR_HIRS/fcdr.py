@@ -376,7 +376,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         counts_space = UADA(ds_space["counts"].sel(
                 scanpos=slice(self.start_space_calib, None),
                 channel=ch).rename({"channel": "calibrated_channel"}),
-            name="counts_space")
+            name="counts_space").drop(("scanline", "lat", "lon"))
         counts_space.attrs.update(units="counts")
 #        counts_space = ureg.Quantity(M_space["counts"][:,
 #            self.start_space_calib:, ch-1], ureg.count)
@@ -384,13 +384,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         counts_iwct = UADA(ds_iwct["counts"].sel(
                 scanpos=slice(self.start_iwct_calib, None),
                 channel=ch).rename({"channel": "calibrated_channel"}),
-            name="counts_iwct")
+            name="counts_iwct").drop(("scanline", "lat", "lon"))
         counts_iwct.attrs.update(units="counts")
 #        counts_iwct = ureg.Quantity(M_iwct["counts"][:,
 #            self.start_iwct_calib:, ch-1], ureg.count)
 
-        T_iwct = ds_iwct["temperature_iwct"].mean(
-                dim="prt_reading").mean(dim="prt_number_iwt")
+        T_iwct = UADA(ds_iwct["temperature_iwct"].mean(
+                dim="prt_reading").mean(dim="prt_number_iwt")).drop(
+                    "scanline")
         T_iwct.attrs["units"] = ds_iwct["temperature_iwct"].attrs["units"]
 #        T_iwct = ureg.Quantity(ds_iwct["temperature_iwct"].mean(
 #                dim="prt_reading").mean(dim="prt_number_iwt"),
@@ -403,8 +404,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # channel), could assert they are identical or move this out of a
         # higher loop, or I could simply leave it
         if tuck:
+            calibcycle_coords = {"calibration_cycle": ds_space["time"].values}
             self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
-                T_iwct, name=me.names[me.symbols["T_IWCT"]])
+                T_iwct, name=me.names[me.symbols["T_IWCT"]],
+                **calibcycle_coords)
             self._quantities[me.symbols["N"]] = self._quantity_to_xarray(
                     numpy.array(ds.dims["prt_number_iwt"], "u1"),
                     name=me.names[me.symbols["N"]])
@@ -456,14 +459,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             extra.append(space_followed_by_iwct.values.nonzero()[0])
 
         if tuck:
-            coords = {"calibration_cycle": ds_space["time"].values}
             #coords = {"calibration_cycle": M_space["time"]}
             self._tuck_quantity_channel("C_s", counts_space,
-                calibrated_channel=ch, **coords)
+                calibrated_channel=ch, **calibcycle_coords)
             self._tuck_quantity_channel("C_IWCT", counts_iwct,
-                calibrated_channel=ch, **coords)
+                calibrated_channel=ch, **calibcycle_coords)
             self._tuck_quantity_channel("R_IWCT", L_iwct,
-                calibrated_channel=ch, **coords)
+                calibrated_channel=ch, **calibcycle_coords)
             # store 'N', C_PRT[n], d_PRT[n, k], O_TPRT, O_TIWCT…
         return (UADA(ds_space["time"]),
                 UADA(L_iwct),
@@ -471,7 +473,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 UADA(counts_space)) + tuple(extra)
         #return (M_space["time"], L_iwct, counts_iwct, counts_space) + tuple(extra)
 
-    def _quantity_to_xarray(self, quantity, name, dropdims=(), dims=None):
+    def _quantity_to_xarray(self, quantity, name, dropdims=(), dims=None,
+            **coords):
         """Convert quantity to xarray
 
         Quantity can be masked and with unit, which will be converted.
@@ -479,13 +482,26 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         for the quantity) or dims (hard list of dims to include).
         """
         
-        da = UADA(
-            numpy.asarray(quantity,
-                dtype=("f4" if hasattr(quantity, "mask") else
-                    quantity.dtype)), # masking only for floats
-            dims=dims if dims is not None else [d for d in self._data_vars_props[name][1] if d not in dropdims],
-            attrs=self._data_vars_props[name][2],
-            encoding=self._data_vars_props[name][3])
+        if isinstance(quantity, UADA):
+            da = quantity.rename(
+                dict(
+                    zip(quantity.dims,
+                        [d for d in self._data_vars_props[name][1]
+                            if d not in dropdims])))
+            da.attrs.update(self._data_vars_props[name][2])
+            da.encoding.update(self._data_vars_props[name][3])
+        else:
+            da = UADA(
+                numpy.asarray(quantity,
+                    dtype=("f4" if hasattr(quantity, "mask") else
+                        quantity.dtype)), # masking only for floats
+                dims=dims if dims is not None else [d for d in self._data_vars_props[name][1] if d not in dropdims],
+                attrs=self._data_vars_props[name][2],
+                encoding=self._data_vars_props[name][3])
+        # also drop dimensions when they are now dimensionless coordinates
+        for d in dropdims:
+            if d in da.coords:
+                da = da.drop(d)
         # 1st choice: quantity.u (pint unit)
         # 2nd choice: defined in quantity.attrs (UADA)
         # 3rd choice: defined in da.attrs
@@ -503,7 +519,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             da.values[quantity.mask] = numpy.nan
         except AttributeError:
             pass # not a masked array
-        return da
+        return da.assign_coords(**coords)
 
     def _tuck_quantity_channel(self, symbol_name, quantity, **coords):
         """Convert quantity to xarray and put into self._quantities
@@ -517,8 +533,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         s = me.symbols[symbol_name]
         name = me.names[s]
         q = self._quantity_to_xarray(quantity, name,
-                dropdims=["channel", "calibrated_channel"]).assign_coords(
-                    **coords)
+                dropdims=["channel", "calibrated_channel"],
+                **coords)
         if s in self._quantities:
             da = self._quantities[s]
             in_coords = [x for x in ("channel", "calibrated_channel")
@@ -676,6 +692,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._tuck_quantity_channel("a_1", slope,
                 calibrated_channel=ch, **coords)
             self._tuck_quantity_channel("a_2", a2,
+                calibrated_channel=ch)
+            self._tuck_quantity_channel("B", L_iwct,
                 calibrated_channel=ch)
         return (time,
                 offset,
@@ -1441,7 +1459,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "have {!s}!".format(s, dest_dims, src_dims or "none"),
                 FCDRWarning)
         if not src_dims <= dest_dims: # needs reducing
-            adict = self._make_dims_consistent(adict)
+            adict = self._make_adict_dims_consistent(adict)
         # verify/convert dimensions
         u = f(*[typhon.math.common.promote_maximally(
                     adict[x]).to_root_units() for x in ta])
@@ -1496,9 +1514,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         else:
             return u
 
-    @staticmethod
-    def _make_dims_consistent(adict):
-        """Ensure dims are consistent
+    def _make_adict_dims_consistent(self, adict):
+        """Ensure adict dims are consistent
 
         The components of adict are the contents to calculate var.  Make
         sure dimensions are consistent, through interpolation, averaging,
@@ -1513,31 +1530,60 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         """
         new_adict = {}
 
-        dest_time = adict[me.symbols["C_E"]].scanline_earth.astype("u8")
+#        dest_time = adict[me.symbols["C_E"]].scanline_earth.astype("u8")
 
         for (k, v) in adict.items():
-            if "calibration_position" in v.dims:
-                v = v.mean(dim="calibration_position", keep_attrs=True)
-            if "calibration_cycle" in v.dims or "rself_update_time" in v.dims:
-                d = ("calibration_cycle"
-                     if "calibration_cycle" in v.dims
-                     else "rself_update_time")
-                src_time = v[d].astype("u8")#adict[me.symbols["a_1"]][d].astype("u8")
-                fnc = scipy.interpolate.interp1d(
-                    src_time, v,
-                    kind="zero",
-                    bounds_error=True,
-                    axis=v.dims.index(d))
-                new_adict[k] = UADA(fnc(dest_time),
-                    dims=[x.replace(d, "scanline_earth") for
-                            x in v.dims],
-                    coords=adict[me.symbols["C_E"]].coords,
-                    attrs=v.attrs,
-                    encoding=v.encoding)
-            else:
-                new_adict[k] = v
+#            if "calibration_position" in v.dims:
+#                v = v.mean(dim="calibration_position", keep_attrs=True)
+#            if "calibration_cycle" in v.dims or "rself_update_time" in v.dims:
+            new_adict[k] = self._make_dims_consistent(
+                adict[me.symbols["C_E"]],
+                v)
+#                d = ("calibration_cycle"
+#                     if "calibration_cycle" in v.dims
+#                     else "rself_update_time")
+#                src_time = v[d].astype("u8")#adict[me.symbols["a_1"]][d].astype("u8")
+#                fnc = scipy.interpolate.interp1d(
+#                    src_time, v,
+#                    kind="zero",
+#                    bounds_error=True,
+#                    axis=v.dims.index(d))
+#                new_adict[k] = UADA(fnc(dest_time),
+#                    dims=[x.replace(d, "scanline_earth") for
+#                            x in v.dims],
+#                    coords=adict[me.symbols["C_E"]].coords,
+#                    attrs=v.attrs,
+#                    encoding=v.encoding)
+#            else:
+#                new_adict[k] = v
 
         return new_adict
+
+    def _make_dims_consistent(self, dest, src):
+        srcdims = getattr(src, "dims", ())
+        if "calibration_position" in srcdims:
+            src = src.mean(dim="calibration_position", keep_attrs=True)
+        if (("calibration_cycle" in srcdims
+            or "rself_update_time" in srcdims)
+                and hasattr(dest, "scanline_earth")):
+            dest_time = dest.scanline_earth.astype("u8")
+            d = ("calibration_cycle" if "calibration_cycle" in srcdims else "rself_update_time")
+            src_time = src[d].astype("u8")
+            fnc = scipy.interpolate.interp1d(
+                src_time, src,
+                kind="zero",
+                bounds_error=True,
+                axis=src.dims.index(d))
+            src = UADA(fnc(dest_time),
+                dims=[x.replace(d, "scanline_earth") for
+                        x in src.dims],
+                attrs=src.attrs,
+                encoding=src.encoding)
+            src = src.assign_coords(
+                **{k: v
+                    for (k, v) in dest.coords.items()
+                    if all(d in src.dims for d in v.dims)})
+        return src
 
 
     def numerically_propagate_ΔL(self, L, ΔL):
@@ -1657,209 +1703,57 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         return (flags_scanline, flags_channel)
 
+    def propagate_uncertainty_components(self, sens, comp, sens_above=1):
+        """Propagate individual uncertainty components seperately
 
-    # The remaining methods are no longer used.
-
-    def calc_sens_coef(self, typ, M, ch, srf): 
-        """Calculate sensitivity coefficient.
-
-        Actual work is delegated to calc_sens_coef_{name}
-
-        Arguments:
-
-            typ
-            M
-            SRF
-            ch
-        """
-
-        f = getattr(self, "calc_sens_coef_{:s}".format(typ))
-
-        (L_iwct, C_iwct, C_space, C_Earth) = (
-            self.extract_and_interp_calibcounts_and_temp(M, ch, srf))
-
-        return f(L_iwct[:, numpy.newaxis], C_iwct[:, numpy.newaxis],
-                 C_space[:, numpy.newaxis], C_Earth)
-    
-    @typhon.math.common.calculate_precisely
-    def calc_sens_coef_C_Earth(self, L_iwct, C_iwct, C_space, C_Earth):
-        return L_iwct / (C_iwct - C_space)
-
-    @typhon.math.common.calculate_precisely
-    def calc_sens_coef_C_iwct(self, L_iwct, C_iwct, C_space, C_Earth):
-        return - L_iwct * (C_Earth - C_space) / (C_iwct - C_space)**2
-
-    @typhon.math.common.calculate_precisely
-    def calc_sens_coef_C_iwct_slope(self, L_iwct, C_iwct, C_space):
-        """Sensitivity coefficient for C_IWCT for slope (a₁) calculation
+        To investigate or otherwise communicate exactly how much each
+        effect contributes to the total uncertainty in destination
+        coordinates (radiance units or brightness temperatures), need to
+        propagate each individually.  calc_u_for_variable only calculates
+        it per sub-measurement-equation, then returns dictionaries with
+        components and sensitivities.  Here, we propagate those and
+        calculate the total magnitude for each uncertainty effect.
 
         Arguments:
 
-            L_iwct [ndarray]
+            sensRe
 
-                Radiance for IWCT.  Can be obtained with
-                self.extract_calibcounts_and_temp.  Should
-                be 1-D [N].
+            compRe
 
-            C_iwct [ndarray]
-
-                Counts for IWCTs.  Should be 2-D [N × 48]
-
-            C_space [ndarray]
-
-                Counts for space views.  Same shape as C_iwct.
-
-        Returns:
-
-            Sensitivity coefficient.
+            sens_above
         """
-        return L_iwct[:, numpy.newaxis] / (C_iwct - C_space)**2
 
-    @typhon.math.common.calculate_precisely
-    def calc_sens_coef_C_space(self, L_iwct, C_iwct, C_space, C_Earth):
-        return L_iwct * (C_Earth - C_iwct) / (C_iwct - C_space)**2
+        if not sens.keys() == comp.keys():
+            raise ValueError("Must have same keys in sensitivity dict "
+                "as in component dict!")
 
-    @typhon.math.common.calculate_precisely
-    def calc_sens_coef_C_space_slope(self, L_iwct, C_iwct, C_space):
-        """Sensitivity coefficient for C_space for slope (a₁) calculation
-
-        Input as for calc_sens_coef_C_iwct_slope
-        """
-        return -L_iwct[:, numpy.newaxis] / (C_iwct - C_space)**2
-
-
-    def calc_urad(self, typ, M, ch, *args, srf=None):
-        """Calculate uncertainty
-
-        Arguments:
-
-            typ [str]
+#        for k in comp.keys():
+#            if not comp[k][0].attrs["units"] == u.attrs["units"]:
+#                raise ValueError(f"Estimating components for {u.name:s} "
+#                    f"due to {comp[k][0].name:s}, but {u.name:s} has units "
+#                    f"{u.attrs['units']:s} and {comp[k][0].name:s} has "
+#                    f"units {comp[k][0].attrs['units']:s}, giving up.")
             
-                Sort of uncertainty.  Currently implemented: "noise" and
-                "calib".
-
-            M
-            ch
-
-            *args
-
-                Depends on the sort of uncertainty, but should pass all
-                the "base" uncertainties needed for propagation.  For
-                example, for calib, must be u_C_iwct and u_C_space.
-
-            srf
-                
-                Only if different from the nominal
-        """
-
-        srf = srf or self.srfs[ch-1]
-        f = getattr(self, "calc_urad_{:s}".format(typ))
-        (L_iwct, C_iwct, C_space, C_Earth) = (
-            self.extract_and_interp_calibcounts_and_temp(M, ch, srf))
-        return f(L_iwct[:, numpy.newaxis],
-                 C_iwct[:, numpy.newaxis],
-                 C_space[:, numpy.newaxis], C_Earth, *args)
-
-    def calc_urad_noise(self, L_iwct, C_iwct, C_space, C_Earth, u_C_Earth):
-        """Calculate uncertainty due to random noise
-        """
-
-        s = self.calc_sens_coef_C_Earth(L_iwct, C_iwct, C_space, C_Earth)
-        return abs(s) * u_C_Earth
-
-    def calc_urad_calib(self, L_iwct, C_iwct, C_space, C_Earth,
-                              u_C_iwct, u_C_space):
-        """Calculate radiance uncertainty due to calibration
-        """
-        s_iwct = self.calc_sens_coef_C_iwct(
-                    L_iwct, C_iwct, C_space, C_Earth)
-        s_space = self.calc_sens_coef_C_space(
-                    L_iwct, C_iwct, C_space, C_Earth)
-        return numpy.sqrt((s_iwct * u_C_iwct)**2 +
-                    (s_space * u_C_space)**2)
-
-    def calc_uslope(self, M, ch, srf=None):
-        """Direct calculation of slope uncertainty
-
-        Such as for purposes of visualising uncertainties in slope/gain
-        """
-        srf = srf or self.srfs[ch-1]
-        (time, L_iwct, C_iwct, C_space, u_C_iwct,
-            u_C_space) = self.extract_calibcounts_and_temp(
-                M, ch, srf, return_u=True)
-        s_iwct = self.calc_sens_coef_C_iwct_slope(L_iwct, C_iwct, C_space)
-        s_space = self.calc_sens_coef_C_space_slope(L_iwct, C_iwct, C_space)
-#        (t_iwt_noise_level, u_C_iwct) = self.estimate_noise(M, ch, typ="iwt")
-#        (t_space_noise_level, u_C_space) = self.estimate_noise(M, ch, typ="space")
-#        (u_C_iwct,) = h.interpolate_between_calibs(M["time"],
-#            t_iwt_noise_level, u_C_iwct)
-#        (u_C_space,) = h.interpolate_between_calibs(M["time"],
-#            t_space_noise_level, u_C_space)
-
-        return numpy.sqrt((s_iwct * u_C_iwct[:, numpy.newaxis])**2 +
-                          (s_space * u_C_space[:, numpy.newaxis])**2)
-
-    def calc_S_noise(self, u):
-        """Calculate covariance matrix between two uncertainty vectors
-
-        Random noise component, so result is a diagonal
-        """
-
-        if u.ndim == 1:
-            return ureg.Quantity(numpy.diag(u**2), u.u**2)
-        elif u.ndim == 2:
-            # FIXME: if this is slow, I will need to vectorise it
-            return ureg.Quantity(
-                numpy.rollaxis(numpy.dstack(
-                    [numpy.diag(u[i, :]**2) for i in range(u.shape[0])]),
-                    2, 0),
-                u.u**2)
-        else:
-            raise ValueError("u must have 1 or 2 dims, found {:d}".format(u.ndim))
-
-    def calc_S_calib(self, u, c_id):
-        """Calculate covariance matrix between two uncertainty vectors
-
-        Calibration (structured random) component.
-
-        For initial version of my own calibration implementation, where
-        only one calibartion propagates into each uncertainty.
-
-        FIXME: make this vectorisable
-
-        Arguments:
-            
-            u [ndarray]
-
-                Vector of uncertainties.  Last dimension must be the
-                dimension to estimate covariance matrix for.
-
-            c_id [ndarray]
-
-                Vector with identifier for what calibration cycle was used
-                in each.  Most commonly, the time.  Shape must match u.
-        """
-
-        u = ureg.Quantity(numpy.atleast_2d(u), u.u)
-        u_cross = u[..., numpy.newaxis] * u[..., numpy.newaxis].swapaxes(-1, -2)
-
-        # r = 1 when using same calib, 0 otherwise...
-        c_id = numpy.atleast_2d(c_id)
-        r = (c_id[..., numpy.newaxis] == c_id[..., numpy.newaxis].swapaxes(-1, -2)).astype("f4")
-
-        S = u_cross * r
-
-        #S.mask |= (u[:, numpy.newaxis].mask | u[numpy.newaxis, :].mask) # redundant
-
-        return S.squeeze()
-
-    def calc_S_srf(self, u):
-        """Calculate covariance matrix between two uncertainty vectors
-
-        Component due to uncertainty due to SRF
-        """
-        
-        raise NotImplementedError("Not implemented yet!")
+        for k in comp.keys():
+            # 'comp' is already a dictionary with 'what component of
+            # uncertainty comes from this?', i.e. we only need to multiply
+            # with sens_above to get correctness...
+            # multiplication with three operands:
+            # sens_above * sens[k][0] * uncertainty_comp[k][0]
+            # first, sens_above is the dest, then it is the src
+            sensk0 = self._make_dims_consistent(sens_above, sens[k][0])
+            sens_to_here = numpy.sqrt(sensk0**2 * sens_above**2)
+            compk0 = self._make_dims_consistent(sens_to_here, comp[k][0])
+            # This is WRONG because I need to multiply with u_x, not with x!
+#            compun = self._make_dims_consistent(sens_to_here, self._quantities[k])
+#            if not src_dims <= dest_dims:
+#                ipsens = self._make_dims_consistent(comp[k][0], sens_to_here)
+#            else:
+#                ipsens = sens_above
+#            yield (k, numpy.sqrt(compk0**2 * sens_to_here**2))
+            yield (k, numpy.sqrt(compk0**2 * sens_above**2))
+            yield from self.propagate_uncertainty_components(
+                sens[k][1], comp[k][1], sens_to_here)
 
 class HIRSPODFCDR:
     """Mixin for HIRS POD FCDRs

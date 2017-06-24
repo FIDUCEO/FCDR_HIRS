@@ -46,7 +46,8 @@ def plot(sat, start, end):
     #h15 = typhon.datasets.tovs.HIRS3(satname="noaa15")
     M15 = h.read_period(
         start, end,
-        reader_args={"max_flagged": 1.0, "apply_flags": False},
+        reader_args={"max_flagged": 1.0, "apply_flags": False,
+                     "calibrate": False},
         fields=["hrs_qualind", "hrs_linqualflgs", "hrs_chqualflg",
                 "hrs_mnfrqual", "time", "lat", "lon"])
 
