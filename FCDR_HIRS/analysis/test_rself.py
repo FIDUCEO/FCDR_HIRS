@@ -44,7 +44,7 @@ from typhon.physics.units.common import radiance_units as rad_u
 from .. import models
 from .. import fcdr
 
-def plot_rself_test(h, M, temperatures, channels,
+def plot_rself_test(h, ds, temperatures, channels,
         tit, fn):
     
     model = models.RSelf(h, temperatures)
@@ -60,8 +60,8 @@ def plot_rself_test(h, M, temperatures, channels,
     (f, ax_all) = matplotlib.pyplot.subplots(nrow, ncol,
         sharex=False, figsize=(2+3*ncol, 3+2.5*nrow))
     for (a, c) in zip(ax_all.ravel(), channels):
-        model.fit(M, c)
-        (X, Y_ref, Y_pred) = model.test(M, c)
+        model.fit(ds, c)
+        (X, Y_ref, Y_pred) = model.test(ds, c)
         xloc = Y_ref.to(rad_u["ir"], "radiance").m
         yloc = (Y_pred - Y_ref).to(rad_u["ir"], "radiance").m
         rng = [scipy.stats.scoreatpercentile(
@@ -107,9 +107,10 @@ def read_and_plot_rself_test(sat, from_date, to_date, temperatures,
                              channels):
     h = fcdr.which_hirs_fcdr(sat)
     M = h.read_period(from_date, to_date,
-        fields=["time", "counts"] +
+        fields=["time", "counts", "lat", "lon", "bt"] +
             ["temp_{:s}".format(t) for t in temperatures])
-    plot_rself_test(h, M, temperatures, channels,
+    ds = h.as_xarray_dataset(M)
+    plot_rself_test(h, ds, temperatures, channels,
         "self-emission regression performance, {sat:s}, "
         "{from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}\n"
         "using {temperatures:s}".format(
@@ -125,8 +126,8 @@ def read_and_plot_rself_test(sat, from_date, to_date, temperatures,
 
 def main():
     import warnings
-    warnings.filterwarnings("error")
-    warnings.filterwarnings("always", category=DeprecationWarning)
+#    warnings.filterwarnings("error")
+#    warnings.filterwarnings("always", category=DeprecationWarning)
     p = parsed_cmdline
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)

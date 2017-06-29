@@ -37,3 +37,8 @@ After installation, command-line utilities include:
 
 Most of those have an online help, i.e. plot_hirs_field_timeseries --help,
 listing all the options and capabilities.
+
+To get started with FCDR generation, analysis, or anything else, you need
+to tell it where the files are.  This happens through the typhon
+dependency.  You will need to create a .typhonrc file and tell typhon
+where it is through the environment variable TYPHONRC.

@@ -693,7 +693,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 calibrated_channel=ch, **coords)
             self._tuck_quantity_channel("a_2", a2,
                 calibrated_channel=ch)
-            self._tuck_quantity_channel("B", L_iwct,
+            self._tuck_quantity_channel("B", L_iwct.assign_coords(time=slope.coords["time"]),
                 calibrated_channel=ch)
         return (time,
                 offset,
@@ -1703,7 +1703,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         return (flags_scanline, flags_channel)
 
-    def propagate_uncertainty_components(self, sens, comp, sens_above=1):
+    def propagate_uncertainty_components(self, u, sens, comp, sens_above=1):
         """Propagate individual uncertainty components seperately
 
         To investigate or otherwise communicate exactly how much each
@@ -1715,6 +1715,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         calculate the total magnitude for each uncertainty effect.
 
         Arguments:
+
+            u
+
+                only used to determine output dimensions
 
             sensRe
 
@@ -1741,9 +1745,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # multiplication with three operands:
             # sens_above * sens[k][0] * uncertainty_comp[k][0]
             # first, sens_above is the dest, then it is the src
-            sensk0 = self._make_dims_consistent(sens_above, sens[k][0])
+            #sensk0 = self._make_dims_consistent(sens_above, sens[k][0])
+            sensk0 = self._make_dims_consistent(u, sens[k][0])
             sens_to_here = numpy.sqrt(sensk0**2 * sens_above**2)
-            compk0 = self._make_dims_consistent(sens_to_here, comp[k][0])
+            #compk0 = self._make_dims_consistent(sens_to_here, comp[k][0])
+            compk0 = self._make_dims_consistent(u, comp[k][0])
             # This is WRONG because I need to multiply with u_x, not with x!
 #            compun = self._make_dims_consistent(sens_to_here, self._quantities[k])
 #            if not src_dims <= dest_dims:
@@ -1752,7 +1758,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #                ipsens = sens_above
 #            yield (k, numpy.sqrt(compk0**2 * sens_to_here**2))
             yield (k, numpy.sqrt(compk0**2 * sens_above**2))
-            yield from self.propagate_uncertainty_components(
+            yield from self.propagate_uncertainty_components(u,
                 sens[k][1], comp[k][1], sens_to_here)
 
 class HIRSPODFCDR:

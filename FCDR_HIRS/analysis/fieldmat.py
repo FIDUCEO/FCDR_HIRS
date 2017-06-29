@@ -140,6 +140,7 @@ class MatrixPlotter:
 
     """
 
+    all_sats = ["tirosn"] + [f"noaa{no:02d}" for no in range(6, 20) if no!=13] + ["metopa", "metopb"]
 #    def __init__(self, sat, from_date, to_date):
 #        self.reset(sat, from_date, to_date)
 
@@ -330,18 +331,38 @@ class MatrixPlotter:
             a.set_yticks([])
         return im
 
+    @staticmethod
+    def _plot_pos_corrmat(S, a, add_x=False, add_y=False):
+        im = a.imshow(S, cmap="PuOr", interpolation="none", vmin=-1, vmax=1)
+        im.set_clim([-1, 1])
+        if add_x:
+            a.set_xlabel("Pos no.")
+        else:
+            a.set_xticks([])
+        if add_y:
+            a.set_ylabel("Pos no.")
+        else:
+            a.set_yticks([])
+        return im
+
+    def _get_pos_corrmat(self, ch, noise_typ):
+        accnt = self._get_accnt(noise_typ)
+        unmasked = ~(accnt[:, :, ch-1].mask.any(1))
+        (S, p) = typhon.math.stats.corrcoef(accnt[unmasked, :, ch-1].T)
+        return (S, p, unmasked.sum())
 
     def plot_noise_value_scanpos_corr(self, channels,
             noise_typ="iwt"):
 
-        accnt = self._get_accnt(noise_typ)
+        #accnt = self._get_accnt(noise_typ)
         channels = numpy.asarray(channels)
         for ch in channels:
             (f, ax_all) = matplotlib.pyplot.subplots(1, 8, figsize=(24, 6),
                 gridspec_kw={"width_ratios": (15, 1, 6, 15, 1, 6, 15, 1)})
             #S = numpy.corrcoef(accnt[:, :, ch].T)
-            unmasked = ~(accnt[:, :, ch].mask.any(1))
-            (S, p) = typhon.math.stats.corrcoef(accnt[unmasked, :, ch].T)
+            #unmasked = ~(accnt[:, :, ch].mask.any(1))
+            #(S, p) = typhon.math.stats.corrcoef(accnt[unmasked, :, ch].T)
+            (S, p, no) = self._get_pos_corrmat(ch, noise_typ)
             # hack to make logarithmic possible
             if (p==0).any():
                 logging.warn("{:d} elements have underflow (p=0), setting "
@@ -372,7 +393,7 @@ class MatrixPlotter:
             cb3.set_label("p-value")
             f.suptitle("HIRS noise correlations, {:s}, {:s} ch. {:d}\n"
                 "({:d} cycles)".format(
-                    self.title_sat_date, noise_typ, ch, unmasked.sum()))
+                    self.title_sat_date, noise_typ, ch, no))
             ax_all[2].set_visible(False)
             ax_all[5].set_visible(False)
             pyatmlab.graphics.print_or_show(f, False,
@@ -390,47 +411,26 @@ class MatrixPlotter:
 
         channels = numpy.asarray(channels)
         if sats == "all":
-            sats = ["tirosn"] + [f"noaa{no:02d}" for no in range(6, 20) if no!=13] + ["metopa", "metopb"]
+            sats = self.all_sats
 
-#        (f, ax_all) = matplotlib.pyplot.subplots(5, 4, figsize=(22, 20))
         f = matplotlib.pyplot.figure(figsize=(22, 24))
         gs = matplotlib.gridspec.GridSpec(20, 21)
         for ((r, c), sat) in zip(itertools.product(range(4), range(4)), sats):
-#        for (i, sat) in enumerate(sats):
-            h = tovs.which_hirs(sat)
+#            h = tovs.which_hirs(sat)
             # early month in lower
-#            em = h.start_date + datetime.timedelta(days=30)
-#            ep = (datetime.datetime(em.year, em.month, 5),
-#                  datetime.datetime(em.year, em.month, 6, 12))
             ep = period_pairs[sat][0]
             lp = period_pairs[sat][1]
 
-#            try:
             self.reset(sat, *ep)
-#            except DataFileError:
-#                S = numpy.zeros((channels.size, channels.size))
-#                ecnt = 0
-#            else:
             (S, ρ, ecnt) = self._get_ch_corrmat(channels, noise_typ,
                 calibpos)
             S_low = numpy.tril(S, k=-1)
-            # late month in upper
-            # …but this should be late month with any valid data…
-#            lm = h.end_date - datetime.timedelta(days=30)
-#            lp = (datetime.datetime(lm.year, lm.month, 5),
-#                  datetime.datetime(lm.year, lm.month, 6, 12))
-#            try:
             self.reset(sat, *lp)
-#            except DataFileError:
-#                S = numpy.zeros((channels.size, channels.size))
-#                lcnt = 0
-#            else:
             (S, ρ, lcnt) = self._get_ch_corrmat(channels, noise_typ,
                 calibpos)
             S_hi = numpy.triu(S, k=1)
             #
             ax = f.add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
-#            ax = ax_all.ravel()[i]
             im = self._plot_ch_corrmat(S_low+S_hi+numpy.diag(numpy.zeros(channels.size)*numpy.nan),
                                   ax, channels, add_x=r==3, add_y=c==0)
             if r==c==0:
@@ -441,18 +441,106 @@ class MatrixPlotter:
                          f"{ep[0]:%Y-%m}, {ecnt:d} cycles\n"
                          f"{lp[0]:%Y-%m}, {lcnt:d} cycles")
 
-        #f.subplots_adjust(wspace=0.10, hspace=0.4)
         gs.update(wspace=0.10, hspace=0.4)
         f.suptitle("HIRS noise correlations for all HIRS, pos "
                   f"{calibpos:d} ", fontsize=40)
         pyatmlab.graphics.print_or_show(f, False,
             f"hirs_noise_correlations_allsats_pos{calibpos:d}.")
 
+    def plot_pos_corrmat_all_sats(self, noise_typ):
+        """Plot set of correlation matrices for all satellites
 
+        One set with all satellites as subplots, figure for each channel
+        One set with all channels as subplots, figure for each satellite
+        """
+        channels = numpy.arange(1, 21)
+        sats = self.all_sats
 
+        f_persat = {}
+        f_perch = {}
+        a_persat = {}
+        a_perch = {}
+        gs_persat = matplotlib.gridspec.GridSpec(26, 21)
+        gs_perch = matplotlib.gridspec.GridSpec(21, 21)
+        for ch in channels:
+            # one figure per channel
+            f_perch[ch] = matplotlib.pyplot.figure(figsize=(22, 24))
+            a_perch[ch] = {}
+            for ((r, c), sat) in zip(
+                    itertools.product(range(4), range(4)), sats):
+                # one panel per satellite
+                a_perch[ch][sat] = f_perch[ch].add_subplot(
+                    gs_perch[r*5:(r+1)*5-1, c*5:(c+1)*5])
+        for sat in sats:
+            # one figure per satellite
+            f_persat[sat] = matplotlib.pyplot.figure(figsize=(22, 24)) 
+            a_persat[sat] = {}
+            for ((r, c), ch) in zip(
+                    itertools.product(range(5), range(4)), channels):
+                # one panel per channel
+                a_persat[sat][ch] = f_persat[sat].add_subplot(
+                    gs_persat[r*5:(r+1)*5-1, c*5:(c+1)*5])
 
+        for (i, sat) in enumerate(sats):
+#            for ch in channels:
+#                a_persat = a_persat[sat][ch]
+#                a_perch = a_perch[ch][sat]
+#            h = tovs.which_hirs(sat)
+            # early month in lower
+            ep = period_pairs[sat][0]
+            lp = period_pairs[sat][1]
 
+            self.reset(sat, *ep)
+            (S_each, _, ecnt_each) = zip(*[
+                self._get_pos_corrmat(ch, noise_typ) for ch in channels])
+            S_low = [numpy.tril(S, k=-1) for S in S_each]
+            self.reset(sat, *lp)
+            (S_each, _, lcnt_each) = zip(*[
+                self._get_pos_corrmat(ch, noise_typ) for ch in channels])
+            S_hi = [numpy.triu(S, k=1) for S in S_each]
+            #
+            for ch in channels:
+                S_tot = S_low[ch-1]+S_hi[ch-1]+numpy.diag(numpy.zeros(48)*numpy.nan)
 
+                ax = a_perch[ch][sat]
+                im = self._plot_pos_corrmat(S_tot, ax,
+                        add_y=i%4==0, add_x=i>=12)
+                ax.set_title(f"{sat:s}\n"
+                         f"{ep[0]:%Y-%m}, {ecnt_each[ch-1]:d} cycles\n"
+                         f"{lp[0]:%Y-%m}, {lcnt_each[ch-1]:d} cycles")
+                if i==0:
+                    cax = ax.figure.add_subplot(gs_perch[:19, -1])
+                    cb = ax.figure.colorbar(im, cax=cax)
+                    cb.set_label("Pearson product-moment correlation coefficient")
+
+                ax = a_persat[sat][ch]
+                im = self._plot_pos_corrmat(S_tot, ax,
+                        add_y=ch%4==1, add_x=ch>=17)
+
+                if ch==1:
+                    cax = ax.figure.add_subplot(gs_persat[:24, -1])
+                    cb = ax.figure.colorbar(im, cax=cax)
+                    cb.set_label("Pearson product-moment correlation coefficient")
+                ax.set_title(f"ch. {ch:d}\n"
+                             f"{ecnt_each[ch-1]:d}/{lcnt_each[ch-1]:d} cycles")
+        for gs in (gs_perch, gs_persat):
+            gs.update(wspace=0.10, hspace=0.4)
+
+        for (ch, f) in f_perch.items():
+            f.suptitle(f"HIRS noise correlations for all HIRS, ch. {ch:d}",
+                       fontsize=40)
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_noise_correlations_allsats_ch{ch:d}.")
+        for (sat, f) in f_persat.items():
+
+            f.suptitle(f"HIRS noise correlations for {sat:s}, all chans\n"
+                       f"{period_pairs[sat][0][0]:%Y-%m} / {period_pairs[sat][1][0]:%Y-%m}",
+                        fontsize=40)
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_noise_correlations_allchan_{sat:s}.")
+#            im = self._plot_ch_corrmat(S_tot, ax, channels,
+#                add_x=r==3, add_y=c==0)
+ 
 def read_and_plot_field_matrices():
 #    h = fcdr.which_hirs_fcdr(sat)
     p = parsed_cmdline
@@ -460,6 +548,7 @@ def read_and_plot_field_matrices():
     #temp_fields_full = ["temp_{:s}".format(t) for t in p.temp_fields]
     mp = MatrixPlotter()
     if p.plot_all_corr:
+        mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
         mp.plot_ch_corrmat_all_sats(p.channels, p.noise_typ[0], p.calibpos[0])
         return
 

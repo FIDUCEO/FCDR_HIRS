@@ -48,21 +48,26 @@ class FCDRMonitor:
                "-{te:%Y%m%d%H%M}.png")
     figtit = ("HIRS FCDR with uncertainties {self.satname:s} ch. {ch:d}, "
               "{tb:%Y-%m-%d %H:%M}--{te:%Y-%m-%d %H:%M} (scanpos {sp:d})")
+    fields=["T_b", "u_T_b_random", "u_T_b_nonrandom",
+        "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
+        'u_from_R_selfE', 'u_from_a_0', 'u_from_a_2', 'u_from_a_1',
+        'u_from_C_s', 'u_from_C_IWCT', 'u_from_R_IWCT', 'u_from_B',
+        'u_from_Tstar', 'u_from_β', 'u_from_α', 'u_from_T_IWCT',
+        'u_from_O_TIWCT', 'u_from_fstar', 'u_from_R_refl', 'u_from_C_E']
     def __init__(self, start_date, end_date, satname,
-            version="0.6",):
+            version="0.7pre",):
         self.hirsfcdr = fcdr.which_hirs_fcdr(satname, read="L1C")
         self.ds = self.hirsfcdr.read_period(
             start_date,
             end_date,
             locator_args={"data_version": version, "fcdr_type": "debug"},
-            fields=["T_b", "u_T_b_random", "u_T_b_nonrandom",
-                "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom"])
+            fields=self.fields)
         self.satname = satname
 
     def plot_timeseries(self, ch, sp=28):
         counter = itertools.count()
         ds = self.ds.sel(calibrated_channel=ch, scanpos=sp)
-        nrow = 5
+        nrow = 6
         gs = matplotlib.gridspec.GridSpec(nrow, 4)
         fig = matplotlib.pyplot.figure(figsize=(18, 3*nrow))
 #        (fig, axes) = matplotlib.pyplot.subplots(nrow, 2,
@@ -70,8 +75,7 @@ class FCDRMonitor:
 #            figsize=(18, 3*nrow))
 
         bad = (2*ds["u_R_Earth_nonrandom"] > ds["R_e"])
-        for v in {"T_b", "u_T_b_random", "u_T_b_nonrandom",
-                  "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom"}:
+        for v in self.fields:
             ds[v][bad] = numpy.nan 
 
         if not numpy.isfinite(ds["T_b"]).any():
@@ -87,6 +91,14 @@ class FCDRMonitor:
         a_tb_u = fig.add_subplot(gs[c, :3])
         a_tb_u_h = fig.add_subplot(gs[c, 3])
 
+        # components
+        c = next(counter)
+        a_tb_ucmp = fig.add_subplot(gs[c, :3])
+        a_tb_ucmp_h = fig.add_subplot(gs[c, 3])
+
+        dsu = ds[[x for x in ds.data_vars.keys() if x.startswith("u_from_")]]
+        self._plot_unc_comps(dsu, a_tb_ucmp, a_tb_ucmp_h)
+        
         self._plot_var_with_unc(
             ds["T_b"],
             ds["u_T_b_random"],
@@ -178,6 +190,21 @@ class FCDRMonitor:
         a_u.set_title("Uncertainty timeseries of {:s}".format(name))
         a_u.set_ylabel(r"$\Delta$ " + a.get_ylabel())
         a_u_h.set_title("Uncertainty histogram of {:s}".format(name))
+
+    def _plot_unc_comps(self, ds, a, a_h, n=8):
+        # take 8 largest
+        for k in [x[-1] for x in sorted([(x.mean(), k) for (k, x) in ds.data_vars.items()])[-1:-n-1:-1]]:
+            da = ds[k]
+            da.plot(ax=a, label=k[7:])
+            da.plot.hist(ax=a_h, label=k[7:], histtype="step")
+
+        a_h.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
+        a.set_title("Uncertainty components")
+        name = getattr(da.attrs, "long_name", da.name)
+        #unit = ureg(da.units).u
+        a.set_ylabel(rf"$\Delta$ {name:s} [K]")#f"\n[{unit:~}]")
+        a.set_xlabel("Time")
+        a_h.set_title("Uncertainty hists")
 
     def _plot_hexbin(self, da, Δda, a):
         unit = ureg(da.units).u

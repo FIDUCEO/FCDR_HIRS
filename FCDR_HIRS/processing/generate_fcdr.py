@@ -48,6 +48,11 @@ Changed filename structure to follow FIDUCEO standard.
 Change estimate for ε=1 to ε=0.98 (or rather, a_3=0 to a_3=-0.02)
 Added bias term a_4 (debug only)
 Added handling of flags
+
+0.7
+
+Correct time axis for uncertainties per calibration cycle, preventing half
+the values being nans (debug version only)
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -79,6 +84,13 @@ def parse_cmdline():
         nargs="+", choices=["easy", "debug"],
         help="What FCDR(s) to write?")
 
+    parser.add_argument("--days", action="store", type=int,
+        default=0,
+        metavar="N",
+        help=("If non-zero, generate only first N days of each month. "
+            "Use this to reduce data volume for debug version but "
+            "still have data throughout lifetime."))
+
     return parser.parse_args()
 p = parse_cmdline()
 
@@ -93,6 +105,7 @@ import pkg_resources
 import datetime
 
 import numpy
+import pandas
 import xarray
 import typhon.datasets.dataset
 from typhon.physics.units.common import radiance_units as rad_u
@@ -113,7 +126,7 @@ class FCDRGenerator:
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
     skip_problem_step = datetime.timedelta(seconds=900)
-    data_version = "0.6"
+    data_version = "0.7pre"
     # FIXME: do we have a filename convention?
     def __init__(self, sat, start_date, end_date, modes):
         logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
@@ -247,10 +260,10 @@ class FCDRGenerator:
         (uRe, sensRe, compRe) = self.fcdr.calc_u_for_variable(
             "R_e", self.fcdr._quantities, self.fcdr._effects, cu,
             return_more=True)
-        unc_components = dict(self.fcdr.propagate_uncertainty_components(
+        unc_components = dict(self.fcdr.propagate_uncertainty_components(uRe,
             sensRe, compRe))
-        u_from = xarray.Dataset(dict([(f"u_from_{k!s}", v) for (k, v) in
-                    unc_components.items()]))
+#        u_from = xarray.Dataset(dict([(f"u_from_{k!s}", v) for (k, v) in
+#                    unc_components.items()]))
         S = self.fcdr.estimate_channel_correlation_matrix(context)
         (LUT_BT, LUT_L) = self.fcdr.get_BT_to_L_LUT()
 
@@ -274,6 +287,10 @@ class FCDRGenerator:
 #            return_more=True)
         uTb = self.fcdr.numerically_propagate_ΔL(R_E, uRe)
         uTb.name = "u_T_b"
+        u_from = xarray.Dataset(
+            {f"u_from_{k!s}": self.fcdr.numerically_propagate_ΔL(R_E, v).astype("f4")
+                for (k, v) in unc_components.items()
+                if v.size>1})
         
         # this is approximate, not accurate, but will do for now
         uTb_syst = uRe_syst/(uRe_syst+uRe_rand) * uTb
@@ -555,8 +572,18 @@ def main():
     warnings.filterwarnings("error", category=numpy.VisibleDeprecationWarning)
 #    warnings.filterwarnings("error",
 #        message="invalid value encountered in log", category=RuntimeWarning)
-    fgen = FCDRGenerator(p.satname,
-        datetime.datetime.strptime(p.from_date, p.datefmt),
-        datetime.datetime.strptime(p.to_date, p.datefmt),
-        p.modes)
-    fgen.process()
+    if p.days == 0:
+        fgen = FCDRGenerator(p.satname,
+            datetime.datetime.strptime(p.from_date, p.datefmt),
+            datetime.datetime.strptime(p.to_date, p.datefmt),
+            p.modes)
+        fgen.process()
+    else:
+        dates = pandas.date_range(p.from_date, p.to_date, freq="MS")
+        for d in dates:
+            fgen = FCDRGenerator(p.satname,
+                d.to_pydatetime(),
+                d.to_pydatetime() + datetime.timedelta(days=p.days),
+                p.modes)
+            fgen.process()
+
