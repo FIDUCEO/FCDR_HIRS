@@ -12,6 +12,7 @@ import xarray
 
 from typhon.physics.units.common import ureg
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.datasets import _tovs_defs
 
 
 class RSelf:
@@ -31,6 +32,7 @@ class RSelf:
     def get_predictor(self, ds, ch):
         L = []
         for t_fld in self.temperatures:
+            t_fld = _tovs_defs.temperature_names.get(t_fld, t_fld)
             x = ds["temperature_{:s}".format(t_fld)]
             for dim in set(x.dims) - {"time"}:
                 x = x.mean(dim=dim, keep_attrs=True)
@@ -64,6 +66,7 @@ class RSelf:
         Xx = numpy.zeros(shape=(X.coords["time"].size, len(X.data_vars.keys())),
             dtype="f4")
         Xx.fill(numpy.nan)
+        OK = OK.values # needed for NumPy < 1.13
         Xx[OK, :] = numpy.concatenate([x.values[OK, numpy.newaxis]
                 for x in X.data_vars.values()], 1)
         if dropna:

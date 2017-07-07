@@ -281,7 +281,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
                 ndarray such as returned by self.as_karray_dataset, corresponding to
                 scanlines.  Must have at least variables 'time',
-                'scantype', 'counts', and 'temperature_iwct'.
+                'scantype', 'counts', and
+                'temperature_internal_warm_calibration_target'.
 
             ch
 
@@ -376,7 +377,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         counts_space = UADA(ds_space["counts"].sel(
                 scanpos=slice(self.start_space_calib, None),
                 channel=ch).rename({"channel": "calibrated_channel"}),
-            name="counts_space").drop(("scanline", "lat", "lon"))
+            name="counts_space")
+        counts_space = counts_space.drop(counts_space.coords.keys()&{"scanline", "lat", "lon"})
         counts_space.attrs.update(units="counts")
 #        counts_space = ureg.Quantity(M_space["counts"][:,
 #            self.start_space_calib:, ch-1], ureg.count)
@@ -384,16 +386,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         counts_iwct = UADA(ds_iwct["counts"].sel(
                 scanpos=slice(self.start_iwct_calib, None),
                 channel=ch).rename({"channel": "calibrated_channel"}),
-            name="counts_iwct").drop(("scanline", "lat", "lon"))
+            name="counts_iwct")
+        counts_iwct = counts_iwct.drop(counts_iwct.coords.keys()&{"scanline", "lat", "lon"})
         counts_iwct.attrs.update(units="counts")
 #        counts_iwct = ureg.Quantity(M_iwct["counts"][:,
 #            self.start_iwct_calib:, ch-1], ureg.count)
 
-        T_iwct = UADA(ds_iwct["temperature_iwct"].mean(
+        T_iwct = UADA(ds_iwct["temperature_internal_warm_calibration_target"].mean(
                 dim="prt_reading").mean(dim="prt_number_iwt")).drop(
                     "scanline")
-        T_iwct.attrs["units"] = ds_iwct["temperature_iwct"].attrs["units"]
-#        T_iwct = ureg.Quantity(ds_iwct["temperature_iwct"].mean(
+        T_iwct.attrs["units"] = ds_iwct["temperature_internal_warm_calibration_target"].attrs["units"]
+#        T_iwct = ureg.Quantity(ds_iwct["temperature_internal_warm_calibration_target"].mean(
 #                dim="prt_reading").mean(dim="prt_number_iwt"),
 #                ureg.K)
 #        T_iwct = ureg.Quantity(
@@ -608,7 +611,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 xarray dataset with fields such as returned by
                 self.as_xarray_dataset.  Must
                 contain at least variables 'time', 'scantype', 'counts',
-                and 'temperature_iwct'.
+                and 'temperature_internal_warm_calibration_target'.
 
             ch [int]
 
@@ -719,7 +722,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             ds [xarray.Dataset]
 
                 xarray Dataset with at least variables 'time', 'scantype',
-                'temperature_iwct', and 'counts'.  Such is returned by
+                'temperature_internal_warm_calibration_target', and 'counts'.  Such is returned by
                 self.as_xarray_dataset.  Those are values for which
                 radiances will be calculated.
 
@@ -1760,6 +1763,193 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             yield (k, numpy.sqrt(compk0**2 * sens_above**2))
             yield from self.propagate_uncertainty_components(u,
                 sens[k][1], comp[k][1], sens_to_here)
+
+
+    # deprecated:
+    # The remaining methods are no longer used.
+
+    def calc_sens_coef(self, typ, M, ch, srf): 
+        """Calculate sensitivity coefficient.
+        Actual work is delegated to calc_sens_coef_{name}
+        Arguments:
+            typ
+            M
+            SRF
+            ch
+        """
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+
+        f = getattr(self, "calc_sens_coef_{:s}".format(typ))
+
+        (L_iwct, C_iwct, C_space, C_Earth) = (
+            self.extract_and_interp_calibcounts_and_temp(M, ch, srf))
+
+        return f(L_iwct[:, numpy.newaxis], C_iwct[:, numpy.newaxis],
+                 C_space[:, numpy.newaxis], C_Earth)
+    
+    @typhon.math.common.calculate_precisely
+    def calc_sens_coef_C_Earth(self, L_iwct, C_iwct, C_space, C_Earth):
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+        return L_iwct / (C_iwct - C_space)
+
+    @typhon.math.common.calculate_precisely
+    def calc_sens_coef_C_iwct(self, L_iwct, C_iwct, C_space, C_Earth):
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+        return - L_iwct * (C_Earth - C_space) / (C_iwct - C_space)**2
+
+    @typhon.math.common.calculate_precisely
+    def calc_sens_coef_C_iwct_slope(self, L_iwct, C_iwct, C_space):
+        """Sensitivity coefficient for C_IWCT for slope (a₁) calculation
+        Arguments:
+            L_iwct [ndarray]
+                Radiance for IWCT.  Can be obtained with
+                self.extract_calibcounts_and_temp.  Should
+                be 1-D [N].
+            C_iwct [ndarray]
+                Counts for IWCTs.  Should be 2-D [N × 48]
+            C_space [ndarray]
+                Counts for space views.  Same shape as C_iwct.
+        Returns:
+            Sensitivity coefficient.
+        """
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+        return L_iwct[:, numpy.newaxis] / (C_iwct - C_space)**2
+
+    @typhon.math.common.calculate_precisely
+    def calc_sens_coef_C_space(self, L_iwct, C_iwct, C_space, C_Earth):
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+        return L_iwct * (C_Earth - C_iwct) / (C_iwct - C_space)**2
+
+    @typhon.math.common.calculate_precisely
+    def calc_sens_coef_C_space_slope(self, L_iwct, C_iwct, C_space):
+        """Sensitivity coefficient for C_space for slope (a₁) calculation
+        Input as for calc_sens_coef_C_iwct_slope
+        """
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+        return -L_iwct[:, numpy.newaxis] / (C_iwct - C_space)**2
+
+
+    def calc_urad(self, typ, M, ch, *args, srf=None):
+        """Calculate uncertainty
+        Arguments:
+            typ [str]
+            
+                Sort of uncertainty.  Currently implemented: "noise" and
+                "calib".
+            M
+            ch
+            *args
+                Depends on the sort of uncertainty, but should pass all
+                the "base" uncertainties needed for propagation.  For
+                example, for calib, must be u_C_iwct and u_C_space.
+            srf
+                
+                Only if different from the nominal
+        """
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+
+        srf = srf or self.srfs[ch-1]
+        f = getattr(self, "calc_urad_{:s}".format(typ))
+        (L_iwct, C_iwct, C_space, C_Earth) = (
+            self.extract_and_interp_calibcounts_and_temp(M, ch, srf))
+        return f(L_iwct[:, numpy.newaxis],
+                 C_iwct[:, numpy.newaxis],
+                 C_space[:, numpy.newaxis], C_Earth, *args)
+
+    def calc_urad_noise(self, L_iwct, C_iwct, C_space, C_Earth, u_C_Earth):
+        """Calculate uncertainty due to random noise
+        """
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+
+        s = self.calc_sens_coef_C_Earth(L_iwct, C_iwct, C_space, C_Earth)
+        return abs(s) * u_C_Earth
+
+    def calc_urad_calib(self, L_iwct, C_iwct, C_space, C_Earth,
+                              u_C_iwct, u_C_space):
+        """Calculate radiance uncertainty due to calibration
+        """
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+        s_iwct = self.calc_sens_coef_C_iwct(
+                    L_iwct, C_iwct, C_space, C_Earth)
+        s_space = self.calc_sens_coef_C_space(
+                    L_iwct, C_iwct, C_space, C_Earth)
+        return numpy.sqrt((s_iwct * u_C_iwct)**2 +
+                    (s_space * u_C_space)**2)
+
+    def calc_uslope(self, M, ch, srf=None):
+        """Direct calculation of slope uncertainty
+        Such as for purposes of visualising uncertainties in slope/gain
+        """
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+        srf = srf or self.srfs[ch-1]
+        # legacy code does not handle xarray dataarrays, move back to
+        # legacy ureg form
+        (time, L_iwct, C_iwct, C_space, u_C_iwct,
+            u_C_space) = [
+                (ureg.Quantity(numpy.ma.masked_invalid(x.values), x.attrs["units"])
+                    if "units" in x.attrs
+                    else numpy.ma.MaskedArray(t_slope.values, mask=numpy.zeros_like(t_slope.values)))
+                          for x in self.extract_calibcounts_and_temp(
+                          M, ch, srf, return_u=True)]
+        s_iwct = self.calc_sens_coef_C_iwct_slope(L_iwct, C_iwct, C_space)
+        s_space = self.calc_sens_coef_C_space_slope(L_iwct, C_iwct, C_space)
+#        (t_iwt_noise_level, u_C_iwct) = self.estimate_noise(M, ch, typ="iwt")
+#        (t_space_noise_level, u_C_space) = self.estimate_noise(M, ch, typ="space")
+#        (u_C_iwct,) = h.interpolate_between_calibs(M["time"],
+#            t_iwt_noise_level, u_C_iwct)
+#        (u_C_space,) = h.interpolate_between_calibs(M["time"],
+#            t_space_noise_level, u_C_space)
+
+        return numpy.sqrt((s_iwct * u_C_iwct[:, numpy.newaxis])**2 +
+                          (s_space * u_C_space[:, numpy.newaxis])**2)
+
+    def calc_S_noise(self, u):
+        """Calculate covariance matrix between two uncertainty vectors
+        Random noise component, so result is a diagonal
+        """
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+
+        if u.ndim == 1:
+            return ureg.Quantity(numpy.diag(u**2), u.u**2)
+        elif u.ndim == 2:
+            # FIXME: if this is slow, I will need to vectorise it
+            return ureg.Quantity(
+                numpy.rollaxis(numpy.dstack(
+                    [numpy.diag(u[i, :]**2) for i in range(u.shape[0])]),
+                    2, 0),
+                u.u**2)
+        else:
+            raise ValueError("u must have 1 or 2 dims, found {:d}".format(u.ndim))
+
+    def calc_S_calib(self, u, c_id):
+        """Calculate covariance matrix between two uncertainty vectors
+        Calibration (structured random) component.
+        For initial version of my own calibration implementation, where
+        only one calibartion propagates into each uncertainty.
+        FIXME: make this vectorisable
+        Arguments:
+            
+            u [ndarray]
+                Vector of uncertainties.  Last dimension must be the
+                dimension to estimate covariance matrix for.
+            c_id [ndarray]
+                Vector with identifier for what calibration cycle was used
+                in each.  Most commonly, the time.  Shape must match u.
+        """
+        warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
+
+        u = ureg.Quantity(numpy.atleast_2d(u), u.u)
+        u_cross = u[..., numpy.newaxis] * u[..., numpy.newaxis].swapaxes(-1, -2)
+
+        # r = 1 when using same calib, 0 otherwise...
+        c_id = numpy.atleast_2d(c_id)
+        r = (c_id[..., numpy.newaxis] == c_id[..., numpy.newaxis].swapaxes(-1, -2)).astype("f4")
+
+        S = u_cross * r
+
+        #S.mask |= (u[:, numpy.newaxis].mask | u[numpy.newaxis, :].mask) # redundant
+
+        return S.squeeze()
 
 class HIRSPODFCDR:
     """Mixin for HIRS POD FCDRs

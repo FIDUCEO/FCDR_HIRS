@@ -58,17 +58,18 @@ def plot_rself_test(h, ds, temperatures, channels,
     (ncol, nrow) = typhon.plots.get_subplot_arrangement(N)
 
     (f, ax_all) = matplotlib.pyplot.subplots(nrow, ncol,
-        sharex=False, figsize=(2+3*ncol, 3+2.5*nrow))
+        sharex=False, figsize=(2+3*ncol, 3+2.5*nrow),
+        squeeze=False)
     for (a, c) in zip(ax_all.ravel(), channels):
         model.fit(ds, c)
         (X, Y_ref, Y_pred) = model.test(ds, c)
-        xloc = Y_ref.to(rad_u["ir"], "radiance").m
-        yloc = (Y_pred - Y_ref).to(rad_u["ir"], "radiance").m
+        xloc = Y_ref.to(rad_u["ir"], "radiance")
+        yloc = (Y_pred - Y_ref).to(rad_u["ir"], "radiance")
         rng = [scipy.stats.scoreatpercentile(
-            xloc[~xloc.mask], [1, 99]),
+            xloc[~xloc.isnull()], [1, 99]),
                scipy.stats.scoreatpercentile(
-            yloc[~xloc.mask], [1, 99])]
-        unmasked = (~xloc.mask) & (~yloc.mask)
+            yloc[~xloc.isnull()], [1, 99])]
+        unmasked = (~xloc.isnull()) & (~yloc.isnull())
         a.hexbin(xloc[unmasked], yloc[unmasked],
             cmap="viridis", mincnt=1,
             gridsize=20,
@@ -86,9 +87,9 @@ def plot_rself_test(h, ds, temperatures, channels,
         #a.set_aspect("equal", "box", "C")
         a.plot(rng, [0, 0], 'k-', linewidth=0.5)
         if a in ax_all[:, 0]:
-            a.set_ylabel("Calib. offset (Estimate-Reference)\n[{:~}]".format(rad_u["ir"].u))
+            a.set_ylabel("Calib. offset (Estimate-Reference)\n[{:~}]".format(rad_u["ir"]))
         if a in ax_all[-1, :]:
-            a.set_xlabel("Calib. offset (Reference)\n[{:~}]".format(rad_u["ir"].u))
+            a.set_xlabel("Calib. offset (Reference)\n[{:~}]".format(rad_u["ir"]))
         for ax in (a.xaxis, a.yaxis):
             ax.set_major_locator(
                 matplotlib.ticker.MaxNLocator(nbins=4, prune=None))
@@ -107,8 +108,9 @@ def read_and_plot_rself_test(sat, from_date, to_date, temperatures,
                              channels):
     h = fcdr.which_hirs_fcdr(sat)
     M = h.read_period(from_date, to_date,
-        fields=["time", "counts", "lat", "lon", "bt"] +
-            ["temp_{:s}".format(t) for t in temperatures])
+        fields=["time", "counts", "lat", "lon", "bt", h.scantype_fieldname] +
+            ["temp_{:s}".format(t) for t in temperatures] +
+            (["temp_iwt"] if "iwt" not in temperatures else []))
     ds = h.as_xarray_dataset(M)
     plot_rself_test(h, ds, temperatures, channels,
         "self-emission regression performance, {sat:s}, "

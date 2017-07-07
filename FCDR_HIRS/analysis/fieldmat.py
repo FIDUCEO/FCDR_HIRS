@@ -317,18 +317,22 @@ class MatrixPlotter:
         """
         im = a.imshow(S, cmap="PuOr", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
+        a.set_xticks(numpy.arange(len(channels)))
         if add_x or a.is_last_row():
-            a.set_xticks(numpy.arange(len(channels)))
+            #a.set_xticks(numpy.arange(len(channels)))
             a.set_xticklabels([str(ch) if ch%each==0 else "" for ch in channels])
             a.set_xlabel("Channel no.")
         else:
-            a.set_xticks([])
+            #a.set_xticks([])
+            a.set_xticklabels([])
+        a.set_yticks(numpy.arange(len(channels)))
         if add_y or a.is_first_col():
-            a.set_yticks(numpy.arange(len(channels)))
+            #a.set_yticks(numpy.arange(len(channels)))
             a.set_yticklabels([str(ch) if ch%each==0 else "" for ch in channels])
             a.set_ylabel("Channel no.")
         else:
-            a.set_yticks([])
+            #a.set_yticks([])
+            a.set_yticklabels([])
         return im
 
     @staticmethod
@@ -338,11 +342,13 @@ class MatrixPlotter:
         if add_x:
             a.set_xlabel("Pos no.")
         else:
-            a.set_xticks([])
+            #a.set_xticks([])
+            a.set_xticklabels([])
         if add_y:
             a.set_ylabel("Pos no.")
         else:
-            a.set_yticks([])
+            #a.set_yticks([])
+            a.set_yticklabels([])
         return im
 
     def _get_pos_corrmat(self, ch, noise_typ):
@@ -530,10 +536,10 @@ class MatrixPlotter:
             f.suptitle(f"HIRS noise correlations for all HIRS, ch. {ch:d}",
                        fontsize=40)
             pyatmlab.graphics.print_or_show(f, False,
-                f"hirs_noise_correlations_allsats_ch{ch:d}.")
+                f"hirs_noise_correlations_allsats_{noise_typ:s}_ch{ch:d}.")
         for (sat, f) in f_persat.items():
 
-            f.suptitle(f"HIRS noise correlations for {sat:s}, all chans\n"
+            f.suptitle(f"HIRS noise correlations for {sat:s}, all chans, {noise_typ:s} views\n"
                        f"{period_pairs[sat][0][0]:%Y-%m} / {period_pairs[sat][1][0]:%Y-%m}",
                         fontsize=40)
             pyatmlab.graphics.print_or_show(f, False,

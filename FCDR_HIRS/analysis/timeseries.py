@@ -75,6 +75,7 @@ def parse_cmdline():
         choices=["min_mean", "max_mean", "min_std", "max_std", "above",
                  "choose"],
         nargs="*",
+        default=[],
         help="Include time series of channel pairs with extremely "
         "high/low correlations.  Only with --plot_noise_with_other. "
         "'min_mean' means pairs with lowest (negative) correlations; "
@@ -305,7 +306,7 @@ class NoiseAnalyser:
                        ["temp_{:s}".format(f) for f in
                        set(temp_fields) | {"iwt"}],
                 locator_args=dict(satname=self.satname),
-                reader_args=dict(filter_firstline=True))
+                reader_args=dict(filter_firstline="first"))
         # those need to be read before combining with HIASI, because
         # afterward, I lose the calibration rounds.  But doing it after
         # read a full month (or more) of data takes too much RAM as I will
@@ -443,6 +444,10 @@ class NoiseAnalyser:
 
     def get_gain(self, M, ch):
         (t_slope, _, slope, _) = self.hirs.calculate_offset_and_slope(M, ch)
+        # most of this module was written before the migration to xarray;
+        # migrate back for now for the sake of legacy code
+        t_slope = numpy.ma.MaskedArray(t_slope.values, mask=numpy.zeros_like(t_slope.values))
+        slope = ureg.Quantity(numpy.ma.masked_invalid(slope.values), slope.attrs["units"])
         slope = slope.to(ureg.mW/(ureg.m**2 * ureg.sr *
             1/ureg.cm * ureg.counts), "radiance")
         u_slope = self.hirs.calc_uslope(M, ch)
