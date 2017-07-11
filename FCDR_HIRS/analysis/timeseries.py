@@ -222,7 +222,7 @@ def get_timeseries_temp_iwt_anomaly(sat, year_start=2005, year_end=2017):
 
 def plot_timeseries_temp_iwt_anomaly(sat, nrow=4):
     (dts, anomalies) = get_timeseries_temp_iwt_anomaly(sat)
-    dts = dts.astype(datetime.datetime)
+    dts = dts.astype("M8[s]").astype(datetime.datetime)
     (f, ax_all) = matplotlib.pyplot.subplots(nrow, 1)
 
     (lo, hi) = scipy.stats.scoreatpercentile(anomalies, [1, 99])
@@ -280,7 +280,7 @@ def write_timeseries_per_day_iwt_anomaly_period(sat, start_date, end_date):
     logging.info("Writing {!s}".format(dest))
     with dest.open("wt", encoding="ascii") as fp:
         fp.writelines([("{:%Y-%m-%d}" + 5*" {:.5f}" + "\n").format(
-                x["date"].astype(datetime.datetime), *x["anomalies"])
+                x["date"].astype("M8[s]").astype(datetime.datetime), *x["anomalies"])
                     for x in X])
             
 
@@ -411,7 +411,7 @@ class NoiseAnalyser:
             views_iwt = M["hrs_scntyp"] == self.hirs.typ_iwt
             views_space = M["hrs_scntyp"] == self.hirs.typ_space
         (f, ax_all) = matplotlib.pyplot.subplots(nrow, 1)
-        t = M[views_space]["time"].astype(datetime.datetime)
+        t = M[views_space]["time"].astype("M8[s]").astype(datetime.datetime)
         # standard deviation...
         # want to have version with regular and with std.dev.
         #y_space = M[views_space]["counts"][:, 8:, :].std(1)
@@ -554,7 +554,7 @@ class NoiseAnalyser:
                     matplotlib.ticker.MaxNLocator(nbins=5, prune="both"))
                 cb.update_ticks()
                     
-        t = M["time"].astype(datetime.datetime)
+        t = M["time"].astype("M8[s]").astype(datetime.datetime)
         for a in self.fig.axes:
             if not "hist" in a.get_title():
                 a.autoscale_view()
@@ -582,7 +582,7 @@ class NoiseAnalyser:
         for (i, tp) in enumerate(all_tp): 
             views = M[self.hirs.scantype_fieldname
                         ] == getattr(self.hirs, "typ_"+tp)
-            t = M[views]["time"].astype(datetime.datetime)
+            t = M[views]["time"].astype("M8[s]").astype(datetime.datetime)
             C = M[views]["counts"][:, 8:, ch-1]
             adv = typhon.math.stats.adev(C, 1)
             D[tp] = (t, C, adv)
@@ -667,7 +667,7 @@ class NoiseAnalyser:
         # 'ValueError: setting an array element with a sequence', see also
         # https://github.com/numpy/numpy/issues/8461
         OK = (~t_slope.mask)&(~med_gain.mask)
-        a.errorbar(t_slope.astype(datetime.datetime).data[OK],
+        a.errorbar(t_slope.astype("M8[s]").astype(datetime.datetime).data[OK],
                     med_gain.m.data[OK], 
                     xerr=None,
                     yerr=u_med_gain.m.data[OK],
@@ -735,7 +735,7 @@ class NoiseAnalyser:
                         correlations.sel(chb=chb).shape[0], cha, chb))
                 continue
             success = True
-            a.plot_date(correlations["time"].astype(datetime.datetime),
+            a.plot_date(correlations["time"].astype("M8[s]").astype(datetime.datetime),
                 correlations.sel(chb=chb),
                 markersize=1,
                 linestyle="-",
@@ -758,7 +758,7 @@ class NoiseAnalyser:
         ah = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
         logging.info("Plotting temperatures")
         ax2lims = None
-        t = M["time"].astype(datetime.datetime)
+        t = M["time"].astype("M8[s]").astype(datetime.datetime)
         for (i, (tmpfld, xt)) in enumerate(self.loop_through_temps(M, temperatures)):
             a.plot_date(t, xt, '.', label=tmpfld.replace("_", ""),
                         color=colours[i],

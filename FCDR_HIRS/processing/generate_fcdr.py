@@ -53,6 +53,8 @@ Added handling of flags
 
 Correct time axis for uncertainties per calibration cycle, preventing half
 the values being nans (debug version only)
+Fix bug which caused random uncertainty on Earth counts to be estimated a
+factor √48 too low.
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See

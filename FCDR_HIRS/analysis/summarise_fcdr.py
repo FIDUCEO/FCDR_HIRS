@@ -2,7 +2,7 @@
 """
 
 import matplotlib
-matplotlib.use("Agg")
+#matplotlib.use("Agg") # now in matplotlibrc
 from .. import common
 import argparse
 
@@ -22,6 +22,11 @@ def parse_cmdline():
         default="summarise",
         help="Mode to use: Summarise into daily summaries, "
             "or plot from them")
+
+    parser.add_argument("--version", action="store", type=str,
+        default="0.6",
+        help="Version to use.  Needs debug version stored.")
+#            "or plot from them")
 
     p = parser.parse_args()
     return p
@@ -61,7 +66,7 @@ class FCDRSummary(HomemadeDataset):
         "{year_end:04d}{month_end:02d}{day_end:02d}.nc")
 
     re = (r"fcdr_hirs_summary_(?P<satname>.{6})_"
-          r"(?P<fcdr_version>.+)_"
+          r"(?P<data_version>.+)_"
           r'(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})_'
           r'(?P<year_end>\d{4})(?P<month_end>\d{2})(?P<day_end>\d{2})\.nc')
 
@@ -70,11 +75,12 @@ class FCDRSummary(HomemadeDataset):
     hirs = None
 
     ptiles = numpy.linspace(0, 100, 101, dtype="u1")
-    data_version = "0.6"
+    data_version = "0.4"
     time_field = "date"
     read_returns = "xarray"
     plot_file = ("hirs_summary/"
-        "FCDR_hirs_summary_{satname:s}_ch{channel:d}_{start:%Y%m%d}-{end:%Y%m%d}.png")
+        "FCDR_hirs_summary_{satname:s}_ch{channel:d}_{start:%Y%m%d}-{end:%Y%m%d}"
+        "v{data_version:s}.png")
 
     def __init__(self, *args, satname, **kwargs):
         super().__init__(*args, satname=satname, **kwargs)
@@ -86,7 +92,8 @@ class FCDRSummary(HomemadeDataset):
     def create_summary(self, start_date, end_date):
         dates = pandas.date_range(start_date, end_date+datetime.timedelta(days=1), freq="D")
         fields=["T_b", "u_T_b_random", "u_T_b_nonrandom",
-                "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom"]
+                "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
+                "u_C_Earth"]
         channels = numpy.arange(1, 20)
         summary = xarray.Dataset(
             {field: 
@@ -130,30 +137,41 @@ class FCDRSummary(HomemadeDataset):
         of.parent.mkdir(parents=True, exist_ok=True)
         summary.to_netcdf(str(of))
 
-    def plot_period(self, start, end, channel):
-        (f, a_all) = matplotlib.pyplot.subplots(figsize=(12, 12),
-            nrows=3, ncols=1)
-        summary = self.read_period(start, end)
-        fields = ["T_b", "u_T_b_random", "u_T_b_nonrandom"]
-        for (i, (fld, a)) in enumerate(zip(fields, a_all)):
-            summary[fld].sel(channel=channel).T.plot.pcolormesh(
-                ax=a, vmin=200 if fld=="T_b" else 0)
+    def plot_period(self, start, end, channel, fields,
+            ptiles=[5, 25, 50, 75, 95],
+            pstyles=[":", "--", "-", "--", ":"]):
+        (f, a_all) = matplotlib.pyplot.subplots(figsize=(10, 3*len(fields)),
+            nrows=len(fields), ncols=1, squeeze=False)
+        summary = self.read_period(start, end, locator_args={"data_version": "v"+self.data_version})
+        #fields = ["T_b", "u_T_b_random", "u_T_b_nonrandom"]
+        for field in ("u_T_b_random", "u_R_Earth_random", "u_C_Earth"):
+            summary[field] *= numpy.sqrt(48) # workaround #125, remove after fix
+        for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
+            summary[fld].values[summary[fld]==0] = numpy.nan # workaround #126, redundant after fix
+            for (ptile, ls) in zip(ptiles, pstyles):
+                summary[fld].sel(channel=channel).sel(ptile=ptile).plot(
+                    ax=a, label=str(ptile), linestyle=ls, color="black")
+#            summary[fld].sel(channel=channel).T.plot.pcolormesh(
+#                ax=a, vmin=200 if fld=="T_b" else 0)
             a.set_title(f"{fld:s}")
+            if len(ptiles) > 1:
+                a.legend([f"p-{p:d}" for f in ptiles])
         f.suptitle(f"HIRS {self.satname:s} ch {channel:d} "
             f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
         f.autofmt_xdate()
         pyatmlab.graphics.print_or_show(f, None, 
             self.plot_file.format(satname=self.satname, start=start,
-            end=end, channel=channel))
+            end=end, channel=channel, data_version=self.data_version))
 
 def summarise():
     p = parsed_cmdline
 #    if p.mode != "summarise":
 #        raise NotImplementedError("Only summarising implemented yet")
-    summary = FCDRSummary(satname=p.satname)
+    summary = FCDRSummary(satname=p.satname, data_version=p.version)
     start = datetime.datetime.strptime(p.from_date, p.datefmt)
     end = datetime.datetime.strptime(p.to_date, p.datefmt)
     if p.mode == "summarise":
         summary.create_summary(start, end)
     elif p.mode == "plot":
-        sumdat = summary.plot_period(start, end, 5)
+        sumdat = summary.plot_period(start, end, 5, fields=["u_C_Earth"],
+            ptiles=[50], pstyles=["-"])

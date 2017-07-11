@@ -16,7 +16,7 @@ from typhon.datasets import _tovs_defs
 
 
 class RSelf:
-    temperatures = ["scanmirror", "fwh", "iwct",
+    temperatures = ["scanmirror", "filter_wheel_housing", "internal_warm_calibration_target",
                     "secondary_telescope", "baseplate", "electronics"]
 
     X_ref = None

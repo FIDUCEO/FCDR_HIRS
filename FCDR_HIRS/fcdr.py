@@ -435,13 +435,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # self.estimate_noise although there is some code duplication.
         # Here, we only use real calibration lines, where both space and
         # earth views were successful.
-        u_counts_space = (typhon.math.stats.adev(counts_space, "scanpos") /
+        counts_space_adev = typhon.math.stats.adev(counts_space, "scanpos")
+        u_counts_space = (counts_space_adev /
             numpy.sqrt(counts_space.shape[1]))
         if tuck:
             self._tuck_effect_channel("C_space", u_counts_space, ch)
 
-        u_counts_iwct = (typhon.math.stats.adev(counts_iwct, "scanpos") /
-            numpy.sqrt(counts_iwct.shape[1]))
+        counts_iwct_adev = typhon.math.stats.adev(counts_iwct, "scanpos")
+        u_counts_iwct = (counts_iwct_adev / numpy.sqrt(counts_iwct.shape[1]))
         if tuck:
             # before 'tucking', I want to make sure the time coordinate
             # corresponds to the calibration cycle, i.e. the same as for
@@ -451,8 +452,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._tuck_effect_channel("C_IWCT", 
                 u_counts_iwct.assign_coords(time=u_counts_space["time"]),
                 ch)
+            # NB: for the estimate on space and IWCT counts, it is
+            # correct to divide by sqrt(N), because we use N repeated
+            # measurements for the variable estimate; but in case of Earth
+            # views, this is NOT correct because we use only a single
+            # measurement.  See #125.
             self._tuck_effect_channel("C_Earth",
-                UADA((u_counts_space.variable + u_counts_iwct.variable)/2,
+                UADA((counts_space_adev.variable + counts_iwct_adev.variable)/2,
                       coords=u_counts_space.coords,
                       attrs=u_counts_space.attrs), ch)
 
@@ -1063,6 +1069,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         TODO: incorporate SRF-induced uncertainties --- how?
         """
+        warnings.warn("Deprecated, use calculate_radiance", DeprecationWarning)
         srf = self.srfs[ch-1]
         if realisations is None:
             realisations = self.realisations
@@ -1766,7 +1773,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
 
     # deprecated:
-    # The remaining methods are no longer used.
+    # The remaining methods should no longer be used but legacy code such
+    # as in timeseries.py still depends on them
 
     def calc_sens_coef(self, typ, M, ch, srf): 
         """Calculate sensitivity coefficient.
@@ -1888,7 +1896,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             u_C_space) = [
                 (ureg.Quantity(numpy.ma.masked_invalid(x.values), x.attrs["units"])
                     if "units" in x.attrs
-                    else numpy.ma.MaskedArray(t_slope.values, mask=numpy.zeros_like(t_slope.values)))
+                    else numpy.ma.MaskedArray(x.values, mask=numpy.zeros_like(x.values)))
                           for x in self.extract_calibcounts_and_temp(
                           M, ch, srf, return_u=True)]
         s_iwct = self.calc_sens_coef_C_iwct_slope(L_iwct, C_iwct, C_space)
