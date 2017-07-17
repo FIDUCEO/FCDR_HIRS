@@ -44,6 +44,10 @@ def parse_cmdline():
         action="store_true",
         help="Plot correlation matrix between actual scanpos noise")
 
+    parser.add_argument("--plot_temperature_corr",
+        action="store_true",
+        help="Plot correlation matrix between temperatures")
+
     parser.add_argument("--calibpos", action="store", type=int,
         nargs="+", default=[20],
         help="When plotting SDM of noise values between chanels, "
@@ -159,8 +163,8 @@ class MatrixPlotter:
         self.filename_sat_date = "{sat:s}_{from_date:%Y}/{sat:s}_{from_date:%Y%m%d%H%M}--{to_date:%Y%m%d%H%M}".format(
             **locals())
 
-    def plot_temperature_sdm(self, temp_fields):
-        MM = numpy.zeros(
+    def _get_temps(self, temp_fields):
+        MM = numpy.ma.zeros(
             shape=self.M.shape,
             dtype=[(t, "f8") for t in temp_fields])
         for t in temp_fields:
@@ -168,6 +172,10 @@ class MatrixPlotter:
             while x.ndim > 1:
                 x = x.mean(-1)
             MM[t] = x
+        return MM
+
+    def plot_temperature_sdm(self, temp_fields):
+        MM = self._get_temps(temp_fields)
         plot_field_matrix(MM,
             ranges=
                 {fld: scipy.stats.scoreatpercentile(MM[fld], [1, 99])
@@ -179,7 +187,6 @@ class MatrixPlotter:
             units={fld: "K" for fld in temp_fields})
 
     def plot_noise_level_sdm(self, channels, noise_typ="iwt"):
-
         for (i, ch) in enumerate(channels):
             (t_x, x) = self.hirs.estimate_noise(self.M, ch, typ=noise_typ)
             if i == 0:
@@ -406,6 +413,36 @@ class MatrixPlotter:
                 "hirs_noise_correlations_scanpos_{:s}_ch{:d}_{:s}.png".format(
                     self.filename_sat_date, ch, noise_typ))
 
+    def plot_temperature_corrmat(self, temp_fields):
+        """Plot correlation matrix for temperatures.
+
+        NB, this is a correlation matrix for the actual temperatures — not
+        for their noises.
+        """
+        MM = self._get_temps(temp_fields)
+        MMp = MM.view("<f8").reshape(MM.shape[0], -1).T
+        MMp = MMp[:, (~MMp.mask).all(0)]
+        S = numpy.corrcoef(MMp)
+        (f, a) = matplotlib.pyplot.subplots(1, 1)
+        im = a.imshow(S, cmap="PuOr", interpolation="none")
+        im.set_clim([-1, 1])
+        cb = f.colorbar(im)
+        cb.set_label("Correlation coefficient")
+        a.set_title("Temperature correlation matrix\n" +
+                    self.title_sat_date)
+
+        a.set_xticks(numpy.arange(len(temp_fields)))
+        a.set_xticklabels(temp_fields)
+        a.set_yticks(numpy.arange(len(temp_fields)))
+        a.set_yticklabels(a.get_xticklabels())
+        for tl in a.get_xticklabels():
+            tl.set_rotation(90)
+
+        f.subplots_adjust(left=0.3, bottom=0.3)
+
+        pyatmlab.graphics.print_or_show(f, False,
+            f"hirs_temperature_correlation_{self.filename_sat_date:s}.png")
+
 
     def plot_ch_corrmat_all_sats(self, channels, noise_typ, calibpos,
             sats="all"):
@@ -563,6 +600,9 @@ def read_and_plot_field_matrices():
     mp.reset(p.satname, from_date, to_date)
     if p.plot_temperature_sdm:
         mp.plot_temperature_sdm(p.temperatures)
+
+    if p.plot_temperature_corr:
+        mp.plot_temperature_corrmat(sorted(p.temperatures))
 
     for typ in p.noise_typ:
         if p.plot_noise_level_sdm:

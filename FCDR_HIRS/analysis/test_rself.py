@@ -4,6 +4,7 @@
 
 from .. import common
 import argparse
+import json
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -15,6 +16,15 @@ def parse_cmdline():
         include_sat=True,
         include_channels=True,
         include_temperatures=True)
+
+    parser.add_argument("--regression_type", action="store", type=str,
+        choices=["LR", "PLSR"],
+        default="PLSR",
+        help="What kind of regression to use for prediction?")
+
+    parser.add_argument("--regression_args", action="store", type=json.loads,
+        default={"n_components": 2, "scale": True},
+        help="Arguments to pass to regression class (as json/Python dict)")
 
     p = parser.parse_args()
     return p
@@ -45,9 +55,10 @@ from .. import models
 from .. import fcdr
 
 def plot_rself_test(h, ds, temperatures, channels,
-        tit, fn):
+        regr_type, regr_args, tit, fn):
     
-    model = models.RSelf(h, temperatures)
+    model = models.RSelf(h, temperatures,
+        (regr_type, regr_args))
 
     #view_space = M[h.scantype_fieldname] == h.typ_space
 
@@ -105,7 +116,7 @@ def plot_rself_test(h, ds, temperatures, channels,
 
 
 def read_and_plot_rself_test(sat, from_date, to_date, temperatures,
-                             channels):
+                             channels, regr_type, regr_args):
     h = fcdr.which_hirs_fcdr(sat)
     M = h.read_period(from_date, to_date,
         fields=["time", "counts", "lat", "lon", "bt", h.scantype_fieldname] +
@@ -113,18 +124,24 @@ def read_and_plot_rself_test(sat, from_date, to_date, temperatures,
             (["temp_iwt"] if "iwt" not in temperatures else []))
     ds = h.as_xarray_dataset(M)
     plot_rself_test(h, ds, temperatures, channels,
+        regr_type, regr_args,
         "self-emission regression performance, {sat:s}, "
         "{from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}\n"
-        "using {temperatures:s}".format(
+        "using {temperatures:s}\n"
+        "{regr_type:s}, {regr_args!s}".format(
             sat=sat, from_date=from_date, to_date=to_date,
-            temperatures=', '.join(temperatures)),
+            temperatures=', '.join(temperatures),
+            regr_type=regr_type, regr_args=regr_args),
         "rself_regr_test_{sat:s}_{from_date:%Y%m%d%H%M}-"
         "{to_date:%Y%m%d%H%M}_"
         "ch_{ch:s}_"
-        "from_{temperatures:s}.png".format(
+        "from_{temperatures:s}_"
+        "{regr_type:s}_{regr_args:s}.png".format(
             sat=sat, from_date=from_date, to_date=to_date,
             ch=",".join([str(c) for c in channels]),
-            temperatures=",".join(temperatures)))
+            temperatures=",".join(temperatures),
+            regr_type=regr_type,
+            regr_args=','.join(f"{k:s}{v!s}" for (k,v) in regr_args.items())))
 
 def main():
     import warnings
@@ -134,4 +151,4 @@ def main():
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)
     read_and_plot_rself_test(p.satname, from_date, to_date,
-        p.temperatures, p.channels)
+        p.temperatures, p.channels, p.regression_type, p.regression_args)

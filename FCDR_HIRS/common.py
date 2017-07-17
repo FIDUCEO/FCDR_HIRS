@@ -87,6 +87,6 @@ def time_epoch_to(ds, epoch):
     for k in [k for (k, v) in ds.items() if v.dtype.kind.startswith("M")]:
         ds[k].encoding["units"] = "seconds since {:%Y-%m-%d %H:%M:%S}".format(epoch)
         ds[k].encoding["add_offset"] = (
-            ds[k][0].values.astype("M8[ms]").astype(datetime.datetime)
+            ds[k].min().values.astype("M8[ms]").astype(datetime.datetime)
             - epoch).total_seconds()
     return ds

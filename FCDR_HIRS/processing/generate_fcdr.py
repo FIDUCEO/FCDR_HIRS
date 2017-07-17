@@ -49,12 +49,20 @@ Change estimate for ε=1 to ε=0.98 (or rather, a_3=0 to a_3=-0.02)
 Added bias term a_4 (debug only)
 Added handling of flags
 
-0.7
+0.7 (in development)
 
 Correct time axis for uncertainties per calibration cycle, preventing half
 the values being nans (debug version only)
 Fix bug which caused random uncertainty on Earth counts to be estimated a
 factor √48 too low.
+Changed approach to self-emission:
+- use more temperatures for prediction, to be precise, use all
+  temperatures that are available for all HIRS
+- use ordinary least squares rather than partial least squares
+- detect and flag cases of gain change, and use old model in this case
+- keep track of times used to train self-emission using a 2-D (channel,
+  time) coordinate for two fields (start, end).  Has to be 2-D because
+  self-emission might fail for some channels but not others.
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -129,7 +137,17 @@ class FCDRGenerator:
     step_size = datetime.timedelta(hours=4)
     skip_problem_step = datetime.timedelta(seconds=900)
     data_version = "0.7pre"
-    # FIXME: do we have a filename convention?
+    # use all temperatures that exist throughout the sensor series
+    rself_temperatures = ['baseplate', 'cooler_housing', 'electronics',
+        'filter_wheel_housing',    'filter_wheel_motor',
+        'internal_warm_calibration_target', 'patch_full',
+        'primary_telescope', 'scanmirror', 'scanmotor',
+        'secondary_telescope']
+    # 2017-07-14 GH: Use LR again, seems to work better than PDR although
+    # I don't know why it should.
+    rself_regr = ("LR", {"fit_intercept": True})
+
+    # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes):
         logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
             "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. "
@@ -140,12 +158,15 @@ class FCDRGenerator:
         logging.info(info)
         self.satname = sat
         self.fcdr = fcdr.which_hirs_fcdr(sat, read="L1B")
+        self.fcdr.my_pseudo_fields.clear() # suppress pseudo fields radiance_fid, bt_fid here
         self.start_date = start_date
         self.end_date = end_date
         self.dd = typhon.datasets.dataset.DatasetDeque(
             self.fcdr, self.window_size, start_date)
 
-        self.rself = models.RSelf(self.fcdr)
+        self.rself = models.RSelf(self.fcdr,
+            temperatures=self.rself_temperatures,
+            regr=self.rself_regr)
         self.modes = modes
 
     def process(self, start=None, end_time=None):
@@ -191,7 +212,11 @@ class FCDRGenerator:
         # each 6 hour segment.  This is a suboptimal solution.
         for (s, e) in list(zip(segments[:-1], segments[1:]))[1:-1]:
             p = piece
-            for tc in time_coords:
+            # only loop through time-coords that are also dimensions,
+            # other coords we don't want to subselect on; for example,
+            # rself period coordinates SHOULD refer to a period outside of
+            # the coverage time for the granule
+            for tc in time_coords & piece.dims.keys():
                 p = p[{tc: 
                         (p[tc] >= piece["lat"]["time"][s]) &
                         (p[tc] < piece["lat"]["time"][e])}]
@@ -295,6 +320,7 @@ class FCDRGenerator:
                 if v.size>1})
         
         # this is approximate, not accurate, but will do for now
+        # see also #55 and #56
         uTb_syst = uRe_syst/(uRe_syst+uRe_rand) * uTb
         uTb_rand = uRe_rand/(uRe_syst+uRe_rand) * uTb
 

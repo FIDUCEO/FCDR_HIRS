@@ -530,7 +530,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             pass # not a masked array
         return da.assign_coords(**coords)
 
-    def _tuck_quantity_channel(self, symbol_name, quantity, **coords):
+    def _tuck_quantity_channel(self, symbol_name, quantity, 
+            concat_coords=(), **coords):
         """Convert quantity to xarray and put into self._quantities
 
         TODO: need to assign time coordinates so that I can later
@@ -553,7 +554,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                                  "channel coordinate, found {:d}.".format(
                                     symbol_name, len(in_coords)))
             # FIXME: need to check if we're tucking the same channel twice
-            da = xarray.concat([da, q], dim=in_coords[0])
+            da = xarray.concat([da, q], dim=in_coords[0],
+                coords=[in_coords[0]]+list(concat_coords))
             # NB: https://github.com/pydata/xarray/issues/1297
             da.encoding = q.encoding
             self._quantities[s] = da
@@ -843,6 +845,23 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         "training data in {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}".format(
                             context["time"].values[0].astype("M8[s]").astype(datetime.datetime),
                             context["time"].values[-1].astype("M8[s]").astype(datetime.datetime)))
+                elif e.args[0].startswith("Space views fail normality"):
+                    if hasattr(Rself_model.model, "coef_"):
+                        # TODO:
+                        # - use old self-emission model
+                        # - use old self-emission uncertainty?  or new?
+                        # - if old, bookkeep this cleverly
+                        if not ch in self._flags["channel"]:
+                            self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.OLD_CONTEXT
+                        else:
+                            self._flags["channel"][ch] |= _fcdr_defs.FlagsChannel.OLD_CONTEXT
+                    else:
+                        raise FCDRError(
+                            "Unable to train self-emission model: "
+                            "very first batch fails normality test, "
+                            "no previous model to fall back to. "
+                            "Can you try to start processing earlier "
+                            "or later?")
                 else:
                     raise
             (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
@@ -855,12 +874,25 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
                     coords=offset["time"].coords,
                     attrs={**Rself.attrs,
-                           "note": "Rself is implemented as ΔRself in pre-β"})
+                           "note": "Rself is implemented as ΔRself in pre-β",
+                           })
+            Rself_start = xarray.DataArray(
+                [Rself_model.fit_time[0]
+                     if Rself_model is not None
+                     else numpy.datetime64("NaT")],
+                dims=["time_rself"])
+            Rself_end = xarray.DataArray(
+                [Rself_model.fit_time[1]
+                    if Rself_model is not None
+                    else numpy.datetime64("NaT")],
+                dims=["time_rself"])
             u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
                 keep_attrs=True, dim="time"))
             # trick to make sure there is a time dimension…
             # http://stackoverflow.com/a/42999562/974555
-            u_Rself = xarray.concat((u_Rself,), dim="rself_update_time")
+            u_Rself = xarray.concat((u_Rself,), dim="time_rself")
+
+            # want to do this differently… see #128
             # and, for now, establish fake time based u_Rself to ensure
             # there's always u_Rself info in every orbit file even though
             # it's updated more rarely than that.  Take a range that is
@@ -873,12 +905,22 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 freq='10min')
             u_Rself = u_Rself[numpy.tile([0], times.size)]
             u_Rself = u_Rself.assign_coords(
-                rself_update_time=times.values)# [ds["time"].values[0]])
+                time_rself=times.values)# [ds["time"].values[0]])
             u_Rself.attrs["U_RSELF_WARNING"] = (
                 "Self-emission uncertainty repeated "
                 "every ten minutes as a stop-gap measure to ensure even "
                 "short slices contain this info, but not a sustainable "
-                "solution.  Coordinates are lying!")
+                "solution.  Coordinates are lying — check attribute instead!")
+
+        Rself = Rself.assign_coords(
+            Rself_start=xarray.DataArray(
+                numpy.tile(Rself_start, Rself.shape[0]),
+                dims=("time",),
+                coords={"time": Rself.time}),
+            Rself_end=xarray.DataArray(
+                numpy.tile(Rself_end, Rself.shape[0]),
+                dims=("time",),
+                coords={"time": Rself.time}))
         # according to Wang, Cao, and Ciren (2007), ε=0.98, no further
         # source or justification given
         ε = UADA(1, name="emissivity")
@@ -904,13 +946,22 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         coords = {"calibration_cycle": time.values}
         if tuck:
+            # I want to keep the channel dimension on the time coordinate
+            # for the 'last update' self-emission.  Sometimes some
+            # channels have a more recently updated self-emission model
+            # than others (imagine if one channel or set of channels is
+            # not functioning for a while, we wouldn't want to abandon
+            # updating all channels)
             self._tuck_quantity_channel("R_selfE", Rself, 
-                calibrated_channel=ch)
+                calibrated_channel=ch,
+                concat_coords=["Rself_start", "Rself_end"])
             self._tuck_effect_channel("Rself", u_Rself, ch)
             self._tuck_quantity_channel("R_selfIWCT", RselfIWCT, 
                 calibrated_channel=ch, **coords)
             self._tuck_quantity_channel("R_selfs", Rselfspace,
                 calibrated_channel=ch, **coords)
+#            self._tuck_quantity_channel("R_self_start", Rself_start)
+#            self._tuck_quantity_channel("R_self_end", Rself_end)
             self._tuck_quantity_channel("C_E", C_Earth, 
                 calibrated_channel=ch, scanline_earth=C_Earth["time"].values)
     #        self._tuck_quantity_channel("R_e", rad_wn[views_Earth, :], ch)
@@ -918,12 +969,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # _tuck_quantity_channel also renames dimensions and I don't want
             # that yet
             R_e = self._tuck_quantity_channel("R_e", rad_wn,
-                calibrated_channel=ch)
+                calibrated_channel=ch,
+                concat_coords=["Rself_start", "Rself_end"])
             rad_wn.encoding = R_e.encoding
             if return_bt:
                 self._tuck_quantity_channel("T_b",
                     rad_wn.to("K", "radiance", srf=srf),
-                    calibrated_channel=ch)
+                    calibrated_channel=ch,
+                    concat_coords=["Rself_start", "Rself_end"])
             self._tuck_quantity_channel("R_refl", Rrefl,
                 calibrated_channel=ch, **coords)
 
@@ -1686,6 +1739,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             attrs=self._data_vars_props["quality_channel_bitmask"][2]
             )
         
+        for (ch, flag) in self._flags["channel"].items():
+            flags_channel.loc[{"calibrated_channel": ch}] |= flag
+
         da_qfb = ds["quality_flags_bitfield"].sel(
             time=R_E.coords["scanline_earth"])
 #        da_lqfb = ds["line_quality_flags_bitfield"].sel(
@@ -1701,10 +1757,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #                    for st in {"tm", "el", "ca"}}
 #        probs["tm"] |= (da_qfb & fd_qif.qitimeseqerr)
 
-        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qidonotuse)!=0)}] |= fs.DO_NOT_USE
-        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qitimeseqerr)!=0)}] |= fs.SUSPECT_TIME
-        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qinofullcalib)!=0)}] |= fs.SUSPECT_CALIB
-        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qinoearthloc)!=0)}] |= fs.SUSPECT_GEO
+        # pass .values to each to avoid xarrays array_ne which uses catch_warnings
+        # which triggers http://bugs.python.org/issue29672
+        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qidonotuse).values!=0)}] |= fs.DO_NOT_USE
+        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qitimeseqerr).values!=0)}] |= fs.SUSPECT_TIME
+        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qinofullcalib).values!=0)}] |= fs.SUSPECT_CALIB
+        flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qinoearthloc).values!=0)}] |= fs.SUSPECT_GEO
 #        flags_scanline[{"scanline_earth":((da_lqfb & probs["el"])!=0)}] |= fs.SUSPECT_GEO
 #        flags_scanline[{"scanline_earth":((da_lqfb & probs["tm"])!=0)}] |= fs.SUSPECT_TIME
 #        flags_scanline[{"scanline_earth":((da_lqfb & probs["ca"])!=0)}] |= fs.SUSPECT_CALIB
@@ -1995,11 +2053,13 @@ class HIRSKLMFCDR:
                 (v for (k, v) in fd_qfb.__members__.items() if k.startswith(st)))
                     for st in {"tm", "el", "ca"}}
 
-        flags_scanline[{"scanline_earth":((da_lqfb & probs["el"])!=0)}] |= fs.SUSPECT_GEO
-        flags_scanline[{"scanline_earth":((da_lqfb & probs["tm"])!=0)}] |= fs.SUSPECT_TIME
-        flags_scanline[{"scanline_earth":((da_lqfb & probs["ca"])!=0)}] |= fs.SUSPECT_CALIB
+        # pass .values to each; xarrays array_ne uses catch_warnings,
+        # which triggers http://bugs.python.org/issue29672
+        flags_scanline[{"scanline_earth":((da_lqfb & probs["el"]).values!=0)}] |= fs.SUSPECT_GEO
+        flags_scanline[{"scanline_earth":((da_lqfb & probs["tm"]).values!=0)}] |= fs.SUSPECT_TIME
+        flags_scanline[{"scanline_earth":((da_lqfb & probs["ca"]).values!=0)}] |= fs.SUSPECT_CALIB
 
-        flags_channel[{"scanline_earth":((da_qfb & fd_qif.qidonotuse)!=0)}] |= fc.DO_NOT_USE
+        flags_channel[{"scanline_earth":((da_qfb & fd_qif.qidonotuse).values!=0)}] |= fc.DO_NOT_USE
 
         return (flags_scanline, flags_channel)
 

@@ -7,6 +7,7 @@ Work in progress!
 
 import scipy.stats
 import sklearn.cross_decomposition
+import sklearn.linear_model
 import numpy
 import xarray
 
@@ -14,18 +15,27 @@ from typhon.physics.units.common import ureg
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.datasets import _tovs_defs
 
+regression_types = {
+    "PLSR": sklearn.cross_decomposition.PLSRegression,
+    "LR": sklearn.linear_model.LinearRegression}
 
 class RSelf:
-    temperatures = ["scanmirror", "filter_wheel_housing", "internal_warm_calibration_target",
-                    "secondary_telescope", "baseplate", "electronics"]
+    # default set of temperatures: all that consistently exist across
+    # series
+    ['baseplate', 'cooler_housing', 'electronics', 'filter_wheel_housing',
+    'filter_wheel_motor', 'internal_warm_calibration_target',
+    'patch_full', 'primary_telescope', 'scanmirror', 'scanmotor',
+    'secondary_telescope']
 
     X_ref = None
     Y_ref = None
+    fit_time = None
 
-    def __init__(self, hirs, temperatures=None):
+    def __init__(self, hirs, temperatures=None,
+            regr=("LR", {"fit_intercept": True})):
         self.hirs = hirs
-        self.model = sklearn.cross_decomposition.PLSRegression(
-            n_components=2)
+        self.model = regression_types[regr[0]](**regr[1])#sklearn.cross_decomposition.PLSRegression(
+            #n_components=2)
         if temperatures is not None:
             self.temperatures = temperatures
     
@@ -88,7 +98,7 @@ class RSelf:
         Y = offset.median("scanpos", keep_attrs=True)
         return Y
 
-    def fit(self, ds, ch):
+    def fit(self, ds, ch, force=False):
         """Fit model
         """
         #ds = self._subsel_calib(ds, ch)
@@ -106,9 +116,18 @@ class RSelf:
 #                for x in X.data_vars.values()], 1)
 #        Yy = Y.values[OK]
         (Xx, Yy) = self._ds2ndarray(X, Y, dropna=True)
+        # if slopes fail normality test, we may be in a regime where we
+        # the gain is changing more than usually; for example, see MetOp-A
+        # 2016-03-01 – 03-03.  The assumptions behind the self-emission
+        # model will fail.  Instead, we should decline to update it and
+        # flag that the self-emission model is old.
+        tr = scipy.stats.normaltest(Yy)
+        if tr.statistic > 10 and tr.pvalue < 0.05 and not force:
+            raise ValueError("Space views fail normality test.  Gain changer?")
         self.model.fit(Xx, Yy)
         self.X_ref = X
         self.Y_ref = Y
+        self.fit_time = ds["time"].values[[0,-1]].astype("M8[ms]")
 
     def evaluate(self, ds, ch):
         X = self.get_predictor(ds, ch)

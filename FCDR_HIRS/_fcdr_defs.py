@@ -373,6 +373,7 @@ class FlagsScanline(enum.IntFlag):
 class FlagsChannel(enum.IntFlag):
     DO_NOT_USE = enum.auto()
     UNCERTAINTY_SUSPICIOUS = enum.auto()
+    OLD_CONTEXT = enum.auto()
 
 FCDR_data_vars_props["quality_scanline_bitmask"][2]["flag_masks"] = ", ".join(str(int(v)) for v in FlagsScanline.__members__.values())
 FCDR_data_vars_props["quality_scanline_bitmask"][2]["flag_meanings"] = ", ".join(FlagsScanline.__members__.keys()) 
