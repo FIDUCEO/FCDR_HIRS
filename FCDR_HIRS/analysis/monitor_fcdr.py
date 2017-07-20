@@ -53,30 +53,34 @@ class FCDRMonitor:
         'u_from_R_selfE', 'u_from_a_0', 'u_from_a_2', 'u_from_a_1',
         'u_from_C_s', 'u_from_C_IWCT', 'u_from_R_IWCT', 'u_from_B',
         'u_from_Tstar', 'u_from_β', 'u_from_α', 'u_from_T_IWCT',
-        'u_from_O_TIWCT', 'u_from_fstar', 'u_from_R_refl', 'u_from_C_E']
+        'u_from_O_TIWCT', 'u_from_fstar', 'u_from_R_refl', 'u_from_C_E',
+        "quality_scanline_bitmask", "quality_channel_bitmask",
+        "quality_minorframe_bitmask"]
+
     def __init__(self, start_date, end_date, satname,
             version="0.7pre",):
         self.hirsfcdr = fcdr.which_hirs_fcdr(satname, read="L1C")
         self.ds = self.hirsfcdr.read_period(
             start_date,
             end_date,
-            locator_args={"data_version": version, "fcdr_type": "debug"},
+            locator_args={"data_version": version, "fcdr_type": "debug",
+                          "format_version": "0.4"},
             fields=self.fields)
         self.satname = satname
 
     def plot_timeseries(self, ch, sp=28):
         counter = itertools.count()
         ds = self.ds.sel(calibrated_channel=ch, scanpos=sp)
-        nrow = 6
+        nrow = 7
         gs = matplotlib.gridspec.GridSpec(nrow, 4)
         fig = matplotlib.pyplot.figure(figsize=(18, 3*nrow))
 #        (fig, axes) = matplotlib.pyplot.subplots(nrow, 2,
 #            gridspec_kw={"width_ratios": [3, 1], "hspace": 1},
 #            figsize=(18, 3*nrow))
 
-        bad = (2*ds["u_R_Earth_nonrandom"] > ds["R_e"])
-        for v in self.fields:
-            ds[v][bad] = numpy.nan 
+#        bad = (2*ds["u_R_Earth_nonrandom"] > ds["R_e"])
+#        for v in self.fields:
+#            ds[v][bad] = numpy.nan 
 
         if not numpy.isfinite(ds["T_b"]).any():
             logging.warning("Found no valid BTs for "
@@ -104,6 +108,30 @@ class FCDRMonitor:
             ds["u_T_b_random"],
             ds["u_T_b_nonrandom"],
             a_tb, a_tb_h, a_tb_u, a_tb_u_h)
+
+        # flags
+        c = next(counter)
+        # although exact same width as other time series would be
+        # desirable, the colourbar currently messes this up /anyway/, so
+        # we might as well take the full width
+        a_flags = fig.add_subplot(gs[c, :])
+        perc_all = []
+        labels = []
+        for f in ("scanline", "channel", "minorframe"):
+            da = ds[f"quality_{f:s}_bitmask"]
+            (perc, meanings) = common.sample_flags(da, "1H", "scanline_earth")
+            perc_all.append(perc)
+            labels.extend(f"{f:s}_{mean:s}" for mean in meanings)
+        perc = xarray.concat(perc_all, dim="flag")
+        perc.values[perc.values==0] = numpy.nan
+        perc.T.plot.pcolormesh(ax=a_flags)
+        a_flags.set_yticks(numpy.arange(len(labels)))
+        a_flags.set_yticklabels(labels)
+        a_flags.set_title("Percentage of flag set per hour")
+#            "{:s} {:%Y%m%d}-{:%Y%m%d}".format(self.satname, start, end))
+        a_flags.grid(axis="x")
+
+#        a_tb_u_h = fig.add_subplot(gs[c, 3])
 
         c = next(counter)
         a_L = fig.add_subplot(gs[c, :3])

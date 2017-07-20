@@ -1,9 +1,12 @@
-"""Common utilities between scripts
+"""Common utility functions between scripts
+
+Should probably be sorted into smaller modules.
 """
 
-from .fcdr import list_all_satellites
-
 import datetime
+import numpy
+import xarray
+from .fcdr import list_all_satellites
 
 def add_to_argparse(parser,
         include_period=True,
@@ -90,3 +93,36 @@ def time_epoch_to(ds, epoch):
             ds[k].min().values.astype("M8[ms]").astype(datetime.datetime)
             - epoch).total_seconds()
     return ds
+
+
+def sample_flags(da, period="1H", dim="time"):
+    """Sample flags
+
+    For a flag field, estimate percentage during which flag is set each
+    period (default 1H)
+
+    Must have .flag_masks and .flag_meanings following
+    http://cfconventions.org/Data/cf-conventions/cf-conventions-1.7/build/ch03s05.html
+
+    Arguments:
+
+        da
+
+            must have flag_masks and flag_meanings attributes
+
+        period
+
+        dim
+
+    Returns:
+
+        (percs, labels)
+    """
+
+    flags = da & xarray.DataArray(numpy.atleast_1d(da.flag_masks), dims=("flag",))
+    perc = (100*(flags!=0)).resample(period, dim=dim, how="mean")
+    # deeper dimensions
+    for d in set(perc.dims) - {dim, "flag"}:
+        perc = perc.mean(dim=d)
+    
+    return (perc, da.flag_meanings.split())

@@ -38,8 +38,9 @@ logging.basicConfig(
     filename=parsed_cmdline.log,
     level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
 
+import numpy
 import matplotlib
-matplotlib.use("Agg")
+# matplotlib.use("Agg") # now in matplotlibrc
 import pathlib
 pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 
@@ -49,7 +50,7 @@ import datetime
 import typhon.plots
 import pyatmlab.graphics
 
-from typhon.physics.units.common import radiance_units as rad_u
+from typhon.physics.units.common import ureg, radiance_units as rad_u
 
 from .. import models
 from .. import fcdr
@@ -93,6 +94,9 @@ def plot_rself_test(h, ds, temperatures, channels,
             nbins=20, color="tan",
             ptiles=[5, 25, 50, 75, 95],
             linestyles=[":", "--", "-", "--", ":"])
+        rmse = numpy.sqrt(((Y_pred-Y_ref).to(rad_u["ir"], "radiance")**2).mean())
+        rmse = ureg.Quantity(rmse.values, rmse.attrs["units"]) 
+        a.annotate(f"RMSE: {rmse.round(2):~}", xy=(.99, .99), xycoords='axes fraction', horizontalalignment='right', verticalalignment="top")
         a.set_title("Ch. {:d}".format(c))
         a.grid(axis="both", color="white")
         #a.set_aspect("equal", "box", "C")

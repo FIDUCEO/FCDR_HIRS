@@ -28,6 +28,7 @@ from pyatmlab import tools
 from . import models
 from . import effects
 from . import measurement_equation as me
+from . import filters
 from . import _fcdr_defs
 
 class FCDRError(typhon.datasets.dataset.InvalidDataError):
@@ -67,8 +68,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                  r"(?P<year_end>\d{4})(?P<month_end>\d{2})(?P<day_end>\d{2})"
                  r"(?P<hour_end>\d{2})(?P<minute_end>\d{2})(?P<second_end>\d{2})_"
                  r"(?P<fcdr_type>[a-zA-Z]*)_"
-                 r"(?P<data_version>v.+)_"
-                 r"(?P<format_version>fv.+)\.nc")
+                 r"v(?P<data_version>.+)_"
+                 r"fv(?P<format_version>.+)\.nc")
     
     # before data_version v0.5
     old_stored_re = (
@@ -82,7 +83,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     # format changelog:
     #
     # v0.3: removed copied flags, added own flag fields
-    format_version="0.3"
+    #
+    # v0.4: attribute with flag masks is now a numeric one
+    format_version="0.4"
 
     realisations = 100
     srfs = None
@@ -99,9 +102,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     # NB: first 8 views of space counts deemed always unusable, see
     # NOAA or EUMETSAT calibration papers/documents.  I've personaly
     # witnessed (on NOAA-18) that later positions are sometimes also
-    # systematically offset
+    # systematically offset; see #12 and the class
+    # filters.CalibrationMirrorFilter
     start_space_calib = 8
     start_iwct_calib = 8
+
+    calibfilter = filters.IQRCalibFilter()
 
     ε = 0.98 # from Wang, Cao, and Ciren (2007, JAOT), who give so further
              # source for this number
@@ -151,7 +157,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 ["radiance", self.scantype_fieldname, "temp_iwt", "time"],
                 lambda M, D:
                 self.calculate_radiance_all(
-                    M[1] if isinstance(M, tuple) else M, interp_kind="zero",
+                    M[1] if isinstance(M, tuple) else M, 
                     return_ndarray=True),
                 cond)
             self.my_pseudo_fields["bt_fid_naive"] = (["radiance_fid_naive"],
@@ -683,17 +689,18 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # (10, 90) … > 3.3: false positive 0.5%
         # …based on a simple simulated # experiment.
         if counts_iwct.coords["time"].size > 0:
-            # NB: need to encapsulate this or it will fail with
-            # ValueError, see https://github.com/scipy/scipy/issues/7178
-            bad_iwct = (counts_iwct.reduce(
-                scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
-                typhon.math.stats.adev(counts_iwct, dim="scanpos"))
-            bad_space = (counts_space.reduce(
-                scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
-                typhon.math.stats.adev(counts_space, dim="scanpos"))
+#            bad_iwct = (counts_iwct.reduce(
+#                scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
+#                typhon.math.stats.adev(counts_iwct, dim="scanpos"))
+            bad_iwct = self.calibfilter.filter_calibcounts(counts_iwct)
+#            bad_space = (counts_space.reduce(
+#                scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
+#                typhon.math.stats.adev(counts_space, dim="scanpos"))
+            bad_space = self.calibfilter.filter_calibcounts(counts_space)
 
             bad_calib = xarray.DataArray(bad_iwct.variable | bad_space.variable,
                     coords=bad_space.coords, name="bad_calib")
+            # TODO/FIXME: this should be salvageable!  
             slope.sel(time=bad_calib)[...] = numpy.nan
             offset.sel(time=bad_calib)[...] = numpy.nan
         coords = {"calibration_cycle": time.values}
@@ -715,35 +722,29 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     _effects = None
     _effects_by_name = None
     _flags = {"scanline": {}, "channel": {}}
-    def calculate_radiance(self, ds, ch, interp_kind="zero", srf=None,
+    def calculate_radiance(self, ds, ch, srf=None,
                 context=None,
                 Rself_model=None,
                 Rrefl_model=None, tuck=False, return_bt=False):
-        """Calculate radiance
+        """Calculate FIDUCEO radiance for channel
 
-        Wants ndarray as returned by read, SRF, and channel.
-
-        Returns pint quantity with masked array underneath.
+        Apply the measurement equation to calculate the calibrated FIDUCEO
+        radiance for a particular channel.
 
         Arguments:
             
             ds [xarray.Dataset]
 
                 xarray Dataset with at least variables 'time', 'scantype',
-                'temperature_internal_warm_calibration_target', and 'counts'.  Such is returned by
-                self.as_xarray_dataset.  Those are values for which
-                radiances will be calculated.
+                'temperature_internal_warm_calibration_target', and
+                'counts'.  Such is returned by self.as_xarray_dataset.
+                Those are values for which radiances will be calculated.
 
             ch [int]
 
                 Channel to calculate radiance for.  If you want to
                 calculate the radiance for all channels, use
                 calculate_radiance_all.
-
-            interp_kind [str]
-
-                Legacy, must be equal to "zero".  Instead of
-                interpolation, pass a self-emission model.
 
             srf [SRF]
 
@@ -765,13 +766,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
                 Model to use for Earthshine.  See models.RRefl.
 
+            tuck [bool]
+
+                If true, store/cache intermediate values in
+                self._quantities.
+
+            return_bt [bool]
+
+                If true, return (radiance, bt).  If false, return only
+                radiance.
+
         """
-        if interp_kind != "zero":
-            raise NotImplementedError("You asked for {:s} interpolation, "
-                "but I refuse to do so.  Interpolating calibration "
-                "must be done with a zero-order spline. Corrections on "
-                "top of that must be physics-based, such as through "
-                "the self-emission model. ".format(interp_kind))
 
         if not isinstance(ds, xarray.Dataset):
             warnings.warn("Passing ndarray to calculate_radiance "
@@ -787,6 +792,70 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # processing.
         (time, offset, slope, a2) = self.calculate_offset_and_slope(
             context, ch, srf, tuck=tuck)
+
+        # see note near line 270
+        views_Earth = xarray.DataArray(ds["scantype"].values == self.typ_Earth, coords=ds["scantype"].coords)
+        #views_Earth = ds["scantype"] == self.typ_Earth
+        # NB: C_Earth has counts for all channels but only
+        # calibrated_channel will be used
+        C_Earth = UADA(ds["counts"].isel(time=views_Earth).sel(
+            channel=ch)).rename({"channel": "calibrated_channel"})
+
+        if Rself_model is None:
+            warnings.warn("No self-emission defined, assuming 0!",
+                FCDRWarning)
+            has_Rself = False
+        else:
+            try:
+                Rself_model.fit(context, ch)
+#                Rself_model.fit(
+#                    context[
+#                        {"time":
+#                         self.filterer.filter_outliers(
+#                            context["counts"].sel(channel=1).values).any(1)}],
+#                    ch)
+            except ValueError as e:
+                if (e.args[0].startswith("Found array with 0 sample(s)") or
+                    e.args[0].startswith("Space views fail normality") or
+                    e.args[0].startswith("All space views in fitting")):
+                    errmsg = (
+                        "Unable to train self-emission model for channel {:d} with "
+                        "training data in {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}: "
+                        "{:s}.".format(
+                            ch,
+                            context["time"].values[0].astype("M8[s]").astype(datetime.datetime),
+                            context["time"].values[-1].astype("M8[s]").astype(datetime.datetime),
+                            e.args[0]))
+                    if offset.shape[0] == 1:
+                        raise FCDRError(errmsg + " Moreover, I have only a "
+                            "single valid calibration cycle in the period "
+                            "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, which "
+                            "means I cannot fall back to interpolation "
+                            "either!  Sorry, I give up!")
+                    logging.error(errmsg +
+                        "Will flag data and reduce to basic interpolation!")
+                    if not ch in self._flags["channel"]:
+                        self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
+                    else:
+                        self._flags["channel"][ch] |= _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
+                    self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.DO_NOT_USE
+#                elif e.args[0].startswith("Space views fail normality"):
+#                    if ch in Rself_model.models.keys():
+#                        # - use old self-emission model — per channel!
+#                        # - use old self-emission uncertainty?  or new?
+#                    else:
+#                        raise FCDRError(
+#                            "Unable to train self-emission model: "
+#                            "very first batch fails normality test, "
+#                            "no previous model to fall back to. "
+#                            "Can you try to start processing earlier "
+#                            "or later?")
+                    has_Rself = False
+                else:
+                    raise
+            else:
+                has_Rself = True
+
         # NOTE: taking the median may not be an optimal solution.  See,
         # for example, plots produced by the script
         # plot_hirs_calibcounts_per_scanpos in the FCDR_HIRS package
@@ -794,14 +863,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # the lowest scan positions are systematically offset compared to
         # the higher ones.  See also the note at
         # calculate_offset_and_slope. 
+        interp_offset_modes = {}
+        interp_slope_modes = {}
         if offset.shape[0] > 1 or has_context:
-            (interp_offset, interp_slope) = self.interpolate_between_calibs(
-                ds["time"], time,
-                offset.median(dim="scanpos", keep_attrs=True),
-                #ureg.Quantity(numpy.ma.median(offset.m, 1), offset.u),
-                slope.median(dim="scanpos", keep_attrs=True),
-                #ureg.Quantity(numpy.ma.median(slope.m, 1), slope.u),
-                kind=interp_kind) # kind is always "zero" (see above)
+            for mode in ("zero", "linear", "cubic"):
+                (interp_offset, interp_slope) = self.interpolate_between_calibs(
+                    ds["time"], time,
+                    offset.median(dim="scanpos", keep_attrs=True),
+                    slope.median(dim="scanpos", keep_attrs=True),
+                    kind=mode)
+                interp_offset_modes[mode] = interp_offset
+                interp_slope_modes[mode] = interp_slope
         elif offset.shape[0] == 1:
             interp_offset = xarray.zeros_like(ds["counts"].sel(
                 scanpos=1, channel=ch))
@@ -816,54 +888,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         else: # zero scanlines…
             raise FCDRError("Dataset has zero scanlines, nothing to do")
 
-        # see note near line 270
-        views_Earth = xarray.DataArray(ds["scantype"].values == self.typ_Earth, coords=ds["scantype"].coords)
-        #views_Earth = ds["scantype"] == self.typ_Earth
-        # NB: C_Earth has counts for all channels but only
-        # calibrated_channel will be used
-        C_Earth = UADA(ds["counts"].isel(time=views_Earth).sel(
-            channel=ch)).rename({"channel": "calibrated_channel"})
-
-        if Rself_model is None:
-            warnings.warn("No self-emission defined, assuming 0!",
-                FCDRWarning)
-            Rself = UADA(numpy.zeros(shape=C_Earth["time"].shape),
-                         coords=C_Earth["time"].coords,
-                         name="Rself", attrs={"units":   
-                str(rad_u["si"])})
-            RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
-                    coords=offset["time"].coords, attrs=Rself.attrs)
-            u_Rself = UADA([0], dims=["rself_update_time"],
-                           coords={"rself_update_time": [ds["time"].values[0]]})
-        else:
-            try:
-                Rself_model.fit(context, ch)
-            except ValueError as e:
-                if e.args[0].startswith("Found array with 0 sample(s)"):
-                    raise FCDRError(
-                        "Unable to train self-emission model, no valid "
-                        "training data in {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}".format(
-                            context["time"].values[0].astype("M8[s]").astype(datetime.datetime),
-                            context["time"].values[-1].astype("M8[s]").astype(datetime.datetime)))
-                elif e.args[0].startswith("Space views fail normality"):
-                    if hasattr(Rself_model.model, "coef_"):
-                        # TODO:
-                        # - use old self-emission model
-                        # - use old self-emission uncertainty?  or new?
-                        # - if old, bookkeep this cleverly
-                        if not ch in self._flags["channel"]:
-                            self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.OLD_CONTEXT
-                        else:
-                            self._flags["channel"][ch] |= _fcdr_defs.FlagsChannel.OLD_CONTEXT
-                    else:
-                        raise FCDRError(
-                            "Unable to train self-emission model: "
-                            "very first batch fails normality test, "
-                            "no previous model to fall back to. "
-                            "Can you try to start processing earlier "
-                            "or later?")
-                else:
-                    raise
+        # might be attractive to do "linear" here, but no: that would
+        # complicate the uncertainty propagation, for which zero-order
+        # interpolation occurs in _make_dims_consistent
+        interp_slope = interp_slope_modes["zero"]
+        if has_Rself:
+            # we do have a working self-emission model, probably
+            interp_offset = interp_offset_modes["zero"]
             (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
             (X, Y_pred) = Rself_model.evaluate(ds, ch)
             # Y_pred is rather the offset than the self-emission
@@ -871,20 +902,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             #Rself = (interp_offset - Y_pred).isel(time=views_Earth)
             Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
                 "RselfIWCT = Rselfspace = 0.")
+            Rself.attrs["model_info"] = str(Rself_model).replace("\n", " ")
             RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
                     coords=offset["time"].coords,
                     attrs={**Rself.attrs,
                            "note": "Rself is implemented as ΔRself in pre-β",
                            })
             Rself_start = xarray.DataArray(
-                [Rself_model.fit_time[0]
-                     if Rself_model is not None
-                     else numpy.datetime64("NaT")],
+                [Rself_model.fit_time[0]],
                 dims=["time_rself"])
             Rself_end = xarray.DataArray(
-                [Rself_model.fit_time[1]
-                    if Rself_model is not None
-                    else numpy.datetime64("NaT")],
+                [Rself_model.fit_time[1]],
                 dims=["time_rself"])
             u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
                 keep_attrs=True, dim="time"))
@@ -911,6 +939,24 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "every ten minutes as a stop-gap measure to ensure even "
                 "short slices contain this info, but not a sustainable "
                 "solution.  Coordinates are lying — check attribute instead!")
+        else:
+            # we don't have a working self-emission model.  Take
+            # self-emission as an interpolation between adjecent
+            # calibration cycles, and include an uncertainty corresponding
+            # to the difference between linear and zero-order
+            # interpolation.
+            interp_offset = interp_offset_modes["cubic"]
+            Rself = UADA(numpy.zeros(shape=C_Earth["time"].shape),
+                         coords=C_Earth["time"].coords,
+                         name="Rself", attrs={"units":   
+                str(rad_u["si"])})
+            RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
+                    coords=offset["time"].coords, attrs=Rself.attrs)
+#            u_Rself = UADA([0], dims=["rself_update_time"],
+#                           coords={"rself_update_time": [ds["time"].values[0]]})
+            u_Rself = abs(interp_offset_modes["linear"] - interp_offset_modes["zero"])
+            Rself_start = Rself_end = xarray.DataArray(
+                [numpy.datetime64(0, 's')], dims=["time_rself"])
 
         Rself = Rself.assign_coords(
             Rself_start=xarray.DataArray(
@@ -1002,7 +1048,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             return rad_wn
     Mtorad = calculate_radiance
 
-    def calculate_radiance_all(self, ds, interp_kind="zero", srf=None,
+    def calculate_radiance_all(self, ds, srf=None,
                 context=None,
                 Rself_model=None,
                 Rrefl_model=None,
@@ -1034,7 +1080,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         self._effects_by_name = {e.name: e for e in
                 itertools.chain.from_iterable(self._effects.values())}
 
-        (all_rad, all_bt) = zip(*[self.calculate_radiance(ds, ch, interp_kind=interp_kind,
+        (all_rad, all_bt) = zip(*[self.calculate_radiance(ds, ch, 
                 context=context, Rself_model=Rself_model,
                 Rrefl_model=Rrefl_model, tuck=True, return_bt=True)
             for ch in range(1, 20)])
@@ -1593,32 +1639,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         """
         new_adict = {}
 
-#        dest_time = adict[me.symbols["C_E"]].scanline_earth.astype("u8")
-
         for (k, v) in adict.items():
-#            if "calibration_position" in v.dims:
-#                v = v.mean(dim="calibration_position", keep_attrs=True)
-#            if "calibration_cycle" in v.dims or "rself_update_time" in v.dims:
             new_adict[k] = self._make_dims_consistent(
                 adict[me.symbols["C_E"]],
                 v)
-#                d = ("calibration_cycle"
-#                     if "calibration_cycle" in v.dims
-#                     else "rself_update_time")
-#                src_time = v[d].astype("u8")#adict[me.symbols["a_1"]][d].astype("u8")
-#                fnc = scipy.interpolate.interp1d(
-#                    src_time, v,
-#                    kind="zero",
-#                    bounds_error=True,
-#                    axis=v.dims.index(d))
-#                new_adict[k] = UADA(fnc(dest_time),
-#                    dims=[x.replace(d, "scanline_earth") for
-#                            x in v.dims],
-#                    coords=adict[me.symbols["C_E"]].coords,
-#                    attrs=v.attrs,
-#                    encoding=v.encoding)
-#            else:
-#                new_adict[k] = v
 
         return new_adict
 
@@ -1731,12 +1755,22 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         flags_channel = xarray.DataArray(
             numpy.zeros(
                 shape=(R_E["scanline_earth"].size, R_E["calibrated_channel"].size),
-                dtype=self._data_vars_props["quality_scanline_bitmask"][3]["dtype"]),
+                dtype=self._data_vars_props["quality_channel_bitmask"][3]["dtype"]),
             dims=("scanline_earth", "calibrated_channel"),
             coords={"scanline_earth": R_E.coords["scanline_earth"],
                     "calibrated_channel": R_E.coords["calibrated_channel"]},
             name="quality_channel_bitmask",
             attrs=self._data_vars_props["quality_channel_bitmask"][2]
+            )
+
+        flags_minorframe = xarray.DataArray(
+            numpy.zeros(
+                shape=(R_E["scanline_earth"].size, ds.dims["minor_frame"]),
+                dtype=self._data_vars_props["quality_minorframe_bitmask"][3]["dtype"]),
+            dims=("scanline_earth", "minor_frame"),
+            coords={"scanline_earth": R_E.coords["scanline_earth"]},
+            name="quality_minorframe_bitmask",
+            attrs=self._data_vars_props["quality_minorframe_bitmask"][2]
             )
         
         for (ch, flag) in self._flags["channel"].items():
@@ -1744,18 +1778,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         da_qfb = ds["quality_flags_bitfield"].sel(
             time=R_E.coords["scanline_earth"])
-#        da_lqfb = ds["line_quality_flags_bitfield"].sel(
-#            time=R_E.coords["scanline_earth"])
+        da_mqfb = ds["minorframe_quality_flags_bitfield"].sel(
+            time=R_E.coords["scanline_earth"])
         fd_qif = typhon.datasets._tovs_defs.QualIndFlagsHIRS[self.version]
-#        fd_qfb = typhon.datasets._tovs_defs.LinQualFlagsHIRS[self.version]
+        fd_mff = typhon.datasets._tovs_defs.MinorFrameFlagsHIRS[self.version]
         fs = _fcdr_defs.FlagsScanline
-#        fc = _fcdr_defs.FlagsChannel
+        fmf = _fcdr_defs.FlagsMinorFrame
 
-#        probs = {st:
-#            functools.reduce(operator.or_,
-#                (v for (k, v) in fd_qfb.__members__.items() if k.startswith(st)))
-#                    for st in {"tm", "el", "ca"}}
-#        probs["tm"] |= (da_qfb & fd_qif.qitimeseqerr)
 
         # pass .values to each to avoid xarrays array_ne which uses catch_warnings
         # which triggers http://bugs.python.org/issue29672
@@ -1763,13 +1792,24 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qitimeseqerr).values!=0)}] |= fs.SUSPECT_TIME
         flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qinofullcalib).values!=0)}] |= fs.SUSPECT_CALIB
         flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qinoearthloc).values!=0)}] |= fs.SUSPECT_GEO
-#        flags_scanline[{"scanline_earth":((da_lqfb & probs["el"])!=0)}] |= fs.SUSPECT_GEO
-#        flags_scanline[{"scanline_earth":((da_lqfb & probs["tm"])!=0)}] |= fs.SUSPECT_TIME
-#        flags_scanline[{"scanline_earth":((da_lqfb & probs["ca"])!=0)}] |= fs.SUSPECT_CALIB
 
-#        flags_channel[{"scanline_earth":((da_qfb & fd_qif.qidonotuse)!=0)}] |= fc.DO_NOT_USE
+        mirprob = (functools.reduce(operator.or_,
+                    (v for (k, v) in fd_mff.__members__.items() if
+                        k.startswith("mfmir"))))
 
-        return (flags_scanline, flags_channel)
+        flags_minorframe.values[(da_mqfb & mirprob).values!=0] |= fmf.SUSPECT_MIRROR
+
+        # easy FCDR does not contain minorframe flags.  To contain at
+        # least some mirror information, flag entire scanline when there
+        # is a mirror flag for any minor frame.  Should consider if this
+        # is the best way: see
+        # https://github.com/FIDUCEO/FCDR_HIRS/issues/133
+        flags_scanline[(flags_minorframe.any("minor_frame") & fmf.SUSPECT_MIRROR).values!=0] |= fs.SUSPECT_MIRROR_ANY
+
+        # do not touch flags_channel here; HIRS/2 does not have any
+        # channel-specific flags, so anything specific goes into HIRSKLM
+
+        return (flags_scanline, flags_channel, flags_minorframe)
 
     def propagate_uncertainty_components(self, u, sens, comp, sens_above=1):
         """Propagate individual uncertainty components seperately
@@ -1813,10 +1853,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # multiplication with three operands:
             # sens_above * sens[k][0] * uncertainty_comp[k][0]
             # first, sens_above is the dest, then it is the src
-            #sensk0 = self._make_dims_consistent(sens_above, sens[k][0])
             sensk0 = self._make_dims_consistent(u, sens[k][0])
             sens_to_here = numpy.sqrt(sensk0**2 * sens_above**2)
-            #compk0 = self._make_dims_consistent(sens_to_here, comp[k][0])
             compk0 = self._make_dims_consistent(u, comp[k][0])
             # This is WRONG because I need to multiply with u_x, not with x!
 #            compun = self._make_dims_consistent(sens_to_here, self._quantities[k])
@@ -2021,11 +2059,11 @@ class HIRSPODFCDR:
     """Mixin for HIRS POD FCDRs
     """
     def get_flags(self, ds, context, R_E):
-        (flags_scanline, flags_channel) = super().get_flags(ds, context, R_E)
+        (flags_scanline, flags_channel, flags_minorframe) = super().get_flags(ds, context, R_E)
 
         # might add stuff here later
 
-        return (flags_scanline, flags_channel)
+        return (flags_scanline, flags_channel, flags_minorframe)
 
 class HIRSKLMFCDR:
     """Mixin for HIRS KLM FCDRs
@@ -2037,7 +2075,7 @@ class HIRSKLMFCDR:
         practice those that have been copied.
         """
 
-        (flags_scanline, flags_channel) = super().get_flags(ds, context, R_E)
+        (flags_scanline, flags_channel, flags_minorframe) = super().get_flags(ds, context, R_E)
 
         da_qfb = ds["quality_flags_bitfield"].sel(
             time=R_E.coords["scanline_earth"])
@@ -2061,7 +2099,7 @@ class HIRSKLMFCDR:
 
         flags_channel[{"scanline_earth":((da_qfb & fd_qif.qidonotuse).values!=0)}] |= fc.DO_NOT_USE
 
-        return (flags_scanline, flags_channel)
+        return (flags_scanline, flags_channel, flags_minorframe)
 
 class HIRS2FCDR(HIRSPODFCDR, HIRSFCDR, HIRS2):
     l1b_base = HIRS2

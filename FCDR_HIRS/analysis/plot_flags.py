@@ -49,7 +49,7 @@ def plot(sat, start, end):
         reader_args={"max_flagged": 1.0, "apply_flags": False,
                      "calibrate": False},
         fields=["hrs_qualind", "hrs_linqualflgs", "hrs_chqualflg",
-                "hrs_mnfrqual", "time", "lat", "lon"])
+                "hrs_mnfrqual", "time"])#, "lat", "lon"])
 
     ds = h.as_xarray_dataset(M15)
 
@@ -59,12 +59,15 @@ def plot(sat, start, end):
                 "channel_quality_flags_bitfield",
                 "minorframe_quality_flags_bitfield"):
         da = ds[fld]
-        flags = da & xarray.DataArray(da.flag_masks, dims=("flag",))
-        perc = (100*(flags!=0)).resample("1H", dim="time", how="mean")
-        for d in set(perc.dims) - {"time", "flag"}:
-            perc = perc.mean(dim=d)
+#        flags = da & xarray.DataArray(da.flag_masks, dims=("flag",))
+#        perc = (100*(flags!=0)).resample("1H", dim="time", how="mean")
+#        for d in set(perc.dims) - {"time", "flag"}:
+#            perc = perc.mean(dim=d)
+#        perc_all.append(perc)
+        (perc, meanings) = common.sample_flags(da, "1H", "time")
+#        labels.extend(da.flag_meanings.split())
         perc_all.append(perc)
-        labels.extend(da.flag_meanings.split())
+        labels.extend(meanings)
 
     (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(14, 9))
 

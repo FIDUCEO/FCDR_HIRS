@@ -277,8 +277,13 @@ FCDR_data_vars_props = dict(
         _u1_coding),
     quality_channel_bitmask = (
         "quality_channel_bitmask",
-        ("scanline",),
+        ("scanline", "channel"),
         {"long_name": "Bitmask for quality per channel"},
+        _u1_coding),
+    quality_minorframe_bitmask = (
+        "quality_minorframe_bitmask",
+        ("scanline", "minor_frame"),
+        {"long_name": "Bitmask for quality per minor frame"},
         _u1_coding),
 )
 
@@ -367,16 +372,30 @@ class FlagsScanline(enum.IntFlag):
     SUSPECT_GEO = enum.auto()
     SUSPECT_TIME = enum.auto()
     SUSPECT_CALIB = enum.auto()
+    SUSPECT_MIRROR_ANY = enum.auto()
     REDUCED_CONTEXT = enum.auto()
 
 @enum.unique
 class FlagsChannel(enum.IntFlag):
     DO_NOT_USE = enum.auto()
     UNCERTAINTY_SUSPICIOUS = enum.auto()
-    OLD_CONTEXT = enum.auto()
+    SELF_EMISSION_FAILS = enum.auto()
 
-FCDR_data_vars_props["quality_scanline_bitmask"][2]["flag_masks"] = ", ".join(str(int(v)) for v in FlagsScanline.__members__.values())
+@enum.unique
+class FlagsMinorFrame(enum.IntFlag):
+    SUSPECT_MIRROR = enum.auto()
+
+#FCDR_data_vars_props["quality_scanline_bitmask"][2]["flag_masks"] = ", ".join(str(int(v)) for v in FlagsScanline.__members__.values())
+FCDR_data_vars_props["quality_scanline_bitmask"][2]["flag_masks"] = [
+    int(v) for v in FlagsScanline.__members__.values()]
 FCDR_data_vars_props["quality_scanline_bitmask"][2]["flag_meanings"] = ", ".join(FlagsScanline.__members__.keys()) 
 
-FCDR_data_vars_props["quality_channel_bitmask"][2]["flag_masks"] = ", ".join(str(int(v)) for v in FlagsChannel.__members__.values())
+#FCDR_data_vars_props["quality_channel_bitmask"][2]["flag_masks"] = ", ".join(str(int(v)) for v in FlagsChannel.__members__.values())
+FCDR_data_vars_props["quality_channel_bitmask"][2]["flag_masks"] = [
+    int(v) for v in FlagsChannel.__members__.values()]
 FCDR_data_vars_props["quality_channel_bitmask"][2]["flag_meanings"] = ", ".join(FlagsChannel.__members__.keys())
+
+#FCDR_data_vars_props["quality_minorframe_bitmask"][2]["flag_masks"] = ", ".join(str(int(v)) for v in FlagsMinorFrame.__members__.values())
+FCDR_data_vars_props["quality_minorframe_bitmask"][2]["flag_masks"] = [
+    int(v) for v in FlagsMinorFrame.__members__.values()]
+FCDR_data_vars_props["quality_minorframe_bitmask"][2]["flag_meanings"] = ", ".join(FlagsMinorFrame.__members__.keys())

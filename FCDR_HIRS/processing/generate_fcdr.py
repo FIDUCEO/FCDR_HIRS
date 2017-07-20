@@ -53,8 +53,14 @@ Added handling of flags
 
 Correct time axis for uncertainties per calibration cycle, preventing half
 the values being nans (debug version only)
+
 Fix bug which caused random uncertainty on Earth counts to be estimated a
 factor √48 too low.
+
+Fix bug which caused both random and nonrandom uncertainty to be
+incorrectly propagated from radiance to brightness temperature space, see
+#134
+
 Changed approach to self-emission:
 - use more temperatures for prediction, to be precise, use all
   temperatures that are available for all HIRS
@@ -63,6 +69,12 @@ Changed approach to self-emission:
 - keep track of times used to train self-emission using a 2-D (channel,
   time) coordinate for two fields (start, end).  Has to be 2-D because
   self-emission might fail for some channels but not others.
+
+Changed approach to flags:
+- Still copy over flags, but do not set corresponding data fields to nan
+- Copy over/consolidate mirror flag.  Since the easy FCDR does not contain
+  a flag per minor frame, the entire scanline is flagged if there is any
+  mirror flag for any minor frame anywhere on the scanline.
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -137,15 +149,13 @@ class FCDRGenerator:
     step_size = datetime.timedelta(hours=4)
     skip_problem_step = datetime.timedelta(seconds=900)
     data_version = "0.7pre"
-    # use all temperatures that exist throughout the sensor series
-    rself_temperatures = ['baseplate', 'cooler_housing', 'electronics',
-        'filter_wheel_housing',    'filter_wheel_motor',
-        'internal_warm_calibration_target', 'patch_full',
-        'primary_telescope', 'scanmirror', 'scanmotor',
-        'secondary_telescope']
+    # see comment in models.Rself
+    rself_temperatures = ["baseplate", "internal_warm_calibration_target",
+        "scanmirror", "scanmotor", "secondary_telescope"]
     # 2017-07-14 GH: Use LR again, seems to work better than PDR although
     # I don't know why it should.
     rself_regr = ("LR", {"fit_intercept": True})
+    reader_args = {"apply_flags": False, "apply_filter": False}
 
     # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes):
@@ -162,7 +172,8 @@ class FCDRGenerator:
         self.start_date = start_date
         self.end_date = end_date
         self.dd = typhon.datasets.dataset.DatasetDeque(
-            self.fcdr, self.window_size, start_date)
+            self.fcdr, self.window_size, start_date,
+            reader_args=self.reader_args)
 
         self.rself = models.RSelf(self.fcdr,
             temperatures=self.rself_temperatures,
@@ -177,9 +188,10 @@ class FCDRGenerator:
         logging.info("Now processing FCDR for {self.satname:s} HIRS, "
             "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. ".format(
             self=self, start=start, end_time=end_time))
-        self.dd.reset(start)
+        self.dd.reset(start, reader_args=self.reader_args)
         while self.dd.center_time < end_time:
-            self.dd.move(self.step_size)
+            self.dd.move(self.step_size,
+                reader_args=self.reader_args)
             try:
                 self.make_and_store_piece(self.dd.center_time - self.segment_size,
                     self.dd.center_time)
@@ -294,7 +306,7 @@ class FCDRGenerator:
         S = self.fcdr.estimate_channel_correlation_matrix(context)
         (LUT_BT, LUT_L) = self.fcdr.get_BT_to_L_LUT()
 
-        (flags_scanline, flags_channel) = self.fcdr.get_flags(
+        (flags_scanline, flags_channel, flags_minorframe) = self.fcdr.get_flags(
             subset, context, R_E)
         if ((self.dd.data["time"][-1] - self.dd.data["time"][0]).values.astype("m8[s]").astype(datetime.timedelta) / self.window_size) < 0.9:
             logging.warn("Reduced context available, flagging data")
@@ -306,7 +318,7 @@ class FCDRGenerator:
             (v[0]**2 for (k, v) in compRe.items() if k is not me.symbols["C_E"])))
         uRe_rand = compRe[me.symbols["C_E"]][0]
 
-        # This goes wrong.  I believe this is due to
+        # Proper propagation goes wrong.  I believe this is due to
         # https://github.com/FIDUCEO/FCDR_HIRS/issues/78
         # Estimate numerically instead.
 #        (uTb, sensTb, compTb) = self.fcdr.calc_u_for_variable("T_b",
@@ -321,8 +333,13 @@ class FCDRGenerator:
         
         # this is approximate, not accurate, but will do for now
         # see also #55 and #56
-        uTb_syst = uRe_syst/(uRe_syst+uRe_rand) * uTb
-        uTb_rand = uRe_rand/(uRe_syst+uRe_rand) * uTb
+        #
+        # It's totally wrong, and causing #134
+#        uTb_syst = uRe_syst/(uRe_syst+uRe_rand) * uTb
+#        uTb_rand = uRe_rand/(uRe_syst+uRe_rand) * uTb
+
+        uTb_syst = self.fcdr.numerically_propagate_ΔL(R_E, uRe_syst)
+        uTb_rand = self.fcdr.numerically_propagate_ΔL(R_E, uRe_rand)
 
         uRe_rand.encoding = uRe_syst.encoding = uRe.encoding = R_E.encoding
         uTb_rand.encoding = uTb_syst.encoding = uTb.encoding = self.fcdr._quantities[me.symbols["T_b"]].encoding
@@ -342,7 +359,7 @@ class FCDRGenerator:
                             uTb_syst, uTb_rand,
                             S, LUT_BT, LUT_L,
                             flags_scanline, flags_channel,
-                            u_from]
+                            flags_minorframe, u_from]
         ds = xarray.merge(
             [da.drop("scanline").rename(
                 {"lat": "lat_earth", "lon": "lon_earth"})
