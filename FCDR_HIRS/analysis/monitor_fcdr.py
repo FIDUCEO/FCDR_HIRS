@@ -117,9 +117,12 @@ class FCDRMonitor:
         a_flags = fig.add_subplot(gs[c, :])
         perc_all = []
         labels = []
+        period = ("5min" if
+            (ds["time"][-1]-ds["time"][0]).values.astype("m8[s]") < numpy.timedelta64(2, 'h')
+            else "1H")
         for f in ("scanline", "channel", "minorframe"):
             da = ds[f"quality_{f:s}_bitmask"]
-            (perc, meanings) = common.sample_flags(da, "1H", "scanline_earth")
+            (perc, meanings) = common.sample_flags(da, period, "scanline_earth")
             perc_all.append(perc)
             labels.extend(f"{f:s}_{mean:s}" for mean in meanings)
         perc = xarray.concat(perc_all, dim="flag")
