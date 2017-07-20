@@ -838,7 +838,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
                     else:
                         self._flags["channel"][ch] |= _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
-                    self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.DO_NOT_USE
+                    self._flags["channel"][ch] |= _fcdr_defs.FlagsChannel.DO_NOT_USE
 #                elif e.args[0].startswith("Space views fail normality"):
 #                    if ch in Rself_model.models.keys():
 #                        # - use old self-emission model — per channel!
