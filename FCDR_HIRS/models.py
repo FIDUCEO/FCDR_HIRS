@@ -7,6 +7,8 @@ Work in progress!
 import datetime
 import copy
 import logging
+import functools
+import operator
 
 import scipy.stats
 import sklearn.cross_decomposition
@@ -144,11 +146,20 @@ class RSelf:
         return (~self.hirs.filterer.filter_outliers(ds["counts"].sel(
             scanpos=slice(8, None)).values).any(1))
 
+    _OKfields = {
+        2: ("quality_flags_bitfield",),
+        3: ("channel_quality_flags_bitfield", "quality_flags_bitfield"),
+        4: ("channel_quality_flags_bitfield", "quality_flags_bitfield")}
+
     def _OK_eval(self, ds):
         """OK for evaluation?
         """
-        return ((ds["channel_quality_flags_bitfield"].values==0)
-            & (ds["quality_flags_bitfield"].values==0))
+        return functools.reduce(operator.and_, 
+            ((ds[f].values==0) for f in
+            self._OKfields[self.hirs.version]))
+
+#        return ((ds["channel_quality_flags_bitfield"].values==0)
+#            & (ds["quality_flags_bitfield"].values==0))
 
     def _ensure_enough_OK(self, ds, OK):
         if OK.sum() < .5*OK.size:

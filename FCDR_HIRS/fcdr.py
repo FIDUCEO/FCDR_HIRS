@@ -1763,9 +1763,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             attrs=self._data_vars_props["quality_channel_bitmask"][2]
             )
 
+        # need to semi-hardcode number 64 here: HIRS/2 does not have any
+        # thing with dimension minor_frame, and indeed the minor_frame
+        # related flags are set only once per scanline!
         flags_minorframe = xarray.DataArray(
             numpy.zeros(
-                shape=(R_E["scanline_earth"].size, ds.dims["minor_frame"]),
+                shape=(R_E["scanline_earth"].size, 64),
                 dtype=self._data_vars_props["quality_minorframe_bitmask"][3]["dtype"]),
             dims=("scanline_earth", "minor_frame"),
             coords={"scanline_earth": R_E.coords["scanline_earth"]},
@@ -1778,10 +1781,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         da_qfb = ds["quality_flags_bitfield"].sel(
             time=R_E.coords["scanline_earth"])
-        da_mqfb = ds["minorframe_quality_flags_bitfield"].sel(
-            time=R_E.coords["scanline_earth"])
         fd_qif = typhon.datasets._tovs_defs.QualIndFlagsHIRS[self.version]
-        fd_mff = typhon.datasets._tovs_defs.MinorFrameFlagsHIRS[self.version]
         fs = _fcdr_defs.FlagsScanline
         fmf = _fcdr_defs.FlagsMinorFrame
 
@@ -1793,18 +1793,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qinofullcalib).values!=0)}] |= fs.SUSPECT_CALIB
         flags_scanline[{"scanline_earth":((da_qfb & fd_qif.qinoearthloc).values!=0)}] |= fs.SUSPECT_GEO
 
-        mirprob = (functools.reduce(operator.or_,
-                    (v for (k, v) in fd_mff.__members__.items() if
-                        k.startswith("mfmir"))))
-
-        flags_minorframe.values[(da_mqfb & mirprob).values!=0] |= fmf.SUSPECT_MIRROR
-
-        # easy FCDR does not contain minorframe flags.  To contain at
-        # least some mirror information, flag entire scanline when there
-        # is a mirror flag for any minor frame.  Should consider if this
-        # is the best way: see
-        # https://github.com/FIDUCEO/FCDR_HIRS/issues/133
-        flags_scanline[(flags_minorframe.any("minor_frame") & fmf.SUSPECT_MIRROR).values!=0] |= fs.SUSPECT_MIRROR_ANY
 
         # do not touch flags_channel here; HIRS/2 does not have any
         # channel-specific flags, so anything specific goes into HIRSKLM
@@ -2081,8 +2069,11 @@ class HIRSKLMFCDR:
             time=R_E.coords["scanline_earth"])
         da_lqfb = ds["line_quality_flags_bitfield"].sel(
             time=R_E.coords["scanline_earth"])
+        da_mqfb = ds["minorframe_quality_flags_bitfield"].sel(
+            time=R_E.coords["scanline_earth"])
         fd_qif = typhon.datasets._tovs_defs.QualIndFlagsHIRS[self.version]
         fd_qfb = typhon.datasets._tovs_defs.LinQualFlagsHIRS[self.version]
+        fd_mff = typhon.datasets._tovs_defs.MinorFrameFlagsHIRS[self.version]
         fs = _fcdr_defs.FlagsScanline
         fc = _fcdr_defs.FlagsChannel
 
@@ -2098,6 +2089,19 @@ class HIRSKLMFCDR:
         flags_scanline[{"scanline_earth":((da_lqfb & probs["ca"]).values!=0)}] |= fs.SUSPECT_CALIB
 
         flags_channel[{"scanline_earth":((da_qfb & fd_qif.qidonotuse).values!=0)}] |= fc.DO_NOT_USE
+
+        mirprob = (functools.reduce(operator.or_,
+                    (v for (k, v) in fd_mff.__members__.items() if
+                        k.startswith("mfmir"))))
+
+        flags_minorframe.values[(da_mqfb & mirprob).values!=0] |= fmf.SUSPECT_MIRROR
+
+        # easy FCDR does not contain minorframe flags.  To contain at
+        # least some mirror information, flag entire scanline when there
+        # is a mirror flag for any minor frame.  Should consider if this
+        # is the best way: see
+        # https://github.com/FIDUCEO/FCDR_HIRS/issues/133
+        flags_scanline[(flags_minorframe.any("minor_frame") & fmf.SUSPECT_MIRROR).values!=0] |= fs.SUSPECT_MIRROR_ANY
 
         return (flags_scanline, flags_channel, flags_minorframe)
 
