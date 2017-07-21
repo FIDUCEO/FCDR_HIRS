@@ -73,6 +73,11 @@ class RSelf:
             self.temperatures = temperatures
     
     def get_predictor(self, ds, ch):
+        """Get predictor (temperatures)
+
+        This takes all lines, if you want to get training or testing only
+        please preselect ds.
+        """
         L = []
         for t_fld in self.temperatures:
             t_fld = _tovs_defs.temperature_names.get(t_fld, t_fld)
@@ -123,6 +128,8 @@ class RSelf:
         return (Xx, Yy) if Y is not None else Xx
 
     def get_predictand(self, M, ch):
+        """This only selects calibration lines anyway, do not preselect
+        """
         offset = self.hirs.calculate_offset_and_slope(M, ch)[1]
         # Note: median may not be an optimal solution, see plots produced
         # by plot_hirs_calibcounts_per_scanpos
@@ -130,6 +137,36 @@ class RSelf:
 #                          offset.u)
         Y = offset.median("scanpos", keep_attrs=True)
         return Y
+
+    def _OK_traintest(self, ds):
+        """Verify OK for training, testing.  
+        """
+        return (~self.hirs.filterer.filter_outliers(ds["counts"].sel(
+            scanpos=slice(8, None)).values).any(1))
+
+    def _OK_eval(self, ds):
+        """OK for evaluation?
+        """
+        return ((ds["channel_quality_flags_bitfield"].values==0)
+            & (ds["quality_flags_bitfield"].values==0))
+
+    def _ensure_enough_OK(self, ds, OK):
+        if OK.sum() < .5*OK.size:
+            logging.warning("When trying to fit or test self-emission model in "
+                "period {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M} for channel "
+                "{:d}, only "
+                "{:d}/{:d} space calibration lines pass tests.  Proceeding "
+                "self-emission training with caution (and calibration "
+                "should also take note of this).".format(
+                    ds["time"][0].values.astype("M8[ms]").astype(datetime.datetime),
+                    ds["time"][-1].values.astype("M8[ms]").astype(datetime.datetime),
+                    int(ds.channel.values),
+                    int(OK.sum()), int(OK.size)))
+        if OK.sum() < 20:
+            raise ValueError("All space views in fitting period "
+                "contain outliers.  Perhaps space views are not really "
+                "space views, see github issue #12.  For now I can't "
+                "proceed.  I'm sorry.")
 
     def fit(self, ds, ch, force=False):
         """Fit model for channel
@@ -142,13 +179,16 @@ class RSelf:
         # filtering on counts here… should not be in reading routine as I
         # don't necessarily want to mask them all out as nan (and they're
         # ints!).  Doesn't really fit in get_predictand either for Y and X
-        # will be out of shape.  Can't fit it anywhere else.  Believe me,
-        # I've tried.  — GH, 2017-07-19
-        OK = (~self.hirs.filterer.filter_outliers(ds["counts"].isel(time=ix).sel(
-            channel=ch, scanpos=slice(8, None)).values).any(1))
-        OK &= (ds.isel(time=ix).sel(channel=ch)["channel_quality_flags_bitfield"].values==0)
-        OK &= (ds.isel(time=ix).sel(channel=ch)["channel_quality_flags_bitfield"].values==0)
-        OK &= (ds.isel(time=ix)["quality_flags_bitfield"].values==0)
+        # will be out of shape.  It's different between training/testing
+        # or evaluation, because this is for space views only.
+        OK = self._OK_traintest(ds.isel(time=ix).sel(channel=ch))
+#        OK = (~self.hirs.filterer.filter_outliers(ds["counts"].isel(time=ix).sel(
+#            channel=ch, scanpos=slice(8, None)).values).any(1))
+        OK = OK & self._OK_eval(ds.isel(time=ix).sel(channel=ch))
+#        OK &= (ds.isel(time=ix).sel(channel=ch)["channel_quality_flags_bitfield"].values==0)
+#        OK &= (ds.isel(time=ix).sel(channel=ch)["channel_quality_flags_bitfield"].values==0)
+#        OK &= (ds.isel(time=ix)["quality_flags_bitfield"].values==0)
+
 #        #OK = ~(X.mask.any(1)) & ~(Y.mask)
 #        OK = X.notnull()
 #        OK = xarray.concat(OK.data_vars.values(), dim="dummy").all("dummy")
@@ -159,22 +199,7 @@ class RSelf:
 #                for x in X.data_vars.values()], 1)
 #        Yy = Y.values[OK]
         (Xx, Yy) = self._ds2ndarray(X, Y, dropna=True)
-        if OK.sum() < .5*OK.size:
-            logging.warning("When trying to fit self-emission model in "
-                "period {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M} for channel "
-                "{:d}, only "
-                "{:d}/{:d} space calibration lines pass tests.  Proceeding "
-                "self-emisison training with caution (and calibration "
-                "should also take note of this).".format(
-                    ds.isel(time=ix)["time"][0].values.astype("M8[ms]").astype(datetime.datetime),
-                    ds.isel(time=ix)["time"][-1].values.astype("M8[ms]").astype(datetime.datetime),
-                    ch,
-                    int(OK.sum()), int(OK.size)))
-        elif OK.sum() < 20:
-            raise ValueError("All space views in fitting period "
-                "contain outliers.  Perhaps space views are not really "
-                "space views, see github issue #12.  For now I can't "
-                "proceed.  I'm sorry.")
+        self._ensure_enough_OK(ds.isel(time=ix).sel(channel=ch), OK)
         Xx = Xx[OK, :]
         Yy = Yy[OK]
         # if slopes fail normality test, we may be in a regime where we
@@ -214,10 +239,13 @@ class RSelf:
 
         FIXME expand
         """
-        Y_ref = self.get_predictand(ds, ch)
         ix = self.hirs.extract_calibcounts_and_temp(
             ds, ch, return_ix=True)[-1]
-        (X, Y_pred) = self.evaluate(ds.isel(time=ix), ch)
+        OK = (self._OK_traintest(ds.isel(time=ix).sel(channel=ch))
+            & self._OK_eval(ds.isel(time=ix).sel(channel=ch)))
+        self._ensure_enough_OK(ds.isel(time=ix).sel(channel=ch), OK)
+        (X, Y_pred) = self.evaluate(ds.isel(time=ix).isel(time=OK), ch)
+        Y_ref = self.get_predictand(ds, ch)[OK]
         return (X, Y_ref.squeeze(), Y_pred.squeeze())
 
     def __str__(self):
