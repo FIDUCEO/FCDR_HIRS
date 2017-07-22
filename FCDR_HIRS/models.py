@@ -151,12 +151,36 @@ class RSelf:
         3: ("channel_quality_flags_bitfield", "quality_flags_bitfield"),
         4: ("channel_quality_flags_bitfield", "quality_flags_bitfield")}
 
+    _badflags = {
+        2: {"quality_flags_bitfield":
+            ["do_not_use"]},
+        3: {"channel_quality_flags_bitfield":
+            ["space_failed_nedc_ch", "iwct_failed_nedc_ch",
+            "anom_iwct_or_space_ch", "calib_failed_ch"],
+            "quality_flags_bitfield":
+            ["do_not_use", "insufficient_calib", "time_seq_error"]}}
+    _badflags[4] = _badflags[3] # no need to copy
+
     def _OK_eval(self, ds):
         """OK for evaluation?
         """
+        # ds["quality_flags_bitfield"] & functools.reduce(operator.or_,
+        # ds["quality_flags_bitfield"].flag_masks)
+        #
+        # For each flagfield, do an OR between all flag meanings I have
+        # listed as bad and verify those are all zero
         return functools.reduce(operator.and_, 
-            ((ds[f].values==0) for f in
-            self._OKfields[self.hirs.version]))
+               (((ds[flagfield] &
+                  functools.reduce(
+                    operator.or_,
+                    (flag_mask
+                        for (flag_meaning, flag_mask)
+                        in zip(ds[flagfield].flag_meanings.split(),
+                               ds[flagfield].flag_masks)
+                        if flag_meaning in
+                               self._badflags[self.hirs.version][flagfield])
+                  )).values==0) for flagfield in
+                self._OKfields[self.hirs.version]))
 
 #        return ((ds["channel_quality_flags_bitfield"].values==0)
 #            & (ds["quality_flags_bitfield"].values==0))

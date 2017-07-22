@@ -1783,7 +1783,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             time=R_E.coords["scanline_earth"])
         fd_qif = typhon.datasets._tovs_defs.QualIndFlagsHIRS[self.version]
         fs = _fcdr_defs.FlagsScanline
-        fmf = _fcdr_defs.FlagsMinorFrame
 
 
         # pass .values to each to avoid xarrays array_ne which uses catch_warnings
@@ -2076,6 +2075,7 @@ class HIRSKLMFCDR:
         fd_mff = typhon.datasets._tovs_defs.MinorFrameFlagsHIRS[self.version]
         fs = _fcdr_defs.FlagsScanline
         fc = _fcdr_defs.FlagsChannel
+        fmf = _fcdr_defs.FlagsMinorFrame
 
         probs = {st:
             functools.reduce(operator.or_,
