@@ -155,11 +155,15 @@ class RSelf:
         2: {"quality_flags_bitfield":
             ["do_not_use"]},
         3: {"channel_quality_flags_bitfield":
+            ["bad_prt_ch", "bad_space_ch", "bad_iwct_ch"],
+            "quality_flags_bitfield":
+            ["do_not_use", "insufficient_calib", "time_seq_error"]},
+        4: {"channel_quality_flags_bitfield":
             ["space_failed_nedc_ch", "iwct_failed_nedc_ch",
             "anom_iwct_or_space_ch", "calib_failed_ch"],
             "quality_flags_bitfield":
             ["do_not_use", "insufficient_calib", "time_seq_error"]}}
-    _badflags[4] = _badflags[3] # no need to copy
+#    _badflags[4] = _badflags[3] # no need to copy
 
     def _OK_eval(self, ds):
         """OK for evaluation?
