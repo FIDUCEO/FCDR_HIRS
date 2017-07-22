@@ -254,6 +254,14 @@ class FCDRGenerator:
         Returns a single xarray.Dataset
         """
         subset = self.dd.data.sel(time=slice(from_, to))
+        # This is not supposed to happen consistently, but may happen if
+        # for some 24-hour period the first >6 hours were not available
+        # but the next <18 hours were
+        if subset.dims["time"] == 0:
+            raise fcdr.FCDRError("Could not find any L1B data in subset "
+                f"{from_:%Y-%m-%d %H:%M}--{to:%Y-%m-%d %H:%M}.  NB: "
+                "if this error message happens consistently there is a "
+                "bug!")
         context = self.dd.data
         if not (context["time"].values[0] < subset["time"].values[0] <
                 subset["time"].values[-1] < context["time"].values[-1]):
