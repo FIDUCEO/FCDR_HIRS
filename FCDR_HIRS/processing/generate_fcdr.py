@@ -188,17 +188,26 @@ class FCDRGenerator:
         logging.info("Now processing FCDR for {self.satname:s} HIRS, "
             "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. ".format(
             self=self, start=start, end_time=end_time))
-        self.dd.reset(start, reader_args=self.reader_args)
+        anyok = False
+        try:
+            self.dd.reset(start, reader_args=self.reader_args)
+        except typhon.datasets.dataset.DataFileError as e:
+            warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
         while self.dd.center_time < end_time:
-            self.dd.move(self.step_size,
-                reader_args=self.reader_args)
             try:
+                self.dd.move(self.step_size,
+                    reader_args=self.reader_args)
                 self.make_and_store_piece(self.dd.center_time - self.segment_size,
                     self.dd.center_time)
-            except fcdr.FCDRError as e:
+            except (fcdr.FCDRError, typhon.datasets.dataset.DataFileError) as e:
                 warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
-        logging.info("Successfully completed, completed successfully.")
-        logging.info("Everything seems fine.")
+            else:
+                anyok = True
+        if anyok:
+            logging.info("Successfully completed, completed successfully.")
+            logging.info("Everything seems fine.")
+        else:
+            raise fcdr.FCDRError("All has failed")
     
     def fragmentate(self, piece):
         """Yield fragments per orbit
