@@ -834,11 +834,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                             "either!  Sorry, I give up!")
                     logging.error(errmsg +
                         "Will flag data and reduce to basic interpolation!")
-                    if not ch in self._flags["channel"]:
-                        self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
-                    else:
-                        self._flags["channel"][ch] |= _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
-                    self._flags["channel"][ch] |= _fcdr_defs.FlagsChannel.DO_NOT_USE
+#                    if not ch in self._flags["channel"]:
+#                        self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
+#                    else:
+                    self._flags["channel"].loc[{"channel": ch}] |= _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
+                    self._flags["channel"].loc[{"channel": ch}] |= _fcdr_defs.FlagsChannel.DO_NOT_USE
 #                elif e.args[0].startswith("Space views fail normality"):
 #                    if ch in Rself_model.models.keys():
 #                        # - use old self-emission model — per channel!
@@ -1068,8 +1068,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # the quantities I calculate so I can use them for the
         # uncertainties after.
         self._quantities.clear() # don't accidentally use old quantities…
-        self._flags["scanline"].clear()
-        self._flags["channel"].clear()
+        self._reset_flags(ds)
+#        self._flags["scanline"].clear()
+#        self._flags["channel"].clear()
 
         # the two following dictionary should and do point to the same
         # effect objects!  I want both because when I'm evaluating the
@@ -1656,16 +1657,53 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             dest_time = dest.scanline_earth.astype("u8")
             d = ("calibration_cycle" if "calibration_cycle" in srcdims else "rself_update_time")
             src_time = src[d].astype("u8")
+            if (src[d][0] <= dest.scanline_earth[0] and
+                src[d][-1] >= dest.scanline_earth[-1]):
+                kind="zero"
+                bounds_error=True
+                fill_value=None
+            else: # reduced context, this is dangerous
+                logging.warning(
+                    "Problem propagating uncertainties "
+                    "from {!s} to {!s}. "
+                    "Calibration cycles ({:s}) cover "
+                    "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, "
+                    "Earth views cover "
+                    "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, "
+                    "reduced context means calibration cycles "
+                    "do not fully cover earth views, so I cannot "
+                    "use the former to interpolate uncertainties "
+                    "on the latter.  Extrapolating instead. "
+                    "Use with care.  I will flag the data.".format(
+                    dest.name, src.name,
+                    d,
+                    src[d].values[0].astype("M8[ms]").astype(datetime.datetime),
+                    src[d].values[-1].astype("M8[ms]").astype(datetime.datetime),
+                    dest.scanline_earth.values[0].astype("M8[ms]").astype(datetime.datetime),
+                    dest.scanline_earth.values[-1].astype("M8[ms]").astype(datetime.datetime)))
+                kind="zero"
+                bounds_error=False
+                fill_value="extrapolate"
+                self._flags["scanline"][{"scanline_earth": dest.scanline_earth<src[d][0]}] |= _fcdr_defs.FlagsScanline.UNCERTAINTY_SUSPICIOUS
+                self._flags["scanline"][{"scanline_earth": dest.scanline_earth>src[d][-1]}] |= _fcdr_defs.FlagsScanline.UNCERTAINTY_SUSPICIOUS
+                # FIXME: flag - but only part that I have extrapolated.
+                # And need to think, what happened when I applied the
+                # calibration in the first place?  This sort of stuff
+                # happens twice in my code, first at initial calculation,
+                # then at uncertainty calculation!
+
             fnc = scipy.interpolate.interp1d(
                 src_time, src,
-                kind="zero",
-                bounds_error=True,
-                axis=src.dims.index(d))
+                kind=kind,
+                bounds_error=bounds_error,
+                axis=src.dims.index(d),
+                fill_value=fill_value)
             src = UADA(fnc(dest_time),
                 dims=[x.replace(d, "scanline_earth") for
                         x in src.dims],
                 attrs=src.attrs,
                 encoding=src.encoding)
+
             src = src.assign_coords(
                 **{k: v
                     for (k, v) in dest.coords.items()
@@ -1735,30 +1773,32 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     rad_u["ir"], "radiance"))
         return (LUT_BT, LUT_radiance)
 
-    def get_flags(self, ds, context, R_E):
-        """Get flags for FCDR
+    def _reset_flags(self, ds):
+        """Reset flags for scanline, channel, and minor frame.
 
-        Only those for which I have the information I need are set, in
-        practice those that have been copied.
+        Should be called at the beginning of each new set of radiance
+        calculations.
         """
+
+        views_Earth = xarray.DataArray(ds["scantype"].values == self.typ_Earth, coords=ds["scantype"].coords)
 
         flags_scanline = xarray.DataArray(
             numpy.zeros(
-                shape=R_E["scanline_earth"].size,
+                shape=int(views_Earth.sum()),
                 dtype=self._data_vars_props["quality_scanline_bitmask"][3]["dtype"]),
             dims=("scanline_earth",),
-            coords={"scanline_earth": R_E.coords["scanline_earth"]},
+            coords={"scanline_earth": ds["time"][(ds["scantype"].values == self.typ_Earth)].values}, 
             name="quality_scanline_bitmask",
             attrs=self._data_vars_props["quality_scanline_bitmask"][2]
             )
 
         flags_channel = xarray.DataArray(
             numpy.zeros(
-                shape=(R_E["scanline_earth"].size, R_E["calibrated_channel"].size),
+                shape=(flags_scanline["scanline_earth"].size,  ds["calibrated_channel"].size),
                 dtype=self._data_vars_props["quality_channel_bitmask"][3]["dtype"]),
             dims=("scanline_earth", "calibrated_channel"),
-            coords={"scanline_earth": R_E.coords["scanline_earth"],
-                    "calibrated_channel": R_E.coords["calibrated_channel"]},
+            coords={"scanline_earth": flags_scanline.coords["scanline_earth"],
+                    "calibrated_channel": ds.coords["calibrated_channel"]},
             name="quality_channel_bitmask",
             attrs=self._data_vars_props["quality_channel_bitmask"][2]
             )
@@ -1768,16 +1808,52 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # related flags are set only once per scanline!
         flags_minorframe = xarray.DataArray(
             numpy.zeros(
-                shape=(R_E["scanline_earth"].size, 64),
+                shape=(flags_scanline["scanline_earth"].size,  64),
                 dtype=self._data_vars_props["quality_minorframe_bitmask"][3]["dtype"]),
             dims=("scanline_earth", "minor_frame"),
-            coords={"scanline_earth": R_E.coords["scanline_earth"]},
+            coords={"scanline_earth": flags_scanline.coords["scanline_earth"]},
             name="quality_minorframe_bitmask",
             attrs=self._data_vars_props["quality_minorframe_bitmask"][2]
             )
+
+        self._flags["scanline"] = flags_scanline
+        self._flags["channel"] = flags_channel
+        self._flags["minorframe"] = flags_channel
+
+    def get_flags(self, ds, context, R_E):
+        """Get flags for FCDR
+
+        Only those for which I have the information I need are set, in
+        practice those that have been copied.
+        """
+
+#        flags_scanline = xarray.DataArray(
+#            numpy.zeros(
+#                shape=R_E["scanline_earth"].size,
+#                dtype=self._data_vars_props["quality_scanline_bitmask"][3]["dtype"]),
+#            dims=("scanline_earth",),
+#            coords={"scanline_earth": R_E.coords["scanline_earth"]},
+#            name="quality_scanline_bitmask",
+#            attrs=self._data_vars_props["quality_scanline_bitmask"][2]
+#            )
+#
+#        flags_channel = xarray.DataArray(
+#            numpy.zeros(
+#                shape=(R_E["scanline_earth"].size, R_E["calibrated_channel"].size),
+#                dtype=self._data_vars_props["quality_channel_bitmask"][3]["dtype"]),
+#            dims=("scanline_earth", "calibrated_channel"),
+#            coords={"scanline_earth": R_E.coords["scanline_earth"],
+#                    "calibrated_channel": R_E.coords["calibrated_channel"]},
+#            name="quality_channel_bitmask",
+#            attrs=self._data_vars_props["quality_channel_bitmask"][2]
+#            )
+        flags_scanline = self._flags["scanline"]
+        flags_channel = self._flags["channel"]
+        flags_minorframe = self._flags["minorframe"]
+
         
-        for (ch, flag) in self._flags["channel"].items():
-            flags_channel.loc[{"calibrated_channel": ch}] |= flag
+#        for (ch, flag) in self._flags["channel"].items():
+#            flags_channel.loc[{"calibrated_channel": ch}] |= flag
 
         da_qfb = ds["quality_flags_bitfield"].sel(
             time=R_E.coords["scanline_earth"])

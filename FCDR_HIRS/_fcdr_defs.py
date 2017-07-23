@@ -374,6 +374,7 @@ class FlagsScanline(enum.IntFlag):
     SUSPECT_CALIB = enum.auto()
     SUSPECT_MIRROR_ANY = enum.auto()
     REDUCED_CONTEXT = enum.auto()
+    UNCERTAINTY_SUSPICIOUS = enum.auto()
 
 @enum.unique
 class FlagsChannel(enum.IntFlag):
