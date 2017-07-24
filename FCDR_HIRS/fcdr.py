@@ -837,8 +837,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #                    if not ch in self._flags["channel"]:
 #                        self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
 #                    else:
-                    self._flags["channel"].loc[{"channel": ch}] |= _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
-                    self._flags["channel"].loc[{"channel": ch}] |= _fcdr_defs.FlagsChannel.DO_NOT_USE
+                    self._flags["channel"].loc[{"calibrated_channel": ch}] |= _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
+                    self._flags["channel"].loc[{"calibrated_channel": ch}] |= _fcdr_defs.FlagsChannel.DO_NOT_USE
 #                elif e.args[0].startswith("Space views fail normality"):
 #                    if ch in Rself_model.models.keys():
 #                        # - use old self-emission model — per channel!
@@ -1808,7 +1808,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # related flags are set only once per scanline!
         flags_minorframe = xarray.DataArray(
             numpy.zeros(
-                shape=(flags_scanline["scanline_earth"].size,  64),
+                shape=(flags_scanline["scanline_earth"].size, 64),
                 dtype=self._data_vars_props["quality_minorframe_bitmask"][3]["dtype"]),
             dims=("scanline_earth", "minor_frame"),
             coords={"scanline_earth": flags_scanline.coords["scanline_earth"]},
@@ -1818,7 +1818,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         self._flags["scanline"] = flags_scanline
         self._flags["channel"] = flags_channel
-        self._flags["minorframe"] = flags_channel
+        self._flags["minorframe"] = flags_minorframe
 
     def get_flags(self, ds, context, R_E):
         """Get flags for FCDR
