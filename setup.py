@@ -129,6 +129,7 @@ setup(
             "determine_hirs_latlon_compression_ratio=FCDR_HIRS.analysis.determine_latlon_compression_ratio:main",
             "determine_hirs_unc_storage=FCDR_HIRS.analysis.determine_optimal_uncertainty_format:main",
             "plot_hirs_flags=FCDR_HIRS.analysis.plot_flags:main",
+            "hirs_info_content=FCDR_HIRS.analysis.corrmat_info_content:main"
         ],
     },
 )
