@@ -817,7 +817,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             except ValueError as e:
                 if (e.args[0].startswith("Found array with 0 sample(s)") or
                     e.args[0].startswith("Space views fail normality") or
-                    e.args[0].startswith("All space views in fitting")):
+                    e.args[0].startswith("All space views in fitting") or
+                    e.args[0].startswith("Some offsets are infinite")):
                     errmsg = (
                         "Unable to train self-emission model for channel {:d} with "
                         "training data in {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}: "
@@ -865,7 +866,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # calculate_offset_and_slope. 
         interp_offset_modes = {}
         interp_slope_modes = {}
-        if offset.shape[0] > 1 or has_context:
+        if offset.shape[0] > 1 or (has_context and time.shape[0]>0):
             for mode in ("zero", "linear", "cubic"):
                 (interp_offset, interp_slope) = self.interpolate_between_calibs(
                     ds["time"], time,
@@ -883,15 +884,47 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 scanpos=1, channel=ch))
             interp_slope.values[:] = UADA(slope.median("scanpos"))
             interp_slope.attrs["units"] = slope.units
+            interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
+            interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
         elif ds["counts"].coords["time"].size > 0:
-            raise typhon.datasets.dataset.InvalidFileError("Found {:d} calibration cycles, too few!".format(offset.shape[0]))
-        else: # zero scanlines…
+            # see noaa14 1995-01-01
+            logging.error("No calibration lines at all found in period "
+                "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}!  Data unusable.".format(
+                *context["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime)))
+            self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
+                _fcdr_defs.FlagsChannel.DO_NOT_USE|
+                _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
+            interp_slope = UADA(xarray.zeros_like(
+                ds["counts"].sel(scanpos=1, channel=ch)),
+                attrs={"units": str(self._data_vars_props["slope"][2]["units"])})*numpy.nan
+            interp_offset = UADA(xarray.zeros_like(
+                ds["counts"].sel(scanpos=1, channel=ch)),
+                attrs={"units": str(self._data_vars_props["offset"][2]["units"])})*numpy.nan
+            interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
+            interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
+        elif ds["counts"].coords["time"].size == 0: # zero scanlines…
             raise FCDRError("Dataset has zero scanlines, nothing to do")
+        else:
+            raise RuntimeError("This code cannot possibly be executed.")
 
         # might be attractive to do "linear" here, but no: that would
         # complicate the uncertainty propagation, for which zero-order
         # interpolation occurs in _make_dims_consistent
         interp_slope = interp_slope_modes["zero"]
+        if not numpy.isfinite(interp_offset).all() or not numpy.isfinite(interp_slope).all():
+            if not numpy.array_equal(numpy.isfinite(interp_offset),
+                                     numpy.isfinite(interp_slope)):
+                raise ValueError("There's nans in slope or offset but "
+                    "they're not the same, this is a bug.")
+            if ((offset.size>0 and numpy.isfinite(offset).all()) or
+                (slope.size>0 and numpy.isfinite(slope).all())):
+                raise ValueError("There's nans in slope or offset when "
+                    "interpolated but not in original, this is a bug.")
+            logging.error("Looks like some or all slopes/offsets are zero "
+                f"for channel {ch:d}.  That's not good.  Do not touch.")
+            self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
+                _fcdr_defs.FlagsChannel.DO_NOT_USE|
+                _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
         if has_Rself:
             # we do have a working self-emission model, probably
             interp_offset = interp_offset_modes["zero"]
@@ -957,6 +990,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             u_Rself = abs(interp_offset_modes["linear"] - interp_offset_modes["zero"])
             Rself_start = Rself_end = xarray.DataArray(
                 [numpy.datetime64(0, 's')], dims=["time_rself"])
+            
+            # make sure dimensions etc. are the same as when we do have a
+            # working model
+            u_Rself = u_Rself.rename(dict(channel="calibrated_channel", time="time_rself")).drop(("scanpos", "scanline", "lon", "lat"))
 
         Rself = Rself.assign_coords(
             Rself_start=xarray.DataArray(
@@ -1548,6 +1585,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     sub_sensitivities.keys() == sub_components.keys(), \
                     "Found inconsistencies between bookkeeping dicts!"
                     
+        hope = True
+        if any([v.size==0 for (k, v) in adict.items()]):
+            logging.error("FATAL! One or more components have size zero. "
+                "I cannot propagate uncertainties!")
+            adict = {k: UADA(0, dims=(), coords={}, attrs={"units": v.units}) for (k, v) in adict.items()}
+            self._flags["scanline"] |= (_fcdr_defs.FlagsScanline.DO_NOT_USE|_fcdr_defs.FlagsScanline.UNCERTAINTY_SUSPICIOUS)
+            hope = False
+
         # now I have adict with values for uncertainties and other
         # quantities, that I need to substitute into the expression
         # I expect I'll have to do some trick to substitute u(x)? no?

@@ -381,6 +381,7 @@ class FlagsChannel(enum.IntFlag):
     DO_NOT_USE = enum.auto()
     UNCERTAINTY_SUSPICIOUS = enum.auto()
     SELF_EMISSION_FAILS = enum.auto()
+    CALIBRATION_IMPOSSIBLE = enum.auto()
 
 @enum.unique
 class FlagsMinorFrame(enum.IntFlag):

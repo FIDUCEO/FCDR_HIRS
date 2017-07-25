@@ -215,6 +215,11 @@ class RSelf:
             ds, ch, return_ix=True)[-1]
         X = self.get_predictor(ds.isel(time=ix), ch)
         Y = self.get_predictand(ds, ch)
+        if numpy.isinf(Y).any():
+            raise ValueError("Some offsets are infinite.  That probably "
+                "means calibration counts (space and IWCT) are all equal. "
+                "There is no hope of doing anything meaningful here. "
+                "Sorry.")
         # filtering on counts here… should not be in reading routine as I
         # don't necessarily want to mask them all out as nan (and they're
         # ints!).  Doesn't really fit in get_predictand either for Y and X

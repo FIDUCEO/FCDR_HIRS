@@ -341,22 +341,27 @@ class FCDRGenerator:
 #        (uTb, sensTb, compTb) = self.fcdr.calc_u_for_variable("T_b",
 #            self.fcdr._quantities, self.fcdr._effects, cu,
 #            return_more=True)
-        uTb = self.fcdr.numerically_propagate_ΔL(R_E, uRe)
+        if uRe.dims == ():
+            logging.error("Scalar uncertainty?!  Hopefully the lines "
+                "immediately above give some hint of what's going on "
+                "here!")
+            uTb = UADA(0, dims=uRe.dims, coords=uRe.coords, attrs=dict(units="K"))
+            u_from = xarray.Dataset(
+                {f"u_from_{k!s}": UADA(0, dims=uRe.dims, coords=uRe.coords,
+                                       attrs=dict(units="K"))
+                    for (k, v) in unc_components.items()
+                    if v.size>1})
+            uTb_syst = uTb_rand = uTb
+        else:
+            uTb = self.fcdr.numerically_propagate_ΔL(R_E, uRe)
+            u_from = xarray.Dataset(
+                {f"u_from_{k!s}": self.fcdr.numerically_propagate_ΔL(R_E, v).astype("f4")
+                    for (k, v) in unc_components.items()
+                    if v.size>1})
+            uTb_syst = self.fcdr.numerically_propagate_ΔL(R_E, uRe_syst)
+            uTb_rand = self.fcdr.numerically_propagate_ΔL(R_E, uRe_rand)
         uTb.name = "u_T_b"
-        u_from = xarray.Dataset(
-            {f"u_from_{k!s}": self.fcdr.numerically_propagate_ΔL(R_E, v).astype("f4")
-                for (k, v) in unc_components.items()
-                if v.size>1})
         
-        # this is approximate, not accurate, but will do for now
-        # see also #55 and #56
-        #
-        # It's totally wrong, and causing #134
-#        uTb_syst = uRe_syst/(uRe_syst+uRe_rand) * uTb
-#        uTb_rand = uRe_rand/(uRe_syst+uRe_rand) * uTb
-
-        uTb_syst = self.fcdr.numerically_propagate_ΔL(R_E, uRe_syst)
-        uTb_rand = self.fcdr.numerically_propagate_ΔL(R_E, uRe_rand)
 
         uRe_rand.encoding = uRe_syst.encoding = uRe.encoding = R_E.encoding
         uTb_rand.encoding = uTb_syst.encoding = uTb.encoding = self.fcdr._quantities[me.symbols["T_b"]].encoding
@@ -420,6 +425,8 @@ class FCDRGenerator:
             institution="University of Reading",
             data_version=self.data_version,
             WARNING=effects.WARNING,
+            history = "Produced from L1B on {:%Y-%m-%dT%H:%M:%SZ}".format(
+                datetime.datetime.utcnow())
             )
         return ds
 
