@@ -126,8 +126,14 @@ class FCDRMonitor:
             perc_all.append(perc)
             labels.extend(f"{f:s}_{mean:s}" for mean in meanings)
         perc = xarray.concat(perc_all, dim="flag")
-        perc.values[perc.values==0] = numpy.nan
-        perc.T.plot.pcolormesh(ax=a_flags)
+        # this causes trouble when all values become nan (no flags set
+        # during plotting period); and there are real nans (no data in
+        # period)
+        #perc.values[perc.values==0] = numpy.nan
+        my_cmap = matplotlib.cm.get_cmap('cool')
+        my_cmap.set_under("white")
+        im = perc.T.plot.pcolormesh(ax=a_flags, cmap=my_cmap, vmin=0.0001)
+        im.set_clim([0.0001, 1])
         a_flags.set_yticks(numpy.arange(len(labels)))
         a_flags.set_yticklabels(labels)
         a_flags.set_title("Percentage of flag set per hour")
