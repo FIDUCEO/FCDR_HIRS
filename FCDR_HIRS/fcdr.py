@@ -610,7 +610,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 else:
                     raise NotImplementedError("TBD")
 
-            da = xarray.concat([da, q], dim="calibrated_channel")
+            # make sure this fails if the other dimension coordinates do
+            # not match
+            da = xarray.concat([da, q], dim="calibrated_channel",
+                compat="identical")
             # NB: https://github.com/pydata/xarray/issues/1297
             da.encoding = q.encoding
             self._effects_by_name[name].magnitude = da
@@ -987,13 +990,21 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     coords=offset["time"].coords, attrs=Rself.attrs)
 #            u_Rself = UADA([0], dims=["rself_update_time"],
 #                           coords={"rself_update_time": [ds["time"].values[0]]})
+            # BUG!  This u_Rself has a value for each Earth view, but if I
+            # do have a self-emission model, I get a value for each
+            # calibration cycle.  That means I can't correctly concatenate
+            # them later if some channels work and others don't!
             u_Rself = abs(interp_offset_modes["linear"] - interp_offset_modes["zero"])
             Rself_start = Rself_end = xarray.DataArray(
                 [numpy.datetime64(0, 's')], dims=["time_rself"])
             
             # make sure dimensions etc. are the same as when we do have a
             # working model
-            u_Rself = u_Rself.rename(dict(channel="calibrated_channel", time="time_rself")).drop(("scanpos", "scanline", "lon", "lat"))
+            try:
+                u_Rself = u_Rself.rename(dict(channel="calibrated_channel", time="time_rself")).drop(("scanpos", "scanline", "lon", "lat"))
+            except ValueError:
+                pass # not sure why this would happen
+        u_Rself.name = "u_Rself"
 
         Rself = Rself.assign_coords(
             Rself_start=xarray.DataArray(
