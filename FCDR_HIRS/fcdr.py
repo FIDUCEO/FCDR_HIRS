@@ -595,6 +595,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             q = self._quantity_to_xarray(quantity, name,
                 dropdims=["channel", "calibrated_channel"],
                 dims=self._effects_by_name[name].dimensions)
+        if q.name is None:
+            q.name = f"u_{name:s}"
         q = q.assign_coords(calibrated_channel=channel)
         if self._effects_by_name[name].magnitude is None:
             self._effects_by_name[name].magnitude = q
@@ -1004,7 +1006,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 u_Rself = u_Rself.rename(dict(channel="calibrated_channel", time="time_rself")).drop(("scanpos", "scanline", "lon", "lat"))
             except ValueError:
                 pass # not sure why this would happen
-        u_Rself.name = "u_Rself"
 
         Rself = Rself.assign_coords(
             Rself_start=xarray.DataArray(
