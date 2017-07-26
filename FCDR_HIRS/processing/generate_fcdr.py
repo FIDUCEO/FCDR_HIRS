@@ -272,32 +272,32 @@ class FCDRGenerator:
                 "if this error message happens consistently there is a "
                 "bug!")
         context = self.dd.data
-        if not (context["time"].values[0] < subset["time"].values[0] <
-                subset["time"].values[-1] < context["time"].values[-1]):
-            warnings.warn("Cannot generate FCDR for "
-                "{0:%Y-%m-%d %H:%M:%S} – {1:%Y-%m-%d %H:%M:%S}.  Context is "
-                "needed for interpolation of calibration and self-emission "
-                "model (among others), but context only available "
-                "between {2:%Y-%m-%d %H:%M:%S} – {3:%Y-%m-%d %H:%M:%S}.  I "
-                "will skip {4:.0f} seconds and hope for the best.".format(
-                    subset["time"].values[0].astype("M8[ms]").astype(datetime.datetime),
-                    subset["time"].values[-1].astype("M8[ms]").astype(datetime.datetime),
-                    context["time"].values[0].astype("M8[ms]").astype(datetime.datetime),
-                    context["time"].values[-1].astype("M8[ms]").astype(datetime.datetime),
-                    self.skip_problem_step.total_seconds()),
-                fcdr.FCDRWarning)
-            from_ = subset["time"].values[0]
-            to = subset["time"].values[-1]
-            while context["time"].values[0] >= subset["time"].values[0]:
-                from_ += numpy.timedelta64(self.skip_problem_step)
-                subset = subset.sel(time=slice(
-                    from_.astype("M8[ms]").astype(datetime.datetime),
-                    to.astype("M8[ms]").astype(datetime.datetime)))
-            while context["time"].values[-1] <= subset["time"].values[1]:
-                to -= numpy.timedelta64(self.skip_problem_step)
-                subset = subset.sel(time=slice(
-                    from_.astype("M8[ms]").astype(datetime.datetime),
-                    to.astype("M8[ms]").astype(datetime.datetime)))
+#        if not (context["time"].values[0] < subset["time"].values[0] <
+#                subset["time"].values[-1] < context["time"].values[-1]):
+#            warnings.warn("Cannot generate FCDR for "
+#                "{0:%Y-%m-%d %H:%M:%S} – {1:%Y-%m-%d %H:%M:%S}.  Context is "
+#                "needed for interpolation of calibration and self-emission "
+#                "model (among others), but context only available "
+#                "between {2:%Y-%m-%d %H:%M:%S} – {3:%Y-%m-%d %H:%M:%S}.  I "
+#                "will skip {4:.0f} seconds and hope for the best.".format(
+#                    subset["time"].values[0].astype("M8[ms]").astype(datetime.datetime),
+#                    subset["time"].values[-1].astype("M8[ms]").astype(datetime.datetime),
+#                    context["time"].values[0].astype("M8[ms]").astype(datetime.datetime),
+#                    context["time"].values[-1].astype("M8[ms]").astype(datetime.datetime),
+#                    self.skip_problem_step.total_seconds()),
+#                fcdr.FCDRWarning)
+#            from_ = subset["time"].values[0]
+#            to = subset["time"].values[-1]
+#            while context["time"].values[0] >= subset["time"].values[0]:
+#                from_ += numpy.timedelta64(self.skip_problem_step)
+#                subset = subset.sel(time=slice(
+#                    from_.astype("M8[ms]").astype(datetime.datetime),
+#                    to.astype("M8[ms]").astype(datetime.datetime)))
+#            while context["time"].values[-1] <= subset["time"].values[1]:
+#                to -= numpy.timedelta64(self.skip_problem_step)
+#                subset = subset.sel(time=slice(
+#                    from_.astype("M8[ms]").astype(datetime.datetime),
+#                    to.astype("M8[ms]").astype(datetime.datetime)))
         # NB: by calibrating the entire subset at once, I get a single set
         # of parameters for the  Rself model.  That may be undesirable.
         # Worse, it means that in most of my files, the dimension for

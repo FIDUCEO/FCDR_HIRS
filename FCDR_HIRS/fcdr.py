@@ -16,6 +16,7 @@ import pandas
 import xarray
 import sympy
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.utils import get_time_dimensions
     
 import typhon.datasets.dataset
 import typhon.physics.units
@@ -179,6 +180,32 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         else:
             raise RuntimeError("Messed up!  Totally bad!")
 
+    def within_enough_context(self, ds, context, ch, n=1):
+        """Get an indexer for 'ds' that ensures enough context
+
+        Make sure that the number of calibration cycles in 'context'
+        before 'ds' starts, and after 'ds' ends, is at least 'n'.
+        """
+
+        if n==0:
+            return ds
+
+        (counts_space, counts_iwct) = self.extract_calibcounts(context, ch)
+
+        if counts_space["time"].size == 0:
+            # set slices that will make things empty
+            ii = dict.fromkeys(
+                    get_time_dimensions(ds),
+                    slice(ds["time"][-1].values.astype("M8[ms]"),
+                          ds["time"][0].values.astype("M8[ms]")))
+        else:
+            ii = dict.fromkeys(
+                    get_time_dimensions(ds),
+                    slice(counts_space["time"][n-1].values.astype("M8[ms]").astype(datetime.datetime),
+                          counts_space["time"][-n].values.astype("M8[ms]").astype(datetime.datetime)))
+        return ii
+        
+
     def interpolate_between_calibs(self, target_time, calib_time, *args, kind="nearest"):
         """Interpolate calibration parameters between calibration cycles
 
@@ -274,6 +301,61 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #              + a2 * counts**2
 #              - Rself)
 
+    def extract_calibcounts(self, ds, ch):
+        """Extract calibration counts from data
+        """
+        # xarray.core.array.nputils.array_eq (and array_neq) use the
+        # context manager 'warnings.catch_warnings'.  This causes the
+        # warnings registry to be reset such that warnings that should be
+        # printed once get printed every time (see
+        # http://bugs.python.org/issue29672 and
+        # https://github.com/pydata/xarray/blob/master/xarray/core/nputils.py#L73)
+        # Therefore, avoid xarray array_eq for now. 
+#        views_space = ds["scantype"] == self.typ_space
+        views_space = xarray.DataArray(ds["scantype"].values == self.typ_space, coords=ds["scantype"].coords)
+#        views_iwct = ds["scantype"] == self.typ_iwt
+        views_iwct = xarray.DataArray(ds["scantype"].values == self.typ_iwt, coords=ds["scantype"].coords)
+
+        # select instances where I have both in succession.  Should be
+        # always, unless one of the two is missing or the start or end of
+        # series is in the middle of a calibration.  Take this from
+        # self.dist_space_iwct because for HIRS/2 and HIRS/2I, there is a
+        # views_icct in-between.
+        dsi = self.dist_space_iwct
+        space_followed_by_iwct = (views_space[:-dsi].variable &
+                                   views_iwct[dsi:].variable)
+#        space_followed_by_iwct = (views_space[:-dsi].variable &
+#                                   views_iwct[dsi:].variable)
+
+        ds_space = ds.isel(time=slice(None, -dsi)).isel(
+                    time=space_followed_by_iwct)
+
+        #M_space = M[:-dsi][space_followed_by_iwct]
+
+        ds_iwct = ds.isel(time=slice(dsi, None)).isel(
+                    time=space_followed_by_iwct)
+        #M_iwct = M[dsi:][space_followed_by_iwct]
+
+        counts_space = UADA(ds_space["counts"].sel(
+                scanpos=slice(self.start_space_calib, None),
+                channel=ch).rename({"channel": "calibrated_channel"}),
+            name="counts_space")
+        counts_space = counts_space.drop(counts_space.coords.keys()&{"scanline", "lat", "lon"})
+        counts_space.attrs.update(units="counts")
+#        counts_space = ureg.Quantity(M_space["counts"][:,
+#            self.start_space_calib:, ch-1], ureg.count)
+        # For IWCT, at least EUMETSAT uses all 56…
+        counts_iwct = UADA(ds_iwct["counts"].sel(
+                scanpos=slice(self.start_iwct_calib, None),
+                channel=ch).rename({"channel": "calibrated_channel"}),
+            name="counts_iwct")
+        counts_iwct = counts_iwct.drop(counts_iwct.coords.keys()&{"scanline", "lat", "lon"})
+        counts_iwct.attrs.update(units="counts")
+#        counts_iwct = ureg.Quantity(M_iwct["counts"][:,
+#            self.start_iwct_calib:, ch-1], ureg.count)
+
+        return (counts_space, counts_iwct)
+
     def extract_calibcounts_and_temp(self, ds, ch, srf=None,
             return_u=False, return_ix=False, tuck=False):
         """Calculate calibration counts and IWCT temperature
@@ -348,56 +430,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "xarray.Dataset ", DeprecationWarning)
             ds = self.as_xarray_dataset(ds)
 
-        # xarray.core.array.nputils.array_eq (and array_neq) use the
-        # context manager 'warnings.catch_warnings'.  This causes the
-        # warnings registry to be reset such that warnings that should be
-        # printed once get printed every time (see
-        # http://bugs.python.org/issue29672 and
-        # https://github.com/pydata/xarray/blob/master/xarray/core/nputils.py#L73)
-        # Therefore, avoid xarray array_eq for now. 
-#        views_space = ds["scantype"] == self.typ_space
-        views_space = xarray.DataArray(ds["scantype"].values == self.typ_space, coords=ds["scantype"].coords)
-#        views_iwct = ds["scantype"] == self.typ_iwt
-        views_iwct = xarray.DataArray(ds["scantype"].values == self.typ_iwt, coords=ds["scantype"].coords)
+        (counts_space, counts_iwct) = self.extract_calibcounts(ds, ch)
 
-        # select instances where I have both in succession.  Should be
-        # always, unless one of the two is missing or the start or end of
-        # series is in the middle of a calibration.  Take this from
-        # self.dist_space_iwct because for HIRS/2 and HIRS/2I, there is a
-        # views_icct in-between.
-        dsi = self.dist_space_iwct
-        space_followed_by_iwct = (views_space[:-dsi].variable &
-                                   views_iwct[dsi:].variable)
-#        space_followed_by_iwct = (views_space[:-dsi].variable &
-#                                   views_iwct[dsi:].variable)
-
-        ds_space = ds.isel(time=slice(None, -dsi)).isel(
-                    time=space_followed_by_iwct)
-
-        #M_space = M[:-dsi][space_followed_by_iwct]
-
-        ds_iwct = ds.isel(time=slice(dsi, None)).isel(
-                    time=space_followed_by_iwct)
-        #M_iwct = M[dsi:][space_followed_by_iwct]
-
-        counts_space = UADA(ds_space["counts"].sel(
-                scanpos=slice(self.start_space_calib, None),
-                channel=ch).rename({"channel": "calibrated_channel"}),
-            name="counts_space")
-        counts_space = counts_space.drop(counts_space.coords.keys()&{"scanline", "lat", "lon"})
-        counts_space.attrs.update(units="counts")
-#        counts_space = ureg.Quantity(M_space["counts"][:,
-#            self.start_space_calib:, ch-1], ureg.count)
-        # For IWCT, at least EUMETSAT uses all 56…
-        counts_iwct = UADA(ds_iwct["counts"].sel(
-                scanpos=slice(self.start_iwct_calib, None),
-                channel=ch).rename({"channel": "calibrated_channel"}),
-            name="counts_iwct")
-        counts_iwct = counts_iwct.drop(counts_iwct.coords.keys()&{"scanline", "lat", "lon"})
-        counts_iwct.attrs.update(units="counts")
-#        counts_iwct = ureg.Quantity(M_iwct["counts"][:,
-#            self.start_iwct_calib:, ch-1], ureg.count)
-
+        ds_iwct = ds.sel(time=counts_space["time"])
         T_iwct = UADA(ds_iwct["temperature_internal_warm_calibration_target"].mean(
                 dim="prt_reading").mean(dim="prt_number_iwt")).drop(
                     "scanline")
@@ -413,7 +448,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # channel), could assert they are identical or move this out of a
         # higher loop, or I could simply leave it
         if tuck:
-            calibcycle_coords = {"calibration_cycle": ds_space["time"].values}
+            calibcycle_coords = {"calibration_cycle": counts_space["time"].values}
             self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
                 T_iwct, name=me.names[me.symbols["T_IWCT"]],
                 **calibcycle_coords)
@@ -471,7 +506,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         if return_u:
             extra.extend([u_counts_iwct, u_counts_space])
         if return_ix:
-            extra.append(space_followed_by_iwct.values.nonzero()[0])
+            #extra.append(space_followed_by_iwct.values.nonzero()[0])
+            extra.append(xarray.DataArray(
+                numpy.arange(ds["time"].size),
+                dims=["time"],
+                coords={"time": ds["time"]}).sel(time=counts_space["time"].values))
 
         if tuck:
             #coords = {"calibration_cycle": M_space["time"]}
@@ -482,7 +521,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._tuck_quantity_channel("R_IWCT", L_iwct,
                 calibrated_channel=ch, **calibcycle_coords)
             # store 'N', C_PRT[n], d_PRT[n, k], O_TPRT, O_TIWCT…
-        return (UADA(ds_space["time"]),
+        return (UADA(counts_space["time"]),
                 UADA(L_iwct),
                 UADA(counts_iwct),
                 UADA(counts_space)) + tuple(extra)
@@ -736,6 +775,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Apply the measurement equation to calculate the calibrated FIDUCEO
         radiance for a particular channel.
 
+        Stores:
+
+        Rself, u_Rself, R_selfIWCT, R_selfs, R_self_start, R_self_end,
+        C_E, R_E, T_b, R_refl, α, Δα, β, Δβ, fstar, Δλ_eff, a_3, a_4
+
         Arguments:
             
             ds [xarray.Dataset]
@@ -774,13 +818,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             tuck [bool]
 
                 If true, store/cache intermediate values in
-                self._quantities.
+                self._quantities and self._effects.
 
             return_bt [bool]
 
                 If true, return (radiance, bt).  If false, return only
                 radiance.
 
+        Returns:
+
+            Euther (radiance, bt) or radiance depending on value of
+            return_bt.
         """
 
         if not isinstance(ds, xarray.Dataset):
@@ -791,114 +839,68 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         srf = srf or self.srfs[ch-1]
         has_context = context is not None
         context = context if has_context else ds
-        # NB: passing `context` here means that quantities and effects are
-        # stored with dimension for entire context period, rather than
-        # just the ds period.  Should take this into account with later
-        # processing.
-        (time, offset, slope, a2) = self.calculate_offset_and_slope(
-            context, ch, srf, tuck=tuck)
 
-        # see note near line 270
+
+        dsix = self.within_enough_context(ds, context, ch, 1)
+        n_within_context = ds.loc[dsix]["time"].size
+        if 0 < n_within_context < ds["time"].size:
+            logging.warning("It appears that, despite best efforts, "
+                "the context does not sufficiently cover the period "
+                "for which the FCDR is to be calculated.  I want to "
+                "calculate FCDR for channel {:d} for "
+                "{:%Y-%m-%d %H:%M:%S} – {:%Y-%m-%d %H:%M:%S}.  Context is "
+                "needed for interpolation of calibration and self-emission "
+                "model (among others), but context only available "
+                "between {:%Y-%m-%d %H:%M:%S} – {:%Y-%m-%d %H:%M:%S}.  I "
+                "will limit the FCDR calculation to the period of "
+                "{:%Y-%m-%d %H:%M:%S} – {:%Y-%m-%d %H:%M:%S}. "
+                "Remaining data will be MISSING pending #137.  Sorry!".format(
+                ch,
+                *ds["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime),
+                *context["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime),
+                *ds.loc[dsix]["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime),
+                ))
+            ds = ds.loc[dsix]
+
+        # some stuff I can do whether I have enough context or not
+
         views_Earth = xarray.DataArray(ds["scantype"].values == self.typ_Earth, coords=ds["scantype"].coords)
-        #views_Earth = ds["scantype"] == self.typ_Earth
         # NB: C_Earth has counts for all channels but only
         # calibrated_channel will be used
         C_Earth = UADA(ds["counts"].isel(time=views_Earth).sel(
             channel=ch)).rename({"channel": "calibrated_channel"})
 
-        if Rself_model is None:
-            warnings.warn("No self-emission defined, assuming 0!",
-                FCDRWarning)
-            has_Rself = False
-        else:
-            try:
-                Rself_model.fit(context, ch)
-#                Rself_model.fit(
-#                    context[
-#                        {"time":
-#                         self.filterer.filter_outliers(
-#                            context["counts"].sel(channel=1).values).any(1)}],
-#                    ch)
-            except ValueError as e:
-                if (e.args[0].startswith("Found array with 0 sample(s)") or
-                    e.args[0].startswith("Space views fail normality") or
-                    e.args[0].startswith("All space views in fitting") or
-                    e.args[0].startswith("Some offsets are infinite")):
-                    errmsg = (
-                        "Unable to train self-emission model for channel {:d} with "
-                        "training data in {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}: "
-                        "{:s}.".format(
-                            ch,
-                            context["time"].values[0].astype("M8[s]").astype(datetime.datetime),
-                            context["time"].values[-1].astype("M8[s]").astype(datetime.datetime),
-                            e.args[0]))
-                    if offset.shape[0] == 1:
-                        raise FCDRError(errmsg + " Moreover, I have only a "
-                            "single valid calibration cycle in the period "
-                            "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, which "
-                            "means I cannot fall back to interpolation "
-                            "either!  Sorry, I give up!")
-                    logging.error(errmsg +
-                        "Will flag data and reduce to basic interpolation!")
-#                    if not ch in self._flags["channel"]:
-#                        self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
-#                    else:
-                    self._flags["channel"].loc[{"calibrated_channel": ch}] |= _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
-                    self._flags["channel"].loc[{"calibrated_channel": ch}] |= _fcdr_defs.FlagsChannel.DO_NOT_USE
-#                elif e.args[0].startswith("Space views fail normality"):
-#                    if ch in Rself_model.models.keys():
-#                        # - use old self-emission model — per channel!
-#                        # - use old self-emission uncertainty?  or new?
-#                    else:
-#                        raise FCDRError(
-#                            "Unable to train self-emission model: "
-#                            "very first batch fails normality test, "
-#                            "no previous model to fall back to. "
-#                            "Can you try to start processing earlier "
-#                            "or later?")
-                    has_Rself = False
-                else:
-                    raise
-            else:
-                has_Rself = True
-
-        # NOTE: taking the median may not be an optimal solution.  See,
-        # for example, plots produced by the script
-        # plot_hirs_calibcounts_per_scanpos in the FCDR_HIRS package
-        # within FIDUCEO, in particular for noaa18 channels 1--12, where
-        # the lowest scan positions are systematically offset compared to
-        # the higher ones.  See also the note at
-        # calculate_offset_and_slope. 
-        interp_offset_modes = {}
-        interp_slope_modes = {}
-        if offset.shape[0] > 1 or (has_context and time.shape[0]>0):
-            for mode in ("zero", "linear", "cubic"):
-                (interp_offset, interp_slope) = self.interpolate_between_calibs(
-                    ds["time"], time,
-                    offset.median(dim="scanpos", keep_attrs=True),
-                    slope.median(dim="scanpos", keep_attrs=True),
-                    kind=mode)
-                interp_offset_modes[mode] = interp_offset
-                interp_slope_modes[mode] = interp_slope
-        elif offset.shape[0] == 1:
-            interp_offset = xarray.zeros_like(ds["counts"].sel(
-                scanpos=1, channel=ch))
-            interp_offset.values[:] = UADA(offset.median("scanpos"))
-            interp_offset.attrs["units"] = offset.units
-            interp_slope = xarray.zeros_like(ds["counts"].sel(
-                scanpos=1, channel=ch))
-            interp_slope.values[:] = UADA(slope.median("scanpos"))
-            interp_slope.attrs["units"] = slope.units
-            interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
-            interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
-        elif ds["counts"].coords["time"].size > 0:
-            # see noaa14 1995-01-01
-            logging.error("No calibration lines at all found in period "
+        if n_within_context == 0:
+            logging.error("Less than two calibration lines in period "
                 "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}!  Data unusable.".format(
                 *context["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime)))
-            self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
+            self._flags["channel"].loc[{"calibrated_channel": ch}] |= (
                 _fcdr_defs.FlagsChannel.DO_NOT_USE|
                 _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
+            # no point in even trying to calibrate or do self-emission
+
+
+            # need to set to dummy:
+            #
+            # Rself, u_Rself, R_selfIWCT, R_selfs, R_self_start, R_self_end,
+            # C_E, R_E, T_b, R_refl, α, Δα, β, Δβ, fstar, Δλ_eff, a_3, a_4
+            
+            R_E = T_b = Rself = u_Rself = UADA(
+                numpy.zeros(shape=C_Earth["time"].shape),
+                         coords=C_Earth["time"].coords,
+                         attrs={"units":   
+                            str(rad_u["si"])})
+
+            u_Rself = RselfIWCT = Rselfspace = R_refl = UADA(
+                numpy.zeros(shape=0),
+                coords={"time": []},
+                attrs=Rself.attrs)
+
+            Rself_start = Rself_end = xarray.DataArray(
+                [numpy.datetime64(0, 's')], dims=["time_rself"])
+
+            coords = {"calibration_cycle": []}
+
             interp_slope = UADA(xarray.zeros_like(
                 ds["counts"].sel(scanpos=1, channel=ch)),
                 attrs={"units": str(self._data_vars_props["slope"][2]["units"])})*numpy.nan
@@ -907,53 +909,195 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 attrs={"units": str(self._data_vars_props["offset"][2]["units"])})*numpy.nan
             interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
             interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
-        elif ds["counts"].coords["time"].size == 0: # zero scanlines…
-            raise FCDRError("Dataset has zero scanlines, nothing to do")
         else:
-            raise RuntimeError("This code cannot possibly be executed.")
+            # this means I have at least two calibration cycles with data
+            # in-between, so in theory I can do everything I wanted to.
+            
+        
+            # NB: passing `context` here means that quantities and effects are
+            # stored with dimension for entire context period, rather than
+            # just the ds period.  Should take this into account with later
+            # processing.
+            (time, offset, slope, a2) = self.calculate_offset_and_slope(
+                context, ch, srf, tuck=tuck)
 
-        # might be attractive to do "linear" here, but no: that would
-        # complicate the uncertainty propagation, for which zero-order
-        # interpolation occurs in _make_dims_consistent
-        interp_slope = interp_slope_modes["zero"]
-        if not numpy.isfinite(interp_offset).all() or not numpy.isfinite(interp_slope).all():
-            if not numpy.array_equal(numpy.isfinite(interp_offset),
-                                     numpy.isfinite(interp_slope)):
-                raise ValueError("There's nans in slope or offset but "
-                    "they're not the same, this is a bug.")
-            if ((offset.size>0 and numpy.isfinite(offset).all()) or
-                (slope.size>0 and numpy.isfinite(slope).all())):
-                raise ValueError("There's nans in slope or offset when "
-                    "interpolated but not in original, this is a bug.")
-            logging.error("Looks like some or all slopes/offsets are zero "
-                f"for channel {ch:d}.  That's not good.  Do not touch.")
-            self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
-                _fcdr_defs.FlagsChannel.DO_NOT_USE|
-                _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
-        if has_Rself:
-            # we do have a working self-emission model, probably
+            if Rself_model is None:
+                warnings.warn("No self-emission defined, assuming 0!",
+                    FCDRWarning)
+                has_Rself = False
+            else:
+                try:
+                    Rself_model.fit(context, ch)
+                except ValueError as e:
+                    if (e.args[0].startswith("Space views fail normality") or
+                        e.args[0].startswith("All space views in fitting") or
+                        e.args[0].startswith("Some offsets are infinite")):
+                        errmsg = (
+                            "Unable to train self-emission model for channel {:d} with "
+                            "training data in {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}: "
+                            "{:s}.".format(
+                                ch,
+                                context["time"].values[0].astype("M8[s]").astype(datetime.datetime),
+                                context["time"].values[-1].astype("M8[s]").astype(datetime.datetime),
+                                e.args[0]))
+                         # This should not happen anymore now that I have the
+                         # context check at the top
+    #                    if offset.shape[0] == 1:
+    #                        raise FCDRError(errmsg + " Moreover, I have only a "
+    #                            "single valid calibration cycle in the period "
+    #                            "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, which "
+    #                            "means I cannot fall back to interpolation "
+    #                            "either!  Sorry, I give up!")
+                        logging.error(errmsg +
+                            "Will flag data and reduce to basic interpolation!")
+    #                    if not ch in self._flags["channel"]:
+    #                        self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
+    #                    else:
+                        self._flags["channel"].loc[{"calibrated_channel": ch}] |= _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
+                        self._flags["channel"].loc[{"calibrated_channel": ch}] |= _fcdr_defs.FlagsChannel.DO_NOT_USE
+                        has_Rself = False
+                    else:
+                        raise
+                else:
+                    has_Rself = True
+
+            # NOTE: taking the median may not be an optimal solution.  See,
+            # for example, plots produced by the script
+            # plot_hirs_calibcounts_per_scanpos in the FCDR_HIRS package
+            # within FIDUCEO, in particular for noaa18 channels 1--12, where
+            # the lowest scan positions are systematically offset compared to
+            # the higher ones.  See also the note at
+            # calculate_offset_and_slope. 
+            interp_offset_modes = {}
+            interp_slope_modes = {}
+            if offset.shape[0] > 1 or (has_context and time.shape[0]>0):
+                for mode in ("zero", "linear", "cubic"):
+                    (interp_offset, interp_slope) = self.interpolate_between_calibs(
+                        ds["time"], time,
+                        offset.median(dim="scanpos", keep_attrs=True),
+                        slope.median(dim="scanpos", keep_attrs=True),
+                        kind=mode)
+                    interp_offset_modes[mode] = interp_offset
+                    interp_slope_modes[mode] = interp_slope
+            else:
+                raise RuntimeError("This should never happen again")
+#                interp_offset = xarray.zeros_like(ds["counts"].sel(
+#                    scanpos=1, channel=ch))
+#                interp_offset.values[:] = UADA(offset.median("scanpos"))
+#                interp_offset.attrs["units"] = offset.units
+#                interp_slope = xarray.zeros_like(ds["counts"].sel(
+#                    scanpos=1, channel=ch))
+#                interp_slope.values[:] = UADA(slope.median("scanpos"))
+#                interp_slope.attrs["units"] = slope.units
+#                interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
+#                interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
+#            elif ds["counts"].coords["time"].size > 0:
+#                raise RuntimeError("This should never happen again!")
+#                # see noaa14 1995-01-01
+#                logging.error("No calibration lines at all found in period "
+#                    "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}!  Data unusable.".format(
+#                    *context["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime)))
+#                self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
+#                    _fcdr_defs.FlagsChannel.DO_NOT_USE|
+#                    _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
+#                interp_slope = UADA(xarray.zeros_like(
+#                    ds["counts"].sel(scanpos=1, channel=ch)),
+#                    attrs={"units": str(self._data_vars_props["slope"][2]["units"])})*numpy.nan
+#                interp_offset = UADA(xarray.zeros_like(
+#                    ds["counts"].sel(scanpos=1, channel=ch)),
+#                    attrs={"units": str(self._data_vars_props["offset"][2]["units"])})*numpy.nan
+#                interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
+#                interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
+#            elif ds["counts"].coords["time"].size == 0: # zero scanlines…
+#                raise FCDRError("Dataset has zero scanlines, nothing to do")
+#            else:
+#                raise RuntimeError("This code cannot possibly be executed.")
+
+            # might be attractive to do "linear" here, but no: that would
+            # complicate the uncertainty propagation, for which zero-order
+            # interpolation occurs in _make_dims_consistent
+            interp_slope = interp_slope_modes["zero"]
+            # may be overwritten but this is so I carry out the right check;
+            # should not be set to cubic here...
             interp_offset = interp_offset_modes["zero"]
-            (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
-            (X, Y_pred) = Rself_model.evaluate(ds, ch)
-            # Y_pred is rather the offset than the self-emission
-            Rself = interp_offset.isel(time=views_Earth) - Y_pred#.sel(time=views_Earth["time"].isel(time=views_Earth))
-            #Rself = (interp_offset - Y_pred).isel(time=views_Earth)
-            Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
-                "RselfIWCT = Rselfspace = 0.")
-            Rself.attrs["model_info"] = str(Rself_model).replace("\n", " ")
-            RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
-                    coords=offset["time"].coords,
-                    attrs={**Rself.attrs,
-                           "note": "Rself is implemented as ΔRself in pre-β",
-                           })
-            Rself_start = xarray.DataArray(
-                [Rself_model.fit_time[0]],
-                dims=["time_rself"])
-            Rself_end = xarray.DataArray(
-                [Rself_model.fit_time[1]],
-                dims=["time_rself"])
-            u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
-                keep_attrs=True, dim="time"))
+            if not numpy.isfinite(interp_offset).all() or not numpy.isfinite(interp_slope).all():
+                if not numpy.array_equal(numpy.isfinite(interp_offset),
+                                         numpy.isfinite(interp_slope)):
+                    raise ValueError("There's nans in slope or offset but "
+                        "they're not the same, this is a bug.")
+                if ((offset.size>0 and numpy.isfinite(offset).all()) or
+                    (slope.size>0 and numpy.isfinite(slope).all())):
+                    raise ValueError("There's nans in slope or offset when "
+                        "interpolated but not in original, this is a bug.")
+                logging.error("Looks like some or all slopes/offsets are "
+                     "impossible to calculate "
+                    f"for channel {ch:d}.  That's not good.  Do not touch.")
+                self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
+                    _fcdr_defs.FlagsChannel.DO_NOT_USE|
+                    _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
+            if has_Rself:
+                # we do have a working self-emission model, probably
+                interp_offset = interp_offset_modes["zero"]
+                (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
+                (X, Y_pred) = Rself_model.evaluate(ds, ch)
+                # Y_pred is rather the offset than the self-emission
+                Rself = interp_offset.isel(time=views_Earth) - Y_pred#.sel(time=views_Earth["time"].isel(time=views_Earth))
+                #Rself = (interp_offset - Y_pred).isel(time=views_Earth)
+                Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
+                    "RselfIWCT = Rselfspace = 0.")
+                Rself.attrs["model_info"] = str(Rself_model).replace("\n", " ")
+                RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
+                        coords=offset["time"].coords,
+                        attrs={**Rself.attrs,
+                               "note": "Rself is implemented as ΔRself in pre-β",
+                               })
+                Rself_start = xarray.DataArray(
+                    [Rself_model.fit_time[0]],
+                    dims=["time_rself"])
+                Rself_end = xarray.DataArray(
+                    [Rself_model.fit_time[1]],
+                    dims=["time_rself"])
+                u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
+                    keep_attrs=True, dim="time"))
+            else:
+                # we don't have a working self-emission model.  Take
+                # self-emission as an interpolation between adjecent
+                # calibration cycles, and include an uncertainty corresponding
+                # to the difference between linear and zero-order
+                # interpolation.
+                interp_offset = interp_offset_modes["cubic"]
+                Rself = UADA(numpy.zeros(shape=C_Earth["time"].shape),
+                             coords=C_Earth["time"].coords,
+                             name="Rself", attrs={"units":   
+                    str(rad_u["si"])})
+                RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
+                        coords=offset["time"].coords, attrs=Rself.attrs)
+    #            u_Rself = UADA([0], dims=["rself_update_time"],
+    #                           coords={"rself_update_time": [ds["time"].values[0]]})
+                # Although I could potentially omit the RMSE here and just
+                # take the difference between the modes, that yields one value
+                # for each Earth view.  Under normal circumstances, the
+                # self-emission model gives me one value for each calibration
+                # cycle.  If some channels work but others don't, I'll have
+                # different time coordinates for different channels, which
+                # means I can't concatenate them into a single DataArray.
+                # Since this is an adhoc bad format anyway I don't care that
+                # I'm losing information.
+                u_Rself = UADA(
+                    [numpy.sqrt((abs(interp_offset_modes["linear"] - interp_offset_modes["zero"])**2).mean())],
+                    dims=["time_rself"],
+                    attrs={"units": offset.attrs["units"]})
+
+                Rself_start = Rself_end = xarray.DataArray(
+                    [numpy.datetime64(0, 's')], dims=["time_rself"])
+                
+    #            # make sure dimensions etc. are the same as when we do have a
+    #            # working model
+    #            try:
+    #                u_Rself = u_Rself.rename(dict(channel="calibrated_channel", time="time_rself")).drop(("scanpos", "scanline", "lon", "lat"))
+    #            except ValueError:
+    #                pass # not sure why this would happen
+
             # trick to make sure there is a time dimension…
             # http://stackoverflow.com/a/42999562/974555
             u_Rself = xarray.concat((u_Rself,), dim="time_rself")
@@ -975,71 +1119,48 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             u_Rself.attrs["U_RSELF_WARNING"] = (
                 "Self-emission uncertainty repeated "
                 "every ten minutes as a stop-gap measure to ensure even "
-                "short slices contain this info, but not a sustainable "
-                "solution.  Coordinates are lying — check attribute instead!")
-        else:
-            # we don't have a working self-emission model.  Take
-            # self-emission as an interpolation between adjecent
-            # calibration cycles, and include an uncertainty corresponding
-            # to the difference between linear and zero-order
-            # interpolation.
-            interp_offset = interp_offset_modes["cubic"]
-            Rself = UADA(numpy.zeros(shape=C_Earth["time"].shape),
-                         coords=C_Earth["time"].coords,
-                         name="Rself", attrs={"units":   
-                str(rad_u["si"])})
-            RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
-                    coords=offset["time"].coords, attrs=Rself.attrs)
-#            u_Rself = UADA([0], dims=["rself_update_time"],
-#                           coords={"rself_update_time": [ds["time"].values[0]]})
-            # BUG!  This u_Rself has a value for each Earth view, but if I
-            # do have a self-emission model, I get a value for each
-            # calibration cycle.  That means I can't correctly concatenate
-            # them later if some channels work and others don't!
-            u_Rself = abs(interp_offset_modes["linear"] - interp_offset_modes["zero"])
-            Rself_start = Rself_end = xarray.DataArray(
-                [numpy.datetime64(0, 's')], dims=["time_rself"])
-            
-            # make sure dimensions etc. are the same as when we do have a
-            # working model
-            try:
-                u_Rself = u_Rself.rename(dict(channel="calibrated_channel", time="time_rself")).drop(("scanpos", "scanline", "lon", "lat"))
-            except ValueError:
-                pass # not sure why this would happen
+                "short slices contain this info, this does not imply "
+                "an actual update of the information.  Check coordinates "
+                "Rself_start and Rself_end.")
 
-        Rself = Rself.assign_coords(
-            Rself_start=xarray.DataArray(
-                numpy.tile(Rself_start, Rself.shape[0]),
-                dims=("time",),
-                coords={"time": Rself.time}),
-            Rself_end=xarray.DataArray(
-                numpy.tile(Rself_end, Rself.shape[0]),
-                dims=("time",),
-                coords={"time": Rself.time}))
-        # according to Wang, Cao, and Ciren (2007), ε=0.98, no further
-        # source or justification given
-        ε = UADA(1, name="emissivity")
-        a_3 = UADA(self.ε-1, name="correction to emissivity")
-        if Rrefl_model is None:
-            warnings.warn("No Earthshine model defined, assuming 0!",
-                FCDRWarning)
-            Rrefl = UADA(numpy.zeros(shape=offset.shape),
-                    coords=offset.coords,
-                    attrs={"units": str(rad_u["si"])})
-        else:
-            raise NotImplementedError("Evalutation of Earthshine "
-                "model not implemented yet")
-        a_4 = UADA(0, name="harmonisation bias",
-            attrs={"units": rad_u["si"]})
-        rad_wn = self.custom_calibrate(C_Earth, interp_slope,
-            interp_offset, a2, Rself)
+            Rself = Rself.assign_coords(
+                Rself_start=xarray.DataArray(
+                    numpy.tile(Rself_start, Rself.shape[0]),
+                    dims=("time",),
+                    coords={"time": Rself.time}),
+                Rself_end=xarray.DataArray(
+                    numpy.tile(Rself_end, Rself.shape[0]),
+                    dims=("time",),
+                    coords={"time": Rself.time}))
+            # according to Wang, Cao, and Ciren (2007), ε=0.98, no further
+            # source or justification given
+            ε = UADA(1, name="emissivity")
+            a_3 = UADA(self.ε-1, name="correction to emissivity")
+            if Rrefl_model is None:
+                warnings.warn("No Earthshine model defined, assuming 0!",
+                    FCDRWarning)
+                R_refl = UADA(numpy.zeros(shape=offset.shape),
+                        coords=offset.coords,
+                        attrs={"units": str(rad_u["si"])})
+            else:
+                raise NotImplementedError("Evalutation of Earthshine "
+                    "model not implemented yet")
+            a_4 = UADA(0, name="harmonisation bias",
+                attrs={"units": rad_u["si"]})
+            rad_wn = self.custom_calibrate(C_Earth, interp_slope,
+                interp_offset, a2, Rself)
+
+            coords = {"calibration_cycle": time.values}
+
+            T_b = rad_wn.to("K", "radiance", srf=srf)
+        # end if n_within_context == 0.  From here only code that can be
+        # executed whether I have good data or not.
 
         (α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients(
             self.satname, self.section, ch)
 #        (α, β, f_eff, Δα, Δβ, Δf_eff) = (numpy.float32(0),
 #            numpy.float32(1), srf.centroid().to(ureg.THz, "sp"), 0, 0, 0)
 
-        coords = {"calibration_cycle": time.values}
         if tuck:
             # I want to keep the channel dimension on the time coordinate
             # for the 'last update' self-emission.  Sometimes some
@@ -1069,10 +1190,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             rad_wn.encoding = R_e.encoding
             if return_bt:
                 self._tuck_quantity_channel("T_b",
-                    rad_wn.to("K", "radiance", srf=srf),
+                    T_b,
                     calibrated_channel=ch,
                     concat_coords=["Rself_start", "Rself_end"])
-            self._tuck_quantity_channel("R_refl", Rrefl,
+            self._tuck_quantity_channel("R_refl", R_refl,
                 calibrated_channel=ch, **coords)
 
             self._tuck_quantity_channel("α", α, 
@@ -1092,7 +1213,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 a_4, name=me.names[me.symbols["a_4"]])
         rad_wn = rad_wn.rename({"time": "scanline_earth"})
         if return_bt:
-            return (rad_wn, rad_wn.to("K", "radiance", srf=srf))
+            return (rad_wn, T_b)
         else:
             return rad_wn
     Mtorad = calculate_radiance
