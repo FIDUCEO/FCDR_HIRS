@@ -920,6 +920,18 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # processing.
             (time, offset, slope, a2) = self.calculate_offset_and_slope(
                 context, ch, srf, tuck=tuck)
+            
+            if not numpy.array_equal(numpy.isfinite(offset),
+                                     numpy.isfinite(slope)):
+                raise ValueError("Expecting offset and slope to have same "
+                    "finite values, but I got disappointed.")
+
+            # median treats nan and inf differently, so where I have inf
+            # in slope but not in offset it goes wrongly.  In any case,
+            # for the purpose of the median, I really want to ignore infs
+            # so I'd rather set them to nans
+            for x in (slope, offset):
+                x.values[~numpy.isfinite(x)] = numpy.nan
 
             if Rself_model is None:
                 warnings.warn("No self-emission defined, assuming 0!",
