@@ -875,8 +875,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         if n_within_context == 0:
             logging.error("Less than two calibration lines in period "
-                "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}!  Data unusable.".format(
-                *context["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime)))
+                "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M} for channel {:d}!  Data unusable.".format(
+                *context["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime),
+                ch))
             self._flags["channel"].loc[{"calibrated_channel": ch}] |= (
                 _fcdr_defs.FlagsChannel.DO_NOT_USE|
                 _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
@@ -888,30 +889,85 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # Rself, u_Rself, R_selfIWCT, R_selfs, R_self_start, R_self_end,
             # C_E, R_E, T_b, R_refl, α, Δα, β, Δβ, fstar, Δλ_eff, a_3, a_4
             
-            R_E = T_b = Rself = u_Rself = UADA(
-                numpy.zeros(shape=C_Earth["time"].shape),
-                         coords=C_Earth["time"].coords,
-                         attrs={"units":   
-                            str(rad_u["si"])})
+            # full Earth count dimensions
+            par = functools.partial(UADA,
+                numpy.zeros(shape=C_Earth.shape),
+                coords=C_Earth.coords)
 
-            u_Rself = RselfIWCT = Rselfspace = R_refl = UADA(
+            rad_wn = par(attrs={"units": str(rad_u["si"])})
+            T_b = par(attrs={"units": "K"})
+            
+            # once per scanline
+            par = functools.partial(UADA,
+                numpy.zeros(shape=C_Earth["time"].shape),
+                coords=C_Earth["time"].coords)
+
+            Rself = par(attrs={"units": str(rad_u["si"])})
+
+            # once per time_rself
+            u_Rself = UADA([0], dims="time_rself", attrs={"units": str(rad_u["si"])})
+
+            # once per calibration cycle (a.k.a. never)
+            # NB: dtype must be ns, https://github.com/pydata/xarray/issues/1494
+            par = functools.partial(UADA,
                 numpy.zeros(shape=0),
-                coords={"time": []},
-                attrs=Rself.attrs)
+                coords={"time": numpy.zeros(shape=0, dtype="M8[ns]")})
+
+            B = offset = a_0 = L_iwct = u_Rself = RselfIWCT = Rselfspace = \
+                     R_refl =  par(attrs=Rself.attrs)
+
+            slope = a_1 = par(attrs={"units":
+                              str(self._data_vars_props["slope"][2]["units"])})
+
+            T_IWCT = par(attrs={"units": "K"})
+
+            u_counts_earth = counts_space = counts_iwct = u_counts_space = u_counts_iwct = par(
+                attrs={"units": "counts"})
+
+            a2 = UADA(0, name="a2", coords={"calibrated_channel": ch}, attrs={"units":
+                str(rad_u["si"]/(ureg.count**2))})
 
             Rself_start = Rself_end = xarray.DataArray(
                 [numpy.datetime64(0, 's')], dims=["time_rself"])
+            has_Rself = False
 
-            coords = {"calibration_cycle": []}
+            coords = {"calibration_cycle": numpy.array([], dtype="M8[ns]")}
 
-            interp_slope = UADA(xarray.zeros_like(
-                ds["counts"].sel(scanpos=1, channel=ch)),
-                attrs={"units": str(self._data_vars_props["slope"][2]["units"])})*numpy.nan
-            interp_offset = UADA(xarray.zeros_like(
-                ds["counts"].sel(scanpos=1, channel=ch)),
-                attrs={"units": str(self._data_vars_props["offset"][2]["units"])})*numpy.nan
-            interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
-            interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
+            # those are normally done in calculate_offset_and_slope and
+            # extract_calibcounts_and_temp
+            self._tuck_effect_channel("C_space", u_counts_space, ch)
+            self._tuck_effect_channel("C_IWCT", u_counts_iwct, ch)
+            self._tuck_effect_channel("C_Earth", u_counts_earth, ch)
+            calibcycle_coords = {"calibration_cycle": counts_space["time"].values}
+            self._tuck_quantity_channel("C_s", counts_space,
+                calibrated_channel=ch, **calibcycle_coords)
+            self._tuck_quantity_channel("C_IWCT", counts_iwct,
+                calibrated_channel=ch, **calibcycle_coords)
+            self._tuck_quantity_channel("R_IWCT", L_iwct,
+                calibrated_channel=ch, **calibcycle_coords)
+            self._tuck_quantity_channel("a_0", offset,
+                calibrated_channel=ch, **calibcycle_coords)
+            self._tuck_quantity_channel("a_1", slope,
+                calibrated_channel=ch, **calibcycle_coords)
+            self._tuck_quantity_channel("a_2", a2,
+                calibrated_channel=ch)
+            self._tuck_quantity_channel("B", B,
+                calibrated_channel=ch)
+            self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
+                T_IWCT, name=me.names[me.symbols["T_IWCT"]],
+                **calibcycle_coords)
+            self._quantities[me.symbols["N"]] = self._quantity_to_xarray(
+                    numpy.array(ds.dims["prt_number_iwt"], "u1"),
+                    name=me.names[me.symbols["N"]])
+
+#            interp_slope = UADA(xarray.zeros_like(
+#                ds["counts"].sel(scanpos=1, channel=ch)),
+#                attrs={"units": str(self._data_vars_props["slope"][2]["units"])})*numpy.nan
+#            interp_offset = UADA(xarray.zeros_like(
+#                ds["counts"].sel(scanpos=1, channel=ch)),
+#                attrs={"units": str(self._data_vars_props["offset"][2]["units"])})*numpy.nan
+#            interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
+#            interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
         else:
             # this means I have at least two calibration cycles with data
             # in-between, so in theory I can do everything I wanted to.
@@ -1070,8 +1126,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     [Rself_model.fit_time[0]],
                     dims=["time_rself"])
                 Rself_end = xarray.DataArray(
-                    [Rself_model.fit_time[1]],
-                    dims=["time_rself"])
+                        [Rself_model.fit_time[1]],
+                        dims=["time_rself"])
+                Rself = Rself.assign_coords(
+                    Rself_start=xarray.DataArray(
+                        numpy.tile(Rself_start, Rself.shape[0]),
+                        dims=("time",),
+                        coords={"time": Rself.time}),
+                    Rself_end=xarray.DataArray(
+                        numpy.tile(Rself_end, Rself.shape[0]),
+                        dims=("time",),
+                        coords={"time": Rself.time}))
                 u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
                     keep_attrs=True, dim="time"))
             else:
@@ -1138,19 +1203,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "an actual update of the information.  Check coordinates "
                 "Rself_start and Rself_end.")
 
-            Rself = Rself.assign_coords(
-                Rself_start=xarray.DataArray(
-                    numpy.tile(Rself_start, Rself.shape[0]),
-                    dims=("time",),
-                    coords={"time": Rself.time}),
-                Rself_end=xarray.DataArray(
-                    numpy.tile(Rself_end, Rself.shape[0]),
-                    dims=("time",),
-                    coords={"time": Rself.time}))
             # according to Wang, Cao, and Ciren (2007), ε=0.98, no further
             # source or justification given
-            ε = UADA(1, name="emissivity")
-            a_3 = UADA(self.ε-1, name="correction to emissivity")
             if Rrefl_model is None:
                 warnings.warn("No Earthshine model defined, assuming 0!",
                     FCDRWarning)
@@ -1160,8 +1214,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             else:
                 raise NotImplementedError("Evalutation of Earthshine "
                     "model not implemented yet")
-            a_4 = UADA(0, name="harmonisation bias",
-                attrs={"units": rad_u["si"]})
             rad_wn = self.custom_calibrate(C_Earth, interp_slope,
                 interp_offset, a2, Rself)
 
@@ -1170,6 +1222,25 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             T_b = rad_wn.to("K", "radiance", srf=srf)
         # end if n_within_context == 0.  From here only code that can be
         # executed whether I have good data or not.
+
+        ε = UADA(1, name="emissivity")
+        a_3 = UADA(self.ε-1, name="correction to emissivity")
+        a_4 = UADA(0, name="harmonisation bias",
+            attrs={"units": rad_u["si"]})
+        if not has_Rself: # need to set manually
+            newcoor = dict(
+                Rself_start=xarray.DataArray(
+                    numpy.tile(Rself_start, Rself.shape[0]),
+                    dims=("time",),
+                    coords={"time": Rself.time}),
+                Rself_end=xarray.DataArray(
+                    numpy.tile(Rself_end, Rself.shape[0]),
+                    dims=("time",),
+                    coords={"time": Rself.time}))
+            Rself = Rself.assign_coords(**newcoor)
+            rad_wn = rad_wn.assign_coords(**newcoor)
+            T_b = T_b.assign_coords(**newcoor)
+
 
         (α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients(
             self.satname, self.section, ch)
