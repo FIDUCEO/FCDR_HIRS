@@ -75,9 +75,9 @@ logging.basicConfig(
     level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
 
 import matplotlib
-matplotlib.use("Agg")
+#matplotlib.use("Agg")
 import pathlib
-pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 
 import datetime
 import itertools

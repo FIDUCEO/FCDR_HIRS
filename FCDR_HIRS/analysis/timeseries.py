@@ -154,7 +154,7 @@ import math
 
 import numpy
 import matplotlib
-matplotlib.use("Agg")
+#matplotlib.use("Agg")
 # Source: http://stackoverflow.com/a/20709149/974555
 if parsed_cmdline.plot_noise_with_other:
     matplotlib.rc('text', usetex=True)
@@ -167,7 +167,7 @@ if parsed_cmdline.plot_noise_with_other:
            r'\DeclareSIUnit\count{count}'  # siunitx doesn't know this one
     ]
 # this too must be before importing matplotlib.pyplot
-pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 import matplotlib.pyplot
 import matplotlib.gridspec
 import matplotlib.dates

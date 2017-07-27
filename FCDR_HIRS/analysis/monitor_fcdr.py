@@ -32,7 +32,7 @@ import pathlib
 import itertools
 import datetime
 import xarray
-pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 import matplotlib.pyplot
 import matplotlib.gridspec
 import numpy

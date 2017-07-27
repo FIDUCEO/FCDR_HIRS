@@ -42,7 +42,7 @@ import numpy
 import matplotlib
 # matplotlib.use("Agg") # now in matplotlibrc
 import pathlib
-pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 
 import matplotlib.ticker
 import scipy.stats

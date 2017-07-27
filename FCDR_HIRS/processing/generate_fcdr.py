@@ -83,7 +83,7 @@ release notes for details on versions used."""
 
 import sys
 import pathlib
-pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 from .. import common
 import argparse
 import subprocess
