@@ -861,6 +861,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 *ds.loc[dsix]["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime),
                 ))
             ds = ds.loc[dsix]
+            # this means I need to fix the flags as well
+            for k in self._flags.keys():
+                self._flags[k] = self._flags[k].sel(scanline_earth=dsix["time"])
 
         # some stuff I can do whether I have enough context or not
 
