@@ -61,6 +61,9 @@ Fix bug which caused both random and nonrandom uncertainty to be
 incorrectly propagated from radiance to brightness temperature space, see
 #134
 
+Handle many more forms of problematic data, leading to a more complete
+dataset.
+
 Changed approach to self-emission:
 - use more temperatures for prediction, to be precise, use all
   temperatures that are available for all HIRS
@@ -103,7 +106,7 @@ def parse_cmdline():
         include_temperatures=False)
 
     parser.add_argument("modes", action="store", type=str,
-        nargs="+", choices=["easy", "debug"],
+        nargs="+", choices=["easy", "debug", "none"],
         help="What FCDR(s) to write?")
 
     parser.add_argument("--days", action="store", type=int,
@@ -483,6 +486,12 @@ class FCDRGenerator:
             piece_easy.to_netcdf(str(fn))
         except FileExistsError as e:
             logging.info("Already exists: {!s}".format(e.args[0]))
+
+    def store_piece_none(self, piece, fn):
+        """Do not store anything!"""
+        logging.info("You told me to write nothing.  I will not write "
+            f"anything to {fn!s} nor to anywhere else (but I have "
+            "accidentally created a directory already, oops).")
 
     map_dims_debug_to_easy = {
         "scanline_earth": "y",

@@ -726,6 +726,25 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         offset = -counts_space**2 * a2 -slope * counts_space
 
+        # in some (rare) cases, counts_space and counts_iwct are all zero.
+        # This will cause slope to be inf, and slope * counts_space to be
+        # nan.  There should be no other possible way for getting nans in
+        # offset.
+        if not numpy.array_equal((counts_space.values == 0) &
+                                 (counts_iwct.values == 0),
+                                 numpy.isnan(offset)):
+            raise ValueError("Problematic data propagating unexpectedly. "
+                "I can except offset nans to correspond to cases where "
+                "counts_space == counts_iwct == 0, such as "
+                "NOAA-12 1997-05-31T16:02:42.528000, but there "
+                "appears to be something else going on here. "
+                "I cannot proceed like this, please investigate what's "
+                "going on and handle it properly.")
+        elif numpy.isnan(offset).any():
+            logging.warn("Found cases where counts_space == counts_iwct == 0.  "
+                "Setting both slope and offset to inf (instead of nan).")
+            offset.values[numpy.isnan(offset)] = numpy.inf
+
         # sometimes IWCT or space counts seem to drift over a “scan line”
         # of calibration.  Identify this by comparing the IQR to the
         # counts.  For truly random normally distributed data:
@@ -1006,7 +1025,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         errmsg = (
                             "Unable to train self-emission model for channel {:d} with "
                             "training data in {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}: "
-                            "{:s}.".format(
+                            "{:s} ".format(
                                 ch,
                                 context["time"].values[0].astype("M8[s]").astype(datetime.datetime),
                                 context["time"].values[-1].astype("M8[s]").astype(datetime.datetime),

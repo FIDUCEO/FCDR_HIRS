@@ -143,7 +143,7 @@ class RSelf:
     def _OK_traintest(self, ds):
         """Verify OK for training, testing.  
         """
-        return (~self.hirs.filterer.filter_outliers(ds["counts"].sel(
+        return (~self.hirs.filter_calibcounts.filter_outliers(ds["counts"].sel(
             scanpos=slice(8, None)).values).any(1))
 
     _OKfields = {
