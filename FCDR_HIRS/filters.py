@@ -23,7 +23,6 @@ class CalibrationMirrorFilter(metaclass=abc.ABCMeta):
 
 
 class IQRCalibFilter(CalibrationMirrorFilter):
-
     def __init__(self, rng=(10, 90), cutoff=3.3):
 
         self.rng = rng

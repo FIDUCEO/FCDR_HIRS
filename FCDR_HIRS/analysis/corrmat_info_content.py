@@ -14,6 +14,7 @@ where:
   NWP, or otherwise.
 """
 
+import itertools
 import pathlib
 
 import numpy
@@ -45,15 +46,16 @@ def get_S_a_from_Chevallier_ArtsXML():
     da_all = []
     for l in L:
         da = l.to_xarray().squeeze()
-        vmr = da.sel(dim_0="abs_species-H2O")
-        rh = typhon.atmosphere.relative_humidity(
-            vmr=da.sel(dim_0="abs_species-H2O"),
-            p=da.dim_1,
-            T=da.sel(dim_0="T"))
+        T = da.sel(dim_0="T")
+#        vmr = da.sel(dim_0="abs_species-H2O")
+#        rh = typhon.atmosphere.relative_humidity(
+#            vmr=da.sel(dim_0="abs_species-H2O"),
+#            p=da.dim_1,
+#            T=da.sel(dim_0="T"))
         da = xarray.DataArray(
             scipy.interpolate.interp1d(
                 numpy.log10(da.dim_1),
-                vmr,
+                T,
                 bounds_error=False,
                 fill_value=numpy.nan)(numpy.log10(p_newgrid)),
             dims=("p",),
@@ -77,11 +79,11 @@ def get_K():
     #K_all = []
     da_all = []
     for n in range(0, 5000, 1):
-        K = typhon.arts.xml.load(str(jacob_dir / "H2O_VMR" / f"HIRS_Chevallier_RH_Jacobians.jacobian.{n:d}.xml.gz"))
+        K = typhon.arts.xml.load(str(jacob_dir / "temp_and_H2O_VMR" / f"HIRS_Chevallier_Jacobians.jacobian.{n:d}.xml.gz"))
         da = xarray.DataArray(
             scipy.interpolate.interp1d(
                 numpy.log10(L[n].grids[1]),
-                K,
+                K[:, :92], # first half relates to temperature
                 axis=1,
                 bounds_error=False,
                 fill_value=0)(numpy.log10(p_newgrid)),
@@ -96,7 +98,7 @@ def get_K():
     return da
 
 def get_S_ε(corrmat=None):
-    ds = xarray.open_dataset("/group_workspaces/cems2/fiduceo/Data/FCDR/HIRS/v0.7pre/debug/metopa/2016/03/02/FIDUCEO_FCDR_L1C_HIRS4_metopa_20160302010629_20160302024729_debug_v0.7pre_fv0.3.nc")
+    ds = xarray.open_dataset("/group_workspaces/cems2/fiduceo/Data/FCDR/HIRS/v0.7pre/debug/metopa/2016/03/02/FIDUCEO_FCDR_L1C_HIRS4_metopa_20160302010629_20160302024729_debug_v0.7pre_fv0.4.nc")
     u_R = ds["u_R_Earth_random"].mean("scanpos").mean("scanline_earth").sel(calibrated_channel=slice(12)).values
     corrmat = corrmat if corrmat is not None else ds["channel_correlation_matrix"].sel(channel=slice(12)).values
     covmat = corrmat * (u_R[:, numpy.newaxis] * u_R[numpy.newaxis, :])
@@ -128,7 +130,45 @@ def dofn(S_a, K, S_ε):
     return (S_ε @ inv(K @ S_a @ K.swapaxes(-1, -2) + S_ε)).trace(
         axis1=-2, axis2=-1)
 
-def get_all_dofs():
+def gain(S_a, K, S_ε):
+    """Gain matrix, broadcasting version
+    """
+    return inv(K.swapaxes(-1, -2) @ inv(S_ε) @ K
+                  + inv(S_a)) @ K.swapaxes(-1, -2) @ inv(S_ε)
+    
+
+def S_degradation(S_a, K, S_ε):
+    """What is the error covariance from use of the wrong observation error covarionce?
+
+    Arguments:
+        S_a
+        K
+        S_ε
+
+    Chris Merchant, personal communication, 2017:
+
+    S_{\hat{x}'-\hat{x}} = (G'-G)(y-F)(y-F)^T(G'-G)^T
+
+    where
+
+    G' = (K^T S_ε'^-1 K + S_a^-1)^-1 K^T S_ε'^-1
+
+    G = (K^T S_ε^-1 K + S_a^-1)^-1 K^T S_ε^-1
+
+    (y-F)(y-F)^T = S_y = K S_a K^T + S_ε
+    """
+
+    S_ε_reg = S_ε
+    S_ε_diag = numpy.diag(numpy.diag(S_ε))
+    G_prime = gain(S_a, K, S_ε_diag)
+    G_reg = gain(S_a, K, S_ε_reg)
+    ΔG = G_prime - G_reg
+
+    S_y = K @ S_a @ K.swapaxes(-1, -2) + S_ε_reg
+
+    return ΔG @ S_y @ ΔG.swapaxes(-1, -2)
+
+def get_S_a_K_S_ε():
     try:
         S_a = xarray.open_dataset(S_a_loc)["S_a"].values
     except FileNotFoundError:
@@ -143,6 +183,12 @@ def get_all_dofs():
     K_all[numpy.isnan(K_all)] = 0
 
     S_ε = get_S_ε()
+
+    return (S_a, K_all, S_ε)
+
+def get_all_dofs():
+    (S_a, K_all, S_ε) = get_S_a_K_S_ε()
+
     S_ε_diag = numpy.diag(numpy.diag(S_ε))
     S_ε_extreme = get_S_ε(numpy.ones((12,12)))
 
@@ -150,7 +196,7 @@ def get_all_dofs():
     # no :(
     #OK = (~(K_all==0).any(-1).any(-1)) 
     #K_all = K_all[OK, :, :]
-    # does THIS?
+    # does THIS? (yes)
     S_a = S_a[:10, :10]
     K_all = K_all[:, :, :10]
     dofs_actual = dofs(S_a, K_all, S_ε)
@@ -163,7 +209,6 @@ def get_all_dofs():
         dofs_full=dofs_full)
 
     return (dofs_actual, dofs_diag, dofs_full)
-
 
 def plot_dofs_hists():
     try:
@@ -179,7 +224,7 @@ def plot_dofs_hists():
 
     (f, a) = matplotlib.pyplot.subplots()
 
-    bins = numpy.linspace(0, 4.5, 40)
+    bins = numpy.linspace(0, 8.5, 40)
     a.hist(dofs_actual, bins=bins, histtype="step", label="actual")
     a.hist(dofs_diag, bins=bins, histtype="step", label="assuming diagonal")
     #a.hist(dofs_full, bins=bins, histtype="step", label="full correlation")
@@ -200,7 +245,80 @@ def plot_dofs_hists():
 #          "DOFS", dofs(S_a, K_all, S_ε_extreme),
 #          "DOFN", dofn(S_a, K_all, S_ε_extreme))
 
+def plot_S_degradation():
+    N = 15
+    (S_a, K_all, S_ε) = get_S_a_K_S_ε()
+    K_da = xarray.open_dataset(K_loc) # for pressures
+    p = K_da["p"][1:N]
+
+    OK = ~(K_all[:, 0, 1:] == 0).any(1)
+    S_degr = S_degradation(S_a[1:N, :][:, 1:N], K_all[:, :, 1:N][OK, :, :], S_ε)
+    OK = numpy.isfinite(S_degr).all(1).all(1)
+    S_degr = S_degr[OK, :, :]
+
+    f = matplotlib.pyplot.figure(figsize=(16, 9))
+    gs = matplotlib.gridspec.GridSpec(3, 6)
+    a_all = []
+    cm_all = []
+    tot = S_degr.shape[0]
+    for i in range(9):
+        a = f.add_subplot(gs[i//3, i%3])
+        idx = tot//9*i
+        cm = a.pcolor(p, p, S_degr[idx, :, :], cmap="PuOr")
+        a_all.append(a)
+        cm_all.append(cm)
+        a.set_title(f"No. {idx:d}")
+        if (i%3) != 0:
+            #a.set_yticklabels([])
+            #a.set_xticks([])
+            pass
+        if (i//3) != 2:
+            #a.set_xticklabels([])
+            #a.set_yticks([])
+            pass
+
+    a_avg = f.add_subplot(gs[:, 3:6])
+    cm = a_avg.pcolor(p, p, numpy.median(S_degr, 0), cmap="PuOr")
+    a_avg.set_title("Median error covariance\n(is this meaningful?)")
+    a_all.append(a_avg)
+    cm_all.append(cm)
+
+#    lim = max(abs(
+#        numpy.array(
+#            list(itertools.chain.from_iterable(cm.get_clim() for cm in cm_all))
+#        )))
+    lim = 4
+    for (a, cm) in zip(a_all, cm_all):
+        a.set_xscale("log")
+        a.set_yscale("log")
+        a.set_aspect("equal")
+        a.invert_xaxis()
+        a.invert_yaxis()
+        cm.set_clim([-lim, +lim])
+        if not (a.is_first_col() or a is a_avg):
+            a.set_yticklabels([])
+            a.set_yticklabels([], minor=True)
+        else:
+            a.set_ylabel("Pressure [Pa]")
+        if not (a.is_last_row() or a is a_avg):
+            a.set_xticklabels([])
+            a.set_xticklabels([], minor=True)
+        else:
+            a.set_xlabel("Pressure [Pa]")
+        if (not a is a_avg) and a.is_last_row():
+            for lab in a.get_xticklabels(which="both"):
+                lab.set_rotation(30)
+            
+    cb = f.colorbar(cm, ax=a)
+    cb.set_label("Error covariance [K^2]")
+    #cb.set_label("Error covariance [(cm mW^-1 m^-2 sr^-1)^2]")
+
+    f.suptitle("What is the error covariance from use of the wrong "
+               "observation error covariance?")
+    pyatmlab.graphics.print_or_show(f, False, "S_degr.")
+
 def main():
+    plot_S_degradation()
     plot_dofs_hists()
 #    print("Zero (nearly no noise in measurement)",
 #          "DOFS", dofs(S_a, K, numpy.diag([1e-200]*12)),

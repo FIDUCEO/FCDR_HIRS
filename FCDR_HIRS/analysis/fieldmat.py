@@ -87,6 +87,7 @@ import datetime
 import scipy.stats
 import numpy
 import itertools
+import abc
 
 import matplotlib.pyplot
 import matplotlib.ticker
@@ -119,8 +120,8 @@ month_pairs = dict(
     metopb = ((2013, 2), (2017, 5)))
 
 period_pairs = {sat:
-    ((datetime.datetime(*start, 1), datetime.datetime(*start, 28)),
-     (datetime.datetime(*end, 1), datetime.datetime(*end, 28)))
+    ((datetime.datetime(*start, 1), datetime.datetime(*start, 28, 23, 59)),
+     (datetime.datetime(*end, 1), datetime.datetime(*end, 28, 23, 59)))
         for (sat, (start, end)) in month_pairs.items()}
 
 def plot_field_matrix(MM, ranges, title, filename, units):
@@ -138,6 +139,172 @@ def plot_field_matrix(MM, ranges, title, filename, units):
     f.suptitle(title)
     f.subplots_adjust(hspace=0.5, wspace=0.5)
     pyatmlab.graphics.print_or_show(f, False, filename)
+
+#
+class _SatPlotHelper(metaclass=abc.ABCMeta):
+    """Helper for MatrixPlotter.plot_all_sats_early_late
+    """
+
+    @abc.abstractmethod
+    def prepare_early(self, mp):
+        ...
+
+    @abc.abstractmethod
+    def prepare_late(self, mp):
+        ...
+
+    @abc.abstractmethod
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp):
+        ...
+
+    @abc.abstractmethod
+    def finalise(self, mp):
+        ...
+#
+class _SatPlotChCorrmat(_SatPlotHelper):
+    def __init__(self, channels, noise_typ, calibpos):
+        self.channels = numpy.asarray(channels)
+        self.noise_typ = noise_typ
+        self.calibpos = calibpos
+    
+    def _get_ch_corrmat(self, mp):
+        (S, ρ, cnt) = mp._get_ch_corrmat(
+            self.channels,
+            self.noise_typ,
+            self.calibpos)
+        return (S, ρ, cnt)
+
+    def prepare_early(self, mp):
+        (S, _, ecnt) = self._get_ch_corrmat(mp)
+        self.S_low = numpy.tril(S, k=-1)
+        self.ecnt = ecnt
+
+    def prepare_late(self, mp):
+        (S, _, lcnt) = self._get_ch_corrmat(mp)
+        self.S_hi = numpy.triu(S, k=1)
+        self.lcnt = lcnt
+
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp):
+        im = mp._plot_ch_corrmat(
+            self.S_low +
+            self.S_hi +
+            numpy.diag(numpy.zeros(self.channels.size)*numpy.nan),
+                              ax, self.channels, add_x=r==3, add_y=c==0)
+        if r==c==0:
+            f = ax.figure
+            cax = f.add_subplot(gs[:-1, -1])
+            cb = f.colorbar(im, cax=cax)
+            cb.set_label("Pearson product-moment correlation coefficient")
+        ax.set_title(f"{sat:s}\n"
+                     f"{ep[0]:%Y-%m}, {self.ecnt:d} cycles\n"
+                     f"{lp[0]:%Y-%m}, {self.lcnt:d} cycles")
+
+    def finalise(self, mp, f, gs):
+        gs.update(wspace=0.10, hspace=0.4)
+        f.suptitle("HIRS noise correlations for all HIRS, pos "
+                  f"{self.calibpos:d} ", fontsize=40)
+        pyatmlab.graphics.print_or_show(f, False,
+            f"hirs_noise_correlations_allsats_pos{self.calibpos:d}.")
+#
+class _SatPlotFFT(_SatPlotHelper):
+    """For plotting FFT stuff
+    """
+
+    def __init__(self, channel):
+        self.n = 2**6
+        self.channel = channel
+
+    def _extract_counts(self, mp):
+        spc = mp._get_accnt("space")[:, :, self.channel-1]
+        spc = spc[(~spc.mask).all(1), :]
+        ec = mp._get_accnt("Earth")[:, :, self.channel-1]
+        ec = ec[(~ec.mask).all(1), :]
+        return (spc, ec)
+
+    def prepare_early(self, mp):
+        (spc, ec) = self._extract_counts(mp)
+        self.early_spc = spc
+        self.early_ec = ec
+        self.ecnt = spc.shape[0]
+
+    def prepare_late(self, mp):
+        (spc, ec) = self._extract_counts(mp)
+        self.late_spc = spc
+        self.late_ec = ec
+        self.lcnt = spc.shape[0]
+
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp):
+        """Plot FFT for calibration counts and Earth views
+        """
+
+        n = self.n
+
+        # 0.1 seconds between observations (NOAA KLM User's Guide, Appendix)
+        x = numpy.fft.fftfreq(n, d=0.1)
+
+        ax.plot(
+            x[1:n//2],
+            abs(numpy.fft.fft(self.early_spc, axis=1, n=n)[:, 1:n//2]).mean(0),
+            label="early, space")
+        ax.plot(
+            x[1:n//2],
+            abs(numpy.fft.fft(self.early_ec, axis=1, n=n)[:, 1:n//2]).mean(0),
+            label="early, Earth")
+
+        ax.plot(
+            x[1:n//2],
+            abs(numpy.fft.fft(self.late_spc, axis=1, n=n)[:, 1:n//2]).mean(0),
+            label="late, space")
+        ax.plot(
+            x[1:n//2],
+            abs(numpy.fft.fft(self.late_ec, axis=1, n=n)[:, 1:n//2]).mean(0),
+            label="late, Earth")
+
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        if r==3:
+            ax.set_xlabel("Frequency [1/s]")
+        else:
+            ax.set_xticklabels([])
+        if c==0:
+            ax.set_ylabel("Amplitude [counts]")
+        else:
+            ax.set_yticklabels([])
+        if r==0 and c==3:
+            ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
+            #ax.legend()
+        ax.set_title(f"{sat:s}\n"
+                     f"{ep[0]:%Y-%m}, {self.ecnt:d} cycles\n"
+                     f"{lp[0]:%Y-%m}, {self.lcnt:d} cycles")
+        ax.set_ylim([5e0, 5e3])
+
+    def finalise(self, mp, f, gs):
+        gs.update(wspace=0.10, hspace=0.4)
+        f.subplots_adjust(right=0.8, bottom=0.2)
+        f.suptitle(f"Spectral analysis, channel {self.channel:d}")
+        pyatmlab.graphics.print_or_show(f, False,
+            f"hirs_crosstalk_fft.")
+
+class _SatPlotAll(_SatPlotChCorrmat, _SatPlotFFT):
+    def __init__(self, *args, **kwargs):
+        _SatPlotChCorrmat.__init__(*args, **kwargs)
+        _SatPlotFFT.__init__(*args, **kwargs)
+
+    def prepare_early(self, *args, **kwargs):
+        _SatPlotChCorrmat.prepare_early(*args, **kwargs)
+        _SatPlotFFT.prepare_early(*args, **kwargs)
+        
+    def prepare_late(self, *args, **kwargs):
+        _SatPlotChCorrmat.prepare_late(*args, **kwargs)
+        _SatPlotFFT.prepare_late(*args, **kwargs)
+
+    def plot_both(self, *args, **kwargs):
+        _SatPlotChCorrmat.plot_both(*args, **kwargs)
+        _SatPlotFFT.plot_both(*args, **kwargs)
+
+    def finalise(self, *args, **kwargs):
+        _SatPlotChCorrmat.finalise(*args, **kwargs)
+        _SatPlotFFT.finalise(*args, **kwargs)
 
 class MatrixPlotter:
     """Plot varous scatter density matrices and correlation matrices
@@ -444,6 +611,60 @@ class MatrixPlotter:
             f"hirs_temperature_correlation_{self.filename_sat_date:s}.png")
 
 
+    def plot_all_sats_early_late(self, plotter, sats):
+        if sats == "all":
+            sats = self.all_sats
+
+        f = matplotlib.pyplot.figure(figsize=(22, 24))
+        gs = matplotlib.gridspec.GridSpec(20, 21)
+        for ((r, c), sat) in zip(itertools.product(range(4), range(4)), sats):
+#            h = tovs.which_hirs(sat)
+            # early month in lower
+            ep = period_pairs[sat][0]
+            lp = period_pairs[sat][1]
+
+            self.reset(sat, *ep)
+            plotter.prepare_early(self)
+#            (S, ρ, ecnt) = self._get_ch_corrmat(channels, noise_typ,
+#                calibpos)
+#            S_low = numpy.tril(S, k=-1)
+            self.reset(sat, *lp)
+            plotter.prepare_late(self)
+#            (S, ρ, lcnt) = self._get_ch_corrmat(channels, noise_typ,
+#                calibpos)
+#            S_hi = numpy.triu(S, k=1)
+            #
+            ax = f.add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
+            plotter.plot_both(self, ax, gs, sat, r, c, ep, lp)
+#            im = self._plot_ch_corrmat(S_low+S_hi+numpy.diag(numpy.zeros(channels.size)*numpy.nan),
+#                                  ax, channels, add_x=r==3, add_y=c==0)
+#            if r==c==0:
+#                cax = f.add_subplot(gs[:-1, -1])
+#                cb = f.colorbar(im, cax=cax)
+#                cb.set_label("Pearson product-moment correlation coefficient")
+#            ax.set_title(f"{sat:s}\n"
+#                         f"{ep[0]:%Y-%m}, {ecnt:d} cycles\n"
+#                         f"{lp[0]:%Y-%m}, {lcnt:d} cycles")
+
+        plotter.finalise(self, f, gs)
+#        gs.update(wspace=0.10, hspace=0.4)
+#        f.suptitle("HIRS noise correlations for all HIRS, pos "
+#                  f"{calibpos:d} ", fontsize=40)
+#        pyatmlab.graphics.print_or_show(f, False,
+#            f"hirs_noise_correlations_allsats_pos{calibpos:d}.")
+
+    def plot_crosstalk_ffts_all_sats(self):
+        self.plot_all_sats_early_late(
+            _SatPlotFFT(5),
+            sats="all")
+
+    def plot_ch_corrmat_all_sats_b(self, channels, noise_typ, calibpos,
+        sats="all"):
+
+        self.plot_all_sats_early_late(
+            _SatPlotChCorrmat(channels, noise_typ, calibpos),
+            sats="all")
+
     def plot_ch_corrmat_all_sats(self, channels, noise_typ, calibpos,
             sats="all"):
         """Plot channel noise covariance matrix for all sats.
@@ -583,6 +804,7 @@ class MatrixPlotter:
                 f"hirs_noise_correlations_allchan_{sat:s}.")
 #            im = self._plot_ch_corrmat(S_tot, ax, channels,
 #                add_x=r==3, add_y=c==0)
+
  
 def read_and_plot_field_matrices():
 #    h = fcdr.which_hirs_fcdr(sat)
@@ -590,9 +812,13 @@ def read_and_plot_field_matrices():
         
     #temp_fields_full = ["temp_{:s}".format(t) for t in p.temp_fields]
     mp = MatrixPlotter()
+#    if p.plot_all_fft:
+#        mp.plot_fft()
+
     if p.plot_all_corr:
-        mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
-        mp.plot_ch_corrmat_all_sats(p.channels, p.noise_typ[0], p.calibpos[0])
+#        mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
+#        mp.plot_ch_corrmat_all_sats_b(p.channels, p.noise_typ[0], p.calibpos[0])
+        mp.plot_crosstalk_ffts_all_sats()
         return
 
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
