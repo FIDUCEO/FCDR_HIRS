@@ -89,9 +89,14 @@ class RSelf:
             L.append(x.astype("f8")) # prevent X⁴ precision loss
         #X = numpy.concatenate(tuple(L), 1)
         X = xarray.merge(L)
+        # std is spectacularly sensitive to outliers, so we need to make
+        # sure we normalise this while removing those
+        OK = ~functools.reduce(
+            operator.or_, 
+            [self.hirs.filter_prttemps.filter_outliers(v.values) for v in X.data_vars.values()])
         # fit in terms of X⁴ because that's closer to radiance than
         # temperature is.
-        Xn = ((X**4)-(X**4).mean("time"))/(X**4).std("time")
+        Xn = ((X**4)-(X**4).isel(time=OK).mean("time"))/(X**4).isel(time=OK).std("time")
 
         return Xn
 
@@ -140,11 +145,12 @@ class RSelf:
         Y = offset.median("scanpos", keep_attrs=True)
         return Y
 
-    def _OK_traintest(self, ds):
-        """Verify OK for training, testing.  
+    def _OK_traintest(self, Y):
+        """Verify OK for training, testing.   Looks at outliers.
         """
-        return (~self.hirs.filter_calibcounts.filter_outliers(ds["counts"].sel(
-            scanpos=slice(8, None)).values).any(1))
+        return ~self.hirs.filter_calibcounts.filter_outliers(Y.values)
+#        return (~self.hirs.filter_calibcounts.filter_outliers(ds["counts"].sel(
+#            scanpos=slice(8, None)).values).any(1))
 
     _OKfields = {
         2: ("quality_flags_bitfield",),
@@ -166,7 +172,7 @@ class RSelf:
 #    _badflags[4] = _badflags[3] # no need to copy
 
     def _OK_eval(self, ds):
-        """OK for evaluation?
+        """OK for evaluation?  Looks at flags.
         """
         # ds["quality_flags_bitfield"] & functools.reduce(operator.or_,
         # ds["quality_flags_bitfield"].flag_masks)
@@ -225,10 +231,11 @@ class RSelf:
         # ints!).  Doesn't really fit in get_predictand either for Y and X
         # will be out of shape.  It's different between training/testing
         # or evaluation, because this is for space views only.
-        OK = self._OK_traintest(ds.isel(time=ix).sel(channel=ch))
+        OK = self._OK_traintest(Y)
+#        OK = self._OK_traintest(ds.isel(time=ix).sel(channel=ch))
 #        OK = (~self.hirs.filterer.filter_outliers(ds["counts"].isel(time=ix).sel(
 #            channel=ch, scanpos=slice(8, None)).values).any(1))
-        OK = OK & self._OK_eval(ds.isel(time=ix).sel(channel=ch))
+        OK &= self._OK_eval(ds.isel(time=ix).sel(channel=ch))
 #        OK &= (ds.isel(time=ix).sel(channel=ch)["channel_quality_flags_bitfield"].values==0)
 #        OK &= (ds.isel(time=ix).sel(channel=ch)["channel_quality_flags_bitfield"].values==0)
 #        OK &= (ds.isel(time=ix)["quality_flags_bitfield"].values==0)
@@ -243,6 +250,8 @@ class RSelf:
 #                for x in X.data_vars.values()], 1)
 #        Yy = Y.values[OK]
         (Xx, Yy) = self._ds2ndarray(X, Y, dropna=True)
+        # remove outliers due to PRT temperature problems from training
+        OK &= ~self.hirs.filter_prttemps.filter_outliers(Xx).any(1)
         self._ensure_enough_OK(ds.isel(time=ix).sel(channel=ch), OK)
         Xx = Xx[OK, :]
         Yy = Yy[OK]
@@ -285,12 +294,13 @@ class RSelf:
         """
         ix = self.hirs.extract_calibcounts_and_temp(
             ds, ch, return_ix=True)[-1]
-        OK = (self._OK_traintest(ds.isel(time=ix).sel(channel=ch))
-            & self._OK_eval(ds.isel(time=ix).sel(channel=ch)))
+        Y_ref = self.get_predictand(ds, ch)
+        OK = (self._OK_traintest(Y_ref) &
+              self._OK_eval(ds.isel(time=ix).sel(channel=ch)))
+#              self._OK_traintest(ds.isel(time=ix).sel(channel=ch))
         self._ensure_enough_OK(ds.isel(time=ix).sel(channel=ch), OK)
         (X, Y_pred) = self.evaluate(ds.isel(time=ix).isel(time=OK), ch)
-        Y_ref = self.get_predictand(ds, ch)[OK]
-        return (X, Y_ref.squeeze(), Y_pred.squeeze())
+        return (X, Y_ref.isel(time=OK).squeeze(), Y_pred.squeeze())
 
     def __str__(self):
         # str(self.models[ch]) triggers http://bugs.python.org/issue29672 due

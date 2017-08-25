@@ -745,27 +745,31 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "Setting both slope and offset to inf (instead of nan).")
             offset.values[numpy.isnan(offset)] = numpy.inf
 
-        # sometimes IWCT or space counts seem to drift over a “scan line”
-        # of calibration.  Identify this by comparing the IQR to the
-        # counts.  For truly random normally distributed data:
-        # (25, 75) … > 2: false positive 0.2%
-        # (10, 90) … > 3.3: false positive 0.5%
-        # …based on a simple simulated # experiment.
         if counts_iwct.coords["time"].size > 0:
-#            bad_iwct = (counts_iwct.reduce(
-#                scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
-#                typhon.math.stats.adev(counts_iwct, dim="scanpos"))
+            # sometimes IWCT or space counts seem to drift over a “scan line”
+            # of calibration.  Identify this by comparing the IQR to the
+            # counts.  For truly random normally distributed data:
+            # (25, 75) … > 2: false positive 0.2%
+            # (10, 90) … > 3.3: false positive 0.5%
+            # …based on a simple simulated # experiment.
             bad_iwct = self.calibfilter.filter_calibcounts(counts_iwct)
-#            bad_space = (counts_space.reduce(
-#                scipy.stats.iqr, dim="scanpos", rng=(10, 90)) > 3.3 *
-#                typhon.math.stats.adev(counts_space, dim="scanpos"))
             bad_space = self.calibfilter.filter_calibcounts(counts_space)
+
+            # filter IWCT and space outliers
+            bad_iwct |= self.filter_calibcounts.filter_outliers(
+                counts_iwct.median("scanpos").values)
+            bad_space |= self.filter_calibcounts.filter_outliers(
+                counts_space.median("scanpos").values)
+
+            # filter PRT outliers 
+            bad_iwct |= self.filter_prttemps.filter_outliers(
+                ds["temperature_internal_warm_calibration_target"].sel(time=counts_iwct["time"]).mean(dim="prt_number_iwt").mean(dim="prt_reading").values)
 
             bad_calib = xarray.DataArray(bad_iwct.variable | bad_space.variable,
                     coords=bad_space.coords, name="bad_calib")
-            # TODO/FIXME: this should be salvageable!  
-            slope.sel(time=bad_calib)[...] = numpy.nan
-            offset.sel(time=bad_calib)[...] = numpy.nan
+            # TODO/FIXME: some of this might be salvageable!  Just set to DONOTUSE
+#            slope.sel(time=bad_calib)[...] = numpy.nan
+#            offset.sel(time=bad_calib)[...] = numpy.nan
         coords = {"calibration_cycle": time.values}
         if tuck:
             self._tuck_quantity_channel("a_0", offset,
@@ -1009,7 +1013,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # for the purpose of the median, I really want to ignore infs
             # so I'd rather set them to nans
             for x in (slope, offset):
-                x.values[~numpy.isfinite(x)] = numpy.nan
+                x.values[~numpy.isfinite(x.values)] = numpy.nan
 
             if Rself_model is None:
                 warnings.warn("No self-emission defined, assuming 0!",
