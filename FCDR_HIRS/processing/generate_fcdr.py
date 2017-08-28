@@ -326,7 +326,7 @@ class FCDRGenerator:
         S = self.fcdr.estimate_channel_correlation_matrix(context)
         (LUT_BT, LUT_L) = self.fcdr.get_BT_to_L_LUT()
 
-        (flags_scanline, flags_channel, flags_minorframe) = self.fcdr.get_flags(
+        (flags_scanline, flags_channel, flags_minorframe, flags_pixel) = self.fcdr.get_flags(
             subset, context, R_E)
         if ((self.dd.data["time"][-1] - self.dd.data["time"][0]).values.astype("m8[s]").astype(datetime.timedelta) / self.window_size) < 0.9:
             logging.warn("Reduced context available, flagging data")
@@ -384,7 +384,8 @@ class FCDRGenerator:
                             uTb_syst, uTb_rand,
                             S, LUT_BT, LUT_L,
                             flags_scanline, flags_channel,
-                            flags_minorframe, u_from]
+                            flags_minorframe, flags_pixel,
+                            u_from]
         ds = xarray.merge(
             [da.drop("scanline").rename(
                 {"lat": "lat_earth", "lon": "lon_earth"})

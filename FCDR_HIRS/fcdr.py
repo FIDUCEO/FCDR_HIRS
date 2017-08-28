@@ -109,6 +109,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     start_iwct_calib = 8
 
     calibfilter = filters.IQRCalibFilter()
+    filter_earthcounts = typhon.datasets.filters.MEDMAD(10)
 
     ε = 0.98 # from Wang, Cao, and Ciren (2007, JAOT), who give so further
              # source for this number
@@ -1240,6 +1241,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             rad_wn = self.custom_calibrate(C_Earth, interp_slope,
                 interp_offset, a2, Rself)
 
+            bad = self.filter_earthcounts.filter_outliers(C_Earth.values)
+            self._flags["pixel"].loc[{"calibrated_channel": ch}].values[bad] |= (
+                _fcdr_defs.FlagsPixel.DO_NOT_USE|_fcdr_defs.FlagsPixel.OUTLIER_NOS)
+            # 
             coords = {"calibration_cycle": time.values}
 
             T_b = rad_wn.to("K", "radiance", srf=srf)
@@ -2077,7 +2082,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             coords={"scanline_earth": ds["time"][(ds["scantype"].values == self.typ_Earth)].values}, 
             name="quality_scanline_bitmask",
             attrs=self._data_vars_props["quality_scanline_bitmask"][2]
-            )
+        )
 
         flags_channel = xarray.DataArray(
             numpy.zeros(
@@ -2088,7 +2093,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     "calibrated_channel": ds.coords["calibrated_channel"]},
             name="quality_channel_bitmask",
             attrs=self._data_vars_props["quality_channel_bitmask"][2]
-            )
+        )
 
         # need to semi-hardcode number 64 here: HIRS/2 does not have any
         # thing with dimension minor_frame, and indeed the minor_frame
@@ -2101,11 +2106,28 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             coords={"scanline_earth": flags_scanline.coords["scanline_earth"]},
             name="quality_minorframe_bitmask",
             attrs=self._data_vars_props["quality_minorframe_bitmask"][2]
-            )
+        )
+
+        # most generic one of all
+        flags_pixel = xarray.DataArray(
+            numpy.zeros(
+                shape=(flags_scanline["scanline_earth"].size,
+                       self.n_perline,
+                       ds["calibrated_channel"].size),
+                dtype=self._data_vars_props["quality_pixel_bitmask"][3]["dtype"]),
+            dims=("scanline_earth", "scanpos", "calibrated_channel"),
+            coords={"scanline_earth": flags_scanline.coords["scanline_earth"],
+                    "scanpos": ds.coords["scanpos"],
+                    "calibrated_channel": ds.coords["calibrated_channel"]},
+            name="quality_pixel_bitmask",
+            attrs=self._data_vars_props["quality_pixel_bitmask"][2]
+        )
+
 
         self._flags["scanline"] = flags_scanline
         self._flags["channel"] = flags_channel
         self._flags["minorframe"] = flags_minorframe
+        self._flags["pixel"] = flags_pixel
 
     def get_flags(self, ds, context, R_E):
         """Get flags for FCDR
@@ -2137,6 +2159,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         flags_scanline = self._flags["scanline"]
         flags_channel = self._flags["channel"]
         flags_minorframe = self._flags["minorframe"]
+        flags_pixel = self._flags["pixel"]
 
         
 #        for (ch, flag) in self._flags["channel"].items():
@@ -2159,7 +2182,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # do not touch flags_channel here; HIRS/2 does not have any
         # channel-specific flags, so anything specific goes into HIRSKLM
 
-        return (flags_scanline, flags_channel, flags_minorframe)
+        return (flags_scanline, flags_channel, flags_minorframe, flags_pixel)
 
     def propagate_uncertainty_components(self, u, sens, comp, sens_above=1):
         """Propagate individual uncertainty components seperately
@@ -2409,11 +2432,11 @@ class HIRSPODFCDR:
     """Mixin for HIRS POD FCDRs
     """
     def get_flags(self, ds, context, R_E):
-        (flags_scanline, flags_channel, flags_minorframe) = super().get_flags(ds, context, R_E)
+        (flags_scanline, flags_channel, flags_minorframe, flags_pixel) = super().get_flags(ds, context, R_E)
 
         # might add stuff here later
 
-        return (flags_scanline, flags_channel, flags_minorframe)
+        return (flags_scanline, flags_channel, flags_minorframe, flags_pixel)
 
 class HIRSKLMFCDR:
     """Mixin for HIRS KLM FCDRs
@@ -2425,7 +2448,7 @@ class HIRSKLMFCDR:
         practice those that have been copied.
         """
 
-        (flags_scanline, flags_channel, flags_minorframe) = super().get_flags(ds, context, R_E)
+        (flags_scanline, flags_channel, flags_minorframe, flags_pixel) = super().get_flags(ds, context, R_E)
 
         da_qfb = ds["quality_flags_bitfield"].sel(
             time=R_E.coords["scanline_earth"])
@@ -2466,7 +2489,8 @@ class HIRSKLMFCDR:
         # https://github.com/FIDUCEO/FCDR_HIRS/issues/133
         flags_scanline[(flags_minorframe.any("minor_frame") & fmf.SUSPECT_MIRROR).values!=0] |= fs.SUSPECT_MIRROR_ANY
 
-        return (flags_scanline, flags_channel, flags_minorframe)
+        return (flags_scanline, flags_channel, flags_minorframe,
+                flags_pixel)
 
 class HIRS2FCDR(HIRSPODFCDR, HIRSFCDR, HIRS2):
     l1b_base = HIRS2
