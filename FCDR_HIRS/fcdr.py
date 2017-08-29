@@ -994,7 +994,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #            interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
         else:
             # this means I have at least two calibration cycles with data
-            # in-between, so in theory I can do everything I wanted to.
+            # in-between, so in theory I can do everything I want to.
             
         
             # NB: passing `context` here means that quantities and effects are
@@ -1065,49 +1065,37 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # calculate_offset_and_slope. 
             interp_offset_modes = {}
             interp_slope_modes = {}
+            interp_bad_modes = {}
             if offset.shape[0] > 1 or (has_context and time.shape[0]>0):
                 for mode in ("zero", "linear", "cubic"):
-                    (interp_offset, interp_slope) = self.interpolate_between_calibs(
+                    moff = offset.median(dim="scanpos", keep_attrs=True)
+                    mslp = slope.median(dim="scanpos", keep_attrs=True)
+                    bad =   (
+                        self.filter_calibcounts.filter_outliers(moff.values) |
+                        self.filter_calibcounts.filter_outliers(mslp.values))
+                    (interp_offset, interp_slope, interp_bad) = self.interpolate_between_calibs(
                         ds["time"], time,
-                        offset.median(dim="scanpos", keep_attrs=True),
-                        slope.median(dim="scanpos", keep_attrs=True),
+                        moff, mslp, bad,
                         kind=mode)
                     interp_offset_modes[mode] = interp_offset
                     interp_slope_modes[mode] = interp_slope
+                    interp_bad_modes[mode] = interp_bad
             else:
                 raise RuntimeError("This should never happen again")
-#                interp_offset = xarray.zeros_like(ds["counts"].sel(
-#                    scanpos=1, channel=ch))
-#                interp_offset.values[:] = UADA(offset.median("scanpos"))
-#                interp_offset.attrs["units"] = offset.units
-#                interp_slope = xarray.zeros_like(ds["counts"].sel(
-#                    scanpos=1, channel=ch))
-#                interp_slope.values[:] = UADA(slope.median("scanpos"))
-#                interp_slope.attrs["units"] = slope.units
-#                interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
-#                interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
-#            elif ds["counts"].coords["time"].size > 0:
-#                raise RuntimeError("This should never happen again!")
-#                # see noaa14 1995-01-01
-#                logging.error("No calibration lines at all found in period "
-#                    "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}!  Data unusable.".format(
-#                    *context["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime)))
-#                self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
-#                    _fcdr_defs.FlagsChannel.DO_NOT_USE|
-#                    _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
-#                interp_slope = UADA(xarray.zeros_like(
-#                    ds["counts"].sel(scanpos=1, channel=ch)),
-#                    attrs={"units": str(self._data_vars_props["slope"][2]["units"])})*numpy.nan
-#                interp_offset = UADA(xarray.zeros_like(
-#                    ds["counts"].sel(scanpos=1, channel=ch)),
-#                    attrs={"units": str(self._data_vars_props["offset"][2]["units"])})*numpy.nan
-#                interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
-#                interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
-#            elif ds["counts"].coords["time"].size == 0: # zero scanlines…
-#                raise FCDRError("Dataset has zero scanlines, nothing to do")
-#            else:
-#                raise RuntimeError("This code cannot possibly be executed.")
-
+                # check version history to see what was here before
+            self._flags["channel"].sel(
+                calibrated_channel=ch)[
+                {"scanline_earth":
+                 xarray.DataArray(
+                    interp_bad_modes["zero"].astype(numpy.bool_),
+                    dims=("time",),
+                    coords={
+                        "time":
+                         ds.coords["time"]}
+                ).sel(time=C_Earth.coords["time"]).values
+                }] |= (
+                _fcdr_defs.FlagsChannel.DO_NOT_USE |
+                _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
             # might be attractive to do "linear" here, but no: that would
             # complicate the uncertainty propagation, for which zero-order
             # interpolation occurs in _make_dims_consistent
@@ -1163,6 +1151,25 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         coords={"time": Rself.time}))
                 u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
                     keep_attrs=True, dim="time"))
+
+                T_outliers = functools.reduce(
+                        operator.or_,
+                        [self.filter_prttemps.filter_outliers(
+                            ds[k].values.mean(-1).mean(-1)
+                            if ds[k].values.ndim==3
+                            else ds[k].values)
+                        for k in X.data_vars.keys()])
+
+                T_outliers = xarray.DataArray(
+                    T_outliers,
+                    dims=("time",),
+                    coords={"time": ds["time"]})
+
+                self._flags["scanline"][{"scanline_earth":
+                    T_outliers.sel(time=C_Earth["time"])}] |= (
+                        _fcdr_defs.FlagsScanline.DO_NOT_USE |
+                        _fcdr_defs.FlagsScanline.BAD_TEMP_NO_RSELF
+                        )
             else:
                 # we don't have a working self-emission model.  Take
                 # self-emission as an interpolation between adjecent
@@ -1326,6 +1333,34 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._quantities[me.symbols["a_4"]] = self._quantity_to_xarray(
                 a_4, name=me.names[me.symbols["a_4"]])
         rad_wn = rad_wn.rename({"time": "scanline_earth"})
+
+
+#
+        # prevent http://bugs.python.org/issue29672
+        # Tb0 = (T_b.variable == 0)
+        Tb0 = xarray.DataArray((T_b.values==0), dims=T_b.dims, coords=T_b.coords)
+        # skip this check for SW channels when R_e is often really so small
+        # that we can't define a meaningful T_b
+        if ch<13 and not (
+            (self._flags["pixel"].sel(calibrated_channel=ch).any("scanpos").isel(scanline_earth=Tb0.any("scanpos"))) |
+            (self._flags["scanline"].isel(scanline_earth=Tb0.any("scanpos"))) |
+            (self._flags["channel"].sel(calibrated_channel=ch).isel(scanline_earth=Tb0.any("scanpos")))).all():
+            idx0 = {"scanline_earth": Tb0.any("scanpos")}
+            flag_p = self._flags["pixel"].sel(calibrated_channel=ch).any("scanpos")[idx0]
+            flag_s = self._flags["scanline"][idx0]
+            flag_c = self._flags["channel"].sel(calibrated_channel=ch)[idx0]
+            flag_any = (flag_c.values!=0)|(flag_p.values!=0)|(flag_s.values!=0) 
+            logging.warning(
+                "Despite best efforts, after filtering outliers and "
+                "accounting for flagged data due to various problems and all "
+                "that, I still find {:d} scanlines for channel {:d} "
+                "where my T_b estimate is 0 but unflagged.  Perhaps outlier detection is "
+                "failing.  See #146.".format(int((~flag_any).sum()), ch))
+            # bad Earth:
+#            C_Earth.isel(time=Tb0.any("scanpos")).isel(time=~flag_any)
+#            raise ValueError("I ended up with unflagged T_b==0!")
+#
+
         if return_bt:
             return (rad_wn, T_b)
         else:

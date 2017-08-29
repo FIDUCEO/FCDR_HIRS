@@ -41,6 +41,7 @@ from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 import pyatmlab.graphics
 from .. import fcdr
+from .. import _fcdr_defs
 
 class FCDRMonitor:
     figname = ("fcdr_perf/{self.satname:s}_{tb:%Y}/ch{ch:d}/"
@@ -55,7 +56,7 @@ class FCDRMonitor:
         'u_from_Tstar', 'u_from_β', 'u_from_α', 'u_from_T_IWCT',
         'u_from_O_TIWCT', 'u_from_fstar', 'u_from_R_refl', 'u_from_C_E',
         "quality_scanline_bitmask", "quality_channel_bitmask",
-        "quality_minorframe_bitmask"]
+        "quality_minorframe_bitmask", "quality_pixel_bitmask"]
 
     def __init__(self, start_date, end_date, satname,
             version="0.7pre",):
@@ -70,7 +71,7 @@ class FCDRMonitor:
 
     def plot_timeseries(self, ch, sp=28):
         counter = itertools.count()
-        ds = self.ds.sel(calibrated_channel=ch, scanpos=sp)
+        ds = self.ds.sel(calibrated_channel=ch, scanpos=sp, minor_frame=sp)
         nrow = 7
         gs = matplotlib.gridspec.GridSpec(nrow, 4)
         fig = matplotlib.pyplot.figure(figsize=(18, 3*nrow))
@@ -99,15 +100,28 @@ class FCDRMonitor:
         c = next(counter)
         a_tb_ucmp = fig.add_subplot(gs[c, :3])
         a_tb_ucmp_h = fig.add_subplot(gs[c, 3])
-
-        dsu = ds[[x for x in ds.data_vars.keys() if x.startswith("u_from_")]]
-        self._plot_unc_comps(dsu, a_tb_ucmp, a_tb_ucmp_h)
         
+        bad = (
+            (ds["quality_scanline_bitmask"]&_fcdr_defs.FlagsScanline.DO_NOT_USE) |
+            (ds["quality_channel_bitmask"]&_fcdr_defs.FlagsChannel.DO_NOT_USE) |
+            (ds["quality_pixel_bitmask"]&_fcdr_defs.FlagsPixel.DO_NOT_USE)
+            )!=0
+        
+        # This doesn't work
+        # ds[["T_b","u_T_b_random","u_T_b_nonrandom"]][{"scanline_earth": bad}] = numpy.nan
+        for fld in {f for f in self.fields
+                    if f.startswith("u_")
+                    or f in {"T_b", "R_e"}}:
+            ds[fld].loc[{"scanline_earth": bad}] = numpy.nan
+
         self._plot_var_with_unc(
             ds["T_b"],
             ds["u_T_b_random"],
             ds["u_T_b_nonrandom"],
             a_tb, a_tb_h, a_tb_u, a_tb_u_h)
+
+        dsu = ds[[x for x in ds.data_vars.keys() if x.startswith("u_from_")]]
+        self._plot_unc_comps(dsu, a_tb_ucmp, a_tb_ucmp_h)
 
         # flags
         c = next(counter)
@@ -120,7 +134,7 @@ class FCDRMonitor:
         period = ("5min" if
             (ds["time"][-1]-ds["time"][0]).values.astype("m8[s]") < numpy.timedelta64(2, 'h')
             else "1H")
-        for f in ("scanline", "channel", "minorframe"):
+        for f in ("scanline", "channel", "minorframe", "pixel"):
             da = ds[f"quality_{f:s}_bitmask"]
             (perc, meanings) = common.sample_flags(da, period, "scanline_earth")
             perc_all.append(perc)

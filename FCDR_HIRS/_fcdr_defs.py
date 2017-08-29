@@ -380,6 +380,7 @@ class FlagsScanline(enum.IntFlag):
     SUSPECT_MIRROR_ANY = enum.auto()
     REDUCED_CONTEXT = enum.auto()
     UNCERTAINTY_SUSPICIOUS = enum.auto()
+    BAD_TEMP_NO_RSELF = enum.auto()
 
 @enum.unique
 class FlagsChannel(enum.IntFlag):
