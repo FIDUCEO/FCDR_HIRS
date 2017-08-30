@@ -74,7 +74,7 @@ class RSelf:
         if temperatures is not None:
             self.temperatures = temperatures
     
-    def get_predictor(self, ds, ch):
+    def get_predictor(self, ds, ch, recalculate_norm=False):
         """Get predictor (temperatures)
 
         This takes all lines, if you want to get training or testing only
@@ -96,7 +96,23 @@ class RSelf:
             [self.hirs.filter_prttemps.filter_outliers(v.values) for v in X.data_vars.values()])
         # fit in terms of X⁴ because that's closer to radiance than
         # temperature is.
-        Xn = ((X**4)-(X**4).isel(time=OK).mean("time"))/(X**4).isel(time=OK).std("time")
+        # if times constant then std dev should be zero (except it isn't:
+        # https://github.com/numpy/numpy/issues/9631), account for this
+        if recalculate_norm:
+            stdoffs = (X**4).isel(time=OK).mean("time")
+            stdnorm = (X**4).isel(time=OK).std("time")
+            # not sure if I can skip the loop on this one...
+            for k in X.data_vars.keys():
+                if X.isel(time=OK)[k].values.ptp() == 0:
+                    # norm doesn't matter much as the values should be all
+                    # (close to) zero anyway; there is no information in
+                    # this predictor.  The best thing would be to throw it
+                    # out but that's a bit beyond the responsibility of a
+                    # normalisation routine.  See #147
+                    stdnorm[k] = 1.0
+            self.norm_offset = stdoffs
+            self.norm_factor = stdnorm
+        Xn = ((X**4)-self.norm_offset)/self.norm_factor
 
         return Xn
 
@@ -219,7 +235,8 @@ class RSelf:
         #ds = self._subsel_calib(ds, ch)
         ix = self.hirs.extract_calibcounts_and_temp(
             ds, ch, return_ix=True)[-1]
-        X = self.get_predictor(ds.isel(time=ix), ch)
+        X = self.get_predictor(ds.isel(time=ix), ch,
+            recalculate_norm=True)
         Y = self.get_predictand(ds, ch)
         if numpy.isinf(Y).any():
             raise ValueError("Some offsets are infinite.  That probably "
@@ -273,7 +290,8 @@ class RSelf:
         self.fit_time = ds["time"].values[[0,-1]].astype("M8[ms]")
 
     def evaluate(self, ds, ch):
-        X = self.get_predictor(ds, ch)
+        X = self.get_predictor(ds, ch,
+            recalculate_norm=False)
 #        Y_ref = self.get_predictand(M, ch)
 #        (Xx, Yy) = self._ds2ndarray(X, Y_ref)
         Xx = self._ds2ndarray(X, dropna=False)
