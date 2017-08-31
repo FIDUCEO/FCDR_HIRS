@@ -225,6 +225,9 @@ class FCDRMonitor:
     def _plot_var_with_unc(self, da, da_rand, da_nonrand, a, a_h, a_u, a_u_h):
         unit = ureg(da.units).u
         name = getattr(da.attrs, "long_name", da.name)
+        if da.isnull().all():
+            logging.error("All nans :(")
+            return
         da.plot(ax=a)
         da.plot.hist(ax=a_h)
         a.set_xlabel("Time")
@@ -246,6 +249,8 @@ class FCDRMonitor:
         # take 8 largest
         for k in [x[-1] for x in sorted([(x.mean(), k) for (k, x) in ds.data_vars.items()])[-1:-n-1:-1]]:
             da = ds[k]
+            if da.isnull().all():
+                continue
             da.plot(ax=a, label=k[7:])
             da.plot.hist(ax=a_h, label=k[7:], histtype="step")
 
@@ -260,6 +265,9 @@ class FCDRMonitor:
     def _plot_hexbin(self, da, Δda, a):
         unit = ureg(da.units).u
         name = getattr(da.attrs, "long_name", da.name)
+        if da.isnull().all():
+            logging.error("still all nans ☹")
+            return
         hb = a.hexbin(da, Δda, gridsize=50, cmap="viridis", mincnt=1,
             marginals=False)
         a.set_xlabel("{name:s}\n[{unit:~}]".format(name=name, unit=unit))
