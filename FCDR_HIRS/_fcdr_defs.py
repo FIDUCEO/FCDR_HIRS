@@ -397,6 +397,7 @@ class FlagsMinorFrame(enum.IntFlag):
 class FlagsPixel(enum.IntFlag):
     DO_NOT_USE = enum.auto()
     OUTLIER_NOS = enum.auto()
+    UNCERTAINTY_TOO_LARGE = enum.auto()
 
 #FCDR_data_vars_props["quality_scanline_bitmask"][2]["flag_masks"] = ", ".join(str(int(v)) for v in FlagsScanline.__members__.values())
 FCDR_data_vars_props["quality_scanline_bitmask"][2]["flag_masks"] = [

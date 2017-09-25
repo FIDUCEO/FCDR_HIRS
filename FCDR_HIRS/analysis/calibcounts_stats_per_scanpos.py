@@ -241,7 +241,7 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
         h.satname, typ, "anomalies" if anomaly else "values"))
 
     pyatmlab.graphics.print_or_show(f, False,
-        "{:s}_{:s}_calib_{:s}_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}_{:s}.png".format(
+        "{:s}_{:s}_calib_{:s}_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}_{:s}.".format(
             typ, mode, "anomalies" if anomaly else "values", h.satname,
             M["time"][idx[0]].astype(datetime.datetime),
             M["time"][idx[-1]].astype(datetime.datetime), N,
@@ -264,7 +264,7 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
                   "{sat:s} {from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}".format(
                     **locals()),
             filename="hirs_calib_per_scanpos_{sat:s}_{from_date:%Y%m%d%H%M}-"
-                     "{to_date:%Y%m%d%H%M}_{ch:s}.png".format(
+                     "{to_date:%Y%m%d%H%M}_{ch:s}.".format(
                             ch=",".join([str(x) for x in channels]), **locals()))
     if plot_examples > 0:
         numpy.random.seed(random_seed)

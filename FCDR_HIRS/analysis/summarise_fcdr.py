@@ -58,6 +58,12 @@ from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 import pyatmlab.graphics
 from .. import fcdr
 
+labels = dict(
+    u_C_Earth = "noise [counts]")
+
+titles = dict(
+    u_C_Earth = "counts noise")
+
 class FCDRSummary(HomemadeDataset):
     name = section = "fcdr_hirs_summary"
 
@@ -80,7 +86,7 @@ class FCDRSummary(HomemadeDataset):
     read_returns = "xarray"
     plot_file = ("hirs_summary/"
         "FCDR_hirs_summary_{satname:s}_ch{channel:d}_{start:%Y%m%d}-{end:%Y%m%d}"
-        "v{data_version:s}.png")
+        "v{data_version:s}.")
 
     def __init__(self, *args, satname, **kwargs):
         super().__init__(*args, satname=satname, **kwargs)
@@ -144,6 +150,9 @@ class FCDRSummary(HomemadeDataset):
             nrows=len(fields), ncols=1, squeeze=False)
         summary = self.read_period(start, end, locator_args={"data_version": "v"+self.data_version})
         #fields = ["T_b", "u_T_b_random", "u_T_b_nonrandom"]
+        total_title = (f"HIRS {self.satname:s} ch {channel:d} "
+                       f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
+
         for field in ("u_T_b_random", "u_R_Earth_random", "u_C_Earth"):
             summary[field] *= numpy.sqrt(48) # workaround #125, remove after fix
         for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
@@ -153,11 +162,19 @@ class FCDRSummary(HomemadeDataset):
                     ax=a, label=str(ptile), linestyle=ls, color="black")
 #            summary[fld].sel(channel=channel).T.plot.pcolormesh(
 #                ax=a, vmin=200 if fld=="T_b" else 0)
-            a.set_title(f"{fld:s}")
+            if len(fields) > 1: # more than one subplot
+                a.set_title(titles.get(fld, f"{fld:s}"))
+            else:
+                if fld in titles.keys():
+                    a.set_title(total_title + ", " + titles[fld])
+                else:
+                    a.set_title(total_title)
+            if fld in labels.keys():
+                a.set_ylabel(labels[fld])
             if len(ptiles) > 1:
                 a.legend([f"p-{p:d}" for f in ptiles])
-        f.suptitle(f"HIRS {self.satname:s} ch {channel:d} "
-            f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
+        if len(fields) > 1:
+            f.suptitle(total_title)
         f.autofmt_xdate()
         pyatmlab.graphics.print_or_show(f, None, 
             self.plot_file.format(satname=self.satname, start=start,

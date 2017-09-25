@@ -296,13 +296,16 @@ class NoiseAnalyser:
     fte = 0.67
     fhs = 0.73
 #@profile
+
     def __init__(self, start_date, end_date, satname, temp_fields={"iwt",
                         "fwh", "fwm"}):
         self.hirs = fcdr.which_hirs_fcdr(satname)
         self.satname = satname
         hrsargs=dict(
                 fields=["hrs_scnlin", self.hirs.scantype_fieldname, "time",
-                        "counts", "calcof_sorted", "radiance"] +
+                        "counts", "calcof_sorted", "radiance",
+                        "bt",
+                        "radiance_fid_naive"] +
                        ["temp_{:s}".format(f) for f in
                        set(temp_fields) | {"iwt"}],
                 locator_args=dict(satname=self.satname),
@@ -327,7 +330,9 @@ class NoiseAnalyser:
             while dt < end_date: 
                 step = datetime.timedelta(days=1)
                 try:
-                    Miasi = self.hiasi.read_period(dt, dt+step, NO_CACHE=True)
+                    Miasi = self.hiasi.read_period(dt, dt+step,
+                        NO_CACHE=True,
+                        enforce_no_duplicates=False)
                 except typhon.datasets.dataset.DataFileError:
                     logging.info("No IASI found in "
                         "[{:%Y-%m-%d %H:%M}-{:%Y-%m-%d %H:%M}]".format(
@@ -857,7 +862,7 @@ class NoiseAnalyser:
         if self.Lhiasi is not None:
             C = next(self.counter)
 
-            Lhrs = ureg.Quantity(self.Mhrscmb["radiance_fid"][..., ch-1],
+            Lhrs = ureg.Quantity(self.Mhrscmb["radiance_fid_naive"][..., ch-1],
                 typhon.physics.units.common.radiance_units["ir"])
             dL = Lhrs - self.Lhiasi[:, ch-1]
             ΔRselfint, = self.hirs.interpolate_between_calibs(
@@ -1019,7 +1024,7 @@ class NoiseAnalyser:
                 linestyles=self.linestyles,
                 linewidth=1.5)
 
-            if (~med_gain.mask).sum() > 5:
+            if include_gain and (~med_gain.mask).sum() > 5:
                 rng[1] = scipy.stats.scoreatpercentile(med_gain[~med_gain.mask], [1, 99])
                 imgn = agn.hexbin(xt, med_gain.m,
                     gridsize=20,
@@ -1039,7 +1044,8 @@ class NoiseAnalyser:
             if i == 0:
                 asc.set_ylabel("Space counts")
                 aad.set_ylabel("Space Allan dev.\n[counts]")
-                agn.set_ylabel("Gain\n[{:~}]".format(med_gain.u))
+                if include_gain:
+                    agn.set_ylabel("Gain\n[{:~}]".format(med_gain.u))
             else:
                 # keep the grid but share ylabel with leftmost
                 for a in a_h2d:
@@ -1092,7 +1098,12 @@ class NoiseAnalyser:
         if include_gain:
             pos = acad.get_position()
             acgn = self.fig.add_axes([pos.x0, pos.y0-pos.height, pos.width, pos.height])
-        for (a, im) in zip((acsc, acad, acgn), (imsc, imad, imgn)):
+            ac_all = (acsc, acad, acgn)
+            im_all = (imsc, imad, imgn)
+        else:
+            ac_all = (acsc, acad)
+            im_all = (imsc, imad)
+        for (a, im) in zip(ac_all, im_all):
             if im is not None:
                 cb = self.fig.colorbar(im, cax=a)
                 allcb.append(cb)

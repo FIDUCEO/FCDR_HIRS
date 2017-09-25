@@ -160,7 +160,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 lambda M, D:
                 self.calculate_radiance_all(
                     M[1] if isinstance(M, tuple) else M, 
-                    return_ndarray=True),
+                    return_ndarray=True,
+                    naive=True),
                 cond)
             self.my_pseudo_fields["bt_fid_naive"] = (["radiance_fid_naive"],
                 self.calculate_bt_all,
@@ -660,7 +661,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             da.encoding = q.encoding
             self._effects_by_name[name].magnitude = da
 
-    def calculate_offset_and_slope(self, ds, ch, srf=None, tuck=False):
+    def calculate_offset_and_slope(self, ds, ch, srf=None, tuck=False,
+            naive=False):
         """Calculate offset and slope.
 
         Arguments:
@@ -731,7 +733,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # This will cause slope to be inf, and slope * counts_space to be
         # nan.  There should be no other possible way for getting nans in
         # offset.
-        if not numpy.array_equal((counts_space.values == 0) &
+        if not naive and not numpy.array_equal((counts_space.values == 0) &
                                  (counts_iwct.values == 0),
                                  numpy.isnan(offset)):
             raise ValueError("Problematic data propagating unexpectedly. "
@@ -741,7 +743,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "appears to be something else going on here. "
                 "I cannot proceed like this, please investigate what's "
                 "going on and handle it properly.")
-        elif numpy.isnan(offset).any():
+        elif not naive and numpy.isnan(offset).any():
             logging.warn("Found cases where counts_space == counts_iwct == 0.  "
                 "Setting both slope and offset to inf (instead of nan).")
             offset.values[numpy.isnan(offset)] = numpy.inf
@@ -793,7 +795,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def calculate_radiance(self, ds, ch, srf=None,
                 context=None,
                 Rself_model=None,
-                Rrefl_model=None, tuck=False, return_bt=False):
+                Rrefl_model=None, tuck=False, return_bt=False,
+                naive=False):
         """Calculate FIDUCEO radiance for channel
 
         Apply the measurement equation to calculate the calibrated FIDUCEO
@@ -867,7 +870,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         dsix = self.within_enough_context(ds, context, ch, 1)
         n_within_context = ds.loc[dsix]["time"].size
-        if 0 < n_within_context < ds["time"].size:
+        if 0 < n_within_context < ds["time"].size and not naive:
             logging.warning("It appears that, despite best efforts, "
                 "the context does not sufficiently cover the period "
                 "for which the FCDR is to be calculated.  I want to "
@@ -1002,7 +1005,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # just the ds period.  Should take this into account with later
             # processing.
             (time, offset, slope, a2) = self.calculate_offset_and_slope(
-                context, ch, srf, tuck=tuck)
+                context, ch, srf, tuck=tuck, naive=naive)
             
             if not numpy.array_equal(numpy.isfinite(offset),
                                      numpy.isfinite(slope)):
@@ -1083,27 +1086,37 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             else:
                 raise RuntimeError("This should never happen again")
                 # check version history to see what was here before
-            self._flags["channel"].sel(
-                calibrated_channel=ch)[
-                {"scanline_earth":
-                 xarray.DataArray(
-                    interp_bad_modes["zero"].astype(numpy.bool_),
-                    dims=("time",),
-                    coords={
-                        "time":
-                         ds.coords["time"]}
-                ).sel(time=C_Earth.coords["time"]).values
-                }] |= (
-                _fcdr_defs.FlagsChannel.DO_NOT_USE |
-                _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
+            if not naive:
+                # in naive mode, interp_bad_modes["zero"] will contain
+                # nans, then .astype(numpy.bool_) will turn it into an
+                # object array, either way boolean indexing will fail
+                # but in naive mode we don't need flags so let's just skip
+                # it.
+                # NB: this may also happen if there's insufficient
+                # context?
+                self._flags["channel"].sel(
+                    calibrated_channel=ch)[
+                    {"scanline_earth":
+                     xarray.DataArray(
+                        interp_bad_modes["zero"].astype(numpy.bool_),
+                        dims=("time",),
+                        coords={
+                            "time":
+                             ds.coords["time"]}
+                    ).sel(time=C_Earth.coords["time"]).values
+                    }] |= (
+                    _fcdr_defs.FlagsChannel.DO_NOT_USE |
+                    _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
             # might be attractive to do "linear" here, but no: that would
             # complicate the uncertainty propagation, for which zero-order
-            # interpolation occurs in _make_dims_consistent
+            # interpolation occurs in _make_dims_consistent.
+            # And in naive mode I certainly want to have 'zero'.
             interp_slope = interp_slope_modes["zero"]
             # may be overwritten but this is so I carry out the right check;
             # should not be set to cubic here...
             interp_offset = interp_offset_modes["zero"]
-            if not numpy.isfinite(interp_offset).all() or not numpy.isfinite(interp_slope).all():
+            if not naive and (not numpy.isfinite(interp_offset).all() or
+                              not numpy.isfinite(interp_slope).all()):
                 if not numpy.array_equal(numpy.isfinite(interp_offset),
                                          numpy.isfinite(interp_slope)):
                     raise ValueError("There's nans in slope or offset but "
@@ -1176,7 +1189,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 # calibration cycles, and include an uncertainty corresponding
                 # to the difference between linear and zero-order
                 # interpolation.
-                interp_offset = interp_offset_modes["cubic"]
+                interp_offset = interp_offset_modes["zero" if naive else "cubic"]
                 Rself = UADA(numpy.zeros(shape=C_Earth["time"].shape),
                              coords=C_Earth["time"].coords,
                              name="Rself", attrs={"units":   
@@ -1371,7 +1384,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 context=None,
                 Rself_model=None,
                 Rrefl_model=None,
-                return_ndarray=False):
+                return_ndarray=False,
+                naive=False):
         """Calculate radiances for all channels
 
         See calculate_radiance for documentation on inputs.
@@ -1402,7 +1416,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         (all_rad, all_bt) = zip(*[self.calculate_radiance(ds, ch, 
                 context=context, Rself_model=Rself_model,
-                Rrefl_model=Rrefl_model, tuck=True, return_bt=True)
+                Rrefl_model=Rrefl_model, tuck=True, return_bt=True,
+                naive=naive)
             for ch in range(1, 20)])
         da = xarray.concat(all_rad, dim="calibrated_channel")
         da.encoding = all_rad[0].encoding

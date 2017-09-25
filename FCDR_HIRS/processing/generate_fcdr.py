@@ -49,7 +49,7 @@ Change estimate for ε=1 to ε=0.98 (or rather, a_3=0 to a_3=-0.02)
 Added bias term a_4 (debug only)
 Added handling of flags
 
-0.7 (in development)
+0.7
 
 Correct time axis for uncertainties per calibration cycle, preventing half
 the values being nans (debug version only)
@@ -78,6 +78,7 @@ Changed approach to flags:
 - Copy over/consolidate mirror flag.  Since the easy FCDR does not contain
   a flag per minor frame, the entire scanline is flagged if there is any
   mirror flag for any minor frame anywhere on the scanline.
+- Added more flags to both easy and debug versions
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -151,7 +152,7 @@ class FCDRGenerator:
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
     skip_problem_step = datetime.timedelta(seconds=900)
-    data_version = "0.7pre"
+    data_version = "0.7"
     # see comment in models.Rself
     rself_temperatures = ["baseplate", "internal_warm_calibration_target",
         "scanmirror", "scanmotor", "secondary_telescope"]
@@ -407,6 +408,10 @@ class FCDRGenerator:
                 ds[cn].encoding.update(self.fcdr._data_vars_props[cn][3])
         ds = self.add_attributes(ds)
         ds = common.time_epoch_to(ds, self.epoch)
+
+        # set uncertainty flag when extended uncertainty larger than value
+        ds["quality_pixel_bitmask"].values[((2*ds["u_R_Earth"]) > ds["R_e"]).transpose(*ds["quality_pixel_bitmask"].dims).values] |= _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
+
         return ds
 
     def add_attributes(self, ds):
@@ -553,7 +558,7 @@ class FCDRGenerator:
                 )
 #            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
 #            u_non_random=UADA(piece["u_R_Earth_nonrandom"]).to(rad_u["ir"], "radiance"))
-        
+
         if self.fcdr.version >= 3:
             newcont.update(
 #                linqualflags=piece["line_quality_flags"].sel(time=t_earth),
@@ -609,6 +614,10 @@ class FCDRGenerator:
             for (kk, vv) in v[1].encoding.items():
                 if kk not in easy[k].encoding:
                     easy[k].encoding[kk] = vv
+
+        easy["quality_channel_bitmask"].values[(piece["quality_pixel_bitmask"] &
+            _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos")] |= \
+            _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
                 
         easy.attrs.update(piece.attrs)
 

@@ -469,7 +469,7 @@ class MatrixPlotter:
             "({:d} cycles)".format(
             self.title_sat_date, noise_typ, calibpos, no))
         pyatmlab.graphics.print_or_show(f, False,
-                "hirs_noise_correlations_channels_{:s}_ch_{:s}_{:s}{:d}.png".format(
+                "hirs_noise_correlations_channels_{:s}_ch_{:s}_{:s}{:d}.".format(
             self.filename_sat_date,
             ",".join(str(ch) for ch in channels),
             noise_typ, calibpos))
