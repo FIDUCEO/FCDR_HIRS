@@ -424,8 +424,8 @@ class FCDRGenerator:
         """
         #pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
         ds.attrs.update(
-            author="Gerrit Holl",
-            email="g.holl@reading.ac.uk",
+            author="Gerrit Holl and the FIDUCEO team",
+            email="fiduceo-coordinator@lists.reading.ac.uk",
             title="HIRS FCDR",
             satellite=self.satname,
             url="http://www.fiduceo.eu/",
@@ -616,7 +616,7 @@ class FCDRGenerator:
                     easy[k].encoding[kk] = vv
 
         easy["quality_channel_bitmask"].values[(piece["quality_pixel_bitmask"] &
-            _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos")] |= \
+            _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |= \
             _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
                 
         easy.attrs.update(piece.attrs)
