@@ -2089,7 +2089,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         da.name = "channel_correlation_matrix"
         da.attrs = self._data_vars_props[da.name][2]
         da.encoding = self._data_vars_props[da.name][3]
-        da.note = "covers only crosstalk effect"
+        da.attrs["note"] = "covers only crosstalk effect"
         return da
 
     def get_BT_to_L_LUT(self):

@@ -355,7 +355,8 @@ class FCDRGenerator:
                                        attrs=dict(units="K"))
                     for (k, v) in unc_components.items()
                     if v.size>1})
-            uTb_syst = uTb_rand = uTb
+            uTb_syst = uTb.copy()
+            uTb_rand = uTb.copy()
         else:
             uTb = self.fcdr.numerically_propagate_ΔL(R_E, uRe)
             u_from = xarray.Dataset(
