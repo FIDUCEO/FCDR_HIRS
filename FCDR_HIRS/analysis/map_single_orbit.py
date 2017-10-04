@@ -87,11 +87,11 @@ class OrbitPlotter:
             cax_all[ch].append(cax)
             if c==0:
                 ax.text(-0.2, 0.5, f"Ch. {ch:d}", transform=ax.transAxes)
-        ax_all[1][0].set_title("BT")
-        ax_all[1][1].set_title("Independent uncertainty")
-        ax_all[1][2].set_title("Structured uncertainty")
-        ax_all[1][3].set_title("Quality channel bitmask")
-        ax_all[1][4].set_title("Quality scanline bitmask")
+        ax_all[channels[0]][0].set_title("BT")
+        ax_all[channels[0]][1].set_title("Independent uncertainty")
+        ax_all[channels[0]][2].set_title("Structured uncertainty")
+        ax_all[channels[0]][3].set_title("Quality channel bitmask")
+        ax_all[channels[0]][4].set_title("Quality scanline bitmask")
 
         return (f, ax_all, cax_all)
 
@@ -100,17 +100,17 @@ class OrbitPlotter:
         # FIXME: only get rid when invalid
         ok = ((ds["quality_channel_bitmask"]==0) & (ds["quality_scanline_bitmask"]==0))
         dsx = ds.sel(channel=ch).isel(y=ok.sel(channel=ch))
-        lons = dsx["longitude"].values
-        lats = dsx["latitude"].values
-        trans = ax_all[0].projection.transform_points(cartopy.crs.Geodetic(), lons, lats)
-        t0 = trans[:, :, 0]
-        t1 = trans[:, :, 1]
         if dsx.dims["y"] < 5:
             logging.warning(f"Skipping channel {ch:d}, only {dsx.dims['y']:d} valid scanlines")
             ax_all[0].clear()
             ax_all[1].clear()
             ax_all[2].clear()
         else:
+            lons = dsx["longitude"].values
+            lats = dsx["latitude"].values
+            trans = ax_all[0].projection.transform_points(cartopy.crs.Geodetic(), lons, lats)
+            t0 = trans[:, :, 0]
+            t1 = trans[:, :, 1]
             self._plot_to(ax_all[0], cax_all[0], t0, t1, dsx["bt"].values,
                 "BT [K]")
             self._plot_to(ax_all[1], cax_all[1], t0, t1, dsx["u_random"].values,
