@@ -48,15 +48,16 @@ from .. import fcdr
 
 class OrbitPlotter:
     def __init__(self, f, channels):
+        self.path = pathlib.Path(f)
         self.ds = xarray.open_dataset(f)
         (fig, ax_all, cax_all) = self.prepare_figure_and_axes(channels)
         self.fig = fig
         self.ax_all = ax_all
+        self.channels = channels
         for ch in channels:
             self.plot_channel(ch, ax_all[ch], cax_all[ch])
 #        pyatmlab.graphics.print_or_show(
 #            f, False, filename)
-        self.path = pathlib.Path(f)
 
     def prepare_figure_and_axes(self, channels):
         ncol = 5
@@ -80,8 +81,6 @@ class OrbitPlotter:
                 gs[(r*10):(r+1)*10, c*16:(c+1)*16],
                 projection=proj) # passing the projection makes it a GeoAxes
             ax.coastlines()
-            # FIXME: place text to the left
-#            ax.set_title(f"Ch. {ch:d}")
             cax = f.add_subplot(gs[(r*10):(r+1)*10, (c+1)*16-1])
             ax_all[ch].append(ax)
             cax_all[ch].append(cax)
@@ -92,13 +91,14 @@ class OrbitPlotter:
         ax_all[channels[0]][2].set_title("Structured uncertainty")
         ax_all[channels[0]][3].set_title("Quality channel bitmask")
         ax_all[channels[0]][4].set_title("Quality scanline bitmask")
+        f.suptitle(self.path.stem)
 
         return (f, ax_all, cax_all)
 
     def plot_channel(self, ch, ax_all, cax_all):
         ds = self.ds
-        # FIXME: only get rid when invalid
-        ok = ((ds["quality_channel_bitmask"]==0) & (ds["quality_scanline_bitmask"]==0))
+        ok = (((ds["quality_channel_bitmask"].astype("uint8")&1)==0) &
+              ((ds["quality_scanline_bitmask"].astype("uint8")&1)==0))
         dsx = ds.sel(channel=ch).isel(y=ok.sel(channel=ch))
         if dsx.dims["y"] < 5:
             logging.warning(f"Skipping channel {ch:d}, only {dsx.dims['y']:d} valid scanlines")
@@ -126,8 +126,6 @@ class OrbitPlotter:
         trans = ax_all[0].projection.transform_points(cartopy.crs.Geodetic(), lons, lats)
         t0 = trans[:, :, 0]
         t1 = trans[:, :, 1]
-        # FIXME: flags need to plotted as discrete categories.  A linear
-        # or even logarithmic scale makes no sense.
         self.plot_bitfield(ax_all[3], cax_all[3], t0, t1,
             ds["quality_channel_bitmask"].sel(channel=ch),
             "Quality channel bitmask")
@@ -186,13 +184,17 @@ class OrbitPlotter:
                 cmap="Set3",
                 cax=cax,
                 pcolor_args=dict(transform=ax.projection), 
-                colorbar_args=dict(orientation="vertical"))
+                colorbar_args=dict(orientation="vertical"),
+                joiner=",\n")
 
     def write(self):
         p = self.path
         pyatmlab.graphics.print_or_show(
             self.fig, False,
-            "orbitplots/" + str((p.relative_to(p.parents[3]).parent / p.stem)) + ".png")
+            "orbitplots/"
+            + str((p.relative_to(p.parents[3]).parent / p.stem))
+            + "_ch" + ",".join(str(ch) for ch in self.channels)
+            + ".png")
 
 def main():
     p = parse_cmdline()
