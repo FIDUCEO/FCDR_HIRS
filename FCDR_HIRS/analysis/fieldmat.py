@@ -146,19 +146,19 @@ class _SatPlotHelper(metaclass=abc.ABCMeta):
     """
 
     @abc.abstractmethod
-    def prepare_early(self, mp):
+    def prepare_early(self, mp, **extra):
         ...
 
     @abc.abstractmethod
-    def prepare_late(self, mp):
+    def prepare_late(self, mp, **extra):
         ...
 
     @abc.abstractmethod
-    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp):
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, **extra):
         ...
 
     @abc.abstractmethod
-    def finalise(self, mp):
+    def finalise(self, mp, f, gs, **extra):
         ...
 #
 class _SatPlotChCorrmat(_SatPlotHelper):
@@ -210,60 +210,98 @@ class _SatPlotFFT(_SatPlotHelper):
     """For plotting FFT stuff
     """
 
-    def __init__(self, channel):
-        self.n = 2**6
-        self.channel = channel
+    def __init__(self):#, channel):
+        #self.n = 2**6
+        self.n = 48
+        #self.channel = channel
+        self.early_spc = {}
+        self.early_iwctc = {}
+        self.early_ec = {}
+        self.early_cnt = {}
+        self.late_spc = {}
+        self.late_iwctc = {}
+        self.late_ec = {}
+        self.late_cnt = {}
 
-    def _extract_counts(self, mp):
-        spc = mp._get_accnt("space")[:, :, self.channel-1]
+    def _extract_counts(self, mp, channel):
+        spc = mp._get_accnt("space")[:, :, channel-1]
         spc = spc[(~spc.mask).all(1), :]
-        ec = mp._get_accnt("Earth")[:, :, self.channel-1]
+        iwctc = mp._get_accnt("iwt")[:, :, channel-1]
+        iwctc = iwctc[(~iwctc.mask).all(1), :]
+        ec = mp._get_accnt("Earth")[:, :, channel-1]
         ec = ec[(~ec.mask).all(1), :]
-        return (spc, ec)
+        return (spc, iwctc, ec)
 
-    def prepare_early(self, mp):
-        (spc, ec) = self._extract_counts(mp)
-        self.early_spc = spc
-        self.early_ec = ec
-        self.ecnt = spc.shape[0]
+    def prepare_early(self, mp, channel):
+        (spc, iwctc, ec) = self._extract_counts(mp, channel)
+        self.early_spc[channel] = spc
+        self.early_iwctc[channel] = iwctc
+        self.early_ec[channel] = ec
+        self.early_cnt[channel] = spc.shape[0]
 
-    def prepare_late(self, mp):
-        (spc, ec) = self._extract_counts(mp)
-        self.late_spc = spc
-        self.late_ec = ec
-        self.lcnt = spc.shape[0]
+    def prepare_late(self, mp, channel):
+        (spc, iwctc, ec) = self._extract_counts(mp, channel)
+        self.late_spc[channel] = spc
+        self.late_iwctc[channel] = iwctc
+        self.late_ec[channel] = ec
+        self.late_cnt[channel] = spc.shape[0]
 
-    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp):
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, channel):
         """Plot FFT for calibration counts and Earth views
         """
 
         n = self.n
 
         # 0.1 seconds between observations (NOAA KLM User's Guide, Appendix)
-        x = numpy.fft.fftfreq(n, d=0.1)
+        #x = numpy.fft.fftfreq(n, d=0.1)
+        # rather do pixels than seconds (feedback CM)
+        x = numpy.fft.fftfreq(n, d=1)
 
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.early_spc, axis=1, n=n)[:, 1:n//2]).mean(0),
+            abs(numpy.fft.fft(self.early_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            color="cyan",
             label="early, space")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.early_ec, axis=1, n=n)[:, 1:n//2]).mean(0),
+            abs(numpy.fft.fft(self.early_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            color="tan",
             label="early, Earth")
+        ax.plot(
+            x[1:n//2],
+            abs(numpy.fft.fft(self.early_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            color="red",
+            label="early, IWCT")
 
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.late_spc, axis=1, n=n)[:, 1:n//2]).mean(0),
+            abs(numpy.fft.fft(self.late_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            color="cyan",
+            linestyle="--",
             label="late, space")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.late_ec, axis=1, n=n)[:, 1:n//2]).mean(0),
+            abs(numpy.fft.fft(self.late_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            color="tan",
+            linestyle="--",
             label="late, Earth")
+        ax.plot(
+            x[1:n//2],
+            abs(numpy.fft.fft(self.late_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            color="red",
+            linestyle="--",
+            label="late, IWCT")
 
         ax.set_xscale("log")
         ax.set_yscale("log")
+        xpos = [48, 24, 12, 6, 3]
+        ax.set_xticks([1/x for x in xpos])
+        ax.grid(axis="both")
         if r==3:
-            ax.set_xlabel("Frequency [1/s]")
+            ax.set_xlabel("Frequency [cycles/pixel]")
+            #ax.set_xscale('log')
+            #ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+            ax.set_xticklabels([fr"$\frac{{1}}{{{x:d}}}$" for x in xpos])
         else:
             ax.set_xticklabels([])
         if c==0:
@@ -274,16 +312,16 @@ class _SatPlotFFT(_SatPlotHelper):
             ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
             #ax.legend()
         ax.set_title(f"{sat:s}\n"
-                     f"{ep[0]:%Y-%m}, {self.ecnt:d} cycles\n"
-                     f"{lp[0]:%Y-%m}, {self.lcnt:d} cycles")
-        ax.set_ylim([5e0, 5e3])
+                     f"{ep[0]:%Y-%m}, {self.early_cnt[channel]:d} cycles\n"
+                     f"{lp[0]:%Y-%m}, {self.late_cnt[channel]:d} cycles")
+        ax.set_ylim([1e0, 1e4])
 
-    def finalise(self, mp, f, gs):
+    def finalise(self, mp, f, gs, channel):
         gs.update(wspace=0.10, hspace=0.4)
-        f.subplots_adjust(right=0.8, bottom=0.2)
-        f.suptitle(f"Spectral analysis, channel {self.channel:d}")
+        f.subplots_adjust(right=0.8, bottom=0.2, top=0.90)
+        f.suptitle(f"Spectral analysis, channel {channel:d}")
         pyatmlab.graphics.print_or_show(f, False,
-            f"hirs_crosstalk_fft.")
+            f"hirs_crosstalk_fft_ch{channel:d}.")
 
 class _SatPlotAll(_SatPlotChCorrmat, _SatPlotFFT):
     def __init__(self, *args, **kwargs):
@@ -615,47 +653,28 @@ class MatrixPlotter:
         if sats == "all":
             sats = self.all_sats
 
-        f = matplotlib.pyplot.figure(figsize=(22, 24))
+        f_all = {}
+        for ch in range(1, 20):
+            f_all[ch] = matplotlib.pyplot.figure(figsize=(22, 24))
         gs = matplotlib.gridspec.GridSpec(20, 21)
         for ((r, c), sat) in zip(itertools.product(range(4), range(4)), sats):
-#            h = tovs.which_hirs(sat)
-            # early month in lower
             ep = period_pairs[sat][0]
             lp = period_pairs[sat][1]
-
             self.reset(sat, *ep)
-            plotter.prepare_early(self)
-#            (S, ρ, ecnt) = self._get_ch_corrmat(channels, noise_typ,
-#                calibpos)
-#            S_low = numpy.tril(S, k=-1)
+            for ch in range(1, 20):
+                plotter.prepare_early(self, ch)
             self.reset(sat, *lp)
-            plotter.prepare_late(self)
-#            (S, ρ, lcnt) = self._get_ch_corrmat(channels, noise_typ,
-#                calibpos)
-#            S_hi = numpy.triu(S, k=1)
-            #
-            ax = f.add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
-            plotter.plot_both(self, ax, gs, sat, r, c, ep, lp)
-#            im = self._plot_ch_corrmat(S_low+S_hi+numpy.diag(numpy.zeros(channels.size)*numpy.nan),
-#                                  ax, channels, add_x=r==3, add_y=c==0)
-#            if r==c==0:
-#                cax = f.add_subplot(gs[:-1, -1])
-#                cb = f.colorbar(im, cax=cax)
-#                cb.set_label("Pearson product-moment correlation coefficient")
-#            ax.set_title(f"{sat:s}\n"
-#                         f"{ep[0]:%Y-%m}, {ecnt:d} cycles\n"
-#                         f"{lp[0]:%Y-%m}, {lcnt:d} cycles")
-
-        plotter.finalise(self, f, gs)
-#        gs.update(wspace=0.10, hspace=0.4)
-#        f.suptitle("HIRS noise correlations for all HIRS, pos "
-#                  f"{calibpos:d} ", fontsize=40)
-#        pyatmlab.graphics.print_or_show(f, False,
-#            f"hirs_noise_correlations_allsats_pos{calibpos:d}.")
+            for ch in range(1, 20):
+                plotter.prepare_late(self, ch)
+            for ch in range(1, 20):
+                ax = f_all[ch].add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
+                plotter.plot_both(self, ax, gs, sat, r, c, ep, lp, ch)
+        for ch in range(1, 20):
+            plotter.finalise(self, f_all[ch], gs, ch)
 
     def plot_crosstalk_ffts_all_sats(self):
         self.plot_all_sats_early_late(
-            _SatPlotFFT(5),
+            _SatPlotFFT(),
             sats="all")
 
     def plot_ch_corrmat_all_sats_b(self, channels, noise_typ, calibpos,
