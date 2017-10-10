@@ -44,7 +44,7 @@ import cartopy.crs
 import typhon.plots.plots
 
 import pyatmlab.graphics
-from .. import fcdr
+#from .. import fcdr
 
 class OrbitPlotter:
     def __init__(self, f, channels):
@@ -67,8 +67,8 @@ class OrbitPlotter:
         f = matplotlib.pyplot.figure(
             figsize=(5*(ncol+1),2.5*(nrow+1)))
         gs = matplotlib.gridspec.GridSpec(10*nrow, 16*ncol+1)
-        proj = cartopy.crs.Mollweide(central_longitude=90)
-        #proj = cartopy.crs.Mollweide(central_longitude=self.ds["latitude"].isel(x=0).sel(y=28)+90)
+        #proj = cartopy.crs.Mollweide(central_longitude=90)
+        proj = cartopy.crs.Mollweide(central_longitude=int(self.ds["latitude"].isel(y=0).sel(x=28)+0))
 
         ax_all = {ch: [] for ch in channels}
         cax_all = copy.deepcopy(ax_all)

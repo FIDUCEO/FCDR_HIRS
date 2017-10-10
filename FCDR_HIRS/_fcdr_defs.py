@@ -331,8 +331,8 @@ FCDR_easy_encodings = dict(
 #    mnfrqualflags = _u1_coding,
     quality_scanline_bitmask = _u1_coding,
     quality_channel_bitmask = _u1_coding,
-    u_random = _temp_coding.copy(),
-    u_non_random = _temp_coding.copy(),
+    u_independent = _temp_coding.copy(),
+    u_structured = _temp_coding.copy(),
     # and the dimensions/coordinates
     channel = _u1_coding,
     #rad_channel = _u1_coding,
@@ -344,7 +344,7 @@ FCDR_easy_encodings = dict(
 )
 
 # this should ensure #70 as long as u>0.01K
-for v in ("u_random", "u_non_random"):
+for v in ("u_independent", "u_structured"):
     FCDR_easy_encodings[v]["dtype"] = "u4"
     FCDR_easy_encodings[v]["scale_factor"] = 0.001
 
@@ -362,10 +362,10 @@ FCDR_extra_attrs = dict(
          "units": "dimensionless",
          "valid_range": [1, 20],
          "note": "channel 20 not calibrated by FIDUCEO"},
-    u_random =
-        {"long_name": "uncertainty from random errors"},
-    u_non_random =
-        {"long_name": "uncertainty from non-random errors",
+    u_independent =
+        {"long_name": "uncertainty from independent errors"},
+    u_structured =
+        {"long_name": "uncertainty from structured errors",
          "note": ("contains uncertainties from fully systematic, "
                   "and structured random effects.  For a more complete "
                   "treatment, please use full FCDR.")}

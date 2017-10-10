@@ -471,7 +471,7 @@ class FCDRGenerator:
 
     def store_piece_easy(self, piece, fn):
         piece_easy = self.debug2easy(piece)
-        piece_easy.attrs["institution"] = "Reading University"
+        piece_easy.attrs["institution"] = "University of Reading"
         piece_easy.attrs["title"] = "HIRS Easy FCDR"
         # already included with add_attributes
 #        piece_easy.attrs["warning"] = ("TRIAL VERSION, DO NOT USE UNDER "
@@ -479,13 +479,14 @@ class FCDRGenerator:
         piece_easy.attrs["source"] = ("Produced with HIRS_FCDR code, "
             "version {!s}".format(
                 pkg_resources.get_distribution("FCDR_HIRS").version))
-        piece_easy.attrs["history"] = "Produced on {:%Y-%m-%dT%H:%M:%SZ}".format(
-            datetime.datetime.utcnow()) + VERSION_HISTORY_EASY
+        piece_easy.attrs["history"] = "Produced on {:%Y-%m-%dT%H:%M:%SZ}.".format(
+            datetime.datetime.utcnow()) + "\n" + VERSION_HISTORY_EASY
         piece_easy.attrs["references"] = "In preparation"
         piece_easy.attrs["url"] = "http://www.fiduceo.eu"
-        piece_easy.attrs["author"] = "Gerrit Holl <g.holl@reading.ac.uk>"
+        piece_easy.attrs["author"] = "Gerrit Holl and the FIDUCEO team"
+        piece_easy.attrs["contact"] = "fiduceo-coordinator@lists.reading.ac.uk"
         piece_easy.attrs["comment"] = "Early version.  Please note warning."
-        piece_easy.attrs["typical_nonrandom_correlation_scale"] = "40 scanlines"
+        piece_easy.attrs["typical_structured_correlation_scale"] = "40 scanlines"
         try:
             # Don't use this one for now, because it doesn't apply scaling
             # and ofsets and such
@@ -550,8 +551,8 @@ class FCDRGenerator:
             quality_scanline_bitmask = piece["quality_scanline_bitmask"],
             quality_channel_bitmask = piece["quality_channel_bitmask"],
 #            qualind=piece["quality_flags"].sel(time=t_earth),
-            u_random=piece["u_T_b_random"],
-            u_non_random=piece["u_T_b_nonrandom"],
+            u_independent=piece["u_T_b_random"],
+            u_structured=piece["u_T_b_nonrandom"],
             channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
                 channel=slice(19)).rename({"channel": "calibrated_channel"}),
             LUT_BT=piece["LUT_BT"],

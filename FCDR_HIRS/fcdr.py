@@ -86,7 +86,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     # v0.3: removed copied flags, added own flag fields
     #
     # v0.4: attribute with flag masks is now a numeric one
-    format_version="0.4"
+    #
+    # v0.5: renamed random -> independent, non-random -> structured,
+    # changed e-mail address to fiduceo-coordinator
+    format_version="0.5"
 
     realisations = 100
     srfs = None
