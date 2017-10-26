@@ -89,7 +89,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     #
     # v0.5: renamed random -> independent, non-random -> structured,
     # changed e-mail address to fiduceo-coordinator
-    format_version="0.5"
+    #
+    # v0.6: changed y-coordinate which now simply continues numerically
+    format_version="0.6"
 
     realisations = 100
     srfs = None

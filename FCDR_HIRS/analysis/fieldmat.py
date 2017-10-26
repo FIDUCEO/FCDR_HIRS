@@ -109,7 +109,7 @@ month_pairs = dict(
     noaa09 = ((1985, 2), (1988, 11)),
     noaa10 = ((1986, 11), (1991, 9)),
     noaa11 = ((1988, 11), (1998, 12)),
-    noaa12 = ((1991, 9), (1998, 12)),
+    noaa12 = ((1991, 9), (1998, 11)),
     noaa14 = ((1995, 1), (2005, 12)),
     noaa15 = ((1999, 1), (2009, 6)),
     noaa16 = ((2001, 1), (2014, 6)),
@@ -120,8 +120,8 @@ month_pairs = dict(
     metopb = ((2013, 2), (2017, 5)))
 
 period_pairs = {sat:
-    ((datetime.datetime(*start, 1), datetime.datetime(*start, 28, 23, 59)),
-     (datetime.datetime(*end, 1), datetime.datetime(*end, 28, 23, 59)))
+    ((datetime.datetime(*start, 1, 0, 0), datetime.datetime(*start, 28, 23, 59)),
+     (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 28, 23, 59)))
         for (sat, (start, end)) in month_pairs.items()}
 
 def plot_field_matrix(MM, ranges, title, filename, units):
@@ -162,6 +162,7 @@ class _SatPlotHelper(metaclass=abc.ABCMeta):
         ...
 #
 class _SatPlotChCorrmat(_SatPlotHelper):
+    multichannel = False
     def __init__(self, channels, noise_typ, calibpos):
         self.channels = numpy.asarray(channels)
         self.noise_typ = noise_typ
@@ -209,6 +210,7 @@ class _SatPlotChCorrmat(_SatPlotHelper):
 class _SatPlotFFT(_SatPlotHelper):
     """For plotting FFT stuff
     """
+    multichannel = True
 
     def __init__(self):#, channel):
         #self.n = 2**6
@@ -259,36 +261,66 @@ class _SatPlotFFT(_SatPlotHelper):
 
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.early_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
-            color="cyan",
-            label="early, space")
-        ax.plot(
-            x[1:n//2],
             abs(numpy.fft.fft(self.early_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
-            color="tan",
+            color="black",
+            marker="*",
+            markersize=6,
+            linewidth=1,
+            markerfacecolor="none",
+            markeredgecolor="black",
             label="early, Earth")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.early_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            abs(numpy.fft.fft(self.early_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
             color="red",
+            markerfacecolor="none",
+            markeredgecolor="red",
+            marker="^",
+            markersize=6,
+            linewidth=1,
+            label="early, space")
+        ax.plot(
+            x[1:n//2],
+            abs(numpy.fft.fft(self.early_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            color="tan",
+            marker="<",
+            markerfacecolor="none",
+            markeredgecolor="tan",
+            markersize=6,
+            linewidth=1,
             label="early, IWCT")
 
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.late_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
-            color="cyan",
-            linestyle="--",
-            label="late, space")
-        ax.plot(
-            x[1:n//2],
             abs(numpy.fft.fft(self.late_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
-            color="tan",
+            color="black",
+            marker="o",
+            markerfacecolor="none",
+            markeredgecolor="black",
+            markersize=6,
+            linewidth=1,
             linestyle="--",
             label="late, Earth")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.late_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            abs(numpy.fft.fft(self.late_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
             color="red",
+            marker="v",
+            markerfacecolor="none",
+            markeredgecolor="red",
+            markersize=6,
+            linewidth=1,
+            linestyle="--",
+            label="late, space")
+        ax.plot(
+            x[1:n//2],
+            abs(numpy.fft.fft(self.late_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            color="tan",
+            marker=">",
+            markerfacecolor="none",
+            markeredgecolor="tan",
+            markersize=6,
+            linewidth=1,
             linestyle="--",
             label="late, IWCT")
 
@@ -324,6 +356,7 @@ class _SatPlotFFT(_SatPlotHelper):
             f"hirs_crosstalk_fft_ch{channel:d}.")
 
 class _SatPlotAll(_SatPlotChCorrmat, _SatPlotFFT):
+    multichannel = True
     def __init__(self, *args, **kwargs):
         _SatPlotChCorrmat.__init__(*args, **kwargs)
         _SatPlotFFT.__init__(*args, **kwargs)
@@ -653,24 +686,44 @@ class MatrixPlotter:
         if sats == "all":
             sats = self.all_sats
 
-        f_all = {}
-        for ch in range(1, 20):
-            f_all[ch] = matplotlib.pyplot.figure(figsize=(22, 24))
         gs = matplotlib.gridspec.GridSpec(20, 21)
+        if plotter.multichannel:
+            f_all = {}
+            for ch in range(1, 20):
+                f_all[ch] = matplotlib.pyplot.figure(figsize=(22, 24))
+        else:
+            f = matplotlib.pyplot.figure(figsize=(22, 24))
+
         for ((r, c), sat) in zip(itertools.product(range(4), range(4)), sats):
             ep = period_pairs[sat][0]
             lp = period_pairs[sat][1]
             self.reset(sat, *ep)
-            for ch in range(1, 20):
-                plotter.prepare_early(self, ch)
+
+            if plotter.multichannel:
+                for ch in range(1, 20):
+                    plotter.prepare_early(self, ch)
+            else:
+                plotter.prepare_early(self)
+
             self.reset(sat, *lp)
+
+            if plotter.multichannel:
+                for ch in range(1, 20):
+                    plotter.prepare_late(self, ch)
+                for ch in range(1, 20):
+                    ax = f_all[ch].add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
+                    plotter.plot_both(self, ax, gs, sat, r, c, ep, lp, ch)
+            else:
+                plotter.prepare_late(self)
+                ax = f.add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
+                plotter.plot_both(self, ax, gs, sat, r, c, ep, lp)
+
+        if plotter.multichannel:
             for ch in range(1, 20):
-                plotter.prepare_late(self, ch)
-            for ch in range(1, 20):
-                ax = f_all[ch].add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
-                plotter.plot_both(self, ax, gs, sat, r, c, ep, lp, ch)
-        for ch in range(1, 20):
-            plotter.finalise(self, f_all[ch], gs, ch)
+                plotter.finalise(self, f_all[ch], gs, ch)
+        else:
+            plotter.finalise(self, f, gs)
+
 
     def plot_crosstalk_ffts_all_sats(self):
         self.plot_all_sats_early_late(
@@ -835,9 +888,9 @@ def read_and_plot_field_matrices():
 #        mp.plot_fft()
 
     if p.plot_all_corr:
-#        mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
-#        mp.plot_ch_corrmat_all_sats_b(p.channels, p.noise_typ[0], p.calibpos[0])
-        mp.plot_crosstalk_ffts_all_sats()
+        mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
+        mp.plot_ch_corrmat_all_sats_b(p.channels, p.noise_typ[0], p.calibpos[0])
+#        mp.plot_crosstalk_ffts_all_sats()
         return
 
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)

@@ -589,7 +589,8 @@ class FCDRGenerator:
         easy = easy.assign(**transfer)
         easy = easy.assign_coords(
             x=numpy.arange(1, 57),
-            y=easy["scanline"],
+            #y=easy["scanline"],
+            y=numpy.arange(easy.dims["y"]),
             channel=numpy.arange(1, 20))
 
         for k in easy.keys():

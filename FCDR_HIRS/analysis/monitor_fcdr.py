@@ -43,6 +43,10 @@ import pyatmlab.graphics
 from .. import fcdr
 from .. import _fcdr_defs
 
+# NB: https://github.com/pydata/xarray/issues/1661#issuecomment-339525582
+from pandas.tseries import converter
+converter.register()
+
 class FCDRMonitor:
     figname = ("fcdr_perf/{self.satname:s}_{tb:%Y}/ch{ch:d}/"
                "fcdr_perf_{self.satname:s}_hirs_ch{ch:d}_{tb:%Y%m%d%H%M}"
