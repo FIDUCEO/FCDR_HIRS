@@ -79,6 +79,9 @@ Changed approach to flags:
   a flag per minor frame, the entire scanline is flagged if there is any
   mirror flag for any minor frame anywhere on the scanline.
 - Added more flags to both easy and debug versions
+
+0.8
+
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -152,7 +155,7 @@ class FCDRGenerator:
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
     skip_problem_step = datetime.timedelta(seconds=900)
-    data_version = "0.7"
+    data_version = "0.8pre"
     # see comment in models.Rself
     rself_temperatures = ["baseplate", "internal_warm_calibration_target",
         "scanmirror", "scanmotor", "secondary_telescope"]

@@ -221,7 +221,8 @@ class FCDRSummary(HomemadeDataset):
                 pt = scipy.stats.mstats.mquantiles(
                     numpy.ma.masked_invalid(
                         da.transpose("channel", "x", "y").values.reshape(channels.size, -1)),
-                        prob=self.ptiles/100, axis=1).T
+                        prob=self.ptiles/100, axis=1,
+                        alphap=0, betap=1).T
                 summary[field].loc[{"date":sd}] = pt
 
                 for ch in range(1, 20):
@@ -308,11 +309,13 @@ class FCDRSummary(HomemadeDataset):
                 lo = scipy.stats.mstats.mquantiles(
                     numpy.ma.masked_invalid(
                         summary[fld].sel(channel=channel).sel(ptile=25).values),
-                    prob=0.05)
+                    prob=0.05,
+                    alphap=0, betap=0)
                 hi = scipy.stats.mstats.mquantiles(
                     numpy.ma.masked_invalid(
                         summary[fld].sel(channel=channel).sel(ptile=75).values),
-                    prob=.95)
+                    prob=.95,
+                    alphap=0, betap=0)
 #                if fld.startswith("u"):
 #                    a.set_ylim([0, hi])
 #                else:
