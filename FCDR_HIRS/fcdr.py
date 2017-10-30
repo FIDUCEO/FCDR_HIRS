@@ -439,7 +439,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         (counts_space, counts_iwct) = self.extract_calibcounts(ds, ch)
 
-        ds_iwct = ds.sel(time=counts_space["time"])
+        # starting with xarray 0.10, “Alignment between coordinates on
+        # indexed and indexing objects is also now enforced.”.  That means
+        # that if ds.coords["calibrated_channel"] == [1, 2, ..., 19], but
+        # counts_space["time"].coords["calibrated_channel] == [1], then
+        # xarray will raise IndexError.  Therefore, I need to state
+        # explicitly that I care only about one channel (even though it
+        # doesn't matter for ds_iwct).
+        ds_iwct = ds.sel(calibrated_channel=ch, time=counts_space["time"])
         T_iwct = UADA(ds_iwct["temperature_internal_warm_calibration_target"].mean(
                 dim="prt_reading").mean(dim="prt_number_iwt")).drop(
                     "scanline")
