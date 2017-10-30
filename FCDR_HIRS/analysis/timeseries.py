@@ -740,7 +740,7 @@ class NoiseAnalyser:
                         correlations.sel(chb=chb).shape[0], cha, chb))
                 continue
             success = True
-            a.plot_date(correlations["time"].astype("M8[s]").astype(datetime.datetime),
+            a.plot_date(correlations["time"].values.astype("M8[s]").astype(object),
                 correlations.sel(chb=chb),
                 markersize=1,
                 linestyle="-",

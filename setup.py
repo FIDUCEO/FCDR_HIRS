@@ -80,7 +80,7 @@ setup(
                       "pyatmlab>=0.1.1",
                       "progressbar2>=3.10",
                       "netCDF4>=1.2",
-                      "pandas>=0.19",
+                      "pandas>=0.21",
                       "xarray",#>=0.9",
                       "seaborn>=0.7",
                       "sympy>=1.0",

@@ -1082,16 +1082,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             interp_slope_modes = {}
             interp_bad_modes = {}
             if offset.shape[0] > 1 or (has_context and time.shape[0]>0):
-                for mode in ("zero", "linear", "cubic"):
+                for mode in ("zero", "linear") if naive else ("zero", "linear", "cubic"):
                     moff = offset.median(dim="scanpos", keep_attrs=True)
                     mslp = slope.median(dim="scanpos", keep_attrs=True)
-                    bad =   (
+                    bad = (
                         self.filter_calibcounts.filter_outliers(moff.values) |
                         self.filter_calibcounts.filter_outliers(mslp.values))
                     (interp_offset, interp_slope, interp_bad) = self.interpolate_between_calibs(
                         ds["time"], time,
                         moff, mslp, bad,
                         kind=mode)
+                    naive
                     interp_offset_modes[mode] = interp_offset
                     interp_slope_modes[mode] = interp_slope
                     interp_bad_modes[mode] = interp_bad
