@@ -709,8 +709,8 @@ class NoiseAnalyser:
         correlations = self.get_correlations(timeres, typ, calibpos).sel(cha=ch)
         # in case I need to select based on max_std or min_std I need to
         # calculate all correlations anyway
-        mcorr = correlations.mean(dim="time")
-        stdcorr = correlations.std(dim="time")
+#        mcorr = correlations.mean(dim="time")
+#        stdcorr = correlations.std(dim="time")
         chpairs = set()
         if any(x in corr_types for x in {"min_std", "max_std", "min_mean",
                 "max_mean"}):

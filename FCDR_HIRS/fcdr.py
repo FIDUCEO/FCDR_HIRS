@@ -1081,8 +1081,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             interp_offset_modes = {}
             interp_slope_modes = {}
             interp_bad_modes = {}
-            if offset.shape[0] > 1 or (has_context and time.shape[0]>0):
-                for mode in ("zero", "linear") if naive else ("zero", "linear", "cubic"):
+            if offset.shape[0] > 1 or ((naive or has_context) and time.shape[0]>0):
+                for mode in ("zero",) if naive else ("zero", "linear", "cubic"):
                     moff = offset.median(dim="scanpos", keep_attrs=True)
                     mslp = slope.median(dim="scanpos", keep_attrs=True)
                     bad = (
@@ -1221,7 +1221,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 # Since this is an adhoc bad format anyway I don't care that
                 # I'm losing information.
                 u_Rself = UADA(
-                    [numpy.sqrt((abs(interp_offset_modes["linear"] - interp_offset_modes["zero"])**2).mean())],
+                    [abs(interp_offset_modes["zero"]).mean()
+                        if naive
+                        else numpy.sqrt((abs(interp_offset_modes["linear"] - interp_offset_modes["zero"])**2).mean())],
                     dims=["time_rself"],
                     attrs={"units": offset.attrs["units"]})
 
@@ -1367,11 +1369,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Tb0 = xarray.DataArray((T_b.values==0), dims=T_b.dims, coords=T_b.coords)
         # skip this check for SW channels when R_e is often really so small
         # that we can't define a meaningful T_b
+        seix = Tb0.any("scanpos").values
         if ch<13 and not (
-            (self._flags["pixel"].sel(calibrated_channel=ch).any("scanpos").isel(scanline_earth=Tb0.any("scanpos"))) |
-            (self._flags["scanline"].isel(scanline_earth=Tb0.any("scanpos"))) |
-            (self._flags["channel"].sel(calibrated_channel=ch).isel(scanline_earth=Tb0.any("scanpos")))).all():
-            idx0 = {"scanline_earth": Tb0.any("scanpos")}
+            (self._flags["pixel"].sel(calibrated_channel=ch).any("scanpos").isel(scanline_earth=seix)) |
+            (self._flags["scanline"].isel(scanline_earth=seix)) |
+            (self._flags["channel"].sel(calibrated_channel=ch).isel(scanline_earth=seix))).all():
+            idx0 = {"scanline_earth": seix}
             flag_p = self._flags["pixel"].sel(calibrated_channel=ch).any("scanpos")[idx0]
             flag_s = self._flags["scanline"][idx0]
             flag_c = self._flags["channel"].sel(calibrated_channel=ch)[idx0]
