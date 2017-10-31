@@ -113,7 +113,9 @@ def parse_cmdline():
         type=str, default="12H",
         help="What time resolution to use for correlation timeseries. "
              "Valid values at "
-             "http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases")
+             "http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases "
+             "or string 'per_cycle' which will calculate one correlation "
+             "for each calibration cycle, by using all positions.")
 
     parser.add_argument("--hiasi_mode", action="store", type=str,
         choices=["perc", "hist"], default="perc",
@@ -386,12 +388,17 @@ class NoiseAnalyser:
         """
         Δt = t[-1] - t[0]
         Δdays = Δt.days + Δt.seconds/86444
-        if Δt < datetime.timedelta(days=(N*2)):
+        if Δt < datetime.timedelta(hours=(N*2)): # <2 hours
+            a.xaxis.set_major_locator(
+                matplotlib.dates.MinuteLocator(
+                    byminute=range(0, 60, 10)))
+            a.xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%H:%M"))
+        elif Δt < datetime.timedelta(days=(N*2)): # <2 days
             a.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=
                     math.ceil((24*Δdays)//(N*10)+1)))
             a.xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%H:%M"))
             # FIXME: minor locator
-        else:
+        else: # >2 days
             a.xaxis.set_major_locator(matplotlib.dates.DayLocator(interval=
                     int(Δdays//(N*10))+1))
             a.xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%b %-d"))
@@ -401,6 +408,7 @@ class NoiseAnalyser:
                     interval=[1, 2, 3, 4, 6, 8, 12][int(Δdays//(N*5))]))
             else:
                 a.xaxis.set_minor_locator(matplotlib.dates.DayLocator())
+            
 
     def plot_noise(self, nrow=4):
         M = self.Mhrsall
@@ -578,9 +586,11 @@ class NoiseAnalyser:
         # cache.  Make sure we create it /again/ ?!
         pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
         pyatmlab.graphics.print_or_show(self.fig, False,
-            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}.png".format(
+            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.png".format(
                 self=self, ch=ch, alltyp='_'.join(all_tp),
-                alltemp='_'.join(temperatures), tb=t[0], te=t[-1]))
+                alltemp='_'.join(temperatures), tb=t[0], te=t[-1],
+                corrinfo=(f"_corr_{corr_info.get('count', 2):d}"
+                          f"_{corr_info.get('timeres', '3H'):s}") if include_corr else ""))
 
     def get_calib_counts_noise(self, M, ch, all_tp):
         D = {}
@@ -750,6 +760,7 @@ class NoiseAnalyser:
             a.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
         a.set_title("{:s} noise correlations".format(typ))
         a.set_ylabel("noise correlation")
+        a.set_xlabel("Date / time")
         return a
         #correlations.sel(cha=ch_a, chb=ch_b)
         # FIXME: histogram
@@ -1171,23 +1182,34 @@ class NoiseAnalyser:
             raise ValueError("Cannot calculate correlations, only {:d} "
                 "time elements found".format(accnt["time"].shape[0]))
 
-        times = pandas.date_range(*accnt["time"][[0, -1]].data, freq=timeres)
+        if timeres == "per_cycle":
+            times = pandas.DatetimeIndex(accnt["time"].values)
+            timeax = times
+        else:
+            times = pandas.date_range(*accnt["time"][[0, -1]].data, freq=timeres)
+            timeax = times[:-1]
 
         correlations = xarray.DataArray(
-            numpy.zeros(shape=(19, 19, times.shape[0]-1), dtype="f4"),
+            numpy.zeros(shape=(19, 19, timeax.shape[0]), dtype="f4"),
             [("cha", accnt.channel), ("chb", accnt.channel),
-             ("time", times[:-1])])
-        for i in range(times.shape[0]-1):
+             ("time", timeax)])
+
+        for i in range(timeax.shape[0]):
             # accnt is now an array containing nans, because xarray does
             # not support masked arrays
             # see also https://github.com/pydata/xarray/issues/1194 and
             # https://github.com/numpy/numpy/issues/4592 but copying
             # between masked and unmasked does not work very well, need to
             # be careful
-            cc = numpy.ma.corrcoef(
-                numpy.ma.masked_invalid(
-                    accnt.sel(time=slice(times[i], times[i+1]),
-                    calibpos=calibpos).T))
+            if timeres == "per_cycle":
+                cc =  numpy.ma.corrcoef(
+                    numpy.ma.masked_invalid(
+                        accnt.isel(time=i)))
+            else:
+                cc =  numpy.ma.corrcoef(
+                    numpy.ma.masked_invalid(
+                        accnt.sel(time=slice(times[i], times[i+1]),
+                        calibpos=calibpos).T))
             cch = cc.data
             cch[cc.mask].fill(numpy.nan)
             correlations[:, :, i] = cch
