@@ -311,7 +311,7 @@ class NoiseAnalyser:
                        ["temp_{:s}".format(f) for f in
                        set(temp_fields) | {"iwt"}],
                 locator_args=dict(satname=self.satname),
-                reader_args=dict(filter_firstline="first"))
+                reader_args=dict(filter_firstline=self.hirs.filter_firstline))
         # those need to be read before combining with HIASI, because
         # afterward, I lose the calibration rounds.  But doing it after
         # read a full month (or more) of data takes too much RAM as I will
@@ -586,7 +586,7 @@ class NoiseAnalyser:
         # cache.  Make sure we create it /again/ ?!
         pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
         pyatmlab.graphics.print_or_show(self.fig, False,
-            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.png".format(
+            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.".format(
                 self=self, ch=ch, alltyp='_'.join(all_tp),
                 alltemp='_'.join(temperatures), tb=t[0], te=t[-1],
                 corrinfo=(f"_corr_{corr_info.get('count', 2):d}"
@@ -650,14 +650,14 @@ class NoiseAnalyser:
         a0h.set_title("Calib. counts hist.")
         a0h.xaxis.set_major_locator(
             matplotlib.ticker.MaxNLocator(nbins=6))
-        a1.set_title("Calibration noise (Allan deviation) for space "
-                        "and IWCT views")
+        a1.set_title("Calibration noise (Allan deviation) for "
+            + "and".join(all_tp) + " views")
         a1h.set_title("Calib. noise hist.")
         a1.set_xlabel("Date / time")
         a1.set_ylabel("Allan deviation\n[counts]")
         a1h.set_xlabel(a1.get_ylabel().replace("\n", " "))
         a1h.set_ylabel("Number")
-        if success:
+        if success and len(all_tp)>1:
             a0h.legend([x[0] for x in L0], all_tp, loc="upper left",
                 bbox_to_anchor=(1.0, 1.0))
             a1h.legend([x[0] for x in L1], all_tp, loc="upper left",
