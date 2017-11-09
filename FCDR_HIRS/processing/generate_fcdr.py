@@ -137,6 +137,7 @@ import numpy
 import pandas
 import xarray
 import typhon.datasets.dataset
+import typhon.datasets.filters
 from typhon.physics.units.common import radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from .. import fcdr
@@ -162,7 +163,7 @@ class FCDRGenerator:
     # 2017-07-14 GH: Use LR again, seems to work better than PDR although
     # I don't know why it should.
     rself_regr = ("LR", {"fit_intercept": True})
-    reader_args = {"apply_flags": False, "apply_filter": False}
+    orbit_filters = None # set in __init__
 
     # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes):
@@ -178,9 +179,17 @@ class FCDRGenerator:
         self.fcdr.my_pseudo_fields.clear() # suppress pseudo fields radiance_fid, bt_fid here
         self.start_date = start_date
         self.end_date = end_date
+
+        orbit_filters=[
+                typhon.datasets.filters.FirstlineDBFilter(
+                    self.fcdr,
+                    self.fcdr.granules_firstline_file),
+                typhon.datasets.filters.TimeMaskFilter(self.fcdr),
+                typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter()]
+        self.orbit_filters = orbit_filters
         self.dd = typhon.datasets.dataset.DatasetDeque(
             self.fcdr, self.window_size, start_date,
-            reader_args=self.reader_args)
+            orbit_filters=orbit_filters)
 
         self.rself = models.RSelf(self.fcdr,
             temperatures=self.rself_temperatures,
@@ -197,13 +206,13 @@ class FCDRGenerator:
             self=self, start=start, end_time=end_time))
         anyok = False
         try:
-            self.dd.reset(start, reader_args=self.reader_args)
+            self.dd.reset(start, orbit_filters=self.orbit_filters)
         except typhon.datasets.dataset.DataFileError as e:
             warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
         while self.dd.center_time < end_time:
             try:
                 self.dd.move(self.step_size,
-                    reader_args=self.reader_args)
+                    orbit_filters=self.orbit_filters)
                 self.make_and_store_piece(self.dd.center_time - self.segment_size,
                     self.dd.center_time)
             except (fcdr.FCDRError, typhon.datasets.dataset.DataFileError) as e:

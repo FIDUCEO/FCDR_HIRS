@@ -37,6 +37,7 @@ import numpy
 import matplotlib.pyplot
 import typhon.datasets.tovs
 import pyatmlab.graphics
+import typhon.datasets.filters
 
 def parse_cmdline():
     pass
@@ -46,8 +47,12 @@ def plot(sat, start, end):
     #h15 = typhon.datasets.tovs.HIRS3(satname="noaa15")
     M15 = h.read_period(
         start, end,
-        reader_args={"max_flagged": 1.0, "apply_flags": False,
-                     "calibrate": False},
+        orbit_filters=[f for f in h.default_orbit_filters
+            if not isinstance(f,
+            (typhon.datasets.filters.HIRSCalibCountFilter,
+             typhon.datasets.filters.PRTTempFilter,
+             typhon.datasets.filters.HIRSFlagger))],
+        reader_args={"calibrate": False},
         fields=["hrs_qualind", "hrs_linqualflgs", "hrs_chqualflg",
                 "hrs_mnfrqual", "time"])#, "lat", "lon"])
 
