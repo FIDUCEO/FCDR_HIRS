@@ -311,7 +311,7 @@ class NoiseAnalyser:
                        ["temp_{:s}".format(f) for f in
                        set(temp_fields) | {"iwt"}],
                 locator_args=dict(satname=self.satname),
-                reader_args=dict(filter_firstline=self.hirs.filter_firstline))
+                orbit_filters=self.hirs.default_orbit_filters)
         # those need to be read before combining with HIASI, because
         # afterward, I lose the calibration rounds.  But doing it after
         # read a full month (or more) of data takes too much RAM as I will
