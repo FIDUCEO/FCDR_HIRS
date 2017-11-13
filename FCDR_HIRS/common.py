@@ -87,7 +87,7 @@ def time_epoch_to(ds, epoch):
     """Convert all time variables/coordinates to count from epoch
     """
 
-    for k in [k for (k, v) in ds.items() if v.dtype.kind.startswith("M")]:
+    for k in [k for (k, v) in ds.variables.items() if v.dtype.kind.startswith("M")]:
         ds[k].encoding["units"] = "seconds since {:%Y-%m-%d %H:%M:%S}".format(epoch)
         if ds[k].size > 0:
             ds[k].encoding["add_offset"] = (

@@ -1192,7 +1192,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     coords={"time": ds["time"]})
 
                 self._flags["scanline"][{"scanline_earth":
-                    T_outliers.sel(time=C_Earth["time"])}] |= (
+                    T_outliers.sel(time=C_Earth["time"]).values}] |= (
                         _fcdr_defs.FlagsScanline.DO_NOT_USE |
                         _fcdr_defs.FlagsScanline.BAD_TEMP_NO_RSELF
                         )

@@ -181,9 +181,10 @@ class FCDRGenerator:
         self.end_date = end_date
 
         orbit_filters=[
-                typhon.datasets.filters.FirstlineDBFilter(
-                    self.fcdr,
-                    self.fcdr.granules_firstline_file),
+#                typhon.datasets.filters.FirstlineDBFilter(
+#                    self.fcdr,
+#                    self.fcdr.granules_firstline_file),
+                typhon.datasets.filters.HIRSBestLineFilter(self.fcdr),
                 typhon.datasets.filters.TimeMaskFilter(self.fcdr),
                 typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter()]
         self.orbit_filters = orbit_filters
@@ -541,7 +542,8 @@ class FCDRGenerator:
         # them in the template
         easy = easy.drop(easy.data_vars.keys() &
             {"scnlintime", "scnlinf", "scantype", "qualind",
-             "linqualflags", "chqualflags", "mnfrqualflags"})
+             "linqualflags", "chqualflags", "mnfrqualflags",
+             "quality_pixel_bitmask"})
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
@@ -605,7 +607,7 @@ class FCDRGenerator:
             y=numpy.arange(easy.dims["y"]),
             channel=numpy.arange(1, 20))
 
-        for k in easy.keys():
+        for k in easy.variables.keys():
             easy[k].encoding = _fcdr_defs.FCDR_easy_encodings[k]
             # when any of those keys is set in
             # both in attrs and encoding, writing to disk fails with:
@@ -673,6 +675,9 @@ class FCDRGenerator:
 
 def main():
     warnings.filterwarnings("error", category=numpy.VisibleDeprecationWarning)
+    warnings.filterwarnings("error", 
+        message="iteration over an xarray.Dataset will change",
+        category=FutureWarning)
 #    warnings.filterwarnings("error",
 #        message="invalid value encountered in log", category=RuntimeWarning)
     if p.days == 0:
