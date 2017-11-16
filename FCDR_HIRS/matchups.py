@@ -13,7 +13,7 @@ from . import fcdr
 hh = typhon.datasets.tovs.HIRSHIRS(read_returns="xarray")
 
 class HIRSMatchupCombiner:
-    fcdr_info = {"data_version": "0.5", "fcdr_type": "debug"}
+    fcdr_info = {"data_version": "0.7pre", "fcdr_type": "debug"}
     fields_from_each = {"u_α", "u_Rself", "u_f_eff", "u_C_Earth",
     "u_C_space", "u_β", "u_C_IWCT", "α", "β", "fstar", "C_E", "C_IWCT",
     "C_s", "T_IWCT", "R_selfE", "R_e", "T_b"}
