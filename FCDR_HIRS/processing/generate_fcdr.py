@@ -82,6 +82,9 @@ Changed approach to flags:
 
 0.8
 
+Overlap between subsequent granules are now selected based on "best
+scanline" criterion, rather than always the oldest (GH#7).
+
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -358,6 +361,8 @@ class FCDRGenerator:
 #        (uTb, sensTb, compTb) = self.fcdr.calc_u_for_variable("T_b",
 #            self.fcdr._quantities, self.fcdr._effects, cu,
 #            return_more=True)
+        tempcode = _fcdr_defs._temp_coding.copy()
+        tempcode["scale_factor"] /= 10
         if uRe.dims == ():
             logging.error("Scalar uncertainty?!  Hopefully the lines "
                 "immediately above give some hint of what's going on "
@@ -365,7 +370,8 @@ class FCDRGenerator:
             uTb = UADA(0, dims=uRe.dims, coords=uRe.coords, attrs=dict(units="K"))
             u_from = xarray.Dataset(
                 {f"u_from_{k!s}": UADA(0, dims=uRe.dims, coords=uRe.coords,
-                                       attrs=dict(units="K"))
+                                       attrs=dict(units="K"),
+                                       encoding=tempcode)
                     for (k, v) in unc_components.items()
                     if v.size>1})
             uTb_syst = uTb.copy()
@@ -373,7 +379,7 @@ class FCDRGenerator:
         else:
             uTb = self.fcdr.numerically_propagate_ΔL(R_E, uRe)
             u_from = xarray.Dataset(
-                {f"u_from_{k!s}": self.fcdr.numerically_propagate_ΔL(R_E, v).astype("f4")
+                {f"u_from_{k!s}": self.fcdr.numerically_propagate_ΔL(R_E, v)
                     for (k, v) in unc_components.items()
                     if v.size>1})
             uTb_syst = self.fcdr.numerically_propagate_ΔL(R_E, uRe_syst)

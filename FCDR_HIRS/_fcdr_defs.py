@@ -10,9 +10,14 @@ from typhon.datasets._tovs_defs import (_u1_coding, _u2_coding, _coding,
 # as per https://github.com/FIDUCEO/FCDR_HIRS/issues/69
 
 _debug_bt_coding = _temp_coding.copy()
-_debug_bt_coding["dtype"] = "f4"
+_debug_bt_coding["dtype"] = "u4"
 #_debug_bt_coding["least_significant_digit"] = 4
-del _debug_bt_coding["scale_factor"]
+_debug_bt_coding["scale_factor"] /= 10
+
+_debug_Re_coding = _coding.copy()
+_debug_Re_coding["dtype"] = "u4"
+_debug_Re_coding["scale_factor"] = 0.0001
+_debug_Re_coding["_FillValue"] = _u2_coding["_FillValue"]
 
 _u_count_coding = _count_coding.copy()
 _u_count_coding["dtype"] = "u2"
@@ -102,7 +107,7 @@ FCDR_data_vars_props = dict(
         ("scanline_earth", "scanpos", "calibrated_channel"),
         {"long_name": "Radiance for Earth views",
          "units": rad_u["si"]},
-        _coding),
+        _debug_Re_coding),
     T_b = (
         "T_b",
         ("scanline_earth", "scanpos", "calibrated_channel"),

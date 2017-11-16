@@ -2077,6 +2077,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         these numerically
         """
         ΔTb = xarray.zeros_like(L).drop(("scanline", "lat", "lon"))
+        ΔTb.encoding = _fcdr_defs._debug_bt_coding
         ΔTb.attrs["units"] = "K"
         for ch in range(1, 20):
             srf = self.srfs[ch-1]
