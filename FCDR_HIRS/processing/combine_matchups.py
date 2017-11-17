@@ -102,10 +102,15 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         Taking the resulf of self.as_xarray_dataset, convert it to a
         dataset of the format wanted by the harmonisation.
 
-        Modelled on files that Jon created for AVHRR, such as on CEMS at
-        /group_workspaces/cems2/fiduceo/Data/Matchup_Simulated/Data/Harm_RealData/n17_n16.nc
+        As described by Sam's document on the FIDUCEO wiki:
 
-        See also Arta's document on the FIDUCEO wiki.
+        20171108-FIDUCEO-SH-Harmonisation_Input_File_Format_Definition-v2.pdf
+
+        and example files at
+
+        /group_workspaces/cems2/fiduceo/Users/shunt/public/harmonisation/data
+        
+        See also Sam's document on the FIDUCEO wiki.
 
         Note that one would want to merge a collection of those.
         """
