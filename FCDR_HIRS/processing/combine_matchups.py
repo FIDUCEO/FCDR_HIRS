@@ -185,7 +185,6 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         daa = xarray.merge(da_all)
 
-        harm.assign_coords(m1=take_for_each, m2=take_for_each)
         for (sat, i) in ((self.prim, 1), (self.sec, 2)):
             # fill X1, X2
 
@@ -206,6 +205,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             # fill uncertainty_vector_use1, uncertainty_vector_use2
 
         # and the rest...
+
+        harm = harm.assign_coords(
+            m1=take_for_each,
+            m2=take_for_each)
 
         raise NotImplementedError("Tot hier hernieuwd!")
 
