@@ -4,11 +4,21 @@
 import numpy
 
 import typhon.datasets.tovs
+import typhon.datasets.filters
 import itertools
 
 from . import fcdr
 
-# change "xarray" to "ndarray" to make old scripts, such as
+class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
+    def __init__(self, prim, sec):
+        self.prim = prim
+        self.sec = sec
+
+    def filter(self, ds, **extra):
+        return ds[{"matchup_count": \
+                        (abs(ds[f"hirs-{self.prim:s}_lza"][:, 3, 3] - \
+                             ds[f"hirs-{self.sec:s}_lza"][:, 3, 3]) < 5)}]
+
 # inspect_hirs_matchups, work again
 hh = typhon.datasets.tovs.HIRSHIRS(read_returns="xarray")
 
@@ -39,11 +49,7 @@ class HIRSMatchupCombiner:
                     lambda ds: ds["hirs-{:s}_time".format(prim)][:, 3, 3].astype("M8[s]"),
                 "time_{:s}".format(sec):
                     lambda ds: ds["hirs-{:s}_time".format(sec)][:, 3, 3].astype("M8[s]")},
-            filters=(
-                lambda ds: \
-                    ds[{"matchup_count": \
-                        (abs(ds["hirs-{:s}_lza".format(prim)][:, 3, 3] - \
-                             ds["hirs-{:s}_lza".format(sec)][:, 3, 3]) < 5)}],))
+            orbit_filters=hh.default_orbit_filters+[HHMatchupCountFilter(prim,sec)])
         self.hirs_prim = fcdr.which_hirs_fcdr(prim, read="L1C")
         self.hirs_sec = fcdr.which_hirs_fcdr(sec, read="L1C")
         Mcp = hh.combine(ds, self.hirs_prim, trans={"time_{:s}".format(prim): "time"},

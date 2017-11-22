@@ -149,6 +149,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self.mandatory_fields.clear()
             self.mandatory_fields.add("time")
             self.read_returns = "xarray"
+            self.default_orbit_filters = []
         else:
             raise ValueError("'read' must be 'L1B' or 'L1C', "
                              "got {!s}".format(read))
