@@ -66,16 +66,16 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             raise RuntimeError("Onmogelĳk.  Impossible.  Unmöglich.")
         #
         keep = {"collocation", "channel", "calibrated_channel",
-                "matchup_count"}
+                "matchup_count", "calibration_position", "scanpos"}
         p_ds.rename(
             {nm: "{:s}_{:s}".format(self.prim, nm)
-                for nm in p_ds.keys()
-                if nm not in keep},
+                for nm in p_ds.variables.keys()
+                if nm not in keep|set(p_ds.dims)},
             inplace=True)
         s_ds.rename(
             {nm: "{:s}_{:s}".format(self.sec, nm)
-                for nm in s_ds.keys()
-                if nm not in keep},
+                for nm in s_ds.variables.keys()
+                if nm not in keep|set(s_ds.dims)},
             inplace=True)
         # dimension prt_number_iwt may differ
         if ("prt_number_iwt" in p_ds and
@@ -110,8 +110,6 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         /group_workspaces/cems2/fiduceo/Users/shunt/public/harmonisation/data
         
-        See also Sam's document on the FIDUCEO wiki.
-
         Note that one would want to merge a collection of those.
         """
 
@@ -132,6 +130,84 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         H = xarray.concat(da_all, dim="m").transpose("matchup_count", "m")
 #        H.name = "H_matrix"
 #        H = H.assign_coords(H_labels=take_total)
+
+        # Dimensions: (M1, m1, m2, w_matrix_count, w_matrix_num_row,
+        #              w_matrix_sum_nnz, uncertainty_vector_count,
+        #              uncertainty_vector_sum_row)
+        harm = xarray.Dataset()
+
+        {"X1": (("M", "m1"),
+                ),
+         "X2": (("M", "m2"),
+                ),
+         "Ur1": (("M", "m1"),
+                ),
+         "Ur2": (("M", "m2"),
+                ),
+         "Us1": (("M", "m1"),
+                ),
+         "Us2": (("M", "m2"),
+                ),
+         "uncertainty_type1": (("m1",),
+                ),
+         "uncertainty_type2": (("m2",),
+                ),
+         "K": (("M",),
+                ),
+         "Kr": (("M",),
+                ),
+         "Ks": (("M",),
+                ),
+         "time1": (("M",),
+                ),
+         "time2": (("M",),
+                ),
+         "w_matrix_nnz": (("w_matrix_count",),
+                ),
+         "w_matrix_row": (("w_matrix_count", "w_matrix_num_row"),
+                ),
+         "w_matrix_col": (("w_matrix_sum_nnz",),
+                ),
+         "w_matrix_val": (("w_matrix_val",),
+                ),
+         "w_matrix_use1": (("m1",),
+                ),
+         "w_matrix_use2": (("m2",),
+                ),
+         "uncertainty_vector_row_count": (("uncertainty_vector_count",),
+                ),
+         "uncertainty_vector": (("uncertainty_vector_sum_row",),
+                ),
+         "uncertainty_vector_use1": (("m1",),
+                ),
+         "uncertainty_vector_use2": (("m2",),
+                )}
+
+        daa = xarray.merge(da_all)
+
+        harm.assign_coords(m1=take_for_each, m2=take_for_each)
+        for (sat, i) in ((self.prim, 1), (self.sec, 2)):
+            # fill X1, X2
+
+            harm[f"X{i:d}"] = (
+                ("M", f"m{i:d}"),
+                numpy.concatenate(
+                    [daa[f"{sat:s}_{x:s}"].values[:, numpy.newaxis]
+                     for x in take_for_each], 1))
+
+            # fill Ur1, Ur2
+
+            # fill Us1, Us2
+
+            # fill time1, time2
+
+            # fill w_matrix_use1, w_matrix_use2
+
+            # fill uncertainty_vector_use1, uncertainty_vector_use2
+
+        # and the rest...
+
+        raise NotImplementedError("Tot hier hernieuwd!")
 
         harm = xarray.Dataset(
             {"H": H.rename({"matchup_count": "M"})},
@@ -316,6 +392,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm.to_netcdf(out)
 
 def main():
+    warnings.filterwarnings("error",
+        message="iteration over an xarray.Dataset will change",
+        category=FutureWarning)
     hmc = HIRSMatchupCombiner(
         datetime.datetime.strptime(p.from_date, p.datefmt),
         datetime.datetime.strptime(p.to_date, p.datefmt),
