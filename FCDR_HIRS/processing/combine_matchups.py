@@ -25,6 +25,10 @@ def parse_cmdline():
     return parser.parse_args()
 p = parse_cmdline()
 
+# workaround for #174
+tl = dict(C_E="C_Earth",
+          fstar="f_eff")
+
 import logging
 logging.basicConfig(
     format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
@@ -114,6 +118,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         """
 
         take_for_each = ["C_s", "C_IWCT", "C_E", "T_IWCT", "α", "β", "fstar", "R_selfE"]
+
+        independent = {"C_E"}
+        common = {"α", "β", "fstar"}
+        structured = {"C_S", "C_IWCT", "T_IWCT", "R_selfE"}
+
         take_total = list('_'.join(x) for x in itertools.product(
                 (self.prim, self.sec),
                 take_for_each) if not x[1].startswith("u_"))
@@ -196,15 +205,53 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
             # fill Ur1, Ur2
 
+            harm[f"Ur{i:d}"] = (
+                ("M", f"m{i:d}"),
+                numpy.concatenate(
+                    [(ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(x,x):s}"].values if x in independent
+                      else numpy.zeros(ds.dims["matchup_count"])
+                      )[:, numpy.newaxis]
+                      for x in take_for_each], 1))
+
             # fill Us1, Us2
 
+            # NB: need to tile scalar (constant) common uncertainties
+            L = []
+            for x in take_for_each:
+                if x in common:
+                    da = ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(x,x):s}"]
+                    L.append(
+                        numpy.tile(
+                            da.values,
+                            [1 if da.ndim>0 else ds.dims["matchup_count"],
+                             1]))
+                else:
+                    L.append(numpy.zeros((ds.dims["matchup_count"], 1)))
+            harm[f"Us{i:d}"] = (
+                ("M", f"m{i:d}"),
+                numpy.concatenate(L, 1))
+
+            # fill uncertainty_type1, uncertainty_type2
+
+            harm[f"uncertainty_type{i:d}"] = (
+                (f"m{i:d}",),
+                [1 if x in independent else
+                 2 if x in structured else
+                 3 if x in common else 0
+                 for x in take_for_each]
+                )
+
             # fill time1, time2
+
+            harm[f"time{i:d}"] = ((("M",), ds[f"{sat:s}_time"]))
 
             # fill w_matrix_use1, w_matrix_use2
 
             # fill uncertainty_vector_use1, uncertainty_vector_use2
 
-        # and the rest...
+        # and the rest: K, Kr, Ks, w_matrix_nnz, w_matrix_row,
+        # w_matrix_col, w_matrix_val, uncertainty_vector_row_count,
+        # uncertainty_vector
 
         harm = harm.assign_coords(
             m1=take_for_each,
