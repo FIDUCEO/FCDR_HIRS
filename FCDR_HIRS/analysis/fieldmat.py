@@ -185,28 +185,40 @@ class _SatPlotChCorrmat(_SatPlotHelper):
         self.S_hi = numpy.triu(S, k=1)
         self.lcnt = lcnt
 
-    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp):
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, solo):
         im = mp._plot_ch_corrmat(
             self.S_low +
             self.S_hi +
             numpy.diag(numpy.zeros(self.channels.size)*numpy.nan),
                               ax, self.channels, add_x=r==3, add_y=c==0)
-        if r==c==0:
+        if solo:
+            cb = f.colorbar(im)
+        elif r==c==0:
             f = ax.figure
             cax = f.add_subplot(gs[:-1, -1])
             cb = f.colorbar(im, cax=cax)
+        else:
+            cb = None
+
+        if cb is not None:
             cb.set_label("Pearson product-moment correlation coefficient")
-        ax.set_title(f"{sat:s}\n"
+
+        ax.set_title(("HIRS noise correlations for " if solo else "") +
+                     f"{sat:s}\n"
                      f"{ep[0]:%Y-%m}, {self.ecnt:d} cycles\n"
                      f"{lp[0]:%Y-%m}, {self.lcnt:d} cycles")
 
-    def finalise(self, mp, f, gs):
-        gs.update(wspace=0.10, hspace=0.4)
-        f.suptitle("HIRS noise correlations for all HIRS, pos "
-                  f"{self.calibpos:d} ", fontsize=40)
-        pyatmlab.graphics.print_or_show(f, False,
-            f"hirs_noise_correlations_allsats_pos{self.calibpos:d}.")
-#
+    def finalise(self, mp, f, gs, sat=None, solo=False):
+        if solo:
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_noise_correlations_sat{sat:s}_pos{self.calibpos:d}.")
+        else:
+            gs.update(wspace=0.10, hspace=0.4)
+            f.suptitle("HIRS noise correlations for all HIRS, pos "
+                      f"{self.calibpos:d} ", fontsize=40)
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_noise_correlations_allsats_pos{self.calibpos:d}.")
+
 class _SatPlotFFT(_SatPlotHelper):
     """For plotting FFT stuff
     """
@@ -248,7 +260,7 @@ class _SatPlotFFT(_SatPlotHelper):
         self.late_ec[channel] = ec
         self.late_cnt[channel] = spc.shape[0]
 
-    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, channel):
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, channel, solo):
         """Plot FFT for calibration counts and Earth views
         """
 
@@ -329,31 +341,37 @@ class _SatPlotFFT(_SatPlotHelper):
         xpos = [48, 24, 12, 6, 3]
         ax.set_xticks([1/x for x in xpos])
         ax.grid(axis="both")
-        if r==3:
+        if solo or r==3:
             ax.set_xlabel("Frequency [cycles/pixel]")
             #ax.set_xscale('log')
             #ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
             ax.set_xticklabels([fr"$\frac{{1}}{{{x:d}}}$" for x in xpos])
         else:
             ax.set_xticklabels([])
-        if c==0:
+        if solo or c==0:
             ax.set_ylabel("Amplitude [counts]")
         else:
             ax.set_yticklabels([])
-        if r==0 and c==3:
+        if solo or (r==0 and c==3):
             ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
             #ax.legend()
-        ax.set_title(f"{sat:s}\n"
+        ax.set_title((f"HIRS noise spectral analysis for {sat:s} channel "
+                     f"{channel:d}\n" if solo else f"{sat:s}\n") +
                      f"{ep[0]:%Y-%m}, {self.early_cnt[channel]:d} cycles\n"
                      f"{lp[0]:%Y-%m}, {self.late_cnt[channel]:d} cycles")
-        ax.set_ylim([1e0, 1e4])
+        if not solo: # for solo, let automated positions decide
+            ax.set_ylim([1e0, 1e4])
 
-    def finalise(self, mp, f, gs, channel):
-        gs.update(wspace=0.10, hspace=0.4)
-        f.subplots_adjust(right=0.8, bottom=0.2, top=0.90)
-        f.suptitle(f"Spectral analysis, channel {channel:d}")
-        pyatmlab.graphics.print_or_show(f, False,
-            f"hirs_crosstalk_fft_ch{channel:d}.")
+    def finalise(self, mp, f, gs, channel, sat=None, solo=False):
+        if solo:
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_crosstalk_fft_sat{sat:s}_ch{channel:d}.")
+        else:
+            gs.update(wspace=0.10, hspace=0.4)
+            f.subplots_adjust(right=0.8, bottom=0.2, top=0.90)
+            f.suptitle(f"Spectral analysis, channel {channel:d}")
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_crosstalk_fft_ch{channel:d}.")
 
 class _SatPlotAll(_SatPlotChCorrmat, _SatPlotFFT):
     multichannel = True
@@ -689,10 +707,15 @@ class MatrixPlotter:
         gs = matplotlib.gridspec.GridSpec(20, 21)
         if plotter.multichannel:
             f_all = {}
+            f_solo = {sat: {} for sat in sats}
             for ch in range(1, 20):
                 f_all[ch] = matplotlib.pyplot.figure(figsize=(22, 24))
+                f_solo[sat][ch] = matplotlib.pyplot.figure(
+                    figsize=(6, 4))
         else:
             f = matplotlib.pyplot.figure(figsize=(22, 24))
+            f_solo = {sat: matplotib.pyplot.figure(figsize=(6, 4))
+                        for sat in sats}
 
         for ((r, c), sat) in zip(itertools.product(range(4), range(4)), sats):
             ep = period_pairs[sat][0]
@@ -712,17 +735,28 @@ class MatrixPlotter:
                     plotter.prepare_late(self, ch)
                 for ch in range(1, 20):
                     ax = f_all[ch].add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
+                    ax_solo = f_solo[sat][ch].add_subplot(1, 1, 1)
                     plotter.plot_both(self, ax, gs, sat, r, c, ep, lp, ch)
+                    plotter.plot_both(self, ax_solo, None, sat, 0, 0, ep,
+                                      lp, ch, solo=True)
             else:
                 plotter.prepare_late(self)
                 ax = f.add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
+                ax_solo = f_solo[sat].add_subplot(1, 1, 1)
                 plotter.plot_both(self, ax, gs, sat, r, c, ep, lp)
+                plotter.plot_both(self, ax_solo, None, sat, 0, 0, ep, lp,
+                                  solo=True)
 
         if plotter.multichannel:
             for ch in range(1, 20):
                 plotter.finalise(self, f_all[ch], gs, ch)
+                for sat in sats:
+                    plotter.finalise(self, f_solo[sat][ch], gs, ch
+                        sat=sat, solo=True)
         else:
             plotter.finalise(self, f, gs)
+            for sat in sats:
+                plotter.finalise(self, f_solo[sat], gs, sat=sat, solo=True)
 
 
     def plot_crosstalk_ffts_all_sats(self):
