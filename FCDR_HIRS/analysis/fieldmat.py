@@ -100,6 +100,7 @@ from typhon.physics.units.common import ureg
 from .. import fcdr
 from typhon.datasets import tovs
 from typhon.datasets.dataset import DataFileError
+from .. import cached
 
 month_pairs = dict(
     tirosn = ((1978, 11), (1979, 12)),
@@ -412,17 +413,9 @@ class MatrixPlotter:
     def reset(self, sat, from_date, to_date):
         h = tovs.which_hirs(sat)
         self.hirs = h
-        M = h.read_period(from_date, to_date,
+        M = cached.read_tovs_hirs_period(sat, from_date, to_date, 
             fields=["temp_{:s}".format(t) for t in h.temperature_fields] + 
-                   ["counts", "time", h.scantype_fieldname],
-            orbit_filters=[
-                typhon.datasets.filters.HIRSBestLineFilter(h),
-                typhon.datasets.filters.TimeMaskFilter(h),
-                typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter(),
-                typhon.datasets.filters.HIRSFlagger(h),
-                typhon.datasets.filters.HIRSCalibCountFilter(h),
-                typhon.datasets.filters.HIRSPRTTempFilter(h),
-                ])
+                   ["counts", "time", h.scantype_fieldname])
         self.M = M
         self.start_date = from_date
         self.end_date = to_date
