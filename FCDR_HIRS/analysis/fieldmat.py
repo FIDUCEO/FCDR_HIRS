@@ -932,8 +932,8 @@ def read_and_plot_field_matrices():
 #        mp.plot_fft()
 
     if p.plot_all_corr:
-        #mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
-        #mp.plot_ch_corrmat_all_sats_b(p.channels, p.noise_typ[0], p.calibpos[0])
+        mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
+        mp.plot_ch_corrmat_all_sats_b(p.channels, p.noise_typ[0], p.calibpos[0])
         mp.plot_crosstalk_ffts_all_sats()
         return
 
