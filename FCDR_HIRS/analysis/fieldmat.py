@@ -414,7 +414,7 @@ class MatrixPlotter:
         h = tovs.which_hirs(sat)
         self.hirs = h
         M = cached.read_tovs_hirs_period(sat, from_date, to_date, 
-            fields=["temp_{:s}".format(t) for t in h.temperature_fields] + 
+            fields=["temp_{:s}".format(t) for t in sorted(h.temperature_fields)] + 
                    ["counts", "time", h.scantype_fieldname])
         self.M = M
         self.start_date = from_date
