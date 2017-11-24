@@ -316,7 +316,7 @@ class _SatPlotFFT(_SatPlotHelper):
             markeredgecolor="black",
             markersize=9,
             linewidth=1,
-            linestyle=((0, (5,5)),
+            linestyle=(0, (5,5)),
             label="late, Earth")
         ax.plot(
             x[1:n//2],
@@ -327,7 +327,7 @@ class _SatPlotFFT(_SatPlotHelper):
             markeredgecolor="red",
             markersize=9,
             linewidth=1,
-            linestyle=((0, (5,5)),
+            linestyle=(0, (5,5)),
             label="late, space")
         ax.plot(
             x[1:n//2],
@@ -338,7 +338,7 @@ class _SatPlotFFT(_SatPlotHelper):
             markeredgecolor="teal",
             markersize=9,
             linewidth=1,
-            linestyle=((0, (5,5)),
+            linestyle=(0, (5,5)),
             label="late, IWCT")
 
         ax.set_xscale("log")
