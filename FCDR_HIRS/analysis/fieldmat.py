@@ -418,7 +418,11 @@ class MatrixPlotter:
             orbit_filters=[
                 typhon.datasets.filters.HIRSBestLineFilter(h),
                 typhon.datasets.filters.TimeMaskFilter(h),
-                typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter()])
+                typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter(),
+                typhon.datasets.filters.HIRSFlagger(h),
+                typhon.datasets.filters.HIRSCalibCountFilter(h),
+                typhon.datasets.filters.HIRSPRTTempFilter(h),
+                ])
         self.M = M
         self.start_date = from_date
         self.end_date = to_date
