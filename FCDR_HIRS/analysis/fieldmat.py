@@ -124,6 +124,11 @@ period_pairs = {sat:
      (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 28, 23, 59)))
         for (sat, (start, end)) in month_pairs.items()}
 
+period_pairs = {sat:
+    ((datetime.datetime(*start, 28, 12, 0), datetime.datetime(*start, 28, 23, 59)),
+     (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 1, 12, 0)))
+        for (sat, (start, end)) in month_pairs.items()}
+
 def plot_field_matrix(MM, ranges, title, filename, units):
     f = typhon.plots.plots.scatter_density_plot_matrix(
         MM,
@@ -185,16 +190,16 @@ class _SatPlotChCorrmat(_SatPlotHelper):
         self.S_hi = numpy.triu(S, k=1)
         self.lcnt = lcnt
 
-    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, solo):
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, solo=False):
         im = mp._plot_ch_corrmat(
             self.S_low +
             self.S_hi +
             numpy.diag(numpy.zeros(self.channels.size)*numpy.nan),
                               ax, self.channels, add_x=r==3, add_y=c==0)
+        f = ax.figure
         if solo:
             cb = f.colorbar(im)
         elif r==c==0:
-            f = ax.figure
             cax = f.add_subplot(gs[:-1, -1])
             cb = f.colorbar(im, cax=cax)
         else:
@@ -260,7 +265,7 @@ class _SatPlotFFT(_SatPlotHelper):
         self.late_ec[channel] = ec
         self.late_cnt[channel] = spc.shape[0]
 
-    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, channel, solo):
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, channel, solo=False):
         """Plot FFT for calibration counts and Earth views
         """
 
@@ -276,7 +281,7 @@ class _SatPlotFFT(_SatPlotHelper):
             abs(numpy.fft.fft(self.early_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
             color="black",
             marker="*",
-            markersize=6,
+            markersize=9,
             linewidth=1,
             markerfacecolor="none",
             markeredgecolor="black",
@@ -288,17 +293,17 @@ class _SatPlotFFT(_SatPlotHelper):
             markerfacecolor="none",
             markeredgecolor="red",
             marker="^",
-            markersize=6,
+            markersize=9,
             linewidth=1,
             label="early, space")
         ax.plot(
             x[1:n//2],
             abs(numpy.fft.fft(self.early_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
-            color="tan",
+            color="teal",
             marker="<",
             markerfacecolor="none",
-            markeredgecolor="tan",
-            markersize=6,
+            markeredgecolor="teal",
+            markersize=9,
             linewidth=1,
             label="early, IWCT")
 
@@ -309,9 +314,9 @@ class _SatPlotFFT(_SatPlotHelper):
             marker="o",
             markerfacecolor="none",
             markeredgecolor="black",
-            markersize=6,
+            markersize=9,
             linewidth=1,
-            linestyle="--",
+            linestyle=((0, (5,5)),
             label="late, Earth")
         ax.plot(
             x[1:n//2],
@@ -320,20 +325,20 @@ class _SatPlotFFT(_SatPlotHelper):
             marker="v",
             markerfacecolor="none",
             markeredgecolor="red",
-            markersize=6,
+            markersize=9,
             linewidth=1,
-            linestyle="--",
+            linestyle=((0, (5,5)),
             label="late, space")
         ax.plot(
             x[1:n//2],
             abs(numpy.fft.fft(self.late_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
-            color="tan",
+            color="teal",
             marker=">",
             markerfacecolor="none",
-            markeredgecolor="tan",
-            markersize=6,
+            markeredgecolor="teal",
+            markersize=9,
             linewidth=1,
-            linestyle="--",
+            linestyle=((0, (5,5)),
             label="late, IWCT")
 
         ax.set_xscale("log")
@@ -409,7 +414,11 @@ class MatrixPlotter:
         self.hirs = h
         M = h.read_period(from_date, to_date,
             fields=["temp_{:s}".format(t) for t in h.temperature_fields] + 
-                   ["counts", "time", h.scantype_fieldname])
+                   ["counts", "time", h.scantype_fieldname],
+            orbit_filters=[
+                typhon.datasets.filters.HIRSBestLineFilter(h),
+                typhon.datasets.filters.TimeMaskFilter(h),
+                typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter()])
         self.M = M
         self.start_date = from_date
         self.end_date = to_date
@@ -578,7 +587,7 @@ class MatrixPlotter:
     def _plot_ch_corrmat(S, a, channels, add_x=False, add_y=False, each=2):
         """Helper for plot_noise_value_channel_corr
         """
-        im = a.imshow(S, cmap="PuOr", interpolation="none", vmin=-1, vmax=1)
+        im = a.imshow(S, cmap="PuOr_r", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
         a.set_xticks(numpy.arange(len(channels)))
         if add_x or a.is_last_row():
@@ -600,7 +609,7 @@ class MatrixPlotter:
 
     @staticmethod
     def _plot_pos_corrmat(S, a, add_x=False, add_y=False):
-        im = a.imshow(S, cmap="PuOr", interpolation="none", vmin=-1, vmax=1)
+        im = a.imshow(S, cmap="PuOr_r", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
         if add_x:
             a.set_xlabel("Pos no.")
@@ -637,7 +646,7 @@ class MatrixPlotter:
                 logging.warn("{:d} elements have underflow (p=0), setting "
                     "to tiny".format((p==0).sum()))
                 p[p==0] = numpy.finfo("float64").tiny * numpy.finfo("float64").eps
-            im1 = ax_all[0].imshow(S, cmap="PuOr", interpolation="none")
+            im1 = ax_all[0].imshow(S, cmap="PuOr_r", interpolation="none")
             im1.set_clim([-1, 1])
             cb1 = f.colorbar(im1, cax=ax_all[1])
             cb1.set_label("Correlation coefficient")
@@ -645,7 +654,7 @@ class MatrixPlotter:
 
             # choose range for S
             upto = scipy.stats.scoreatpercentile(abs(S[S<1]), 99)
-            im2 = ax_all[3].imshow(S, cmap="PuOr", vmin=-upto, vmax=upto)
+            im2 = ax_all[3].imshow(S, cmap="PuOr_r", vmin=-upto, vmax=upto)
             im2.set_clim([-upto, upto])
             cb2 = f.colorbar(im2, cax=ax_all[4])
             cb2.set_label("Correlation coefficient")
@@ -680,7 +689,7 @@ class MatrixPlotter:
         MMp = MMp[:, (~MMp.mask).all(0)]
         S = numpy.corrcoef(MMp)
         (f, a) = matplotlib.pyplot.subplots(1, 1)
-        im = a.imshow(S, cmap="PuOr", interpolation="none")
+        im = a.imshow(S, cmap="PuOr_r", interpolation="none")
         im.set_clim([-1, 1])
         cb = f.colorbar(im)
         cb.set_label("Correlation coefficient")
@@ -710,11 +719,12 @@ class MatrixPlotter:
             f_solo = {sat: {} for sat in sats}
             for ch in range(1, 20):
                 f_all[ch] = matplotlib.pyplot.figure(figsize=(22, 24))
-                f_solo[sat][ch] = matplotlib.pyplot.figure(
-                    figsize=(6, 4))
+                for sat in sats:
+                    f_solo[sat][ch] = matplotlib.pyplot.figure(
+                        figsize=(6, 4))
         else:
             f = matplotlib.pyplot.figure(figsize=(22, 24))
-            f_solo = {sat: matplotib.pyplot.figure(figsize=(6, 4))
+            f_solo = {sat: matplotlib.pyplot.figure(figsize=(6, 4))
                         for sat in sats}
 
         for ((r, c), sat) in zip(itertools.product(range(4), range(4)), sats):
@@ -751,7 +761,7 @@ class MatrixPlotter:
             for ch in range(1, 20):
                 plotter.finalise(self, f_all[ch], gs, ch)
                 for sat in sats:
-                    plotter.finalise(self, f_solo[sat][ch], gs, ch
+                    plotter.finalise(self, f_solo[sat][ch], gs, ch,
                         sat=sat, solo=True)
         else:
             plotter.finalise(self, f, gs)
@@ -922,9 +932,9 @@ def read_and_plot_field_matrices():
 #        mp.plot_fft()
 
     if p.plot_all_corr:
-        mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
-        mp.plot_ch_corrmat_all_sats_b(p.channels, p.noise_typ[0], p.calibpos[0])
-#        mp.plot_crosstalk_ffts_all_sats()
+        #mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
+        #mp.plot_ch_corrmat_all_sats_b(p.channels, p.noise_typ[0], p.calibpos[0])
+        mp.plot_crosstalk_ffts_all_sats()
         return
 
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
