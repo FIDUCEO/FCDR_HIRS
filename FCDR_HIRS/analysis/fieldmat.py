@@ -124,10 +124,10 @@ period_pairs = {sat:
      (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 28, 23, 59)))
         for (sat, (start, end)) in month_pairs.items()}
 
-period_pairs = {sat:
-    ((datetime.datetime(*start, 28, 12, 0), datetime.datetime(*start, 28, 23, 59)),
-     (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 1, 12, 0)))
-        for (sat, (start, end)) in month_pairs.items()}
+#period_pairs = {sat:
+#    ((datetime.datetime(*start, 28, 12, 0), datetime.datetime(*start, 28, 23, 59)),
+#     (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 1, 12, 0)))
+#        for (sat, (start, end)) in month_pairs.items()}
 
 def plot_field_matrix(MM, ranges, title, filename, units):
     f = typhon.plots.plots.scatter_density_plot_matrix(
