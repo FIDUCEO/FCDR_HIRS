@@ -84,7 +84,8 @@ setup(
                       "xarray",#>=0.9",
                       "seaborn>=0.7",
                       "sympy>=1.0",
-                      "pint>=0.8"],
+                      "pint>=0.8",
+                      "joblib>=0.11"],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,
