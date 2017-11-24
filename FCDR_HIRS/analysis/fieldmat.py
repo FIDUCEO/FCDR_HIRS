@@ -279,7 +279,8 @@ class _SatPlotFFT(_SatPlotHelper):
 
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.early_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            cached.calc_mean_power_spectrum(self.early_ec[channel], n),
+            #abs(numpy.fft.fft(self.early_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
             color="black",
             marker="*",
             markersize=9,
@@ -289,7 +290,8 @@ class _SatPlotFFT(_SatPlotHelper):
             label="early, Earth")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.early_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            cached.calc_mean_power_spectrum(self.early_spc[channel], n),
+            #abs(numpy.fft.fft(self.early_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
             color="red",
             markerfacecolor="none",
             markeredgecolor="red",
@@ -299,7 +301,8 @@ class _SatPlotFFT(_SatPlotHelper):
             label="early, space")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.early_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            cached.calc_mean_power_spectrum(self.early_iwctc[channel], n),
+            #abs(numpy.fft.fft(self.early_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
             color="teal",
             marker="<",
             markerfacecolor="none",
@@ -310,7 +313,8 @@ class _SatPlotFFT(_SatPlotHelper):
 
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.late_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            cached.calc_mean_power_spectrum(self.late_ec[channel], n),
+            #abs(numpy.fft.fft(self.late_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
             color="black",
             marker="o",
             markerfacecolor="none",
@@ -321,7 +325,8 @@ class _SatPlotFFT(_SatPlotHelper):
             label="late, Earth")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.late_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            cached.calc_mean_power_spectrum(self.late_spc[channel], n),
+            #abs(numpy.fft.fft(self.late_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
             color="red",
             marker="v",
             markerfacecolor="none",
@@ -332,7 +337,8 @@ class _SatPlotFFT(_SatPlotHelper):
             label="late, space")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.late_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            cached.calc_mean_power_spectrum(self.late_iwctc[channel], n),
+            #abs(numpy.fft.fft(self.late_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
             color="teal",
             marker=">",
             markerfacecolor="none",
@@ -725,8 +731,10 @@ class MatrixPlotter:
                         for sat in sats}
 
         for ((r, c), sat) in zip(itertools.product(range(4), range(4)), sats):
+            logging.info(f"Processing {sat:s}")
             ep = period_pairs[sat][0]
             lp = period_pairs[sat][1]
+            logging.info("Preparing early")
             self.reset(sat, *ep)
 
             if plotter.multichannel:
@@ -735,8 +743,10 @@ class MatrixPlotter:
             else:
                 plotter.prepare_early(self)
 
+            logging.info("Preparing late")
             self.reset(sat, *lp)
 
+            logging.info("Plotting all channels")
             if plotter.multichannel:
                 for ch in range(1, 20):
                     plotter.prepare_late(self, ch)
@@ -767,6 +777,7 @@ class MatrixPlotter:
 
 
     def plot_crosstalk_ffts_all_sats(self):
+        logging.info("Processing FFTs")
         self.plot_all_sats_early_late(
             _SatPlotFFT(),
             sats="all")
@@ -774,6 +785,7 @@ class MatrixPlotter:
     def plot_ch_corrmat_all_sats_b(self, channels, noise_typ, calibpos,
         sats="all"):
 
+        logging.info("Processing channel correlation matrices")
         self.plot_all_sats_early_late(
             _SatPlotChCorrmat(channels, noise_typ, calibpos),
             sats="all")
@@ -830,6 +842,7 @@ class MatrixPlotter:
         One set with all satellites as subplots, figure for each channel
         One set with all channels as subplots, figure for each satellite
         """
+        logging.info("Processing position correlation matrices")
         channels = numpy.arange(1, 21)
         sats = self.all_sats
 
@@ -859,6 +872,7 @@ class MatrixPlotter:
                     gs_persat[r*5:(r+1)*5-1, c*5:(c+1)*5])
 
         for (i, sat) in enumerate(sats):
+            logging.info(f"Processing {sat:s}")
 #            for ch in channels:
 #                a_persat = a_persat[sat][ch]
 #                a_perch = a_perch[ch][sat]
@@ -867,15 +881,18 @@ class MatrixPlotter:
             ep = period_pairs[sat][0]
             lp = period_pairs[sat][1]
 
+            logging.info("Getting early period")
             self.reset(sat, *ep)
             (S_each, _, ecnt_each) = zip(*[
                 self._get_pos_corrmat(ch, noise_typ) for ch in channels])
             S_low = [numpy.tril(S, k=-1) for S in S_each]
+            logging.info("Getting late period")
             self.reset(sat, *lp)
             (S_each, _, lcnt_each) = zip(*[
                 self._get_pos_corrmat(ch, noise_typ) for ch in channels])
             S_hi = [numpy.triu(S, k=1) for S in S_each]
             #
+            logging.info("Plotting all channels")
             for ch in channels:
                 S_tot = S_low[ch-1]+S_hi[ch-1]+numpy.diag(numpy.zeros(48)*numpy.nan)
 
