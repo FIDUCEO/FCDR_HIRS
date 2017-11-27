@@ -100,6 +100,7 @@ from typhon.physics.units.common import ureg
 from .. import fcdr
 from typhon.datasets import tovs
 from typhon.datasets.dataset import DataFileError
+from .. import cached
 
 month_pairs = dict(
     tirosn = ((1978, 11), (1979, 12)),
@@ -123,6 +124,11 @@ period_pairs = {sat:
     ((datetime.datetime(*start, 1, 0, 0), datetime.datetime(*start, 28, 23, 59)),
      (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 28, 23, 59)))
         for (sat, (start, end)) in month_pairs.items()}
+
+#period_pairs = {sat:
+#    ((datetime.datetime(*start, 28, 12, 0), datetime.datetime(*start, 28, 23, 59)),
+#     (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 1, 12, 0)))
+#        for (sat, (start, end)) in month_pairs.items()}
 
 def plot_field_matrix(MM, ranges, title, filename, units):
     f = typhon.plots.plots.scatter_density_plot_matrix(
@@ -185,28 +191,40 @@ class _SatPlotChCorrmat(_SatPlotHelper):
         self.S_hi = numpy.triu(S, k=1)
         self.lcnt = lcnt
 
-    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp):
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, solo=False):
         im = mp._plot_ch_corrmat(
             self.S_low +
             self.S_hi +
             numpy.diag(numpy.zeros(self.channels.size)*numpy.nan),
                               ax, self.channels, add_x=r==3, add_y=c==0)
-        if r==c==0:
-            f = ax.figure
+        f = ax.figure
+        if solo:
+            cb = f.colorbar(im)
+        elif r==c==0:
             cax = f.add_subplot(gs[:-1, -1])
             cb = f.colorbar(im, cax=cax)
+        else:
+            cb = None
+
+        if cb is not None:
             cb.set_label("Pearson product-moment correlation coefficient")
-        ax.set_title(f"{sat:s}\n"
+
+        ax.set_title(("HIRS noise correlations for " if solo else "") +
+                     f"{sat:s}\n"
                      f"{ep[0]:%Y-%m}, {self.ecnt:d} cycles\n"
                      f"{lp[0]:%Y-%m}, {self.lcnt:d} cycles")
 
-    def finalise(self, mp, f, gs):
-        gs.update(wspace=0.10, hspace=0.4)
-        f.suptitle("HIRS noise correlations for all HIRS, pos "
-                  f"{self.calibpos:d} ", fontsize=40)
-        pyatmlab.graphics.print_or_show(f, False,
-            f"hirs_noise_correlations_allsats_pos{self.calibpos:d}.")
-#
+    def finalise(self, mp, f, gs, sat=None, solo=False):
+        if solo:
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_noise_correlations_sat{sat:s}_pos{self.calibpos:d}.")
+        else:
+            gs.update(wspace=0.10, hspace=0.4)
+            f.suptitle("HIRS noise correlations for all HIRS, pos "
+                      f"{self.calibpos:d} ", fontsize=40)
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_noise_correlations_allsats_pos{self.calibpos:d}.")
+
 class _SatPlotFFT(_SatPlotHelper):
     """For plotting FFT stuff
     """
@@ -248,7 +266,8 @@ class _SatPlotFFT(_SatPlotHelper):
         self.late_ec[channel] = ec
         self.late_cnt[channel] = spc.shape[0]
 
-    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, channel):
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, channel,
+                  solo=False, c_max=3, r_max=3, custom=False):
         """Plot FFT for calibration counts and Earth views
         """
 
@@ -259,69 +278,80 @@ class _SatPlotFFT(_SatPlotHelper):
         # rather do pixels than seconds (feedback CM)
         x = numpy.fft.fftfreq(n, d=1)
 
+        logging.debug("Calculating FFTs")
+
+        fft_e_ec = abs(numpy.fft.fft(self.early_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+        fft_e_spc = abs(numpy.fft.fft(self.early_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+        fft_e_iwctc = abs(numpy.fft.fft(self.early_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+        fft_l_ec = abs(numpy.fft.fft(self.late_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+        fft_l_spc = abs(numpy.fft.fft(self.late_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+        fft_l_iwctc = abs(numpy.fft.fft(self.late_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+
+        logging.debug("Done calculating, now plotting FFTs")
+
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.early_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            fft_e_ec,
             color="black",
             marker="*",
-            markersize=6,
+            markersize=9,
             linewidth=1,
             markerfacecolor="none",
             markeredgecolor="black",
             label="early, Earth")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.early_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            fft_e_spc,
             color="red",
             markerfacecolor="none",
             markeredgecolor="red",
             marker="^",
-            markersize=6,
+            markersize=9,
             linewidth=1,
             label="early, space")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.early_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
-            color="tan",
+            fft_e_iwctc,
+            color="teal",
             marker="<",
             markerfacecolor="none",
-            markeredgecolor="tan",
-            markersize=6,
+            markeredgecolor="teal",
+            markersize=9,
             linewidth=1,
             label="early, IWCT")
 
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.late_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            fft_l_ec,
             color="black",
             marker="o",
             markerfacecolor="none",
             markeredgecolor="black",
-            markersize=6,
+            markersize=9,
             linewidth=1,
-            linestyle="--",
+            linestyle=(0, (5,5)),
             label="late, Earth")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.late_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            fft_l_spc,
             color="red",
             marker="v",
             markerfacecolor="none",
             markeredgecolor="red",
-            markersize=6,
+            markersize=9,
             linewidth=1,
-            linestyle="--",
+            linestyle=(0, (5,5)),
             label="late, space")
         ax.plot(
             x[1:n//2],
-            abs(numpy.fft.fft(self.late_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
-            color="tan",
+            fft_l_iwctc,
+            color="teal",
             marker=">",
             markerfacecolor="none",
-            markeredgecolor="tan",
-            markersize=6,
+            markeredgecolor="teal",
+            markersize=9,
             linewidth=1,
-            linestyle="--",
+            linestyle=(0, (5,5)),
             label="late, IWCT")
 
         ax.set_xscale("log")
@@ -329,31 +359,42 @@ class _SatPlotFFT(_SatPlotHelper):
         xpos = [48, 24, 12, 6, 3]
         ax.set_xticks([1/x for x in xpos])
         ax.grid(axis="both")
-        if r==3:
+        if solo or r==r_max:
             ax.set_xlabel("Frequency [cycles/pixel]")
             #ax.set_xscale('log')
             #ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
             ax.set_xticklabels([fr"$\frac{{1}}{{{x:d}}}$" for x in xpos])
         else:
             ax.set_xticklabels([])
-        if c==0:
+        if solo or c==0:
             ax.set_ylabel("Amplitude [counts]")
         else:
             ax.set_yticklabels([])
-        if r==0 and c==3:
+        if solo or (r==0 and c==c_max):
             ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
             #ax.legend()
-        ax.set_title(f"{sat:s}\n"
+        ax.set_title((f"HIRS noise spectral analysis for {sat:s} channel "
+                     f"{channel:d}\n" if solo else f"{sat:s} ch. {channel:d}\n" if custom else f"{sat:s}\n") +
                      f"{ep[0]:%Y-%m}, {self.early_cnt[channel]:d} cycles\n"
                      f"{lp[0]:%Y-%m}, {self.late_cnt[channel]:d} cycles")
-        ax.set_ylim([1e0, 1e4])
+        if not solo: # for solo, let automated positions decide
+            ax.set_ylim([1e0, 1e4])
+        logging.debug("Done plotting FFTs")
 
-    def finalise(self, mp, f, gs, channel):
-        gs.update(wspace=0.10, hspace=0.4)
-        f.subplots_adjust(right=0.8, bottom=0.2, top=0.90)
-        f.suptitle(f"Spectral analysis, channel {channel:d}")
-        pyatmlab.graphics.print_or_show(f, False,
-            f"hirs_crosstalk_fft_ch{channel:d}.")
+    def finalise(self, mp, f, gs, channel=None, sat=None, solo=False,
+                 custom=False):
+        if custom:
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_crosstalk_fft_custom.")
+        elif solo:
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_crosstalk_fft_sat{sat:s}_ch{channel:d}.")
+        else:
+            gs.update(wspace=0.10, hspace=0.4)
+            f.subplots_adjust(right=0.8, bottom=0.2, top=0.90)
+            f.suptitle(f"Spectral analysis, channel {channel:d}")
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_crosstalk_fft_ch{channel:d}.")
 
 class _SatPlotAll(_SatPlotChCorrmat, _SatPlotFFT):
     multichannel = True
@@ -389,8 +430,8 @@ class MatrixPlotter:
     def reset(self, sat, from_date, to_date):
         h = tovs.which_hirs(sat)
         self.hirs = h
-        M = h.read_period(from_date, to_date,
-            fields=["temp_{:s}".format(t) for t in h.temperature_fields] + 
+        M = cached.read_tovs_hirs_period(sat, from_date, to_date, 
+            fields=["temp_{:s}".format(t) for t in sorted(h.temperature_fields)] + 
                    ["counts", "time", h.scantype_fieldname])
         self.M = M
         self.start_date = from_date
@@ -560,7 +601,7 @@ class MatrixPlotter:
     def _plot_ch_corrmat(S, a, channels, add_x=False, add_y=False, each=2):
         """Helper for plot_noise_value_channel_corr
         """
-        im = a.imshow(S, cmap="PuOr", interpolation="none", vmin=-1, vmax=1)
+        im = a.imshow(S, cmap="PuOr_r", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
         a.set_xticks(numpy.arange(len(channels)))
         if add_x or a.is_last_row():
@@ -582,7 +623,7 @@ class MatrixPlotter:
 
     @staticmethod
     def _plot_pos_corrmat(S, a, add_x=False, add_y=False):
-        im = a.imshow(S, cmap="PuOr", interpolation="none", vmin=-1, vmax=1)
+        im = a.imshow(S, cmap="PuOr_r", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
         if add_x:
             a.set_xlabel("Pos no.")
@@ -619,7 +660,7 @@ class MatrixPlotter:
                 logging.warn("{:d} elements have underflow (p=0), setting "
                     "to tiny".format((p==0).sum()))
                 p[p==0] = numpy.finfo("float64").tiny * numpy.finfo("float64").eps
-            im1 = ax_all[0].imshow(S, cmap="PuOr", interpolation="none")
+            im1 = ax_all[0].imshow(S, cmap="PuOr_r", interpolation="none")
             im1.set_clim([-1, 1])
             cb1 = f.colorbar(im1, cax=ax_all[1])
             cb1.set_label("Correlation coefficient")
@@ -627,7 +668,7 @@ class MatrixPlotter:
 
             # choose range for S
             upto = scipy.stats.scoreatpercentile(abs(S[S<1]), 99)
-            im2 = ax_all[3].imshow(S, cmap="PuOr", vmin=-upto, vmax=upto)
+            im2 = ax_all[3].imshow(S, cmap="PuOr_r", vmin=-upto, vmax=upto)
             im2.set_clim([-upto, upto])
             cb2 = f.colorbar(im2, cax=ax_all[4])
             cb2.set_label("Correlation coefficient")
@@ -662,7 +703,7 @@ class MatrixPlotter:
         MMp = MMp[:, (~MMp.mask).all(0)]
         S = numpy.corrcoef(MMp)
         (f, a) = matplotlib.pyplot.subplots(1, 1)
-        im = a.imshow(S, cmap="PuOr", interpolation="none")
+        im = a.imshow(S, cmap="PuOr_r", interpolation="none")
         im.set_clim([-1, 1])
         cb = f.colorbar(im)
         cb.set_label("Correlation coefficient")
@@ -689,43 +730,126 @@ class MatrixPlotter:
         gs = matplotlib.gridspec.GridSpec(20, 21)
         if plotter.multichannel:
             f_all = {}
+            f_solo = {sat: {} for sat in sats}
             for ch in range(1, 20):
                 f_all[ch] = matplotlib.pyplot.figure(figsize=(22, 24))
+                for sat in sats:
+                    f_solo[sat][ch] = matplotlib.pyplot.figure(
+                        figsize=(6, 4))
         else:
             f = matplotlib.pyplot.figure(figsize=(22, 24))
+            f_solo = {sat: matplotlib.pyplot.figure(figsize=(6, 4))
+                        for sat in sats}
 
         for ((r, c), sat) in zip(itertools.product(range(4), range(4)), sats):
+            logging.info(f"Processing {sat:s}")
             ep = period_pairs[sat][0]
             lp = period_pairs[sat][1]
+            logging.info("Resetting to early")
             self.reset(sat, *ep)
 
+            logging.info("Preparing early")
             if plotter.multichannel:
                 for ch in range(1, 20):
                     plotter.prepare_early(self, ch)
             else:
                 plotter.prepare_early(self)
 
+            logging.info("Resetting to late")
             self.reset(sat, *lp)
 
+            logging.info("Preparing late")
             if plotter.multichannel:
                 for ch in range(1, 20):
                     plotter.prepare_late(self, ch)
+                logging.info("Plotting all channels")
                 for ch in range(1, 20):
                     ax = f_all[ch].add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
-                    plotter.plot_both(self, ax, gs, sat, r, c, ep, lp, ch)
+                    ax_solo = f_solo[sat][ch].add_subplot(1, 1, 1)
+                    plotter.plot_both(self, ax, gs, sat, r, c, ep, lp, ch,
+                        c_max=3, r_max=3)
+                    plotter.plot_both(self, ax_solo, None, sat, 0, 0, ep,
+                                      lp, ch, solo=True, c_max=3, r_max=3)
             else:
                 plotter.prepare_late(self)
                 ax = f.add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
-                plotter.plot_both(self, ax, gs, sat, r, c, ep, lp)
+                ax_solo = f_solo[sat].add_subplot(1, 1, 1)
+                plotter.plot_both(self, ax, gs, sat, r, c, ep, lp,
+                                  c_max=3, r_max=3)
+                plotter.plot_both(self, ax_solo, None, sat, 0, 0, ep, lp,
+                                  solo=True, c_max=3, r_max=3)
 
         if plotter.multichannel:
             for ch in range(1, 20):
                 plotter.finalise(self, f_all[ch], gs, ch)
+                for sat in sats:
+                    plotter.finalise(self, f_solo[sat][ch], gs, ch,
+                        sat=sat, solo=True)
         else:
             plotter.finalise(self, f, gs)
+            for sat in sats:
+                plotter.finalise(self, f_solo[sat], gs, sat=sat, solo=True)
 
+    def plot_selection_sats_early_late(self, plotter, pairs):
+        """Plot for a selection of sats.
+
+        Select 9.
+        """
+
+        if len(pairs) != 9:
+            raise ValueError(f"I want 9 pairs, not {len(pairs):d}")
+
+        if not plotter.multichannel:
+            raise ValueError(f"Cannot plot subselection for {plotter!s}")
+
+        gs = matplotlib.gridspec.GridSpec(18, 19)
+        f = matplotlib.pyplot.figure(figsize=(16, 16))
+        #pairs = sorted(pairs)
+        lastsat = None
+        for ((r, c), (sat, ch)) in zip(
+                itertools.product(range(3), range(3)), pairs):
+            logging.info(f"Processing {sat:s} ch. {ch:d}")
+            (ep, lp) = period_pairs[sat]
+
+            logging.info("Resetting to early")
+            self.reset(sat, *ep)
+
+            logging.info("Preparing early")
+            plotter.prepare_early(self, ch)
+
+            logging.info("Resetting to late")
+            self.reset(sat, *lp)
+
+            logging.info("Preparing late")
+            plotter.prepare_late(self, ch)
+
+            logging.info("Plotting")
+            ax = f.add_subplot(gs[r*6:(r+1)*6-1, c*6:(c+1)*6])
+
+            gs.update(hspace=2.0)
+            plotter.plot_both(self, ax, gs, sat, r, c, ep, lp, ch,
+                              solo=False, c_max=2, r_max=2, custom=True)
+
+        logging.info("Finalising figure")
+        plotter.finalise(self, f, gs, custom=True)
 
     def plot_crosstalk_ffts_all_sats(self):
+        logging.info("Processing FFTs")
+        self.plot_selection_sats_early_late(
+            _SatPlotFFT(),
+            pairs=[
+                ("noaa06", 7),
+                ("noaa06", 17),
+                #("noaa09", 4),
+                ("noaa11", 3),
+                ("noaa11", 4),
+                ("noaa12", 4),
+                ("noaa14", 10),
+                ("noaa15", 14),
+                ("noaa16", 1),
+                ("metopa", 12),
+                ]
+            )
         self.plot_all_sats_early_late(
             _SatPlotFFT(),
             sats="all")
@@ -733,6 +857,7 @@ class MatrixPlotter:
     def plot_ch_corrmat_all_sats_b(self, channels, noise_typ, calibpos,
         sats="all"):
 
+        logging.info("Processing channel correlation matrices")
         self.plot_all_sats_early_late(
             _SatPlotChCorrmat(channels, noise_typ, calibpos),
             sats="all")
@@ -789,6 +914,7 @@ class MatrixPlotter:
         One set with all satellites as subplots, figure for each channel
         One set with all channels as subplots, figure for each satellite
         """
+        logging.info("Processing position correlation matrices")
         channels = numpy.arange(1, 21)
         sats = self.all_sats
 
@@ -818,6 +944,7 @@ class MatrixPlotter:
                     gs_persat[r*5:(r+1)*5-1, c*5:(c+1)*5])
 
         for (i, sat) in enumerate(sats):
+            logging.info(f"Processing {sat:s}")
 #            for ch in channels:
 #                a_persat = a_persat[sat][ch]
 #                a_perch = a_perch[ch][sat]
@@ -826,15 +953,18 @@ class MatrixPlotter:
             ep = period_pairs[sat][0]
             lp = period_pairs[sat][1]
 
+            logging.info("Getting early period")
             self.reset(sat, *ep)
             (S_each, _, ecnt_each) = zip(*[
                 self._get_pos_corrmat(ch, noise_typ) for ch in channels])
             S_low = [numpy.tril(S, k=-1) for S in S_each]
+            logging.info("Getting late period")
             self.reset(sat, *lp)
             (S_each, _, lcnt_each) = zip(*[
                 self._get_pos_corrmat(ch, noise_typ) for ch in channels])
             S_hi = [numpy.triu(S, k=1) for S in S_each]
             #
+            logging.info("Plotting all channels")
             for ch in channels:
                 S_tot = S_low[ch-1]+S_hi[ch-1]+numpy.diag(numpy.zeros(48)*numpy.nan)
 
@@ -888,9 +1018,9 @@ def read_and_plot_field_matrices():
 #        mp.plot_fft()
 
     if p.plot_all_corr:
+        mp.plot_crosstalk_ffts_all_sats()
         mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
         mp.plot_ch_corrmat_all_sats_b(p.channels, p.noise_typ[0], p.calibpos[0])
-#        mp.plot_crosstalk_ffts_all_sats()
         return
 
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
