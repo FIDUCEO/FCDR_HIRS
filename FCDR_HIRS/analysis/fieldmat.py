@@ -277,10 +277,20 @@ class _SatPlotFFT(_SatPlotHelper):
         # rather do pixels than seconds (feedback CM)
         x = numpy.fft.fftfreq(n, d=1)
 
+        logging.debug("Calculating FFTs")
+
+        fft_e_ec = abs(numpy.fft.fft(self.early_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+        fft_e_spc = abs(numpy.fft.fft(self.early_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+        fft_e_iwctc = abs(numpy.fft.fft(self.early_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+        fft_l_ec = abs(numpy.fft.fft(self.late_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+        fft_l_spc = abs(numpy.fft.fft(self.late_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+        fft_l_iwctc = abs(numpy.fft.fft(self.late_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0)
+
+        logging.debug("Done calculating, now plotting FFTs")
+
         ax.plot(
             x[1:n//2],
-            cached.calc_mean_power_spectrum(self.early_ec[channel], n),
-            #abs(numpy.fft.fft(self.early_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            fft_e_ec,
             color="black",
             marker="*",
             markersize=9,
@@ -290,8 +300,7 @@ class _SatPlotFFT(_SatPlotHelper):
             label="early, Earth")
         ax.plot(
             x[1:n//2],
-            cached.calc_mean_power_spectrum(self.early_spc[channel], n),
-            #abs(numpy.fft.fft(self.early_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            fft_e_spc,
             color="red",
             markerfacecolor="none",
             markeredgecolor="red",
@@ -301,8 +310,7 @@ class _SatPlotFFT(_SatPlotHelper):
             label="early, space")
         ax.plot(
             x[1:n//2],
-            cached.calc_mean_power_spectrum(self.early_iwctc[channel], n),
-            #abs(numpy.fft.fft(self.early_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            fft_e_iwctc,
             color="teal",
             marker="<",
             markerfacecolor="none",
@@ -313,8 +321,7 @@ class _SatPlotFFT(_SatPlotHelper):
 
         ax.plot(
             x[1:n//2],
-            cached.calc_mean_power_spectrum(self.late_ec[channel], n),
-            #abs(numpy.fft.fft(self.late_ec[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            fft_l_ec,
             color="black",
             marker="o",
             markerfacecolor="none",
@@ -325,8 +332,7 @@ class _SatPlotFFT(_SatPlotHelper):
             label="late, Earth")
         ax.plot(
             x[1:n//2],
-            cached.calc_mean_power_spectrum(self.late_spc[channel], n),
-            #abs(numpy.fft.fft(self.late_spc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            fft_l_spc,
             color="red",
             marker="v",
             markerfacecolor="none",
@@ -337,8 +343,7 @@ class _SatPlotFFT(_SatPlotHelper):
             label="late, space")
         ax.plot(
             x[1:n//2],
-            cached.calc_mean_power_spectrum(self.late_iwctc[channel], n),
-            #abs(numpy.fft.fft(self.late_iwctc[channel], axis=1, n=n)[:, 1:n//2]).mean(0),
+            fft_l_iwctc,
             color="teal",
             marker=">",
             markerfacecolor="none",
@@ -373,6 +378,7 @@ class _SatPlotFFT(_SatPlotHelper):
                      f"{lp[0]:%Y-%m}, {self.late_cnt[channel]:d} cycles")
         if not solo: # for solo, let automated positions decide
             ax.set_ylim([1e0, 1e4])
+        logging.debug("Done plotting FFTs")
 
     def finalise(self, mp, f, gs, channel, sat=None, solo=False):
         if solo:
@@ -734,22 +740,24 @@ class MatrixPlotter:
             logging.info(f"Processing {sat:s}")
             ep = period_pairs[sat][0]
             lp = period_pairs[sat][1]
-            logging.info("Preparing early")
+            logging.info("Resetting to early")
             self.reset(sat, *ep)
 
+            logging.info("Preparing early")
             if plotter.multichannel:
                 for ch in range(1, 20):
                     plotter.prepare_early(self, ch)
             else:
                 plotter.prepare_early(self)
 
-            logging.info("Preparing late")
+            logging.info("Resetting to late")
             self.reset(sat, *lp)
 
-            logging.info("Plotting all channels")
+            logging.info("Preparing late")
             if plotter.multichannel:
                 for ch in range(1, 20):
                     plotter.prepare_late(self, ch)
+                logging.info("Plotting all channels")
                 for ch in range(1, 20):
                     ax = f_all[ch].add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
                     ax_solo = f_solo[sat][ch].add_subplot(1, 1, 1)
@@ -946,9 +954,9 @@ def read_and_plot_field_matrices():
 #        mp.plot_fft()
 
     if p.plot_all_corr:
+        mp.plot_crosstalk_ffts_all_sats()
         mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
         mp.plot_ch_corrmat_all_sats_b(p.channels, p.noise_typ[0], p.calibpos[0])
-        mp.plot_crosstalk_ffts_all_sats()
         return
 
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)

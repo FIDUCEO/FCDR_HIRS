@@ -31,6 +31,5 @@ def read_tovs_hirs_period(satname, start_date, to_date, fields):
             filters.HIRSCalibCountFilter(h, h.filter_calibcounts),
             filters.HIRSPRTTempFilter(h, h.filter_prttemps)])
 
-@memory.cache
-def calc_mean_power_spectrum(x, n):
-    return abs(numpy.fft.fft(x, axis=1, n=n)[:, 1:n//2]).mean(0)
+# FIXME: put something like fieldmat._SatPlotFFT._extract_counts
+# as this method takes a lot of time when plotting
