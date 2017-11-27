@@ -266,7 +266,8 @@ class _SatPlotFFT(_SatPlotHelper):
         self.late_ec[channel] = ec
         self.late_cnt[channel] = spc.shape[0]
 
-    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, channel, solo=False):
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, channel,
+                  solo=False, c_max=3, r_max=3, custom=False):
         """Plot FFT for calibration counts and Earth views
         """
 
@@ -358,7 +359,7 @@ class _SatPlotFFT(_SatPlotHelper):
         xpos = [48, 24, 12, 6, 3]
         ax.set_xticks([1/x for x in xpos])
         ax.grid(axis="both")
-        if solo or r==3:
+        if solo or r==r_max:
             ax.set_xlabel("Frequency [cycles/pixel]")
             #ax.set_xscale('log')
             #ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
@@ -369,19 +370,23 @@ class _SatPlotFFT(_SatPlotHelper):
             ax.set_ylabel("Amplitude [counts]")
         else:
             ax.set_yticklabels([])
-        if solo or (r==0 and c==3):
+        if solo or (r==0 and c==c_max):
             ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
             #ax.legend()
         ax.set_title((f"HIRS noise spectral analysis for {sat:s} channel "
-                     f"{channel:d}\n" if solo else f"{sat:s}\n") +
+                     f"{channel:d}\n" if solo else f"{sat:s} ch. {channel:d}\n" if custom else f"{sat:s}\n") +
                      f"{ep[0]:%Y-%m}, {self.early_cnt[channel]:d} cycles\n"
                      f"{lp[0]:%Y-%m}, {self.late_cnt[channel]:d} cycles")
         if not solo: # for solo, let automated positions decide
             ax.set_ylim([1e0, 1e4])
         logging.debug("Done plotting FFTs")
 
-    def finalise(self, mp, f, gs, channel, sat=None, solo=False):
-        if solo:
+    def finalise(self, mp, f, gs, channel=None, sat=None, solo=False,
+                 custom=False):
+        if custom:
+            pyatmlab.graphics.print_or_show(f, False,
+                f"hirs_crosstalk_fft_custom.")
+        elif solo:
             pyatmlab.graphics.print_or_show(f, False,
                 f"hirs_crosstalk_fft_sat{sat:s}_ch{channel:d}.")
         else:
@@ -761,16 +766,18 @@ class MatrixPlotter:
                 for ch in range(1, 20):
                     ax = f_all[ch].add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
                     ax_solo = f_solo[sat][ch].add_subplot(1, 1, 1)
-                    plotter.plot_both(self, ax, gs, sat, r, c, ep, lp, ch)
+                    plotter.plot_both(self, ax, gs, sat, r, c, ep, lp, ch,
+                        c_max=3, r_max=3)
                     plotter.plot_both(self, ax_solo, None, sat, 0, 0, ep,
-                                      lp, ch, solo=True)
+                                      lp, ch, solo=True, c_max=3, r_max=3)
             else:
                 plotter.prepare_late(self)
                 ax = f.add_subplot(gs[r*5:(r+1)*5-1, c*5:(c+1)*5])
                 ax_solo = f_solo[sat].add_subplot(1, 1, 1)
-                plotter.plot_both(self, ax, gs, sat, r, c, ep, lp)
+                plotter.plot_both(self, ax, gs, sat, r, c, ep, lp,
+                                  c_max=3, r_max=3)
                 plotter.plot_both(self, ax_solo, None, sat, 0, 0, ep, lp,
-                                  solo=True)
+                                  solo=True, c_max=3, r_max=3)
 
         if plotter.multichannel:
             for ch in range(1, 20):
@@ -783,9 +790,66 @@ class MatrixPlotter:
             for sat in sats:
                 plotter.finalise(self, f_solo[sat], gs, sat=sat, solo=True)
 
+    def plot_selection_sats_early_late(self, plotter, pairs):
+        """Plot for a selection of sats.
+
+        Select 9.
+        """
+
+        if len(pairs) != 9:
+            raise ValueError(f"I want 9 pairs, not {len(pairs):d}")
+
+        if not plotter.multichannel:
+            raise ValueError(f"Cannot plot subselection for {plotter!s}")
+
+        gs = matplotlib.gridspec.GridSpec(18, 19)
+        f = matplotlib.pyplot.figure(figsize=(16, 16))
+        #pairs = sorted(pairs)
+        lastsat = None
+        for ((r, c), (sat, ch)) in zip(
+                itertools.product(range(3), range(3)), pairs):
+            logging.info(f"Processing {sat:s} ch. {ch:d}")
+            (ep, lp) = period_pairs[sat]
+
+            logging.info("Resetting to early")
+            self.reset(sat, *ep)
+
+            logging.info("Preparing early")
+            plotter.prepare_early(self, ch)
+
+            logging.info("Resetting to late")
+            self.reset(sat, *lp)
+
+            logging.info("Preparing late")
+            plotter.prepare_late(self, ch)
+
+            logging.info("Plotting")
+            ax = f.add_subplot(gs[r*6:(r+1)*6-1, c*6:(c+1)*6])
+
+            gs.update(hspace=2.0)
+            plotter.plot_both(self, ax, gs, sat, r, c, ep, lp, ch,
+                              solo=False, c_max=2, r_max=2, custom=True)
+
+        logging.info("Finalising figure")
+        plotter.finalise(self, f, gs, custom=True)
 
     def plot_crosstalk_ffts_all_sats(self):
         logging.info("Processing FFTs")
+        self.plot_selection_sats_early_late(
+            _SatPlotFFT(),
+            pairs=[
+                ("noaa06", 7),
+                ("noaa06", 17),
+                #("noaa09", 4),
+                ("noaa11", 3),
+                ("noaa11", 4),
+                ("noaa12", 4),
+                ("noaa14", 10),
+                ("noaa15", 14),
+                ("noaa16", 1),
+                ("metopa", 12),
+                ]
+            )
         self.plot_all_sats_early_late(
             _SatPlotFFT(),
             sats="all")
