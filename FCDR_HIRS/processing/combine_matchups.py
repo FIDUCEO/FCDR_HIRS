@@ -51,6 +51,28 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     # FIXME: go through NetCDFDataset functionality
     basedir = "/group_workspaces/cems2/fiduceo/Data/Harmonisation_matchups/HIRS/"
 
+    kmodel = None
+    def __init__(self, start_date, end_date, prim, sec,
+                 kmodel=None,
+                 krmodel=None):
+        super().__init__(start_date, end_date, prim, sec)
+        if kmodel is None:
+            kmodel = matchups.KModelPlanck(
+                self.ds,
+                self.prim_name,
+                self.prim_hirs,
+                self.sec_name,
+                self.sec_hirs)
+        if krmodel is None:
+            krmodel = matchups.KrModelLSD(
+                self.ds,
+                self.prim_name,
+                self.prim_hirs,
+                self.sec_name,
+                self.sec_hirs)
+        self.kmodel = kmodel
+        self.krmodel = krmodel
+
     def as_xarray_dataset(self):
         """Returns SINGLE xarray dataset for matchups
         """
@@ -61,8 +83,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             (p_ds, s_ds) = (tp.as_xarray_dataset(src,
                 skip_dimensions=["scanpos"],
                 rename_dimensions={"scanline": "collocation"})
-                    for (tp, src) in ((self.hirs_prim, self.Mcp),
-                                      (self.hirs_sec, self.Mcs)))
+                    for (tp, src) in ((self.prim_hirs, self.Mcp),
+                                      (self.sec_hirs, self.Mcs)))
         elif is_xarray:
             p_ds = self.Mcp
             s_ds = self.Mcs
@@ -249,7 +271,15 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
             # fill uncertainty_vector_use1, uncertainty_vector_use2
 
-        # and the rest: K, Kr, Ks, w_matrix_nnz, w_matrix_row,
+        # dimension matchup only:
+        #
+        # K, Kr, Ks
+
+        harm["K"] = (("M",), self.kmodel.calc_K(channel))
+        harm["Ks"] = (("M",), self.kmodel.calc_Ks(channel))
+        harm["Kr"] = (("M",), self.krmodel.calc_Kr(channel))
+
+        # and the rest: w_matrix_nnz, w_matrix_row,
         # w_matrix_col, w_matrix_val, uncertainty_vector_row_count,
         # uncertainty_vector
 
