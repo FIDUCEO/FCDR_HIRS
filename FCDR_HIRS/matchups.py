@@ -1,6 +1,8 @@
 """Any code related to processing or analysing matchups
 """
 
+import abc
+
 import numpy
 
 import typhon.datasets.tovs
@@ -9,7 +11,7 @@ import itertools
 
 from . import fcdr
 
-from typhon.physics.units.common import rad_u
+from typhon.physics.units.common import ureg, radiance_units as rad_u
 
 class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
     def __init__(self, prim, sec):
@@ -100,8 +102,9 @@ class KModel(metaclass=abc.ABCMeta):
 
     """
 
-    def __init__(self, ds, prim_name, prim_hirs, sec_name, sec_hirs):
+    def __init__(self, ds, ds_orig, prim_name, prim_hirs, sec_name, sec_hirs):
         self.ds = ds
+        self.ds_orig = ds_orig
         self.prim_name = prim_name
         self.prim_hirs = prim_hirs
         self.sec_name = sec_name
@@ -152,21 +155,26 @@ class KModelPlanck(KModel):
                 rad_u["si"]))
 
 
-        return self.L2 - self.L1
+        return L2 - L1
 
     def calc_Ks(self, channel):
         # propagate from band correction
         Δ = self.sec_hirs.srfs[channel-1].estimate_band_coefficients(
             self.sec_hirs.satname, "fcdr_hirs", channel)[-1]
         Δ = ureg.Quantity(Δ.values, Δ.units)
+        slave_bt = self.sec_hirs.srfs[channel-1].channel_radiance2bt(
+            ureg.Quantity(
+                self.ds[f"{self.prim_name:s}_R_e"].sel(
+                    calibrated_channel=channel).values,
+                rad_u["si"]))
         slave_bt_perturbed = self.sec_hirs.srfs[channel-1].shift(
             Δ).channel_radiance2bt(ureg.Quantity(
-                ds["{:s}_R_e".format(self.prim_name)].sel(
+                self.ds["{:s}_R_e".format(self.prim_name)].sel(
                     calibrated_channel=channel).values,
                 rad_u["si"]))
         slave_bt_perturbed_2 = self.sec_hirs.srfs[channel-1].shift(
             Δ).channel_radiance2bt(ureg.Quantity(
-                ds["{:s}_R_e".format(self.prim_name)].sel(
+                self.ds["{:s}_R_e".format(self.prim_name)].sel(
                     calibrated_channel=channel).values,
                 rad_u["si"]))
         Δslave_bt = (abs(slave_bt_perturbed - slave_bt)
@@ -176,8 +184,9 @@ class KModelPlanck(KModel):
 
 class KrModelLSD(KrModel):
 
-    def __init__(self, ds, prim_name, prim_hirs, sec_name, sec_hirs):
+    def __init__(self, ds, ds_orig, prim_name, prim_hirs, sec_name, sec_hirs):
         self.ds = ds
+        self.ds_orig = ds_orig
         self.prim_name = prim_name
         self.prim_hirs = prim_hirs
         self.sec_name = sec_name
@@ -186,7 +195,7 @@ class KrModelLSD(KrModel):
     def calc_Kr(self, channel):
         # NB FIXME!  This should use my own BTs instead.  See #117.
         # use local standard deviation
-        btlocal = self.ds["hirs-{:s}_bt_ch{:02d}".format(self.prim_name, channel)]
+        btlocal = self.ds_orig["hirs-{:s}_bt_ch{:02d}".format(self.prim_name, channel)]
         btlocal.values[btlocal>400] = numpy.nan # not all are flagged correctly
         lsd = btlocal.loc[{"hirs-{:s}_ny".format(self.prim_name): slice(1, 6),
                            "hirs-{:s}_nx".format(self.prim_name): slice(1, 6)}].stack(

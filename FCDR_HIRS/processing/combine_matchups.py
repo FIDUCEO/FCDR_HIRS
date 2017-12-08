@@ -58,6 +58,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         super().__init__(start_date, end_date, prim, sec)
         if kmodel is None:
             kmodel = matchups.KModelPlanck(
+                self.as_xarray_dataset(),
                 self.ds,
                 self.prim_name,
                 self.prim_hirs,
@@ -65,6 +66,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 self.sec_hirs)
         if krmodel is None:
             krmodel = matchups.KrModelLSD(
+                self.as_xarray_dataset(),
                 self.ds,
                 self.prim_name,
                 self.prim_hirs,
@@ -86,20 +88,20 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     for (tp, src) in ((self.prim_hirs, self.Mcp),
                                       (self.sec_hirs, self.Mcs)))
         elif is_xarray:
-            p_ds = self.Mcp
-            s_ds = self.Mcs
+            p_ds = self.Mcp.copy()
+            s_ds = self.Mcs.copy()
         else:
             raise RuntimeError("Onmogelĳk.  Impossible.  Unmöglich.")
         #
         keep = {"collocation", "channel", "calibrated_channel",
                 "matchup_count", "calibration_position", "scanpos"}
         p_ds.rename(
-            {nm: "{:s}_{:s}".format(self.prim, nm)
+            {nm: "{:s}_{:s}".format(self.prim_name, nm)
                 for nm in p_ds.variables.keys()
                 if nm not in keep|set(p_ds.dims)},
             inplace=True)
         s_ds.rename(
-            {nm: "{:s}_{:s}".format(self.sec, nm)
+            {nm: "{:s}_{:s}".format(self.sec_name, nm)
                 for nm in s_ds.variables.keys()
                 if nm not in keep|set(s_ds.dims)},
             inplace=True)
@@ -109,10 +111,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             p_ds["prt_number_iwt"].shape != s_ds["prt_number_iwt"].shape):
 
             p_ds.rename(
-                {"prt_number_iwt": self.prim + "_prt_number_iwt"},
+                {"prt_number_iwt": self.prim_name + "_prt_number_iwt"},
                 inplace=True)
             s_ds.rename(
-                {"prt_number_iwt": self.sec + "_prt_number_iwt"},
+                {"prt_number_iwt": self.sec_name + "_prt_number_iwt"},
                 inplace=True)
         ds = xarray.merge([p_ds, s_ds,
             xarray.DataArray(
@@ -144,9 +146,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         independent = {"C_E"}
         common = {"α", "β", "fstar"}
         structured = {"C_S", "C_IWCT", "T_IWCT", "R_selfE"}
+        wmats = {**dict.fromkeys({"C_S", "C_IWCT", "T_IWCT"}, 0),
+                 **dict.fromkeys({"R_selfE"}, 1)}
 
         take_total = list('_'.join(x) for x in itertools.product(
-                (self.prim, self.sec),
+                (self.prim_name, self.sec_name),
                 take_for_each) if not x[1].startswith("u_"))
         da_all = [ds.sel(calibrated_channel=channel)[v]
                     for v in take_total]
@@ -157,7 +161,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 da_all[i] = xarray.concat(
                     [da_all[i]]*ds.dims["matchup_count"],
                     "matchup_count").assign_coords(
-                        **next(d.coords for d in da_all if (self.prim+"_scanline") in d.coords))
+                        **next(d.coords for d in da_all if (self.prim_name+"_scanline") in d.coords))
         H = xarray.concat(da_all, dim="m").transpose("matchup_count", "m")
 #        H.name = "H_matrix"
 #        H = H.assign_coords(H_labels=take_total)
@@ -216,7 +220,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         daa = xarray.merge(da_all)
 
-        for (sat, i) in ((self.prim, 1), (self.sec, 2)):
+        # counter for w-matrices
+        for (sat, i) in ((self.prim_name, 1), (self.sec_name, 2)):
             # fill X1, X2
 
             harm[f"X{i:d}"] = (
@@ -268,6 +273,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             harm[f"time{i:d}"] = ((("M",), ds[f"{sat:s}_time"]))
 
             # fill w_matrix_use1, w_matrix_use2
+            harm[f"w_matrix_use{i:d}"] = (
+                (f"m{i:d}",),
+                [2*i+wmats[x] if x in structured else 0
+                    for x in take_for_each])
 
             # fill uncertainty_vector_use1, uncertainty_vector_use2
 
@@ -282,6 +291,51 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # and the rest: w_matrix_nnz, w_matrix_row,
         # w_matrix_col, w_matrix_val, uncertainty_vector_row_count,
         # uncertainty_vector
+
+        # W-matrix for C_S, C_IWCT, T_IWCT.  This should have a 1 where
+        # the matchup shares the same correlation information, and a 0
+        # otherwise.  There is one for the primary and one for the
+        # secondary.  I only have ones so w_matrix_val contains only ones.
+        # The work is in bookkeeping the locations in the sparse matrix
+
+        # the w-matrix is a block of ones for each unique calibration
+        # cycle occurring in the matchups.  That means the number of ones
+        # is the sum of the squares of the number of unique calibration
+        # cycles.
+
+        w_matrix_count = 4
+        # according to the previous iteration, we have first the primary
+        # for C_S, C_IWCT, T_IWCT, then the primary for RselfE, then the
+        # secondary for the same two.
+
+        w_matrix_nnz = []
+        w_matrix_col = []
+        w_matrix_row = []
+        for sat in (self.prim_name, self.sec_name):
+            for dim in ("calibration_cycle", "rself_update_time"):
+                counts = numpy.unique(ds[f"{sat:s}_calibration_cycle"],
+                            return_counts=True)[1]
+                w_matrix_nnz.append((counts**2).sum())
+
+                # each square follows diagonally below the previous one, such that
+                # w_matrix_col gets a form like [0 1 0 1 2 3 4 2 3 4 2 3 4 5 6 5 6]
+
+                c = itertools.count(0)
+                w_matrix_col.extend(numpy.concatenate([numpy.tile([next(c) for _ in range(cnt)], cnt) for cnt in counts]))
+
+                # and w_matrix_row will have a form like
+                # [2 2 3 3 3 2 2]
+                w_matrix_row.append(numpy.concatenate([numpy.tile(cnt, cnt) for cnt in counts]))
+            
+
+
+        w_matrix_nnz = numpy.array(w_matrix_nnz)
+        w_matrix_col = numpy.array(w_matrix_col)
+        w_matrix_row = numpy.array(w_matrix_row)
+        w_matrix_val = numpy.ones(w_matrix_nnz.sum())
+
+        # W-matrix for for R_self.  One for the primary and one for the
+        # secondary.
 
         harm = harm.assign_coords(
             m1=take_for_each,
@@ -462,11 +516,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     def write_harm(self, harm):
         out = (self.basedir + 
                "{:s}_{:s}_ch{:d}_{:%Y%m%d}-{:%Y%m%d}.nc".format(
-                    self.prim,
-                    self.sec,
+                    self.prim_name,
+                    self.sec_name,
                     int(harm["calibrated_channel"]),
-                    harm["{:s}_time".format(self.prim)].values[0].astype("M8[s]").astype(datetime.datetime),
-                    harm["{:s}_time".format(self.prim)].values[-1].astype("M8[s]").astype(datetime.datetime),
+                    harm["{:s}_time".format(self.prim_name)].values[0].astype("M8[s]").astype(datetime.datetime),
+                    harm["{:s}_time".format(self.prim_name)].values[-1].astype("M8[s]").astype(datetime.datetime),
                     ))
         logging.info("Writing {:s}".format(out))
         harm.to_netcdf(out)
