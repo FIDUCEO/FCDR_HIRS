@@ -267,7 +267,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         w_matrix_nnz = []
         w_matrix_col = []
-        w_matrix_row = []
+        w_matrix_row_count = []
         u_matrix_val = []
         u_matrix_row_count = []
         for sat in (self.prim_name, self.sec_name):
@@ -282,7 +282,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 c = itertools.count(0)
                 w_matrix_col.extend(numpy.concatenate([numpy.tile([next(c) for _ in range(cnt)], cnt) for cnt in counts]))
 
-                # and w_matrix_row will have a form like
+                # and w_matrix_row_count will have a form like
                 # [2 2 3 3 3 2 2]
                 # or is it
                 # [0 0 3 3 3 5 5] 
@@ -291,7 +291,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 # ?
                 # I think it's the latter!
                 nonzero_count_per_row = numpy.concatenate([numpy.tile(cnt, cnt) for cnt in counts])
-                w_matrix_row.append(nonzero_count_per_row.cumsum()-nonzero_count_per_row[0])
+                w_matrix_row_count.append(nonzero_count_per_row.cumsum()-nonzero_count_per_row[0])
             for v in structured:
                 u = ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(x,x):s}"].values
                 u_matrix_val.extend(u)
@@ -302,8 +302,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             numpy.array(w_matrix_nnz, dtype="u4"))
         harm["w_matrix_col"] = (("w_matrix_nnz_sum",),
             numpy.array(w_matrix_col, dtype="u4"))
-        harm["w_matrix_row"] = (("w_matrix_count", "w_matrix_num_row"),
-            numpy.array(w_matrix_row, dtype="u4"))
+        harm["w_matrix_row_count"] = (("w_matrix_count", "w_matrix_num_row"),
+            numpy.array(w_matrix_row_count, dtype="u4"))
         harm["w_matrix_val"] = (("w_matrix_nnz_sum",),
             numpy.ones(numpy.array(w_matrix_nnz).sum(), dtype="f4"))
 
