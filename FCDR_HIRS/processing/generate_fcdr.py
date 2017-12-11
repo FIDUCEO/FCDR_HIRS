@@ -84,7 +84,10 @@ Changed approach to flags:
 
 Overlap between subsequent granules are now selected based on "best
 scanline" criterion, rather than always the oldest (GH#7).
+
 Add missing months January-February 1985 for NOAA-7 (reported by MS).
+
+Fix encoding for radiances in debug version.
 
 """
 
