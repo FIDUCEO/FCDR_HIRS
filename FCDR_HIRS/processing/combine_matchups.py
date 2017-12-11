@@ -358,7 +358,6 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             numpy.array(u_matrix_val))
         harm["u_matrix_row_count"] = (("u_matrix_count",),
             numpy.array(u_matrix_row_count))
-=======
 
             # fill uncertainty_vector_use1, uncertainty_vector_use2
 
