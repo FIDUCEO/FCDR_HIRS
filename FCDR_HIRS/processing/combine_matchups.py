@@ -358,11 +358,100 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             numpy.array(u_matrix_val))
         harm["u_matrix_row_count"] = (("u_matrix_count",),
             numpy.array(u_matrix_row_count))
+=======
 
-        harm = harm.assign_coords(
-            m1=take_for_each,
-            m2=take_for_each)
+            # fill uncertainty_vector_use1, uncertainty_vector_use2
 
+        # and the rest: K, Kr, Ks, w_matrix_nnz, w_matrix_row,
+        # w_matrix_col, w_matrix_val, uncertainty_vector_row_count,
+        # uncertainty_vector
+        raise NotImplementedError("Tot hier hernieuwd!")
+
+        harm = xarray.Dataset(
+            {"H": H.rename({"matchup_count": "M"})},
+            coords={"m": take_total},
+            attrs={"Channel": 
+                "Ch. {:d}: {:.6~} (primary, {:s}), {:.6~} (secondary, {:s})".format(
+                    channel,
+                    self.hirs_prim.srfs[channel-1].centroid().to("um", "sp"),
+                    self.prim,
+                    self.hirs_sec.srfs[channel-1].centroid().to("um", "sp"),
+                    self.sec)})
+        harm["H"].attrs["description"] = "Inputs for harmonisation functions"
+        harm["H"].attrs["units"] = "Various"
+
+        harm["lm"] = (("L", "nl"),
+            numpy.array([[
+                typhon.datasets._tovs_defs.NOAA_numbers[self.hirs_prim.satname],
+                 typhon.datasets._tovs_defs.NOAA_numbers[self.hirs_sec.satname],
+                 harm.dims["M"]]]))
+        harm["lm"].attrs["description"] = ("Harmonisation satellite "
+            "numbers and number of entries")
+
+        # this just to fill it up so I can write to it more specifically
+        # later
+        harm["Ur"] = (harm["H"].dims, numpy.zeros_like(harm["H"].values))
+        harm["Us"] = (harm["H"].dims, numpy.zeros_like(harm["H"].values))
+        u_trans = dict(C_s="C_space", R_selfE="Rself", fstar="f_eff",
+                       C_E="C_Earth")
+
+        for sat in (self.prim, self.sec):
+            for v in take_for_each:
+                dest = "Ur" if v == "C_E" else "Us"
+                try:
+                    harm[dest].loc[{"m": "{:s}_{:s}".format(sat, v)}] = ds[
+                        "{:s}_u_{:s}".format(sat, u_trans.get(v,v))].sel(
+                            calibrated_channel=channel)
+                except KeyError as e:
+                    warnings.warn("No uncertainty defined for "
+                        "{:s}: {:s}".format(v, e.args[0]),
+                        UserWarning)
+
+        harm["Ur"].attrs["description"] = ("Random error in elements "
+            "of H")
+
+        harm["Us"].attrs["description"] = ("Nonrandom error in elements "
+            "of H")
+
+        harm["CorrIndexArray"] = (("M",), harm["{:s}_calibration_cycle".format(self.prim)])
+        harm["CorrIndexArray"].attrs["description"] = ("time at which "
+            "calibration for this measurement was performed (slave)")
+        harm["ref_CorrIndexArray"] = (("M",), harm["{:s}_calibration_cycle".format(self.sec)])
+        harm["CorrIndexArray"].attrs["description"] = ("time at which "
+            "calibration for this measurement was performed (reference)")
+
+        ref_bt = self.hirs_prim.srfs[channel-1].channel_radiance2bt(
+            ureg.Quantity(
+                ds["{:s}_R_e".format(self.prim)].sel(
+                    calibrated_channel=channel).values,
+                rad_u["si"]))
+
+        # the "slave" BT should be the radiance of the REFERENCE using the
+        # SRF of the SECONDARY, so that all other effects are nada.
+        slave_bt = self.hirs_sec.srfs[channel-1].channel_radiance2bt(
+            ureg.Quantity(
+                ds["{:s}_R_e".format(self.prim)].sel(
+                    calibrated_channel=channel).values,
+                rad_u["si"]))
+
+        harm["K_InputData"] = (("M",), ref_bt)
+        harm["K_InputData"].attrs["description"] = "Reference BT"
+        harm["K_InputData"].attrs["units"] = "K"
+        harm["K_Auxilliary"] = (("nsrfAux",),
+            [ds["{:s}_α".format(self.prim)].sel(calibrated_channel=channel),
+             ds["{:s}_β".format(self.prim)].sel(calibrated_channel=channel),
+             ds["{:s}_fstar".format(self.prim)].sel(calibrated_channel=channel)])
+        harm["K_Auxilliary"].attrs["description"] = ("Band correction "
+            "parameters, reference")
+
+        harm = harm.assign_coords(nsrfAux=["α", "β", "fstar"])
+
+        harm["corrData"] = (("ncorr",), [40])
+        harm["corrData"].attrs["description"] = "length of normal calibration cycle"
+        harm["corrData"].attrs["units"] = "Scanlines"
+
+        # to estimate K, use BT with both SRFs for ΔL
+        harm["K"] = (("M",), slave_bt - ref_bt)
         harm["K"].attrs["description"] = ("Expected ΔBT due to nominal "
             "SRF (slave - reference)")
 
