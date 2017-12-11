@@ -220,9 +220,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             harm[f"uncertainty_type{i:d}"] = (
                 (f"m{i:d}",),
                 numpy.array([1 if x in independent else
-                 2 if x in structured else
-                 3 if x in u_common else 0
-                 for x in take_for_each], dtype="u1")
+                 3 if x in structured else
+                 2 if x in u_common else 0
+                 for x in take_for_each], dtype="i4")
                 )
 
             # fill time1, time2
@@ -233,13 +233,13 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             harm[f"w_matrix_use{i:d}"] = (
                 (f"m{i:d}",),
                 numpy.array([2*i-1+wmats[x] if x in structured else 0
-                    for x in take_for_each], dtype="u1"))
+                    for x in take_for_each], dtype="i4"))
 
             # fill u_matrix_use1, u_matrix_use2
             harm[f"u_matrix_use{i:d}"] = (
                 (f"m{i:d}",),
                 numpy.array([next(cc) if x in structured else 0
-                    for x in take_for_each], dtype="u1"))
+                    for x in take_for_each], dtype="i4"))
 
         # dimension matchup only:
         #
@@ -299,9 +299,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             
 
         harm["w_matrix_nnz"] = (("w_matrix_count",),
-            numpy.array(w_matrix_nnz, dtype="u4"))
+            numpy.array(w_matrix_nnz, dtype="i4"))
         harm["w_matrix_col"] = (("w_matrix_nnz_sum",),
-            numpy.array(w_matrix_col, dtype="u4"))
+            numpy.array(w_matrix_col, dtype="i4"))
         harm["w_matrix_row_count"] = (("w_matrix_count", "w_matrix_num_row"),
             numpy.array(w_matrix_row_count, dtype="u4"))
         harm["w_matrix_val"] = (("w_matrix_nnz_sum",),
@@ -332,8 +332,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             harm["time1"].values[0].astype("M8[s]").astype(datetime.datetime),
             harm["time1"].values[-1].astype("M8[s]").astype(datetime.datetime))
 
-        harm.attrs["reference_satellite"] = self.prim_name
-        harm.attrs["slave_satellite"] = self.sec_name
+        harm.attrs["sensor_1_name"] = self.prim_name
+        harm.attrs["sensor_2_name"] = self.sec_name
 
         harm = common.time_epoch_to(
             harm,
