@@ -15,8 +15,8 @@ _debug_bt_coding["dtype"] = "u4"
 _debug_bt_coding["scale_factor"] /= 10
 
 _debug_Re_coding = _coding.copy()
-_debug_Re_coding["dtype"] = "u4"
-_debug_Re_coding["scale_factor"] = 0.0001
+_debug_Re_coding["dtype"] = "u8"
+_debug_Re_coding["scale_factor"] = 1e-21 # mW units...
 _debug_Re_coding["_FillValue"] = _u2_coding["_FillValue"]
 
 _u_count_coding = _count_coding.copy()
