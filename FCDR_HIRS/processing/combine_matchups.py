@@ -172,53 +172,6 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         #              uncertainty_vector_sum_row)
         harm = xarray.Dataset()
 
-        {"X1": (("M", "m1"),
-                ),
-         "X2": (("M", "m2"),
-                ),
-         "Ur1": (("M", "m1"),
-                ),
-         "Ur2": (("M", "m2"),
-                ),
-         "Us1": (("M", "m1"),
-                ),
-         "Us2": (("M", "m2"),
-                ),
-         "uncertainty_type1": (("m1",),
-                ),
-         "uncertainty_type2": (("m2",),
-                ),
-         "K": (("M",),
-                ),
-         "Kr": (("M",),
-                ),
-         "Ks": (("M",),
-                ),
-         "time1": (("M",),
-                ),
-         "time2": (("M",),
-                ),
-         "w_matrix_nnz": (("w_matrix_count",),
-                ),
-         "w_matrix_row": (("w_matrix_count", "w_matrix_num_row"),
-                ),
-         "w_matrix_col": (("w_matrix_sum_nnz",),
-                ),
-         "w_matrix_val": (("w_matrix_val",),
-                ),
-         "w_matrix_use1": (("m1",),
-                ),
-         "w_matrix_use2": (("m2",),
-                ),
-         "u_matrix_row_count": (("u_matrix_count",),
-                ),
-         "u_matrix_val": (("u_matrix_row_count_sum",),
-                ),
-         "u_matrix_use1": (("m1",),
-                ),
-         "u_matrix_use2": (("m2",),
-                )}
-
         daa = xarray.merge(da_all)
 
         # counter for uncertainties that have w-matrices.  Some but not
@@ -231,7 +184,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             harm[f"X{i:d}"] = (
                 ("M", f"m{i:d}"),
                 numpy.concatenate(
-                    [daa[f"{sat:s}_{x:s}"].values[:, numpy.newaxis]
+                    [daa[f"{sat:s}_{x:s}"].values[:, numpy.newaxis].astype("f4")
                      for x in take_for_each], 1))
 
             # fill Ur1, Ur2
@@ -239,7 +192,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             harm[f"Ur{i:d}"] = (
                 ("M", f"m{i:d}"),
                 numpy.concatenate(
-                    [(ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(x,x):s}"].values if x in independent
+                    [(ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(x,x):s}"].values.astype("f4") if x in independent
                       else numpy.zeros(ds.dims["matchup_count"])
                       )[:, numpy.newaxis]
                       for x in take_for_each], 1))
@@ -266,10 +219,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
             harm[f"uncertainty_type{i:d}"] = (
                 (f"m{i:d}",),
-                [1 if x in independent else
+                numpy.array([1 if x in independent else
                  2 if x in structured else
                  3 if x in u_common else 0
-                 for x in take_for_each]
+                 for x in take_for_each], dtype="u1")
                 )
 
             # fill time1, time2
@@ -279,14 +232,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             # fill w_matrix_use1, w_matrix_use2
             harm[f"w_matrix_use{i:d}"] = (
                 (f"m{i:d}",),
-                [2*i-1+wmats[x] if x in structured else 0
-                    for x in take_for_each])
+                numpy.array([2*i-1+wmats[x] if x in structured else 0
+                    for x in take_for_each], dtype="u1"))
 
             # fill u_matrix_use1, u_matrix_use2
             harm[f"u_matrix_use{i:d}"] = (
                 (f"m{i:d}",),
-                [next(cc) if x in structured else 0
-                    for x in take_for_each])
+                numpy.array([next(cc) if x in structured else 0
+                    for x in take_for_each], dtype="u1"))
 
         # dimension matchup only:
         #
@@ -346,22 +299,24 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             
 
         harm["w_matrix_nnz"] = (("w_matrix_count",),
-            numpy.array(w_matrix_nnz))
+            numpy.array(w_matrix_nnz, dtype="u4"))
         harm["w_matrix_col"] = (("w_matrix_nnz_sum",),
-            numpy.array(w_matrix_col))
+            numpy.array(w_matrix_col, dtype="u4"))
         harm["w_matrix_row"] = (("w_matrix_count", "w_matrix_num_row"),
-            numpy.array(w_matrix_row))
+            numpy.array(w_matrix_row, dtype="u4"))
         harm["w_matrix_val"] = (("w_matrix_nnz_sum",),
-            numpy.ones(numpy.array(w_matrix_nnz).sum()))
+            numpy.ones(numpy.array(w_matrix_nnz).sum(), dtype="f4"))
 
         harm["u_matrix_val"] = (("u_matrix_row_count_sum",),
-            numpy.array(u_matrix_val))
+            numpy.array(u_matrix_val, dtype="f4"))
         harm["u_matrix_row_count"] = (("u_matrix_count",),
-            numpy.array(u_matrix_row_count))
+            numpy.array(u_matrix_row_count, dtype="u4"))
 
         harm = harm.assign_coords(
             m1=take_for_each,
-            m2=take_for_each)
+            m2=take_for_each,
+            channel=channel)
+        # need to recover other coordinates too
 
         harm["K"].attrs["description"] = ("Expected ΔBT due to nominal "
             "SRF (slave - reference)")
@@ -374,8 +329,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             "uncertainty due to band correction factors.")
 
         harm.attrs["time_coverage"] = "{:%Y-%m-%d} -- {:%Y-%m-%d}".format(
-            harm[self.prim_name + "_time"].values[0].astype("M8[s]").astype(datetime.datetime),
-            harm[self.prim_name + "_time"].values[-1].astype("M8[s]").astype(datetime.datetime))
+            harm["time1"].values[0].astype("M8[s]").astype(datetime.datetime),
+            harm["time1"].values[-1].astype("M8[s]").astype(datetime.datetime))
 
         harm.attrs["reference_satellite"] = self.prim_name
         harm.attrs["slave_satellite"] = self.sec_name
@@ -399,9 +354,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                "{:s}_{:s}_ch{:d}_{:%Y%m%d}-{:%Y%m%d}.nc".format(
                     self.prim_name,
                     self.sec_name,
-                    int(harm["calibrated_channel"]),
-                    harm["{:s}_time".format(self.prim_name)].values[0].astype("M8[s]").astype(datetime.datetime),
-                    harm["{:s}_time".format(self.prim_name)].values[-1].astype("M8[s]").astype(datetime.datetime),
+                    int(harm["channel"]),
+                    harm["time1".format(self.prim_name)].values[0].astype("M8[s]").astype(datetime.datetime),
+                    harm["time1".format(self.prim_name)].values[-1].astype("M8[s]").astype(datetime.datetime),
                     ))
         logging.info("Writing {:s}".format(out))
         harm.to_netcdf(out)
