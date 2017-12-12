@@ -4,6 +4,9 @@ https://packaging.python.org/en/latest/distributing.html
 https://github.com/pypa/sampleproject
 """
 
+import subprocess
+import re
+
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
 # To use a consistent encoding
@@ -12,42 +15,17 @@ from os import path
 
 here = path.abspath(path.dirname(__file__))
 
-# approach stolen from xarray
-# https://github.com/pydata/xarray/blob/master/setup.py
-MAJOR = 0
-MINOR = 1
-MICRO = 15
-ISRELEASED = False
-VERSION = f"{MAJOR:d}.{MINOR:d}.MICRO{:d}"
-
 # Get the long description from the README file
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-FULLVERSION = VERSION
+cp = subprocess.run(
+    ["git", "describe", "--always"],
+    stdout=subprocess.PIPE,
+    check=True)
+so = cp.stdout 
 
-import subprocess
-import re
-FULLVERSION += '.dev'
-
-pipe = None
-cmd = "git"
-try:
-    cp = subprocess.run(
-        [cmd, "describe", "--always"],
-        stdout=subprocess.PIPE,
-        check=True)
-    so = cp.stdout 
-except subprocess.CalledProcessError:
-    pass
-
-rev = so.strip().decode("ascii")
-
-if rev.startswith("v"):
-    if not rev[1:] == VERSION:
-        raise ValueError(f"Inconsistent version: {VERSION:s} or {rev:s}")
-else:
-    VERSION = f"v{VERSION:s}.dev-{rev:s}"
+version = so.strip().decode("ascii")
 
 setup(
     name='FCDR_HIRS',
@@ -55,7 +33,7 @@ setup(
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
-    version=VERSION,
+    version=version,
 
     description='Library and scripts for HIRS FCDR analysis and production',
     long_description=long_description,
