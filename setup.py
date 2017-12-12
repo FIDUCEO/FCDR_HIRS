@@ -25,7 +25,8 @@ cp = subprocess.run(
     check=True)
 so = cp.stdout 
 
-version = so.strip().decode("ascii").lstrip("v")
+version = so.strip().decode("ascii").lstrip("v").replace("-",
+    "dev+", 1).replace("-", ".")
 
 setup(
     name='FCDR_HIRS',
@@ -83,18 +84,18 @@ setup(
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=["numpy>=1.11",
-                      "scipy>=0.18",
-                      "matplotlib>=1.5",
+    install_requires=["numpy>=1.13",
+                      "scipy>=1.0",
+                      "matplotlib>=2.0",
                       "numexpr>=2.6",
-                      "typhon>=0.3.6",
+                      "typhon>=0.5.0",
                       "pyatmlab>=0.1.1",
                       "progressbar2>=3.10",
                       "netCDF4>=1.2",
                       "pandas>=0.21",
-                      "xarray",#>=0.9",
+                      "xarray>=0.10",
                       "seaborn>=0.7",
-                      "sympy>=1.0",
+                      "sympy==1.0", # see #151
                       "pint>=0.8",
                       "joblib>=0.11"],
 
