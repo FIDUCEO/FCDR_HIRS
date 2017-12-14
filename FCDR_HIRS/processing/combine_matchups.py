@@ -27,6 +27,7 @@ p = parse_cmdline()
 
 # workaround for #174
 tl = dict(C_E="C_Earth",
+          C_s="C_space",
           fstar="f_eff",
           R_selfE="Rself")
 
@@ -51,6 +52,10 @@ from typhon.physics.units.common import ureg, radiance_units as rad_u
 class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     # FIXME: go through NetCDFDataset functionality
     basedir = "/group_workspaces/cems2/fiduceo/Data/Harmonisation_matchups/HIRS/"
+
+    # fallback for simplified only, because I don't store the
+    # intermediate value and 
+    u_fallback = {"T_IWCT": 0.1}
 
     kmodel = None
     def __init__(self, start_date, end_date, prim, sec,
@@ -149,6 +154,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         structured = {"C_s", "C_IWCT", "T_IWCT", "R_selfE"}
         wmats = {**dict.fromkeys({"C_s", "C_IWCT", "T_IWCT"}, 0),
                  **dict.fromkeys({"R_selfE"}, 1)}
+        # for W-matrices, what corresponds to what
+        dim_var = {"calibration_cycle": {"C_s", "C_IWCT", "T_IWCT"},
+                   "rself_update_time": {"R_selfE"}}
 
         take_total = list('_'.join(x) for x in itertools.product(
                 (self.prim_name, self.sec_name),
@@ -255,10 +263,17 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # secondary.  I only have ones so w_matrix_val contains only ones.
         # The work is in bookkeeping the locations in the sparse matrix
 
-        # the w-matrix is a block of ones for each unique calibration
-        # cycle occurring in the matchups.  That means the number of ones
-        # is the sum of the squares of the number of unique calibration
-        # cycles.
+        # the w-matrix has a form like:
+        # [[1 0 0 0 ...]
+        #  [1 0 0 0 ...]
+        #  [0 1 0 0 ...]
+        #  [0 1 0 0 ...]
+        #  [0 1 0 0 ...]
+        #  [0 0 1 0 ...]
+        #  [0 0 1 0 ...]
+        #  [...        ]]
+        # That means the number of ones is equal to 
+        # w_matrix_row_count = M+1
 
         w_matrix_count = 4
         # according to the previous iteration, we have first the primary
@@ -268,35 +283,44 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         w_matrix_nnz = []
         w_matrix_col = []
         w_matrix_row = []
+
         u_matrix_val = []
         u_matrix_row_count = []
+
         for sat in (self.prim_name, self.sec_name):
             for dim in ("calibration_cycle", "rself_update_time"):
-                counts = numpy.unique(ds[f"{sat:s}_{dim:s}"],
-                            return_counts=True)[1]
-                w_matrix_nnz.append((counts**2).sum())
+                (w_matrix_nnz_i, w_matrix_col_i, w_matrix_row_i, idx) = \
+                    self.get_w_matrix(ds, sat, dim)
+                w_matrix_nnz.append(w_matrix_nnz_i)
+                w_matrix_col.extend(w_matrix_col_i)
+                w_matrix_row.append(w_matrix_row_i)
+                for var in dim_var[dim]:
+                    (u_matrix_val_i, u_matrix_row_count_i) = \
+                        self.get_u_matrix(ds, sat, channel, var, idx)
+                    u_matrix_val.extend(u_matrix_val_i)
+                    u_matrix_row_count.append(u_matrix_row_count_i)
 
-                # each square follows diagonally below the previous one, such that
-                # w_matrix_col gets a form like [0 1 0 1 2 3 4 2 3 4 2 3 4 5 6 5 6]
-
-                c = itertools.count(0)
-                w_matrix_col.extend(numpy.concatenate([numpy.tile([next(c) for _ in range(cnt)], cnt) for cnt in counts]))
-
-                # and w_matrix_row will have a form like
-                # [2 2 3 3 3 2 2]
-                # or is it
-                # [0 0 3 3 3 5 5] 
-                # or is it
-                # [0 2 4 7 10 13 15]
-                # ?
-                # I think it's the latter!
-                nonzero_count_per_row = numpy.concatenate([numpy.tile(cnt, cnt) for cnt in counts])
-                w_matrix_row.append(nonzero_count_per_row.cumsum()-nonzero_count_per_row[0])
-            for v in structured:
-                u = ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(x,x):s}"].values
-                u_matrix_val.extend(u)
-                u_matrix_row_count.append(len(u))
-            
+#                (_, idx, counts) = numpy.unique(ds[f"{sat:s}_{dim:s}"],
+#                        return_index=True, return_counts=True)
+#                uidx.append(idx)
+#                w_matrix_nnz.append(counts.sum())
+#
+#                # w_matrix_col gets a form like [0 0 1 1 1 2 2 ...]
+#
+#                c = itertools.count(0)
+#                w_matrix_col.extend(
+#                    numpy.concatenate([numpy.tile(next(c), cnt) for cnt in counts]))
+#
+#                # and w_matrix_row will simply be
+#                # [0 1 2 3 ...]
+#                w_matrix_row.append(numpy.arange(counts.sum()+1))
+#                # construct u-matrices for those parameters that use this
+#                # w-matrix, information contained in wmats
+#            for v in structured:
+#                u = ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(x,x):s}"].values
+#                u_matrix_val.extend(u[uidx[wmats[v]]])
+#                u_matrix_row_count.append(len(idx))
+                
 
         harm["w_matrix_nnz"] = (("w_matrix_count",),
             numpy.array(w_matrix_nnz, dtype="i4"))
@@ -340,6 +364,43 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             datetime.datetime(1970, 1, 1, 0, 0, 0))
 
         return harm
+
+    def get_w_matrix(self, ds, sat, dim):
+        """Get W matrix from ds for dimension
+
+        Returns w_matrix_nnz, w_matrix_col,
+        """
+
+        (_, idx, counts) = numpy.unique(ds[f"{sat:s}_{dim:s}"],
+                return_index=True, return_counts=True)
+        w_matrix_nnz = counts.sum()
+
+        # w_matrix_col gets a form like [0 0 1 1 1 2 2 ...]
+
+        c = itertools.count(0)
+        w_matrix_col = numpy.concatenate([numpy.tile(next(c), cnt) for cnt in counts])
+
+        # and w_matrix_row will simply be
+        # [0 1 2 3 ...]
+        w_matrix_row = numpy.arange(counts.sum()+1)
+        # construct u-matrices for those parameters that use this
+        # w-matrix, information contained in wmats
+
+        return (w_matrix_nnz, w_matrix_col, w_matrix_row, idx)
+
+    def get_u_matrix(self, ds, sat, channel, var, idx):
+        try:
+            u = ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(var,var):s}"].values
+        except KeyError:
+            warnings.warn(
+                f"Could not get uncertainty for {var:s}, using fallback.",
+                UserWarning)
+            u_matrix_val = numpy.tile(self.u_fallback[var],
+                                      idx.size)
+        else:
+            u_matrix_val = u[idx]
+        u_matrix_row_count = len(idx)
+        return (u_matrix_val, u_matrix_row_count)
 
     def write(self, outfile):
         ds = self.as_xarray_dataset()
