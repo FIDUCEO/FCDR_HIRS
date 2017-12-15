@@ -115,6 +115,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     calibfilter = filters.IQRCalibFilter()
     filter_earthcounts = typhon.datasets.filters.MEDMAD(5)
+    filter_prtcounts = typhon.datasets.filters.MEDMAD(5)
+    filter_calibcounts = typhon.datasets.filters.MEDMAD(5)
 
     ε = 0.98 # from Wang, Cao, and Ciren (2007, JAOT), who give so further
              # source for this number
