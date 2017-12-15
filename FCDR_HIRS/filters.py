@@ -38,3 +38,17 @@ class IQRCalibFilter(CalibrationMirrorFilter):
         return counts.reduce(
             scipy.stats.iqr, dim=dim,
             rng=self.rng) > 3.3 * adev(counts, dim=dim)
+
+
+class ImSoColdFilter:
+    """Intended for Earth Counts, reject when colder than space
+    """
+
+    def filter(self, C_Earth, C_space):
+        # depending on the sign of the gain, either they should be all
+        # larger or all smaller... in either case, equal to space is bad
+        # enough!
+        if C_Earth.median() > C_space.median():
+            return C_Earth <= C_space
+        else:
+            return C_Earth >= C_space
