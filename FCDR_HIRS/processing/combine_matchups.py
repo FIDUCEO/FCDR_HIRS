@@ -112,8 +112,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 if nm not in keep|set(s_ds.dims)},
             inplace=True)
         # dimension prt_number_iwt may differ
-        if ("prt_number_iwt" in p_ds and
-            "prt_number_iwt" in s_ds and
+        if ("prt_number_iwt" in p_ds.dims and
+            "prt_number_iwt" in s_ds.dims and
             p_ds["prt_number_iwt"].shape != s_ds["prt_number_iwt"].shape):
 
             p_ds.rename(
