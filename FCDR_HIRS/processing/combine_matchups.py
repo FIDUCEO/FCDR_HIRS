@@ -147,10 +147,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         Note that one would want to merge a collection of those.
         """
 
-        take_for_each = ["C_s", "C_IWCT", "C_E", "T_IWCT", "α", "β", "fstar", "R_selfE"]
+        #take_for_each = ["C_s", "C_IWCT", "C_E", "T_IWCT", "α", "β", "fstar", "R_selfE"]
+        take_for_each = ["C_s", "C_IWCT", "C_E", "T_IWCT", "R_selfE"]
 
         independent = {"C_E"}
-        u_common = {"α", "β", "fstar"}
+        #u_common = {"α", "β", "fstar"}
         structured = {"C_s", "C_IWCT", "T_IWCT", "R_selfE"}
         wmats = {**dict.fromkeys({"C_s", "C_IWCT", "T_IWCT"}, 0),
                  **dict.fromkeys({"R_selfE"}, 1)}
@@ -207,18 +208,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
             # fill Us1, Us2
 
-            # NB: need to tile scalar (constant) common uncertainties
+            # NB: not used!  Only my constants have common uncertainties,
+            # and those should be corrected for in the harmonisation.
             L = []
             for x in take_for_each:
-                if x in u_common:
-                    da = ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(x,x):s}"]
-                    L.append(
-                        numpy.tile(
-                            da.values,
-                            [1 if da.ndim>0 else ds.dims["matchup_count"],
-                             1]))
-                else:
-                    L.append(numpy.zeros((ds.dims["matchup_count"], 1)))
+                L.append(numpy.zeros((ds.dims["matchup_count"], 1)))
             harm[f"Us{i:d}"] = (
                 ("M", f"m{i:d}"),
                 numpy.concatenate(L, 1))
@@ -228,8 +222,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             harm[f"uncertainty_type{i:d}"] = (
                 (f"m{i:d}",),
                 numpy.array([1 if x in independent else
-                 3 if x in structured else
-                 2 if x in u_common else 0
+                 3 if x in structured else 0
                  for x in take_for_each], dtype="i4")
                 )
 
