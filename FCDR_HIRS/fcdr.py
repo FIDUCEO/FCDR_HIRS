@@ -1261,7 +1261,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "every ten minutes as a stop-gap measure to ensure even "
                 "short slices contain this info, this does not imply "
                 "an actual update of the information.  Check coordinates "
-                "Rself_start and Rself_end.")
+                "Rself_start and Rself_end.  See #128.")
 
             # according to Wang, Cao, and Ciren (2007), ε=0.98, no further
             # source or justification given
