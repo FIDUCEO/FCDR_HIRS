@@ -196,14 +196,14 @@ import typhon.datasets.dataset
 from typhon.physics.units.common import ureg
 
 import pyatmlab.stats
-import pyatmlab.config
+#import pyatmlab.config
 import pyatmlab.graphics
 #import pyatmlab.datasets.tovs
 #from pyatmlab.units import ureg
 
 from .. import fcdr
 
-srcfile_temp_iwt = pathlib.Path(pyatmlab.config.conf["main"]["myscratchdir"],
+srcfile_temp_iwt = pathlib.Path(typhon.config.conf["main"]["myscratchdir"],
                        "hirs_{sat:s}_{year:d}_temp_iwt.npz")
 
 def get_timeseries_temp_iwt_anomaly(sat, year_start=2005, year_end=2017):
@@ -277,7 +277,7 @@ def extract_timeseries_per_day_iwt_anomaly_period(sat, start_date, end_date):
 
 def write_timeseries_per_day_iwt_anomaly_period(sat, start_date, end_date):
     X = extract_timeseries_per_day_iwt_anomaly_period(sat, start_date, end_date)
-    dest = pathlib.Path(pyatmlab.config.conf["main"]["myscratchdir"],
+    dest = pathlib.Path(typhon.config.conf["main"]["myscratchdir"],
         "hirs_iwt_anom_{:s}_{:%Y%m%d}-{:%Y%m%d}".format(sat, start_date, end_date))
     logging.info("Writing {!s}".format(dest))
     with dest.open("wt", encoding="ascii") as fp:
