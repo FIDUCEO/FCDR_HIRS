@@ -114,7 +114,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     start_iwct_calib = 8
 
     calibfilter = filters.IQRCalibFilter()
-    filter_earthcounts = typhon.datasets.filters.MEDMAD(10)
+    filter_earthcounts = typhon.datasets.filters.MEDMAD(5)
 
     ε = 0.98 # from Wang, Cao, and Ciren (2007, JAOT), who give so further
              # source for this number
@@ -1278,7 +1278,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 interp_offset, a2, Rself)
 
             bad = self.filter_earthcounts.filter_outliers(C_Earth.values)
-            bad | T_outliers.isel(time=views_Earth).values[:, numpy.newaxis]
+            if has_Rself: # otherwise I have no use of T and no T_ouliers
+                bad |= T_outliers.isel(time=views_Earth).values[:, numpy.newaxis]
             # NB, need to test if this takes care of most remaining
             # bad outliers!  May need an entire rerun of the archive for
             # that...
