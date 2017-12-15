@@ -1279,6 +1279,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
             bad = self.filter_earthcounts.filter_outliers(C_Earth.values)
             bad | T_outliers.isel(time=views_Earth).values[:, numpy.newaxis]
+            # NB, need to test if this takes care of most remaining
+            # bad outliers!  May need an entire rerun of the archive for
+            # that...
             self._flags["pixel"].loc[{"calibrated_channel": ch}].values[bad] |= (
                 _fcdr_defs.FlagsPixel.DO_NOT_USE|_fcdr_defs.FlagsPixel.OUTLIER_NOS)
             # 
