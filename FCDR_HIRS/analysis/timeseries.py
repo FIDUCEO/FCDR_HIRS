@@ -53,7 +53,7 @@ def parse_cmdline():
 
     parser.add_argument("--count_fields", action="store", type=str,
         nargs="*",
-        choices=["space", "ict", "iwt"],
+        choices=["space", "ict", "iwt", "Earth"],
         default=["space", "iwt"],
         help="Count fields to show, including noise levels.  Note that ICT "
              "only exists on HIRS/2.")
