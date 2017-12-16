@@ -181,6 +181,7 @@ class FCDRGenerator:
         pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
         info = pr.stdout.decode("utf-8")
         logging.info(info)
+        self.info = info
         self.satname = sat
         self.fcdr = fcdr.which_hirs_fcdr(sat, read="L1B")
         self.fcdr.my_pseudo_fields.clear() # suppress pseudo fields radiance_fid, bt_fid here
@@ -490,6 +491,7 @@ class FCDRGenerator:
             getattr(self, "store_piece_{:s}".format(mode))(piece, fn)
 
     def store_piece_debug(self, piece, fn):
+        piece.attrs["full_info"] = self.info
         piece.to_netcdf(str(fn))
 
     def store_piece_easy(self, piece, fn):
