@@ -3,6 +3,7 @@
 
 import abc
 
+import numpy
 import scipy.stats
 
 from typhon.datasets.filters import OutlierFilter, MEDMAD
@@ -48,7 +49,7 @@ class ImSoColdFilter:
         # depending on the sign of the gain, either they should be all
         # larger or all smaller... in either case, equal to space is bad
         # enough!
-        if C_Earth.median() > C_space.median():
-            return C_Earth <= C_space
+        if C_Earth.median() > numpy.ma.median(C_space): # should never equal
+            return C_Earth <= C_space[:, numpy.newaxis]
         else:
-            return C_Earth >= C_space
+            return C_Earth >= C_space[:, numpy.newaxis]
