@@ -136,6 +136,10 @@ def parse_cmdline():
     parser.add_argument("--store_only", action="store_true",
         help="Only store to NetCDF, do not plot.  Name calculate automatically.", default=False)
 
+    parser.add_argument("--width_factor", action="store", type=float,
+        default=1,
+        help="Make plot a factor x wider (for noise_with_other only).")
+
     parser.set_defaults(include_gain=True, include_rself=True)
     
     p = parser.parse_args()
@@ -488,7 +492,8 @@ class NoiseAnalyser:
             include_rself=True,
             include_corr=(),
             corr_info={},
-            hiasi_mode="perc"):
+            hiasi_mode="perc",
+            width_factor=1):
         logging.info("Channel {:d}".format(ch))
         M = self.Mhrsall
 #        ch = self.ch
@@ -512,7 +517,7 @@ class NoiseAnalyser:
         self.ifte = int(self.fte*k)
         self.ifhs = int(self.fhs*k)
         self.gridspec = matplotlib.gridspec.GridSpec(N, k)
-        self.fig = matplotlib.pyplot.figure(figsize=(18, 3*N))
+        self.fig = matplotlib.pyplot.figure(figsize=(18*width_factor, 3*N))
         #(f, ax) = matplotlib.pyplot.subplots(N, 1, figsize=(16, 3*N))
         #itax = iter(ax)
         logging.info("Plotting calibration counts + noise")
@@ -1379,7 +1384,8 @@ def main():
                                "perc": p.corr_perc,
                                "count": p.corr_count,
                                "timeres": p.corr_timeres,
-                               "calibpos": p.corr_calibpos})
+                               "calibpos": p.corr_calibpos},
+                    width_factor=p.width_factor)
 
     if p.plot_noise_correlation_timeseries:
         logging.info("Plotting noise correlation timeseries")
