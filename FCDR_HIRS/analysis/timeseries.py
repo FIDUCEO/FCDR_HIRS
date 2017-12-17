@@ -512,10 +512,12 @@ class NoiseAnalyser:
              3*include_rself + (len(include_corr)>0)*len(all_tp))
         #k = int(numpy.ceil(len(temperatures)/2)*2)
         Ntemps = len(temperatures)
-        fact = 16
+        fact = 16*width_factor
         k = int((max(Ntemps,1)+(2/fact))*fact)
-        self.ifte = int(self.fte*k)
-        self.ifhs = int(self.fhs*k)
+        rshift = (1-(1-self.fhs)/width_factor)-self.fhs # compensate for wider
+        lshift = rshift + (self.fhs-self.fte)-(self.fhs-self.fte)/width_factor
+        self.ifte = int((self.fte+lshift)*k)
+        self.ifhs = int((self.fhs+rshift)*k)
         self.gridspec = matplotlib.gridspec.GridSpec(N, k)
         self.fig = matplotlib.pyplot.figure(figsize=(18*width_factor, 3*N))
         #(f, ax) = matplotlib.pyplot.subplots(N, 1, figsize=(16, 3*N))
