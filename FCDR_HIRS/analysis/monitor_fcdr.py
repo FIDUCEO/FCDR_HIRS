@@ -49,9 +49,9 @@ converter.register()
 
 class FCDRMonitor:
     figname = ("fcdr_perf/{self.satname:s}_{tb:%Y}/ch{ch:d}/"
-               "fcdr_perf_{self.satname:s}_hirs_ch{ch:d}_{tb:%Y%m%d%H%M}"
+               "fcdr_perf_{self.satname:s}_hirs_{self.version:s}_ch{ch:d}_{tb:%Y%m%d%H%M}"
                "-{te:%Y%m%d%H%M}.png")
-    figtit = ("HIRS FCDR with uncertainties {self.satname:s} ch. {ch:d}, "
+    figtit = ("HIRS FCDR v{self.version:s} with uncertainties {self.satname:s} ch. {ch:d}, "
               "{tb:%Y-%m-%d %H:%M}--{te:%Y-%m-%d %H:%M} (scanpos {sp:d})")
     fields=["T_b", "u_T_b_random", "u_T_b_nonrandom",
         "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
@@ -63,13 +63,14 @@ class FCDRMonitor:
         "quality_minorframe_bitmask", "quality_pixel_bitmask"]
 
     def __init__(self, start_date, end_date, satname,
-            version="0.7pre",):
+            version="0.8pre",):
         self.hirsfcdr = fcdr.which_hirs_fcdr(satname, read="L1C")
+        self.version = version
         self.ds = self.hirsfcdr.read_period(
             start_date,
             end_date,
             locator_args={"data_version": version, "fcdr_type": "debug",
-                          "format_version": "0.4"},
+                          "format_version": "0.6"},
             fields=self.fields)
         self.satname = satname
 
