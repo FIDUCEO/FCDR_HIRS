@@ -188,7 +188,7 @@ class FCDRSummary(HomemadeDataset):
                     locator_args={"data_version": self.data_version,
                                   "fcdr_type": fcdr_type},
                     fields=fields[fcdr_type])
-                if ds["u_structured"].dims == ():
+                if fcdr_type=="easy" and ds["u_structured"].dims == ():
                     raise DataFileError("See https://github.com/FIDUCEO/FCDR_HIRS/issues/171")
             except DataFileError:
                 continue
