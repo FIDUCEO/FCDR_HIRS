@@ -114,7 +114,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     start_iwct_calib = 8
 
     calibfilter = filters.IQRCalibFilter()
-    filter_earthcounts = typhon.datasets.filters.MEDMAD(10)
+    filter_earthcounts = typhon.datasets.filters.MEDMAD(5)
+    filter_coldearth = filters.ImSoColdFilter()
+    filter_prtcounts = typhon.datasets.filters.MEDMAD(5)
+    filter_calibcounts = typhon.datasets.filters.MEDMAD(5)
 
     ε = 0.98 # from Wang, Cao, and Ciren (2007, JAOT), who give so further
              # source for this number
@@ -1278,6 +1281,27 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 interp_offset, a2, Rself)
 
             bad = self.filter_earthcounts.filter_outliers(C_Earth.values)
+            # I need to compare to space counts.
+            C_space = self._quantities[me.symbols["C_s"]]
+            # 2017-12-16, for the first channel there is a coordinate but
+            # not a dimension for the channel.  Should be properly fixed
+            # up where it's tucked away but I tried two fixed that both
+            # had side-effects I couldn't quite understand right away, so
+            # workaround here instead. -- 2017-12-16, GH
+            if "calibrated_channel" in C_space.dims:
+                C_space = C_space.sel(calibrated_channel=ch)
+            bad |= self.filter_coldearth.filter(
+                C_Earth,
+                self.interpolate_between_calibs(
+                    C_Earth["time"],
+                    time,
+                    C_space.median("calibration_position").values,
+                    kind="zero")[0])
+            if has_Rself: # otherwise I have no use of T and no T_ouliers
+                bad |= T_outliers.isel(time=views_Earth).values[:, numpy.newaxis]
+            # NB, need to test if this takes care of most remaining
+            # bad outliers!  May need an entire rerun of the archive for
+            # that...
             self._flags["pixel"].loc[{"calibrated_channel": ch}].values[bad] |= (
                 _fcdr_defs.FlagsPixel.DO_NOT_USE|_fcdr_defs.FlagsPixel.OUTLIER_NOS)
             # 

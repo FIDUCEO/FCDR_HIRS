@@ -3,6 +3,7 @@
 
 import abc
 
+import numpy
 import scipy.stats
 
 from typhon.datasets.filters import OutlierFilter, MEDMAD
@@ -38,3 +39,17 @@ class IQRCalibFilter(CalibrationMirrorFilter):
         return counts.reduce(
             scipy.stats.iqr, dim=dim,
             rng=self.rng) > 3.3 * adev(counts, dim=dim)
+
+
+class ImSoColdFilter:
+    """Intended for Earth Counts, reject when colder than space
+    """
+
+    def filter(self, C_Earth, C_space):
+        # depending on the sign of the gain, either they should be all
+        # larger or all smaller... in either case, equal to space is bad
+        # enough!
+        if C_Earth.median() > numpy.ma.median(C_space): # should never equal
+            return C_Earth <= C_space[:, numpy.newaxis]
+        else:
+            return C_Earth >= C_space[:, numpy.newaxis]
