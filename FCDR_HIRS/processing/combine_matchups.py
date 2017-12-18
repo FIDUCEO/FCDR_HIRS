@@ -356,7 +356,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             harm,
             datetime.datetime(1970, 1, 1, 0, 0, 0))
 
-        return harm
+        return (harm, ds)
 
     def get_w_matrix(self, ds, sat, dim):
         """Get W matrix from ds for dimension
@@ -403,7 +403,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             format="NETCDF4"))
         ds.to_netcdf(outfile)
 
-    def write_harm(self, harm):
+    def write_harm(self, harm, ds_new):
         out = (self.basedir + 
                "{:s}_{:s}_ch{:d}_{:%Y%m%d}-{:%Y%m%d}.nc".format(
                     self.prim_name,
@@ -414,6 +414,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     ))
         logging.info("Writing {:s}".format(out))
         harm.to_netcdf(out)
+        ds_out = out[:-3] + "_ds.nc"
+        logging.info("Writing {:s}".format(ds_out))
+        ds_new.to_netcdf(ds_out)
 
 def main():
     warnings.filterwarnings("error",
@@ -425,6 +428,6 @@ def main():
         p.satname1, p.satname2)
 
     ds = hmc.as_xarray_dataset()
-    harm = hmc.ds2harm(ds, 12)
-    hmc.write_harm(harm)
+    (harm, ds_new) = hmc.ds2harm(ds, 12)
+    hmc.write_harm(harm, ds_new)
     #hmc.write("/work/scratch/gholl/test.nc")
