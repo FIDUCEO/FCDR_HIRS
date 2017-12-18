@@ -603,7 +603,7 @@ class NoiseAnalyser:
         # cache.  Make sure we create it /again/ ?!
         pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
         pyatmlab.graphics.print_or_show(self.fig, False,
-            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.png".format(
+            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.".format(
                 self=self, ch=ch, alltyp='_'.join(all_tp),
                 alltemp='_'.join(temperatures), tb=t[0], te=t[-1],
                 corrinfo=(f"_corr_{corr_info.get('count', 2):d}"
@@ -663,7 +663,8 @@ class NoiseAnalyser:
         a0.set_ylabel("Counts")
         a0h.set_xlabel(a0.get_ylabel().replace("\n", " "))
         a0h.set_ylabel("Number")
-        a0.set_title("Calibration counts over time")
+        a0.set_title("Calibration counts over time for "
+            + "and".join(all_tp) + " views")
         a0h.set_title("Calib. counts hist.")
         a0h.xaxis.set_major_locator(
             matplotlib.ticker.MaxNLocator(nbins=6))
@@ -775,8 +776,8 @@ class NoiseAnalyser:
                 label="ch. {:d}".format(chb))
         if success:
             a.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
-        a.set_title("{:s} noise correlations".format(typ))
-        a.set_ylabel("noise correlation")
+        a.set_title("{:s} error correlations".format(typ))
+        a.set_ylabel("error correlation")
         a.set_xlabel("Date / time")
         return a
         #correlations.sel(cha=ch_a, chb=ch_b)
