@@ -146,6 +146,7 @@ class FCDRSummary(HomemadeDataset):
             freq="D")
         if fields is None:
             fields = self.fields
+        chandim = "channel" if fcdr_type=="easy" else "calibrated_channel"
         channels = numpy.arange(1, 20)
         #bins = numpy.linspace(self.hist_range, self.nbins)
         summary = xarray.Dataset(
@@ -167,7 +168,10 @@ class FCDRSummary(HomemadeDataset):
                 # range(5)]) 
                     numpy.concatenate([[
                     numpy.concatenate(
-                        [[0], numpy.linspace(
+                        [[min(
+                            self.hist_range.sel(channel=ch,edges=0)[field]-1,
+                            0)],
+                          numpy.linspace(
                             self.hist_range.sel(
                                 channel=ch,
                                 edges=0)[field],
@@ -175,7 +179,9 @@ class FCDRSummary(HomemadeDataset):
                                 channel=ch,
                                 edges=1)[field], self.nbins,
                                 dtype="f4"),
-                        [1000]])]
+                        [max(
+                            self.hist_range.sel(channel=ch,edges=1)[field]+1,
+                            1000)]])]
                     for ch in channels]))
                 for field in fields[fcdr_type]},
             },
@@ -220,7 +226,9 @@ class FCDRSummary(HomemadeDataset):
                 # both #172 and #173
                 pt = scipy.stats.mstats.mquantiles(
                     numpy.ma.masked_invalid(
-                        da.transpose("channel", "x", "y").values.reshape(channels.size, -1)),
+                        (da.transpose("channel", "x", "y")
+                         if fcdr_type == "easy"
+                         else da).values.reshape(channels.size, -1)),
                         prob=self.ptiles/100, axis=1,
                         alphap=0, betap=1).T
                 summary[field].loc[{"date":sd}] = pt
@@ -228,7 +236,7 @@ class FCDRSummary(HomemadeDataset):
                 for ch in range(1, 20):
                     summary[f"hist_{field:s}"].loc[
                         {"date": sd, "channel": ch}] = numpy.histogram(
-                            da.sel(channel=ch),
+                            da.loc[{chandim:ch}],
                             bins=summary[f"bins_{field:s}"].sel(channel=ch),
                             range=(da.min(), da.max()))[0]
 
