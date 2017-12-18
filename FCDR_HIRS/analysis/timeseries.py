@@ -310,16 +310,26 @@ class NoiseAnalyser:
         hrsargs=dict(
                 fields=["hrs_scnlin", self.hirs.scantype_fieldname, "time",
                         "counts", "calcof_sorted", "radiance",
-                        "bt",
-                        "radiance_fid_naive"] +
+                        "bt"] + 
+                        #"radiance_fid_naive"] + # GH 2017-12-17: fails
+                        # with new filters due to pandas index error
+                        # because duplicate removals are postponed but
+                        # pseudo fields are not
                        ["temp_{:s}".format(f) for f in
                        set(temp_fields) | {"iwt"}],
                 locator_args=dict(satname=self.satname),
-                orbit_filters=self.hirs.default_orbit_filters)
+                orbit_filters=
+                    [typhon.datasets.filters.HIRSBestLineFilter(self.hirs),
+                     typhon.datasets.filters.TimeMaskFilter(self.hirs),
+                     typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter(),
+                     typhon.datasets.filters.HIRSFlagger(self.hirs, max_flagged=0.9),
+                     typhon.datasets.filters.HIRSCalibCountFilter(self.hirs, self.hirs.filter_calibcounts),
+                     ])
         # those need to be read before combining with HIASI, because
         # afterward, I lose the calibration rounds.  But doing it after
         # read a full month (or more) of data takes too much RAM as I will
         # need to copy the entire period; therefore, add it on-the-fly
+        self.hirs.maxsize = 200*2**30 # tolerate 200 GB
         Mhrsall = self.hirs.read_period(start_date, end_date,
             pseudo_fields=
                 {"tsc": self.hirs.calc_time_since_last_calib,
@@ -593,7 +603,7 @@ class NoiseAnalyser:
         # cache.  Make sure we create it /again/ ?!
         pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
         pyatmlab.graphics.print_or_show(self.fig, False,
-            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.".format(
+            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.png".format(
                 self=self, ch=ch, alltyp='_'.join(all_tp),
                 alltemp='_'.join(temperatures), tb=t[0], te=t[-1],
                 corrinfo=(f"_corr_{corr_info.get('count', 2):d}"
