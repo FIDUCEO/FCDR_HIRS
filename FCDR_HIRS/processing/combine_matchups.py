@@ -401,6 +401,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             outfile,
             mode='w',
             format="NETCDF4"))
+        p = pathlib.Path(outfile)
+        p.parent.mkdir(parents=True, exist_ok=True)
         ds.to_netcdf(outfile)
 
     def write_harm(self, harm, ds_new):
