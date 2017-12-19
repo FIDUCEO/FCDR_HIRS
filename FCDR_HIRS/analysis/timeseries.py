@@ -603,7 +603,7 @@ class NoiseAnalyser:
         # cache.  Make sure we create it /again/ ?!
         pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
         pyatmlab.graphics.print_or_show(self.fig, False,
-            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.".format(
+            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.png".format(
                 self=self, ch=ch, alltyp='_'.join(all_tp),
                 alltemp='_'.join(temperatures), tb=t[0], te=t[-1],
                 corrinfo=(f"_corr_{corr_info.get('count', 2):d}"
