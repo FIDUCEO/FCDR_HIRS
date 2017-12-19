@@ -49,7 +49,12 @@ class ImSoColdFilter:
         # depending on the sign of the gain, either they should be all
         # larger or all smaller... in either case, equal to space is bad
         # enough!
-        if C_Earth.median() > numpy.ma.median(C_space): # should never equal
+
+        csm = numpy.ma.median(C_space)
+        # to circumvent https://github.com/pydata/xarray/issues/1792
+        if isinstance(C_space, numpy.ma.masked_array):
+            C_space = C_space.data
+        if C_Earth.median() > csm # should never equal
             return C_Earth <= C_space[:, numpy.newaxis]
         else:
             return C_Earth >= C_space[:, numpy.newaxis]
