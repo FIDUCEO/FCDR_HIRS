@@ -404,7 +404,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         ds.to_netcdf(outfile)
 
     def write_harm(self, harm, ds_new):
-        out = (self.basedir + 
+        out = (self.basedir + f"{self.prim_name:s}_{self.sec_name:s}/" +
                "{:s}_{:s}_ch{:d}_{:%Y%m%d}-{:%Y%m%d}.nc".format(
                     self.prim_name,
                     self.sec_name,
@@ -428,6 +428,7 @@ def main():
         p.satname1, p.satname2)
 
     ds = hmc.as_xarray_dataset()
-    (harm, ds_new) = hmc.ds2harm(ds, 12)
-    hmc.write_harm(harm, ds_new)
+    for channel in range(1, 20):
+        (harm, ds_new) = hmc.ds2harm(ds, channel)
+        hmc.write_harm(harm, ds_new)
     #hmc.write("/work/scratch/gholl/test.nc")
