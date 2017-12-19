@@ -414,9 +414,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     ))
         logging.info("Writing {:s}".format(out))
         harm.to_netcdf(out)
-        ds_out = out[:-3] + "_ds.nc"
-        logging.info("Writing {:s}".format(ds_out))
-        ds_new.to_netcdf(ds_out)
+        if int(harm["channel"]) == 1:
+            ds_out = out[:-3] + "_ds.nc"
+            logging.info("Writing {:s}".format(ds_out))
+            ds_new.to_netcdf(ds_out.replace("_ch1", ""))
 
 def main():
     warnings.filterwarnings("error",
