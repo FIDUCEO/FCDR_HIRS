@@ -25,6 +25,7 @@ class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
 
 # inspect_hirs_matchups, work again
 hh = typhon.datasets.tovs.HIRSHIRS(read_returns="xarray")
+hi = typhon.datasets.tovs.HIASI() # metopa only
 
 class HIRSMatchupCombiner:
     fcdr_info = {"data_version": "0.8pre", "fcdr_type": "debug"}
