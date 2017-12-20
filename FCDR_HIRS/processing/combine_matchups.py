@@ -408,12 +408,12 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
     def write_harm(self, harm, ds_new):
         out = (self.basedir + f"{self.prim_name:s}_{self.sec_name:s}/" +
-               "{:s}_{:s}_ch{:d}_{:%Y%m%d}-{:%Y%m%d}.nc".format(
-                    self.prim_name,
-                    self.sec_name,
-                    int(harm["channel"]),
-                    harm["time1".format(self.prim_name)].values[0].astype("M8[s]").astype(datetime.datetime),
-                    harm["time1".format(self.prim_name)].values[-1].astype("M8[s]").astype(datetime.datetime),
+               "{st:%Y-%m-%d}/{pn:s}_{sn:s}_ch{ch:d}_{st:%Y%m%d}-{en:%Y%m%d}.nc".format(
+                    pn=self.prim_name,
+                    sn=self.sec_name,
+                    ch=int(harm["channel"]),
+                    st=harm["time1".format(self.prim_name)].values[0].astype("M8[s]").astype(datetime.datetime),
+                    en=harm["time1".format(self.prim_name)].values[-1].astype("M8[s]").astype(datetime.datetime),
                     ))
         pathlib.Path(out).parent.mkdir(exist_ok=True, parents=True)
         logging.info("Writing {:s}".format(out))
