@@ -43,6 +43,7 @@ import warnings
 
 import numpy
 import xarray
+import pathlib
 from .. import matchups
 
 import typhon.datasets._tovs_defs
@@ -414,6 +415,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     harm["time1".format(self.prim_name)].values[0].astype("M8[s]").astype(datetime.datetime),
                     harm["time1".format(self.prim_name)].values[-1].astype("M8[s]").astype(datetime.datetime),
                     ))
+        pathlib.Path(out).parent.mkdir(exist_ok=True, parents=True)
         logging.info("Writing {:s}".format(out))
         harm.to_netcdf(out)
         if int(harm["channel"]) == 1:
