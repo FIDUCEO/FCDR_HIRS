@@ -23,9 +23,23 @@ class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
                         (abs(ds[f"hirs-{self.prim:s}_lza"][:, 3, 3] - \
                              ds[f"hirs-{self.sec:s}_lza"][:, 3, 3]) < 5)}]
 
+class CalibrationCountDimensionReducer(typhon.datasets.filters.OrbitFilter):
+    """Reduce the size of calibration counts.
+
+    When we want to add calibraiton counts to matchup, we want to add only
+    one (median) to each matchup, not the whole batch of 48, that becomes
+    too large...
+    """
+
+    def finalise(self, arr):
+        hcd = [k for (k, v) in arr.data_vars.items() if "calibration_position" in v.dims]
+        for k in hcd:
+            arr[k] = arr[k].median("calibration_position")
+        return arr
+
 # inspect_hirs_matchups, work again
 hh = typhon.datasets.tovs.HIRSHIRS(read_returns="xarray")
-hi = typhon.datasets.tovs.HIASI() # metopa only
+hi = typhon.datasets.tovs.HIASI(read_returns="xarray") # metopa only
 
 class HIRSMatchupCombiner:
     fcdr_info = {"data_version": "0.8pre", "fcdr_type": "debug"}
@@ -54,7 +68,7 @@ class HIRSMatchupCombiner:
          'c',
          'channel_correlation_matrix',
          #'counts',
-         'earth_location',
+         #'earth_location',
          #'elements',
          'fstar',
          'h',
@@ -131,6 +145,7 @@ class HIRSMatchupCombiner:
          'β',
          'ε']
 
+    mode = None
     def __init__(self, start_date, end_date, prim_name, sec_name):
         #self.ds = netCDF4.Dataset(str(sf), "r")
         # acquire original brightness temperatures here for the purposes
@@ -139,37 +154,65 @@ class HIRSMatchupCombiner:
         # readibly available in the matchups from BC, so it would take
         # more effort to gather the necessary context information.  See
         # #117.
-        ds = hh.read_period(start_date, end_date,
-            locator_args={"prim": prim_name, "sec": sec_name},
-            fields={"hirs-{:s}_{:s}".format(s, field)
-                for field in ("x", "y", "time", "lza", "file_name",
-                              "acquisition_time", "scanpos") + tuple(
-                                "bt_ch{:02d}".format(ch) for ch in
-                                range(1, 20))
-                for s in (prim_name, sec_name)}|{"matchup_spherical_distance"},
-            pseudo_fields={
-                "time_{:s}".format(prim_name):
-                    lambda ds: ds["hirs-{:s}_time".format(prim_name)][:, 3, 3].astype("M8[s]"),
-                "time_{:s}".format(sec_name):
-                    lambda ds: ds["hirs-{:s}_time".format(sec_name)][:, 3, 3].astype("M8[s]")},
-            orbit_filters=hh.default_orbit_filters+[HHMatchupCountFilter(prim_name,sec_name)])
+        if prim_name.lower() == "iasi":
+            if sec_name.lower() not in ("metopa", "ma"):
+                raise ValueError(f"When primary is IASI, secondary "
+                    f"must be metopa, not {sec_name!s}")
+            self.mode = "reference"
+            ds = hi.read_period(start_date, end_date,
+                orbit_filter=hi.default_orbit_filters)
+        else:
+            self.mode == "hirs"
+            ds = hh.read_period(start_date, end_date,
+                locator_args={"prim": prim_name, "sec": sec_name},
+                fields={"hirs-{:s}_{:s}".format(s, field)
+                    for field in ("x", "y", "time", "lza", "file_name",
+                                  "acquisition_time", "scanpos") + tuple(
+                                    "bt_ch{:02d}".format(ch) for ch in
+                                    range(1, 20))
+                    for s in (prim_name, sec_name)}|{"matchup_spherical_distance"},
+                pseudo_fields={
+                    "time_{:s}".format(prim_name):
+                        lambda ds: ds["hirs-{:s}_time".format(prim_name)][:, 3, 3].astype("M8[s]"),
+                    "time_{:s}".format(sec_name):
+                        lambda ds: ds["hirs-{:s}_time".format(sec_name)][:, 3, 3].astype("M8[s]")},
+                orbit_filters=hh.default_orbit_filters+[HHMatchupCountFilter(prim_name,sec_name)])
         self.prim_hirs = fcdr.which_hirs_fcdr(prim_name, read="L1C")
+
         self.sec_hirs = fcdr.which_hirs_fcdr(sec_name, read="L1C")
-        Mcp = hh.combine(ds, self.prim_hirs, trans={"time_{:s}".format(prim_name): "time"},
-                         timetol=numpy.timedelta64(4, 's'),
-                         col_field="hirs-{:s}_x".format(prim_name),
-                         col_dim_name="scanpos",
-                         other_args={"locator_args": self.fcdr_info,
-                                     "fields": self.fields_from_each,
-                                     "NO_CACHE": True},
-                         time_name="time_"+prim_name)
-        Mcs = hh.combine(ds, self.sec_hirs, trans={"time_{:s}".format(sec_name): "time"},
-                         timetol=numpy.timedelta64(4, 's'),
-                         col_field="hirs-{:s}_x".format(sec_name),
-                         col_dim_name="scanpos",
-                         other_args={"locator_args": self.fcdr_info,
-                                     "fields": self.fields_from_each},
-                         time_name="time_"+sec_name)
+        orbit_filters = {}
+        for p in ("prim", "sec"):
+            h = getattr(self, f"{p:s}_hirs")
+            orbit_filters[p] = [CalibrationCountDimensionReducer()]
+
+        if self.mode == "reference":
+            # There is no Mcp, for the primary (reference) is IASI
+            Mcp = None
+            Mcs = hi.combine(ds,
+                self.prim_hirs,
+                trans={"mon_time": "time"},
+                timetol=numpy.timedelta64(4, 's'),
+                other_args={"locator_args": self.fcdr_info,
+                            "fields": self.fields_from_each})
+        else:
+            Mcp = hh.combine(ds, self.prim_hirs, trans={"time_{:s}".format(prim_name): "time"},
+                             timetol=numpy.timedelta64(4, 's'),
+                             col_field="hirs-{:s}_x".format(prim_name),
+                             col_dim_name="scanpos",
+                             other_args={"locator_args": self.fcdr_info,
+                                         "fields": self.fields_from_each,
+                                         "orbit_filters": orbit_filters["prim"],
+                                         "NO_CACHE": True},
+                             time_name="time_"+prim_name)
+            Mcs = hh.combine(ds, self.sec_hirs, trans={"time_{:s}".format(sec_name): "time"},
+                             timetol=numpy.timedelta64(4, 's'),
+                             col_field="hirs-{:s}_x".format(sec_name),
+                             col_dim_name="scanpos",
+                             other_args={"locator_args": self.fcdr_info,
+                                         "orbit_filters": orbit_filters["sec"],
+                                         "fields": self.fields_from_each},
+                             time_name="time_"+sec_name)
+
         self.start_date = start_date
         self.end_date = end_date
         self.ds = ds
