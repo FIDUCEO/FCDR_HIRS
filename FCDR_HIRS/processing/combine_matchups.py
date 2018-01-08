@@ -497,6 +497,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         harm["time1"] = (("M",), self.ds["mon_time"])
 
+        # and w-matrix stuff
+
+         harm["w_matrix_use1"] = (("m1",), [0])
+         harm["u_matrix_use1"] = (("m1",), [0])
+
     def write(self, outfile):
         ds = self.as_xarray_dataset()
         logging.info("Storing to {:s}".format(
