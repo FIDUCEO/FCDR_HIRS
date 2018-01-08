@@ -354,9 +354,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm.attrs["sensor_1_name"] = self.prim_name
         harm.attrs["sensor_2_name"] = self.sec_name
 
-        harm = common.time_epoch_to(
-            harm,
-            datetime.datetime(1970, 1, 1, 0, 0, 0))
+        # time should be double and without add-offset
+        for i in (1, 2):
+            v = f"time{i:d}"
+            harm[v].encoding.pop("add_offset", None)
+            harm[v]["dtype"] = "f8"
 
         return (harm, ds)
 
@@ -516,11 +518,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     ))
         pathlib.Path(out).parent.mkdir(exist_ok=True, parents=True)
         logging.info("Writing {:s}".format(out))
-        harm.to_netcdf(out)
+        harm.to_netcdf(out, unlimited_dims="M")
         if int(harm["channel"]) == 1:
             ds_out = out[:-3] + "_ds.nc"
             logging.info("Writing {:s}".format(ds_out))
-            ds_new.to_netcdf(ds_out.replace("_ch1", ""))
+            ds_new.to_netcdf(ds_out.replace("_ch1", ""), unlimited_dim="line")
 
 def combine_hirs():
     p = parse_cmdline_hirs()
