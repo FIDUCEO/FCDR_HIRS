@@ -23,6 +23,11 @@ class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
                         (abs(ds[f"hirs-{self.prim:s}_lza"][:, 3, 3] - \
                              ds[f"hirs-{self.sec:s}_lza"][:, 3, 3]) < 5)}]
 
+class HIMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
+    def filter(self, ds, **extra):
+        bad = (ds["ref_radiance"]==0).any("ch_ref")
+        return ds[{"line": ~bad}]
+
 class CalibrationCountDimensionReducer(typhon.datasets.filters.OrbitFilter):
     """Reduce the size of calibration counts.
 
@@ -160,7 +165,7 @@ class HIRSMatchupCombiner:
                     f"must be metopa, not {sec_name!s}")
             self.mode = "reference"
             ds = hi.read_period(start_date, end_date,
-                orbit_filters=hi.default_orbit_filters)
+                orbit_filters=hi.default_orbit_filters+[HIMatchupCountFilter()])
             self.prim_hirs = "iasi"
             self.hiasi = hi
         else:
@@ -360,4 +365,4 @@ class KrModelIASIRef(KrModel):
     def calc_Kr(self, channel):
         # FIXME: this should not be zero!  Use a constant nonzero value
         # instead for now, until better value from Viju
-        return numpy.zeros(shape=self.ds.dims["line"])
+        return numpy.zeros(shape=self.ds.dims["line"])+0.1

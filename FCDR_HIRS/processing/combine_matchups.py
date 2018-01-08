@@ -269,7 +269,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # That means the number of ones is equal to 
         # w_matrix_row_count = M+1
 
-        w_matrix_count = 4
+        w_matrix_count = 4 if self.mode == "hirs" else 2
         # according to the previous iteration, we have first the primary
         # for C_S, C_IWCT, T_IWCT, then the primary for RselfE, then the
         # secondary for the same two.
@@ -358,7 +358,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         for i in (1, 2):
             v = f"time{i:d}"
             harm[v].encoding.pop("add_offset", None)
-            harm[v]["dtype"] = "f8"
+            harm[v].encoding["dtype"] = "f8"
 
         return (harm, ds)
 
@@ -449,7 +449,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # fill w_matrix_use1, w_matrix_use2
         harm[f"w_matrix_use{i:d}"] = (
             (f"m{i:d}",),
-            numpy.array([2*i-1+wmats[x] if x in structured else 0
+            numpy.array([2*(i if self.mode=="hirs" else i-1)-1+wmats[x] if x in structured else 0
                 for x in take_for_each], dtype="i4"))
 
         # fill u_matrix_use1, u_matrix_use2
@@ -499,8 +499,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         # and w-matrix stuff
 
-         harm["w_matrix_use1"] = (("m1",), [0])
-         harm["u_matrix_use1"] = (("m1",), [0])
+        harm["w_matrix_use1"] = (("m1",), numpy.array([0], dtype="i4"))
+        harm["u_matrix_use1"] = (("m1",), numpy.array([0], dtype="i4"))
 
     def write(self, outfile):
         ds = self.as_xarray_dataset()
@@ -523,11 +523,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     ))
         pathlib.Path(out).parent.mkdir(exist_ok=True, parents=True)
         logging.info("Writing {:s}".format(out))
-        harm.to_netcdf(out, unlimited_dims="M")
+        harm.to_netcdf(out, unlimited_dims=["M"])
         if int(harm["channel"]) == 1:
             ds_out = out[:-3] + "_ds.nc"
             logging.info("Writing {:s}".format(ds_out))
-            ds_new.to_netcdf(ds_out.replace("_ch1", ""), unlimited_dim="line")
+            ds_new.to_netcdf(ds_out.replace("_ch1", ""), unlimited_dims=["line"])
 
 def combine_hirs():
     p = parse_cmdline_hirs()
