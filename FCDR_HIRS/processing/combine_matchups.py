@@ -359,6 +359,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             v = f"time{i:d}"
             harm[v].encoding.pop("add_offset", None)
             harm[v].encoding["dtype"] = "f8"
+            harm[v].encoding["units"] = "seconds since 1970-01-01"
 
         return (harm, ds)
 

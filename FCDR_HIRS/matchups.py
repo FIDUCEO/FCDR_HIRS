@@ -22,11 +22,20 @@ class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
         return ds[{"matchup_count": \
                         (abs(ds[f"hirs-{self.prim:s}_lza"][:, 3, 3] - \
                              ds[f"hirs-{self.sec:s}_lza"][:, 3, 3]) < 5)}]
+    
+    def finalise(self, ds):
+        idx = numpy.argsort(ds[f"time_{self.prim:s}"])
+        return ds[{"matchup_count": idx}]
 
 class HIMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
     def filter(self, ds, **extra):
         bad = (ds["ref_radiance"]==0).any("ch_ref")
         return ds[{"line": ~bad}]
+    
+    def finalise(self, ds):
+        # Another round of sorting, not sure why needed
+        idx = numpy.argsort(ds["ref_time"])
+        return ds[{"line": idx}]
 
 class CalibrationCountDimensionReducer(typhon.datasets.filters.OrbitFilter):
     """Reduce the size of calibration counts.
