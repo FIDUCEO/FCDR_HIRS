@@ -89,8 +89,8 @@ class HIRSMatchupCombiner:
          'k_b',
          'latitude',
          'longitude',
-         'original_calibration_coefficients',
-         'original_calibration_coefficients_sorted',
+         #'original_calibration_coefficients',
+         #'original_calibration_coefficients_sorted',
          'platform_altitude',
          'platform_zenith_angle',
          'quality_channel_bitmask',
@@ -205,7 +205,8 @@ class HIRSMatchupCombiner:
                 trans={"mon_time": "time"},
                 timetol=numpy.timedelta64(4, 's'),
                 other_args={"locator_args": self.fcdr_info,
-                            "fields": self.fields_from_each})
+                            "fields": self.fields_from_each}).drop(
+                    ("lat_earth", "lon_earth"))
         elif self.mode == "hirs":
             Mcp = hh.combine(ds, self.prim_hirs, trans={"time_{:s}".format(prim_name): "time"},
                              timetol=numpy.timedelta64(4, 's'),
@@ -215,7 +216,8 @@ class HIRSMatchupCombiner:
                                          "fields": self.fields_from_each,
                                          "orbit_filters": [CalibrationCountDimensionReducer()],
                                          "NO_CACHE": True},
-                             time_name="time_"+prim_name)
+                             time_name="time_"+prim_name).drop(
+                    ("lat_earth", "lon_earth"))
             Mcs = hh.combine(ds, self.sec_hirs, trans={"time_{:s}".format(sec_name): "time"},
                              timetol=numpy.timedelta64(4, 's'),
                              col_field="hirs-{:s}_x".format(sec_name),
@@ -223,7 +225,8 @@ class HIRSMatchupCombiner:
                              other_args={"locator_args": self.fcdr_info,
                                          "orbit_filters": [CalibrationCountDimensionReducer()],
                                          "fields": self.fields_from_each},
-                             time_name="time_"+sec_name)
+                             time_name="time_"+sec_name).drop(
+                    ("lat_earth", "lon_earth"))
         else:
             raise RuntimeError(f"Mode can't possibly be {self.mode:s}!")
 
