@@ -67,7 +67,11 @@ from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 
 class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     # FIXME: go through NetCDFDataset functionality
-    basedir = "/group_workspaces/cems2/fiduceo/Data/Harmonisation_matchups/HIRS/"
+    # Experiencing problems with extreme slowness and hanging writing to
+    # the GWS.  Experiment if this is any better writing to scratch2 (and
+    # can then rsync those over later).
+    #basedir = "/group_workspaces/cems2/fiduceo/Data/Harmonisation_matchups/HIRS/"
+    basedir = "/work/scratch2/gholl/Harmonisation_matchups/HIRS/"
 
     # fallback for simplified only, because I don't store the
     # intermediate value and 
