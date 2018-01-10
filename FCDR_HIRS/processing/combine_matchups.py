@@ -5,6 +5,7 @@ from .. import common
 import argparse
 import tempfile
 import subprocess
+import time
 
 def parse_cmdline_hirs():
     parser = argparse.ArgumentParser(
@@ -562,10 +563,13 @@ def combine_hirs():
                     stderr=subprocess.PIPE,
                     check=True)
             except subprocess.CalledProcessError as cpe:
+                wait = i**2/5
                 print(f"Copying failed with code {cpe.returncode!s}.\n"
                     f"Command:\n{cpe.cmd!s}\n"
                     f"STDOUT:\n{cpe.stdout.decode('utf8'):s}\n"
-                    f"STDERR:\n{cpe.stderr.decode('utf8'):s}\n")
+                    f"STDERR:\n{cpe.stderr.decode('utf8'):s}.\n"
+                    f"Waiting {wait:.3f} seconds.")
+                time.sleep(wait)
             else:
                 break
         else:
