@@ -6,6 +6,7 @@ import argparse
 import tempfile
 import subprocess
 import time
+import sys
 
 def parse_cmdline_hirs():
     parser = argparse.ArgumentParser(
@@ -568,7 +569,8 @@ def combine_hirs():
                     f"Command:\n{cpe.cmd!s}\n"
                     f"STDOUT:\n{cpe.stdout.decode('utf8'):s}\n"
                     f"STDERR:\n{cpe.stderr.decode('utf8'):s}.\n"
-                    f"Waiting {wait:.3f} seconds.")
+                    f"Waiting {wait:.3f} seconds.",
+                    file=sys.stderr)
                 time.sleep(wait)
             else:
                 break
