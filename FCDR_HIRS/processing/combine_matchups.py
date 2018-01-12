@@ -3,6 +3,10 @@
 
 from .. import common
 import argparse
+import tempfile
+import subprocess
+import time
+import sys
 
 def parse_cmdline_hirs():
     parser = argparse.ArgumentParser(
@@ -517,8 +521,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         p.parent.mkdir(parents=True, exist_ok=True)
         ds.to_netcdf(outfile)
 
-    def write_harm(self, harm, ds_new):
-        out = (self.basedir + f"{self.prim_name:s}_{self.sec_name:s}/" +
+    def write_harm(self, harm, ds_new, basedir=None):
+        if basedir is None:
+            basedir = self.basedir
+        out = (basedir + f"/{self.prim_name:s}_{self.sec_name:s}/" +
                "{st:%Y-%m-%d}/{pn:s}_{sn:s}_ch{ch:d}_{st:%Y%m%d}-{en:%Y%m%d}.nc".format(
                     pn=self.prim_name,
                     sn=self.sec_name,
@@ -545,10 +551,31 @@ def combine_hirs():
         p.satname1, p.satname2)
 
     ds = hmc.as_xarray_dataset()
-    for channel in range(1, 20):
-        (harm, ds_new) = hmc.ds2harm(ds, channel)
-        hmc.write_harm(harm, ds_new)
-    #hmc.write("/work/scratch/gholl/test.nc")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for channel in range(1, 20):
+            (harm, ds_new) = hmc.ds2harm(ds, channel)
+            hmc.write_harm(harm, ds_new, basedir=tmpdir)
+        # copy over
+        for i in range(50):
+            logging.info(f"Copying files from {tmpdir:s} to {hmc.basedir:s} (attempt {i+1:d})")
+            try:
+                subprocess.run(["rsync", "-av", tmpdir + "/", hmc.basedir + "/"], 
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True)
+            except subprocess.CalledProcessError as cpe:
+                wait = i**2/5
+                print(f"Copying failed with code {cpe.returncode!s}.\n"
+                    f"Command:\n{cpe.cmd!s}\n"
+                    f"STDOUT:\n{cpe.stdout.decode('utf8'):s}\n"
+                    f"STDERR:\n{cpe.stderr.decode('utf8'):s}.\n"
+                    f"Waiting {wait:.3f} seconds.",
+                    file=sys.stderr)
+                time.sleep(wait)
+            else:
+                break
+        else:
+            raise IOError("Failed 50 copying attempts, see above.")
 
 def combine_iasi():
     p = parse_cmdline_iasi()
