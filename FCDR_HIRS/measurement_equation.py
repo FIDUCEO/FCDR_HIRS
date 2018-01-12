@@ -19,7 +19,7 @@ version = "β"
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
          "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φn "
          "R_IWCT O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT f Δf fstar "
-         "ν Δν νstar T_bstar T_b a_4")
+         "ν Δν νstar T_bstar T_b a_4 S h_0 h_1 h_2 h_3")
 
 symbols = sym = dict(zip(names.split(), sympy.symbols(names)))
 
@@ -85,6 +85,16 @@ expressions[sym["c"]] = sympy.sympify(scipy.constants.speed_of_light)
 expressions[sym["h"]] = sympy.sympify(scipy.constants.Planck)
 expressions[sym["k_b"]] = sympy.sympify(scipy.constants.Boltzmann)
 
+expressions_simplified = {}
+expressions_simplified[sym["R_e"]] = (sym["S"] * (sym["C_E"] - sym["C_s"])
+        + sym["h_2"]* (sym["C_E"]**2 - sym["C_s"]**2)
+        - (sym["R_selfE"] + sym["h_1"]))
+expressions_simplified[sym["S"]] = -(sym["R_IWCT"] -
+    sym["h_2"] * (sym["C_IWCT"] - sym["C_s"]))/(sym["C_IWCT"] - sym["C_s"])
+expressions_simplified[sym["R_IWCT"]] = ((sym["ε"] + sym["h_3"]) * sym["B"])
+expressions_simplified[sym["B"]] = expressions[sym["B"]] # correct if version=="β"
+expressions_simplified[sym["Tstar"]] = sym["α"] + sym["β"]*sym["T_IWCT"]
+
 units = {}
 units[sym["c"]] = ureg.c
 units[sym["h"]] = ureg.h
@@ -95,7 +105,8 @@ aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
 aliases[sym["C_PRT"]] = sympy.IndexedBase(sym["C_PRT"])[sym["n"]]
 aliases[sym["d_PRT"]] = sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]]
 
-def recursive_substitution(e, stop_at=None, return_intermediates=False):
+def recursive_substitution(e, stop_at=None, return_intermediates=False,
+        expressions=expressions):
     """For expression 'e', substitute all the way down.
 
     Using the dictionary `expressions`, repeatedly substitute all symbols
