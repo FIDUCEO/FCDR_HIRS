@@ -90,7 +90,7 @@ expressions_simplified[sym["R_e"]] = (sym["S"] * (sym["C_E"] - sym["C_s"])
         + sym["h_2"]* (sym["C_E"]**2 - sym["C_s"]**2)
         - (sym["R_selfE"] + sym["h_1"]))
 expressions_simplified[sym["S"]] = -(sym["R_IWCT"] -
-    sym["h_2"] * (sym["C_IWCT"] - sym["C_s"]))/(sym["C_IWCT"] - sym["C_s"])
+    sym["h_2"] * (sym["C_IWCT"]**2 - sym["C_s"]**2))/(sym["C_IWCT"] - sym["C_s"])
 expressions_simplified[sym["R_IWCT"]] = ((sym["ε"] + sym["h_3"]) * sym["B"])
 expressions_simplified[sym["B"]] = expressions[sym["B"]] # correct if version=="β"
 expressions_simplified[sym["Tstar"]] = sym["α"] + sym["β"]*sym["T_IWCT"]
