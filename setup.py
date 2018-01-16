@@ -98,7 +98,8 @@ setup(
                       "sympy==1.0", # see #151
                       "pint>=0.8",
                       "fcdr-tools>=1.1.1",
-                      "joblib>=0.11"],
+                      "joblib>=0.11",
+                      "cartopy"],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,
