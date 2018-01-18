@@ -43,6 +43,20 @@ Convert HIRS-IASI matchups for harmonisation
 
     return parser.parse_args()
 
+def parse_cmdline_merge():
+    parser = argparse.ArgumentParser(
+        description="Merge multiple harmonisation files",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument("files", type=str, nargs="+",
+        help="Files to concatenate")
+
+    parser.add_argument("--out", type=str,
+        default="out.nc",
+        help="File to write output to")
+
+    return parser.parse_args()
+    
 # workaround for #174
 tl = dict(C_E="C_Earth",
           C_s="C_space",
@@ -591,3 +605,96 @@ def combine_iasi():
     for channel in range(1, 20):
         (harm, ds_new) = hmc.ds2harm(ds, channel)
         hmc.write_harm(harm, ds_new)
+
+def merge_all(*files):
+    """Merge one or more matchup harmonisation files
+
+    This ignores the fact that there may be correlations between matchups
+    in different files.
+    """
+
+    ds_all = [xarray.open_dataset(f) for f in files]
+    # dimensions
+    dims = {}
+    ds_new = xarray.Dataset()
+
+    # concatenated interleaving.  Length determined by w_matrix_nnz.  Each
+    # W-matrix concatenated individually.
+        
+    w_mat_val_all = []
+    u_mat_val_all = []
+
+    w_mat_col_all = []
+    w_mat_col_num = numpy.zeros(ds_all[0].dims["w_matrix_count"], "u4")
+
+    w_mat_row_all = [[] for _ in range(ds_all[0].dims["w_matrix_count"])]
+    w_mat_row_num = numpy.zeros(ds_all[0].dims["w_matrix_count"], "u4")
+
+    for i in range(ds_all[0].dims["w_matrix_count"]):
+        for (j, dsl) in enumerate(ds_all):
+            wmatcumsum = dsl["w_matrix_nnz"].cumsum("w_matrix_count")
+            w_mat_val_all.append(dsl["w_matrix_val"][int(wmatcumsum[i-1] if i>0 else 0):int(wmatcumsum[i])])
+            # and w_matrix_col, but need to add the corresponding i from
+            # previous dsl, if any
+            w_mat_col = dsl["w_matrix_col"][int(wmatcumsum[i-1] if i>0 else 0):int(wmatcumsum[i])]
+            w_mat_col_all.append(w_mat_col + w_mat_col_num[i])
+            w_mat_col_num[i] += w_mat_col[-1] + 1
+            # same for w_matrix_row
+            w_mat_row = dsl["w_matrix_row"].sel(w_matrix_count=i)
+            w_mat_row_all[i].append(w_mat_row[(j>0):] + w_mat_row_num[i])
+            w_mat_row_num[i] += w_mat_row[-1]
+
+    for i in range(ds_all[0].dims["u_matrix_count"]):
+        for dsl in ds_all:
+            umatcumsum = dsl["u_matrix_row_count"].cumsum("u_matrix_count")
+            u_mat_val_all.append(dsl["u_matrix_val"][int(umatcumsum[i-1] if i>0 else 0):int(umatcumsum[i])])
+
+    ds_new["w_matrix_val"] = xarray.concat(w_mat_val_all, dim="w_matrix_nnz_sum")
+    ds_new["w_matrix_col"] = xarray.concat(w_mat_col_all, dim="w_matrix_nnz_sum")
+    ds_new["u_matrix_val"] = xarray.concat(u_mat_val_all, dim="u_matrix_row_count_sum")
+
+    ds_new["w_matrix_row"] = xarray.concat([
+        xarray.concat(w_mat_row_all[i], dim="w_matrix_row_count")
+        for i in range(ds_all[0].dims["w_matrix_count"])],
+        dim="w_matrix_count")
+
+    # additions
+    #
+    # extra .astype needed due to https://github.com/pydata/xarray/issues/1838
+
+    ds_new["w_matrix_nnz"] = xarray.concat([da["w_matrix_nnz"] for da in ds_all], dim="dummy").sum("dummy", dtype="i4").astype("i4")
+    ds_new["u_matrix_row_count"] = xarray.concat([da["u_matrix_row_count"] for da in ds_all], dim="dummy").sum("dummy", dtype="i4").astype("i4")
+
+    identicals = ["w_matrix_use1", "w_matrix_use2", "u_matrix_use1", "u_matrix_use2"]
+    for k in ds_all[0].data_vars.keys()-ds_new.keys():
+        if "M" in ds_all[0][k].dims:
+            ds_new[k] = xarray.concat([da[k] for da in ds_all], dim="M")
+        else:
+            if not ("m1" in ds_all[0][k].dims or 
+                    "m2" in ds_all[0][k].dims):
+                raise RuntimeError(f"I forgot about {k:s}?") 
+            identicals.append(k)
+
+    for (i, ds) in enumerate(ds_all):
+        for var in identicals:
+            if not (ds[var]==ds_all[0][var]).all():
+                raise ValueError(f"Contents of {var:s} in {files[i]:s} "
+                    f"must be equal to that in {files[0]:s} but is not.")
+            ds_new[var] = ds_all[0][var]
+        if not (ds.sensor_1_name == ds_all[0].sensor_1_name and
+                ds.sensor_2_name == ds_all[0].sensor_2_name):
+            raise ValueError(f"Attributes of {files[i]:s} inconsistent "
+                "with the ones of {files[0]:s}.")
+
+    ds_new.attrs["sensor_1_name"] = ds_all[0].sensor_1_name
+    ds_new.attrs["sensor_2_name"] = ds_all[0].sensor_2_name
+    ds_new.attrs["time_coverage"] = ds_all[0].time_coverage.split()[0] + "--" + ds_all[-1].time_coverage.split()[-1]
+
+    return ds_new
+
+def merge_files():
+    p = parse_cmdline_merge()
+    logging.info(f"Merging {len(p.files):d} files")
+    new = merge_all(*p.files)
+    logging.info(f"Writing to {p.out:s}")
+    new.to_netcdf(p.out)
