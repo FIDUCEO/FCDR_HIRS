@@ -85,11 +85,16 @@ def calc_S_esl(R_els: List[List[numpy.ndarray]],
 
         C_elj: numpy.ndarray, for all terms, Cross-element sensitivity
             matrices per term.  These matrices are diagonal.  Defined by §3.2.9.
+
+    Returns:
+
+        S_esl as described above
     """
 
     if not (len(R_els) == len(U_els) == len(C_elj)):
         raise ValueError("R, U, C must have same length")
 
+    # how much can be vectorised here?  The arrays may be jagged.
     agg = []
     for j in range(len(C_elj)):
         if not (len(R_els[j]) == len(U_els[j])):
