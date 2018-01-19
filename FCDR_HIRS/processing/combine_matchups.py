@@ -269,9 +269,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         #
         # K, Kr, Ks
 
-        harm["K"] = (("M",), self.kmodel.calc_K(channel))
-        harm["Ks"] = (("M",), self.kmodel.calc_Ks(channel))
-        harm["Kr"] = (("M",), self.krmodel.calc_Kr(channel))
+        harm["K"] = (("M",), self.kmodel.calc_K(channel).astype("f4"))
+        harm["Ks"] = (("M",), self.kmodel.calc_Ks(channel).astype("f4"))
+        harm["Kr"] = (("M",), self.krmodel.calc_Kr(channel).astype("f4"))
 
         # W-matrix for C_S, C_IWCT, T_IWCT.  This should have a 1 where
         # the matchup shares the same correlation information, and a 0
@@ -441,7 +441,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             ("M", f"m{i:d}"),
             numpy.concatenate(
                 [(ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(x,x):s}"].values.astype("f4") if x in independent
-                  else numpy.zeros(ds.dims["matchup_count"])
+                  else numpy.zeros(ds.dims["matchup_count"], dtype="f4")
                   )[:, numpy.newaxis]
                   for x in take_for_each], 1))
 
@@ -451,7 +451,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # and those should be corrected for in the harmonisation.
         L = []
         for x in take_for_each:
-            L.append(numpy.zeros((ds.dims["matchup_count"], 1)))
+            L.append(numpy.zeros((ds.dims["matchup_count"], 1), dtype="f4"))
         harm[f"Us{i:d}"] = (
             ("M", f"m{i:d}"),
             numpy.concatenate(L, 1))
@@ -495,20 +495,20 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             ureg.Quantity(specrad_f.values, specrad_f.attrs["units"]))
         harm["X1"] = (
             ("M", "m1"),
-            L[:, numpy.newaxis])
+            L[:, numpy.newaxis].astype("f4"))
  
         # fill Ur1.  Uncertainties in refeence not considered.
         # Arbitrarily put at 1‰.
 
         harm["Ur1"] = (
             ("M", "m1"),
-            harm["X1"]*0.001)
+            (harm["X1"]*0.001).astype("f4"))
 
         # fill Us1.
 
         harm["Us1"] = (
             ("M", "m1"),
-            numpy.zeros((harm.dims["M"], 1)))
+            numpy.zeros((harm.dims["M"], 1), dtype="f4"))
 
         # fill uncertainty_type1
 
