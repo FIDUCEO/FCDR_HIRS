@@ -89,9 +89,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     # FIXME: go through NetCDFDataset functionality
     # Experiencing problems with extreme slowness and hanging writing to
     # the GWS.  Experiment if this is any better writing to scratch2 (and
-    # can then rsync those over later).
-    #basedir = "/group_workspaces/cems2/fiduceo/Data/Harmonisation_matchups/HIRS/"
-    basedir = "/work/scratch2/gholl/Harmonisation_matchups/HIRS/"
+    # can then rsync those over later).  UPDATE: Well, it's not.  First
+    # write to /dev/shm, then rsync to fiduceo GWS in same script.
+    basedir = "/group_workspaces/cems2/fiduceo/Data/Harmonisation_matchups/HIRS/"
+    #basedir = "/work/scratch2/gholl/Harmonisation_matchups/HIRS/"
 
     # fallback for simplified only, because I don't store the
     # intermediate value and 
@@ -563,6 +564,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     ))
         pathlib.Path(out).parent.mkdir(exist_ok=True, parents=True)
         logging.info("Writing {:s}".format(out))
+        if not numpy.all(
+                [numpy.isfinite(harm[k]).all()
+                    for k in harm.data_vars.keys()
+                    if not harm[k].dtype.kind.startswith("M")]):
+            raise ValueError("Changed my mind, found some invalid values!")
         harm.to_netcdf(out, unlimited_dims=["M"],
             encoding=dict.fromkeys(harm.data_vars.keys(), {"zlib": True}))
         if int(harm["channel"]) == 1:
