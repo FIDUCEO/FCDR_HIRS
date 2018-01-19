@@ -630,9 +630,17 @@ def merge_all(*files):
     w_mat_row_all = [[] for _ in range(ds_all[0].dims["w_matrix_count"])]
     w_mat_row_num = numpy.zeros(ds_all[0].dims["w_matrix_count"], "u4")
 
+    blacklist = []
     for i in range(ds_all[0].dims["w_matrix_count"]):
+        ok = True
         for (j, dsl) in enumerate(ds_all):
-            wmatcumsum = dsl["w_matrix_nnz"].cumsum("w_matrix_count")
+            try:
+                wmatcumsum = dsl["w_matrix_nnz"].cumsum("w_matrix_count")
+            except KeyError:
+                if i==0:
+                    logging.error(f"Incomplete file: {files[j]:s}")
+                    blacklist.append(j)
+                continue
             w_mat_val_all.append(dsl["w_matrix_val"][int(wmatcumsum[i-1] if i>0 else 0):int(wmatcumsum[i])])
             # and w_matrix_col, but need to add the corresponding i from
             # previous dsl, if any
@@ -644,8 +652,15 @@ def merge_all(*files):
             w_mat_row_all[i].append(w_mat_row[(j>0):] + w_mat_row_num[i])
             w_mat_row_num[i] += w_mat_row[-1]
 
+    if len(blacklist) > 0:
+        logging.error("Some files failed to process:")
+        for j in blacklist:
+            print(files[j], file=sys.stderr)
+        sys.exit(1)
+
     for i in range(ds_all[0].dims["u_matrix_count"]):
-        for dsl in ds_all:
+        for (j, dsl) in enumerate(ds_all):
+            if j in blacklist: continue # bad file
             umatcumsum = dsl["u_matrix_row_count"].cumsum("u_matrix_count")
             u_mat_val_all.append(dsl["u_matrix_val"][int(umatcumsum[i-1] if i>0 else 0):int(umatcumsum[i])])
 
