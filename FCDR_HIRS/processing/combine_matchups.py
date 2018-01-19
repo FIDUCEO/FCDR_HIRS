@@ -236,14 +236,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # skip flagged values
         donotuse = (ds.sel(calibrated_channel=1)[
             [f"{nm:s}_quality_{fld:s}_bitmask"
-                for nm in [self.prim_name, self.sec_name]
+                for nm in ([self.prim_name, self.sec_name] if self.mode == "hirs" else [self.sec_name])
                 for fld in ["channel", "pixel", "scanline"]]] & 0x01)!=0
         ok = ~functools.reduce(operator.or_, [v.values for v in donotuse.data_vars.values()])
         ds = ds[{mdim:ok}]
         if not self.kmodel.filtered:
-            self.kmodel.limit(ok)
+            self.kmodel.limit(ok, mdim=mdim)
         if not self.krmodel.filtered:
-            self.krmodel.limit(ok)
+            self.krmodel.limit(ok, mdim=mdim)
 
         da_all = [ds.sel(calibrated_channel=channel)[v]
                     for v in take_total]

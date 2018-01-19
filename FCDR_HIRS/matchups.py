@@ -284,11 +284,11 @@ class KModel(metaclass=abc.ABCMeta):
         ...
 
     filtered = False
-    def limit(self, ok):
+    def limit(self, ok, mdim):
         """Reduce dataset to those values
         """
         self.ds = self.ds.isel(matchup_count=ok)
-        self.ds_orig = self.ds_orig.isel(matchup_count=ok)
+        self.ds_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
 
 class KrModel(metaclass=abc.ABCMeta):
@@ -308,11 +308,11 @@ class KrModel(metaclass=abc.ABCMeta):
         ...
 
     filtered = False
-    def limit(self, ok):
+    def limit(self, ok, mdim):
         """Reduce dataset to those values
         """
         self.ds = self.ds.isel(matchup_count=ok)
-        self.ds_orig = self.ds_orig.isel(matchup_count=ok)
+        self.ds_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
 
 class KModelPlanck(KModel):
