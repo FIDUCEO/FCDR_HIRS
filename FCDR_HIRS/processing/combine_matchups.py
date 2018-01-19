@@ -736,4 +736,6 @@ def merge_files():
     logging.info(f"Merging {len(p.files):d} files")
     new = merge_all(*p.files)
     logging.info(f"Writing to {p.out:s}")
-    new.to_netcdf(p.out)
+    new.to_netcdf(p.out,
+        unlimited_dims=["M"],
+        encoding=dict.fromkeys(new.data_vars.keys(), {"zlib": True}))
