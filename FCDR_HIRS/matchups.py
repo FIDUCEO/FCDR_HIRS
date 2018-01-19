@@ -282,6 +282,14 @@ class KModel(metaclass=abc.ABCMeta):
     def calc_Ks(self, channel):
         ...
 
+    filtered = False
+    def limit(self, ok):
+        """Reduce dataset to those values
+        """
+        self.ds = self.ds.isel(matchup_count=ok)
+        self.ds_orig = self.ds_orig.isel(matchup_count=ok)
+        self.filtered = True
+
 class KrModel(metaclass=abc.ABCMeta):
     """Implementations of models to estimate the matchup uncertainty
     """
@@ -297,6 +305,14 @@ class KrModel(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def calc_Kr(self, channel):
         ...
+
+    filtered = False
+    def limit(self, ok):
+        """Reduce dataset to those values
+        """
+        self.ds = self.ds.isel(matchup_count=ok)
+        self.ds_orig = self.ds_orig.isel(matchup_count=ok)
+        self.filtered = True
 
 class KModelPlanck(KModel):
     """Simplified implementation.

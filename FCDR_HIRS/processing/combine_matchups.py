@@ -7,6 +7,8 @@ import tempfile
 import subprocess
 import time
 import sys
+import functools
+import operator
 
 def parse_cmdline_hirs():
     parser = argparse.ArgumentParser(
@@ -223,14 +225,27 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # for W-matrices, what corresponds to what
         dim_var = {"calibration_cycle": {"C_s", "C_IWCT", "T_IWCT"},
                    "rself_update_time": {"R_selfE"}}
+        mdim = "matchup_count" if self.mode=="hirs" else "line"
 
         take_total = list('_'.join(x) for x in itertools.product(
                 (self.prim_name, self.sec_name),
                 take_for_each) if not x[1].startswith("u_")
                               and not x[0] == "iasi")
+
+        # skip flagged values
+        donotuse = (ds.sel(calibrated_channel=1)[
+            [f"{nm:s}_quality_{fld:s}_bitmask"
+                for nm in [self.prim_name, self.sec_name]
+                for fld in ["channel", "pixel", "scanline"]]] & 0x01)!=0
+        ok = ~functools.reduce(operator.or_, [v.values for v in donotuse.data_vars.values()])
+        ds = ds[{mdim:ok}]
+        if not self.kmodel.filtered:
+            self.kmodel.limit(ok)
+        if not self.krmodel.filtered:
+            self.krmodel.limit(ok)
+
         da_all = [ds.sel(calibrated_channel=channel)[v]
                     for v in take_total]
-        mdim = "matchup_count" if self.mode=="hirs" else "line"
         for (i, da) in enumerate(da_all):
             if "calibration_position" in da.dims:
                 da_all[i] = da.median(dim="calibration_position")
@@ -548,11 +563,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     ))
         pathlib.Path(out).parent.mkdir(exist_ok=True, parents=True)
         logging.info("Writing {:s}".format(out))
-        harm.to_netcdf(out, unlimited_dims=["M"])
+        harm.to_netcdf(out, unlimited_dims=["M"],
+            encoding=dict.fromkeys(harm.data_vars.keys(), {"zlib": True}))
         if int(harm["channel"]) == 1:
             ds_out = out[:-3] + "_ds.nc"
             logging.info("Writing {:s}".format(ds_out))
-            ds_new.to_netcdf(ds_out.replace("_ch1", ""), unlimited_dims=["line"])
+            ds_new.to_netcdf(ds_out.replace("_ch1", ""),
+                unlimited_dims=["line"],
+                encoding=dict.fromkeys(ds_new.data_vars.keys(), {"zlib": True}))
 
 def combine_hirs():
     p = parse_cmdline_hirs()
