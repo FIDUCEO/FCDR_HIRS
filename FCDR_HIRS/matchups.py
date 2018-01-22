@@ -287,7 +287,7 @@ class KModel(metaclass=abc.ABCMeta):
     def limit(self, ok, mdim):
         """Reduce dataset to those values
         """
-        self.ds = self.ds.isel(matchup_count=ok)
+        self.ds = self.ds[{mdim:ok}]
         self.ds_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
 
@@ -311,7 +311,7 @@ class KrModel(metaclass=abc.ABCMeta):
     def limit(self, ok, mdim):
         """Reduce dataset to those values
         """
-        self.ds = self.ds.isel(matchup_count=ok)
+        self.ds = self.ds[{mdim:ok}]
         self.ds_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
 
@@ -383,7 +383,7 @@ class KrModelLSD(KrModel):
         # NB FIXME!  This should use my own BTs instead.  See #117.
         # use local standard deviation
         btlocal = self.ds_orig["hirs-{:s}_bt_ch{:02d}".format(self.prim_name, channel)]
-        btlocal.values[btlocal>400] = numpy.nan # not all are flagged correctly
+        btlocal.values.reshape((-1,))[btlocal.values.ravel()>400] = numpy.nan # not all are flagged correctly
         lsd = btlocal.loc[{"hirs-{:s}_ny".format(self.prim_name): slice(1, 6),
                            "hirs-{:s}_nx".format(self.prim_name): slice(1, 6)}].stack(
                     z=("hirs-{:s}_ny".format(self.prim_name),

@@ -164,7 +164,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             raise RuntimeError("Onmogelĳk.  Impossible.  Unmöglich.")
         #
         keep = {"collocation", "channel", "calibrated_channel",
-                "matchup_count", "calibration_position", "scanpos"}
+                "matchup_count" if self.mode=="hirs" else "line", "calibration_position", "scanpos"}
         if self.mode == "hirs":
             p_ds.rename(
                 {nm: "{:s}_{:s}".format(self.prim_name, nm)
@@ -192,7 +192,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             xarray.DataArray(
                 self.ds["matchup_spherical_distance"] if self.mode=="hirs"
                     else numpy.zeros(self.ds.dims["line"]), 
-                dims=["matchup_count"],
+                dims=["matchup_count" if self.mode=="hirs" else "line"],
                 name="matchup_spherical_distance")
             ]
         ds = xarray.merge(to_merge)
@@ -272,14 +272,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         # add to harmonisation the variables that exist for each 1, 2
         if self.mode == "reference":
-            self._add_harm_for_iasi(harm, channel)
+            self._add_harm_for_iasi(harm, channel, ok)
         else:
             self._add_harm_for_hirs(harm, channel, self.prim_name, 1, ds, daa,
                                     take_for_each, wmats, independent,
-                                    structured, cc)
+                                    structured, cc, mdim)
         self._add_harm_for_hirs(harm, channel, self.sec_name, 2, ds, daa,
                                 take_for_each, wmats, independent,
-                                structured, cc)
+                                structured, cc, mdim)
 
         # dimension matchup only:
         #
@@ -442,7 +442,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         return (u_matrix_val, u_matrix_row_count)
 
     def _add_harm_for_hirs(self, harm, channel, sat, i, ds, daa, take_for_each,
-                           wmats, independent, structured, cc):
+                           wmats, independent, structured, cc, mdim):
         # fill X1, X2
 
         harm[f"X{i:d}"] = (
@@ -457,7 +457,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             ("M", f"m{i:d}"),
             numpy.concatenate(
                 [(ds.sel(calibrated_channel=channel)[f"{sat:s}_u_{tl.get(x,x):s}"].values.astype("f4") if x in independent
-                  else numpy.zeros(ds.dims["matchup_count"], dtype="f4")
+                  else numpy.zeros(ds.dims[mdim], dtype="f4")
                   )[:, numpy.newaxis]
                   for x in take_for_each], 1))
 
@@ -467,7 +467,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # and those should be corrected for in the harmonisation.
         L = []
         for x in take_for_each:
-            L.append(numpy.zeros((ds.dims["matchup_count"], 1), dtype="f4"))
+            L.append(numpy.zeros((ds.dims[mdim], 1), dtype="f4"))
         harm[f"Us{i:d}"] = (
             ("M", f"m{i:d}"),
             numpy.concatenate(L, 1))
@@ -497,13 +497,13 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             numpy.array([next(cc) if x in structured else 0
                 for x in take_for_each], dtype="i4"))
 
-    def _add_harm_for_iasi(self, harm, channel):
+    def _add_harm_for_iasi(self, harm, channel, ok):
         # fill X1
 
         # self.ds["ref_radiance"] contains IASI radiances; need to use
         # this to simulate HIRS radiance for MetOp-A
         freq = ureg.Quantity(numpy.loadtxt(self.hiasi.freqfile), ureg.Hz)
-        specrad_wn = UADA(self.ds["ref_radiance"])
+        specrad_wn = UADA(self.ds.isel(line=ok)["ref_radiance"])
         specrad_f = specrad_wn.to(rad_u["si"], "radiance")
         srf = typhon.physics.units.em.SRF.fromArtsXML(
                 "METOPA", "hirs", channel)
@@ -534,7 +534,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         # fill time1
 
-        harm["time1"] = (("M",), self.ds["mon_time"])
+        harm["time1"] = (("M",), self.ds.isel(line=ok)["mon_time"])
 
         # and w-matrix stuff
 
@@ -569,14 +569,22 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     for k in harm.data_vars.keys()
                     if not harm[k].dtype.kind.startswith("M")]):
             raise ValueError("Changed my mind, found some invalid values!")
-        harm.to_netcdf(out, unlimited_dims=["M"],
-            encoding={k: {**v.encoding, "zlib": True} for (k, v) in harm.data_vars.items()})
+        for (k, v) in harm.data_vars.items():
+            v.encoding["zlib"] = True
+        #harm.to_netcdf(out, unlimited_dims=["M"])
+        # unlimited_dims may fail:
+        # https://github.com/pydata/xarray/issues/1849
+        harm.to_netcdf(out)
         if int(harm["channel"]) == 1:
+            for (k, v) in ds_new.data_vars.items():
+                v.encoding["zlib"] = True
             ds_out = out[:-3] + "_ds.nc"
             logging.info("Writing {:s}".format(ds_out))
-            ds_new.to_netcdf(ds_out.replace("_ch1", ""),
-                unlimited_dims=["line"],
-                encoding={k: {**v.encoding, "zlib": True} for (k, v) in ds_new.data_vars.items()})
+            # unlimited_dims may fail:
+            # https://github.com/pydata/xarray/issues/1849
+            # ds_new.to_netcdf(ds_out.replace("_ch1", ""),
+            #     unlimited_dims=["line"])
+            ds_new.to_netcdf(ds_out.replace("_ch1", ""))
 
 def combine_hirs():
     p = parse_cmdline_hirs()
