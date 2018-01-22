@@ -570,13 +570,13 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     if not harm[k].dtype.kind.startswith("M")]):
             raise ValueError("Changed my mind, found some invalid values!")
         harm.to_netcdf(out, unlimited_dims=["M"],
-            encoding=dict.fromkeys(harm.data_vars.keys(), {"zlib": True}))
+            encoding={k: {**v.encoding, "zlib": True} for (k, v) in harm.data_vars.items()})
         if int(harm["channel"]) == 1:
             ds_out = out[:-3] + "_ds.nc"
             logging.info("Writing {:s}".format(ds_out))
             ds_new.to_netcdf(ds_out.replace("_ch1", ""),
                 unlimited_dims=["line"],
-                encoding=dict.fromkeys(ds_new.data_vars.keys(), {"zlib": True}))
+                encoding={k: {**v.encoding, "zlib": True} for (k, v) in ds_new.data_vars.items()})
 
 def combine_hirs():
     p = parse_cmdline_hirs()
