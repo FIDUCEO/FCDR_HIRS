@@ -20,9 +20,9 @@ class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
 
     def filter(self, ds, **extra):
         return ds[{"matchup_count":
-            (ds[f"hirs-{self.prim:s}_lza"][:, 3, 3] < 5) &
-            (ds[f"hirs-{self.sec:s}_lza"][:, 3, 3] < 5) &
-            (ds["matchup_spherical_distance"]<10)}]
+            (ds[f"hirs-{self.prim:s}_lza"][:, 3, 3] < 10) &
+            (ds[f"hirs-{self.sec:s}_lza"][:, 3, 3] < 10) &
+            (ds["matchup_spherical_distance"]<20)}]
     
     def finalise(self, ds):
         idx = numpy.argsort(ds[f"time_{self.prim:s}"])
@@ -30,7 +30,7 @@ class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
 
 class HIMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
     def filter(self, ds, **extra):
-        bad = (ds["ref_radiance"]==0).any("ch_ref")
+        bad = (ds["ref_radiance"]<=0).any("ch_ref")
         return ds[{"line": ~bad}]
     
     def finalise(self, ds):
