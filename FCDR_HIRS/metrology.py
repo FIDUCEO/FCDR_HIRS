@@ -55,9 +55,9 @@ def prepare():
 def calc_S_esl(R_els: List[List[numpy.ndarray]],
                U_els: List[List[numpy.ndarray]],
                C_elj: List[numpy.ndarray]):
-    """Calculate S_esl
+    """Calculate S_es^l
     
-    Calculate S_esl, the total cross-element error covariance from the structured
+    Calculate S_es^l, the total cross-element error covariance from the structured
     effects per channel evaluated at a single line.
 
     Follows recipe from:
@@ -71,19 +71,19 @@ def calc_S_esl(R_els: List[List[numpy.ndarray]],
 
     Arguments:
 
-        R_els: List[List[numpy.ndarray]], for all terms, list of all
+        R_e^ls: List[List[numpy.ndarray]], for all terms, list of all
             cross-element error correlation matrices for one effect, that
             all affect that particular term in the measurement equation. 
             The outer list has the length corresponding to the number of
             terms (n_j), the inner list the number of structured effects for each
             particular term (n_s|j).  Defined by §3.2.3.
 
-        U_els: List[List[numpy.ndarray]], for all terms, list of all
+        U_e^ls: List[List[numpy.ndarray]], for all terms, list of all
             cross-element term uncertainty matrices for one effect, that
             all affect the same term in the measurement equation.  Those
             matrices are diagonal.  Defined by §3.2.6.
 
-        C_elj: numpy.ndarray, for all terms, Cross-element sensitivity
+        C_e^lj: List[numpy.ndarray], for all terms, Cross-element sensitivity
             matrices per term.  These matrices are diagonal.  Defined by §3.2.9.
 
     Returns:
@@ -105,3 +105,6 @@ def calc_S_esl(R_els: List[List[numpy.ndarray]],
     S_esl = functools.reduce(operator.add, agg)
 
     return S_esl
+
+
+
