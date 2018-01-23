@@ -1,16 +1,17 @@
 """For any metrology-related functions
 """
 
+import functools
+import operator
+
 import numpy
+import scipy.optimize
 import xarray
 
 import typhon.physics.metrology
 from . import effects
 from . import measurement_equation as me
 from typing import List
-
-import functools
-import operator
 
 def evaluate_uncertainty(e, unset="raise"):
     """Evaluate uncertainty for expression.
@@ -51,60 +52,163 @@ def prepare():
     newnames = {a: str(a).replace('[','').replace(', ','_').replace(']','') for a in args}
 
 
+def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
+                    U_xΛyt: List[List[numpy.ndarray]],
+                    C_xΛyj: List[numpy.ndarray]) -> numpy.ndarray:
+    """Calculate S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp
 
-def calc_S_esl(R_els: List[List[numpy.ndarray]],
-               U_els: List[List[numpy.ndarray]],
-               C_elj: List[numpy.ndarray]):
-    """Calculate S_es^l
+    Calculate either of those:
     
-    Calculate S_es^l, the total cross-element error covariance from the structured
-    effects per channel evaluated at a single line.
+    - S_esΛl, the total cross-element error covariance from the structured
+      effects per channel evaluated at a single line.  To get S_esΛl, pass
+      in R_eΛls, U_eΛls, and C_eΛlj.
+    - S_lsΛe, the total cross-line error covariance from the structured
+      effects per channel evaluated at a single element.  To get S_lsΛe,
+      pass in R_lΛes, U_lΛes, and C_lΛej.
+    - S_ciΛp, the total cross-channel error covariance from the
+      independent effects evaluated at a single pixel.  To get S_ciΛp, pass
+      in R_cΛpi, U_cΛpi, and C_cΛpj.
+    - S_csΛp, like S_ciΛp but for structured effects.
 
     Follows recipe from:
     
     Chris Merchant, Emma Woolliams and Jonathan Mittaz,
     Uncertainty and Error Correlation Quantification for FIDUCEO “easy-
     FCDR” Products: Mathematical Recipes.  Hereunder referred to as
-    "Recipes".  Section and page numbers refer to version 0.9.3.
+    "Recipes".  Section and page numbers refer to document version 0.9.3.
 
-    As defined by §3.3.3.
+    As defined by §3.3.3 and §3.3.6.
 
     Arguments:
 
-        R_e^ls: List[List[numpy.ndarray]], for all terms, list of all
-            cross-element error correlation matrices for one effect, that
+        One of R_eΛls, R_lΛes, R_cΛpi, or R_cΛps: List[List[numpy.ndarray]],
+            for each terms, either the list of all
+            cross-element error correlation matrices, or the list of all
+            cross-line error correlation matrices, for one effect, that
             all affect that particular term in the measurement equation. 
             The outer list has the length corresponding to the number of
             terms (n_j), the inner list the number of structured effects for each
-            particular term (n_s|j).  Defined by §3.2.3.
+            particular term (n_s|j), except in the case of R_cΛpi, where
+            it's the number of independent effects for that term.
+            Defined by §3.2.3.
 
-        U_e^ls: List[List[numpy.ndarray]], for all terms, list of all
-            cross-element term uncertainty matrices for one effect, that
+        One of U_eΛls, U_lΛes, U_cΛpi, or U_cΛps: List[List[numpy.ndarray]],
+            for all terms, either a list of all
+            cross-element term uncertainty matrices or a list of all
+            cross-line term uncertainty matrices, for one effect, that
             all affect the same term in the measurement equation.  Those
             matrices are diagonal.  Defined by §3.2.6.
 
-        C_e^lj: List[numpy.ndarray], for all terms, Cross-element sensitivity
-            matrices per term.  These matrices are diagonal.  Defined by §3.2.9.
+        One of C_eΛlj, C_lΛej, C_cΛpj: List[numpy.ndarray], for all terms,
+            either cross-element
+            sensitivity matrices per term or cross-line sensitivity matrices per
+            term.  These matrices are diagonal.  Defined by §3.2.9.
 
     Returns:
 
-        S_esl as described above
+        S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp: numpy.ndarray, as described above
     """
 
-    if not (len(R_els) == len(U_els) == len(C_elj)):
+    if not (len(R_xΛyt) == len(U_xΛyt) == len(C_xΛyj)):
         raise ValueError("R, U, C must have same length")
 
-    # how much can be vectorised here?  The arrays may be jagged.
+    # How much can be vectorised here?  The arrays may be jagged?  And
+    # this function itself also needs to be called many times (for every
+    # line) — expensive?
     agg = []
-    for j in range(len(C_elj)):
-        if not (len(R_els[j]) == len(U_els[j])):
+    for j in range(len(C_xΛyj)):
+        if not (len(R_xΛyt[j]) == len(U_xΛyt[j])):
             raise ValueError(f"R and U nr. {j:d} must have same length")
-        for s in range(len(R_els[j])):
-            agg.append(C_elj[j] @ U_els[j][s] @ R_els[j][s] @ U_els[j][s].T @ C_elj[j].T)
+        for s in range(len(R_xΛyt[j])):
+            # equation 20 or 24
+            agg.append(C_xΛyj[j] @ U_xΛyt[j][s] @ R_xΛyt[j][s] @ U_xΛyt[j][s].T @ C_xΛyj[j].T)
 
-    S_esl = functools.reduce(operator.add, agg)
+    S_xtΛy = functools.reduce(operator.add, agg)
 
-    return S_esl
+    return S_xtΛy
 
+def calc_S_xt(S_xtΛy: List[numpy.ndarray]) -> numpy.ndarray:
+    """Calculate S_es, S_ls, C_ci, or C_cs
 
+    Calculate either of:
+    
+    - S_es, the average cross-element error covariance from the
+    structured effects per channel (Eq. 20)
+    - S_ls, the average cross-line error covariance from the structured
+      effects per channel (Eq. 24)
+    covariance from the structured effects per channel.
+    - S_ci, the average cross-channel error covariance matrix from the
+      spatially independent effects, per channel (Eq. 27)
+    - S_cs, the average cross-channel error covariance matrix from the
+      structured effects, per channel (Eq. 30)
 
+    Follows recipe with same document source as calc_S_from_CUR.
+
+    Arguments:
+
+    S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp: List[numpy.ndarray]
+
+        List of values of relevant matrix, or ndarray with outermost dimension
+        being the scanline.  You can obtain those from calc_S_from_CUR
+
+    Returns:
+
+        S_es, S_el, S_ci, or S_cs: numpy.ndarray, as described.
+    """
+
+    return numpy.average(S_xtΛy, 0) # Eq. 20, 24, 27, or 30
+
+def calc_R_xt(S_xt: numpy.ndarray):
+    """Calculate R_es, R_ls, R_ci, or R_cs
+
+    Calculate either of:
+    
+    - R_es, the cross-element radiance error correlation matrix,
+      structured effects, per channel (Eq. 22)
+    - R_ls, the cross-line radiance error correlation matrix, structured
+      effects, per channel (Eq. 26)
+    - R_ci, cross-channel error correlation matrix, independent effects (Eq. 29)
+    - R_cs, cross-channel error correlation matrix, structured effects (Eq. 32)
+
+    Follows recipe with same document source as calc_S_from_CUR.
+
+    Arguments:
+
+        S_es or S_el: numpy.ndarray
+
+            Average cross-element error covariance from the structured
+            effects per channel.  Can be obtained from calc_S_xt.
+
+    Returns:
+
+        R_es or R_el: numpy.ndarray, as described. 
+    """
+
+    U_xt = numpy.diag(S_xt) # Eq. 21 or 25
+    R_xt = numpy.inv(U_xt) @ S_xt @ numpy.inv(U_xt).T # Eq. 22 or 26
+
+def calc_Δ_x(R_xt: numpy.ndarray):
+    """Calculate optimum Δ_e or Δ_l
+
+    Calculate optimum correlation length scale, either across elements,
+    Δ_e or across lines, Δ_l.
+    Structured effects, per channel.
+
+    Recipe source as for calc_S_from_CUR, now §3.3.4.
+
+    Arguments:
+
+        R_es or R_ls: numpy.ndarray
+
+            Either cross-element or cross-line radiance error correlation matrix, structured
+            effects, per channel.  Can be obtained from calc_R_xt.
+    """
+
+    Δ_ref = numpy.arange(R_xt.shape[0])
+    r_xΔ = numpy.array([numpy.diag(M, k=-i).mean() for i in Δ_ref])
+
+    def f(Δ, Δ_e):
+        return numpy.exp(-Δ/Δ_e)
+
+    (popt, pcov) = scipy.optimize.curve_fit(f, Δ, r_xΔ, p0=1)
+    return popt
