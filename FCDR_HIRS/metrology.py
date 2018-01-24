@@ -52,6 +52,33 @@ def prepare():
     newnames = {a: str(a).replace('[','').replace(', ','_').replace(']','') for a in args}
 
 
+
+##### Functions related to Chris recipes' document #####
+    
+#    Chris Merchant, Emma Woolliams and Jonathan Mittaz,
+#    Uncertainty and Error Correlation Quantification for FIDUCEO “easy-
+#    FCDR” Products: Mathematical Recipes.  Hereunder referred to as
+#    "Recipes".  Section and page numbers refer to document version 0.9.3.
+
+# Within generate_fcdr.FCDRGenerator.get_piece, the fcdr object stored in
+# self.fcdr collects effects in fcdr._effects.  Once this is populated, it
+# contains:
+#
+#   Dict[sympy.Symbol, Set[effects.Effect]]
+#
+# which translates nicely to the recipes:  Each Symbol corresponds to a
+# term j in the measurement equation, and each Effect to an effect k
+# (either independent i, or structured s).  After the uncertainties have
+# been calculated, those Effect objects have been populated with
+# uncertainties in their 'magnitude' attribute.  Note that terms without
+# associated uncertainties are not included here.
+#
+# Sensitivity expressions are included with the effects, but at this
+# point, not their values.  The values of sensitivities are stored in
+# sensRe but only per sub-measurement-equation and thus need to be
+# multiplied together to get a direct "R_e-to-end" sensitivity.
+#
+
 def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
                     U_xΛyt: List[List[numpy.ndarray]],
                     C_xΛyj: List[numpy.ndarray]) -> numpy.ndarray:
