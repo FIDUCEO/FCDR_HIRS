@@ -343,6 +343,11 @@ class FCDRGenerator:
             return_more=True)
         unc_components = dict(self.fcdr.propagate_uncertainty_components(uRe,
             sensRe, compRe))
+
+        # collect sensitivity coefficients for each in
+        # self.fcdr._effects.keys():
+        self.fcdr.accum_sens_coef(sensRe, me.symbols["C_s"])
+
 #        u_from = xarray.Dataset(dict([(f"u_from_{k!s}", v) for (k, v) in
 #                    unc_components.items()]))
         S = self.fcdr.estimate_channel_correlation_matrix(context)

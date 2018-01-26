@@ -77,6 +77,8 @@ def prepare():
 # point, not their values.  The values of sensitivities are stored in
 # sensRe but only per sub-measurement-equation and thus need to be
 # multiplied together to get a direct "R_e-to-end" sensitivity.
+# I should be already doing that when I propagate individual components
+# for debugging purposes?
 #
 
 def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
@@ -96,6 +98,8 @@ def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
       independent effects evaluated at a single pixel.  To get S_ciΛp, pass
       in R_cΛpi, U_cΛpi, and C_cΛpj.
     - S_csΛp, like S_ciΛp but for structured effects.
+
+    NB: Λ indicates superscript.
 
     Follows recipe from:
     

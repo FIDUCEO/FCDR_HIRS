@@ -8,6 +8,8 @@ import functools
 import operator
 import datetime
 import numbers
+import collections
+from typing import Dict, Tuple, Deque, Optional
 
 import numpy
 import scipy.interpolate
@@ -2338,6 +2340,50 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             yield from self.propagate_uncertainty_components(u,
                 sens[k][1], comp[k][1], sens_to_here)
 
+
+    def accum_sens_coef(self,
+            sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple]]]]],
+            sym: sympy.Symbol,
+            _d: Optional[Deque]=None):
+        """Given a sensitivity coefficient dictionary, accumulate them for term
+
+        Given a dictionary of sensitivity coefficients (see function
+        annotation) such as returned by calc_u_for_variable), accumulate
+        recursivey the sensitivity coefficients for symbol `sym`.
+
+        Arguments:
+
+            sensdict (Dict[Symbol, Tuple[ndarray, 
+                    Dict[Symbol, Tuple[ndarray,
+                      Dict[Symbol, Tuple[...]]]]]])
+
+                Collection of sensitivities.  Returned by
+                calc_u_for_variable.
+
+            sym: sympy.Symbol
+
+                Symbol for which to calculate total sensitivity
+                coefficient
+
+            _d: Deque
+
+                THOU SHALT NOT PASS!  Internal recursive use only.
+
+        """
+
+        if _d is None:
+            _d = collections.deque([1])
+
+        if sym in sensdict.keys():
+            _d.append(sensdict[sym][0])
+            return _d
+
+        for (subsym, (sensval, sub_sensdict)) in sensdict.items():
+            _d.append(sensval)
+            try:
+                return self.accum_sens_coef(sub_sensdict, sym, _d)
+            except KeyError: # not found
+                _d.pop()
 
     # deprecated:
     # The remaining methods should no longer be used but legacy code such
