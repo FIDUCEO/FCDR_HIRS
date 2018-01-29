@@ -2,6 +2,7 @@
 """
 
 import abc
+import warnings
 
 import numpy
 
@@ -12,6 +13,8 @@ import itertools
 from . import fcdr
 
 from typhon.physics.units.common import ureg, radiance_units as rad_u
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.physics.units.em import SRF
 
 class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
     def __init__(self, prim, sec):
@@ -323,6 +326,9 @@ class KModelPlanck(KModel):
     """
 
     def calc_K(self, channel):
+        warnings.warn(
+            f"Using ad-hoc/Planck approximation for K, not accurate.",
+            UserWarning)
         L1 = self.prim_hirs.srfs[channel-1].channel_radiance2bt(
             ureg.Quantity(
                 self.ds[f"{self.prim_name:s}_R_e"].sel(
@@ -334,12 +340,16 @@ class KModelPlanck(KModel):
         # But that's not quite accurate, because the calibration
         # coefficients are still computed using the primary... need to
         # redo the entire measurement equation?  See #181 or rather #183.
+        # Need to use forward modelling to do this properly.
         L2 = self.sec_hirs.srfs[channel-1].channel_radiance2bt(
             ureg.Quantity(
                 self.ds[f"{self.prim_name:s}_R_e"].sel(
                     calibrated_channel=channel).values,
                 rad_u["si"]))
 
+        return (
+            L2.to(rad_u["si"], "radiance", srf=self.sec_hirs.srfs[channel-1])
+          - L1.to(rad_u["si"], "radiance", srf=self.sec_hirs.srfs[channel-1]))
 
         return L2 - L1
 
@@ -366,7 +376,17 @@ class KModelPlanck(KModel):
         Δslave_bt = (abs(slave_bt_perturbed - slave_bt)
                    + abs(slave_bt_perturbed_2 - slave_bt))/2
 
-        return Δslave_bt
+        srf = self.sec_hirs.srfs[channel-1]
+        Δslave_rad = (abs(slave_bt_perturbed.to(
+                            rad_u["si"], "radiance", srf=srf)
+                        - slave_bt.to(
+                            rad_u["si"], "radiance", srf=srf))
+                    + abs(slave_bt_perturbed_2.to(
+                            rad_u["si"], "radiance", srf=srf)
+                       - slave_bt.to(
+                            rad_u["si"], "radiance", srf=srf)))/2
+
+        return Δslave_rad
 
 class KModelIASIRef(KModel):
     """Estimate K and Ks in case of IASI reference
@@ -380,18 +400,28 @@ class KModelIASIRef(KModel):
 class KrModelLSD(KrModel):
 
     def calc_Kr(self, channel):
-        # NB FIXME!  This should use my own BTs instead.  See #117.
-        # use local standard deviation
         btlocal = self.ds_orig["hirs-{:s}_bt_ch{:02d}".format(self.prim_name, channel)]
         btlocal.values.reshape((-1,))[btlocal.values.ravel()>400] = numpy.nan # not all are flagged correctly
-        lsd = btlocal.loc[{"hirs-{:s}_ny".format(self.prim_name): slice(1, 6),
+        btlocal = btlocal.loc[{"hirs-{:s}_ny".format(self.prim_name): slice(1, 6),
                            "hirs-{:s}_nx".format(self.prim_name): slice(1, 6)}].stack(
                     z=("hirs-{:s}_ny".format(self.prim_name),
-                       "hirs-{:s}_nx".format(self.prim_name))).std("z")
+                       "hirs-{:s}_nx".format(self.prim_name)))
+        btlocal = UADA(btlocal)
+        srf = SRF.fromArtsXML(
+            typhon.datasets.tovs.norm_tovs_name(self.prim_name).upper(),
+            "hirs", channel)
+        radlocal = btlocal.to(rad_u["si"], "radiance", srf=srf)
+        lsd = radlocal.std("z")
+        #lsd.attrs["units"] = "K"
+        # Convert from K to radiance
+        #lsd = UADA(lsd).to(rad_u["si"], "radiance", srf=srf)
         return lsd
 
 class KrModelIASIRef(KrModel):
     def calc_Kr(self, channel):
-        # FIXME: this should not be zero!  Use a constant nonzero value
-        # instead for now, until better value from Viju
-        return numpy.zeros(shape=self.ds.dims["line"])+0.1
+        srf = SRF.fromArtsXML(
+            typhon.datasets.tovs.norm_tovs_name(self.sec_name).upper(),
+            "hirs", channel)
+        return ureg.Quantity(
+            numpy.zeros(shape=self.ds.dims["line"])+0.1,
+            "K").to(rad_u["si"], "radiance", srf=srf)
