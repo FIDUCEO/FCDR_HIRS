@@ -62,8 +62,9 @@ def main():
               me.sym["C_IWCT"], me.sym["R_selfE"]}:
         print(f"Sensitivity coefficient for {s!s}:")
         D = expr.diff(s)
-        sympy.pprint(D)
+#        sympy.pprint(D)
         print(sympy.latex(D))
+        print(D)
 
     for s in consts:
         if s in me.units:
