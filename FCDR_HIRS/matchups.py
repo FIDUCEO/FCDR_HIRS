@@ -422,6 +422,10 @@ class KrModelIASIRef(KrModel):
         srf = SRF.fromArtsXML(
             typhon.datasets.tovs.norm_tovs_name(self.sec_name).upper(),
             "hirs", channel)
-        return ureg.Quantity(
-            numpy.zeros(shape=self.ds.dims["line"])+0.1,
-            "K").to(rad_u["si"], "radiance", srf=srf)
+        return abs(
+            ureg.Quantity(
+                self.ds["metopa_T_b"].sel(calibrated_channel=channel).values, "K"
+                    ).to(rad_u["si"], "radiance", srf=srf) -
+            ureg.Quantity(
+                self.ds["metopa_T_b"].sel(calibrated_channel=channel).values+0.1, "K"
+                    ).to(rad_u["si"], "radiance", srf=srf))
