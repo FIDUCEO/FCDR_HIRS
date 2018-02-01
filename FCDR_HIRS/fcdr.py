@@ -2344,7 +2344,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def accum_sens_coef(self,
             sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple]]]]],
             sym: sympy.Symbol,
-            _d: Optional[Deque]=None):
+            _d: Optional[Deque]=None) -> Deque:
         """Given a sensitivity coefficient dictionary, accumulate them for term
 
         Given a dictionary of sensitivity coefficients (see function
@@ -2384,7 +2384,18 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 return self.accum_sens_coef(sub_sensdict, sym, _d)
             except KeyError: # not found
                 _d.pop()
+        raise KeyError(f"Term not found: {sym!s}")
 
+    def calc_corr_scale_channel(self, sensRe, ch):
+        """Calculate correlation length scale for channel
+        """
+
+
+        for j in self.fcdr._effects.keys(): 
+            C = self.accum_sens_coef(sensRe, j)
+            for k in self.fcdr._effects[k]:
+                raise NotImplementedError("And now?")
+                
     # deprecated:
     # The remaining methods should no longer be used but legacy code such
     # as in timeseries.py still depends on them
