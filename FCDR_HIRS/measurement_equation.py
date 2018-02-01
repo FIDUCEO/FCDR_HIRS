@@ -94,6 +94,8 @@ expressions_simplified[sym["S"]] = -(sym["R_IWCT"] -
 expressions_simplified[sym["R_IWCT"]] = ((sym["ε"] + sym["h_3"]) * sym["B"])
 expressions_simplified[sym["B"]] = expressions[sym["B"]] # correct if version=="β"
 expressions_simplified[sym["Tstar"]] = sym["α"] + sym["β"]*sym["T_IWCT"]
+for s in ("c", "h", "k_b"):
+    expressions_simplified[sym[s]] = expressions[sym[s]]
 
 units = {}
 units[sym["c"]] = ureg.c
