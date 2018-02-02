@@ -10,6 +10,9 @@ import sys
 import functools
 import operator
 
+class MatchupError(Exception):
+    pass
+
 def parse_cmdline_hirs():
     parser = argparse.ArgumentParser(
         description="""
@@ -80,6 +83,7 @@ import xarray
 import pathlib
 from .. import matchups
 
+import typhon.datasets
 import typhon.datasets._tovs_defs
 
 from typhon.physics.units.common import ureg, radiance_units as rad_u
@@ -239,6 +243,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 for nm in ([self.prim_name, self.sec_name] if self.mode == "hirs" else [self.sec_name])
                 for fld in ["channel", "pixel", "scanline"]]] & 0x01)!=0
         ok = ~functools.reduce(operator.or_, [v.values for v in donotuse.data_vars.values()])
+        if ok.sum() == 0:
+            raise MatchupError("No matchups pass filters")
         ds = ds[{mdim:ok}]
         if not self.kmodel.filtered:
             self.kmodel.limit(ok, mdim=mdim)
@@ -591,16 +597,31 @@ def combine_hirs():
     warnings.filterwarnings("error",
         message="iteration over an xarray.Dataset will change",
         category=FutureWarning)
-    hmc = HIRSMatchupCombiner(
-        datetime.datetime.strptime(p.from_date, p.datefmt),
-        datetime.datetime.strptime(p.to_date, p.datefmt),
-        p.satname1, p.satname2)
+    try:
+        hmc = HIRSMatchupCombiner(
+            datetime.datetime.strptime(p.from_date, p.datefmt),
+            datetime.datetime.strptime(p.to_date, p.datefmt),
+            p.satname1, p.satname2)
 
-    ds = hmc.as_xarray_dataset()
+        ds = hmc.as_xarray_dataset()
+    except (typhon.datasets.DataFileError, MatchupError) as e:
+        print(f"No results: {e.args[0]:s}", file=sys.stderr)
+        sys.exit(1)
     with tempfile.TemporaryDirectory() as tmpdir:
+        anygood = False
         for channel in range(1, 20):
-            (harm, ds_new) = hmc.ds2harm(ds, channel)
+            try:
+                (harm, ds_new) = hmc.ds2harm(ds, channel)
+            except MatchupError as e:
+                print(f"No results after filtering for "
+                    f"channel {channel:d}: {e.args[0]:s}",
+                    file=sys.stderr)
+                continue
+            anygood = True
             hmc.write_harm(harm, ds_new, basedir=tmpdir)
+        if not anygood:
+            print("All channels failed!", file=sys.stderr)
+            sys.exit(1)
         # copy over
         for i in range(50):
             logging.info(f"Copying files from {tmpdir:s} to {hmc.basedir:s} (attempt {i+1:d})")
