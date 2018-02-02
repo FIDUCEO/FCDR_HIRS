@@ -3,15 +3,17 @@
 
 import functools
 import operator
+import collections
 
 import numpy
 import scipy.optimize
 import xarray
+import sympy
 
 import typhon.physics.metrology
 from . import effects
 from . import measurement_equation as me
-from typing import List
+from typing import (List, Dict, Tuple, Deque, Optional)
 
 def evaluate_uncertainty(e, unset="raise"):
     """Evaluate uncertainty for expression.
@@ -135,6 +137,44 @@ def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
             sensitivity matrices per term or cross-line sensitivity matrices per
             term.  These matrices are diagonal.  Defined by §3.2.9.
 
+    You probably want to vectorise this over an entire image.  Probable
+    dimensions:
+
+        One per term:
+        
+        C_eΛlj [n_c, n_l, n_j, n_e, n_e]
+        C_lΛej [n_c, n_e, n_j, n_l, n_l]
+        C_cΛpj [n_p, n_j, n_c, n_c]
+        
+        One per effect:
+        
+        S_esΛl [n_c, n_l, n_e, n_e]
+        S_lsΛe [n_c, n_e, n_l, n_l]
+        S_ciΛp [n_p, n_c, n_c]
+        S_csΛp [n_p, n_c, n_c]
+        
+        R_eΛls [n_c, n_l, n_s|j, n_e, n_e]
+        R_lΛes [n_c, n_e, n_s|j, n_l, n_l]
+        R_cΛpi [n_p, n_i|j, n_c, n_c]
+        R_cΛps [n_p, n_s|j, n_c, n_c]
+        
+        U_eΛls [n_c, n_l, n_s|j, n_e, n_e]
+        U_lΛes [n_c, n_e, n_s|j, n_l, n_l]
+        U_cΛpi [n_p, n_i|j, n_c, n_c]
+        U_cΛps [n_p, n_s|j, n_c, n_c]
+
+        One total:
+        
+        S_es [n_c, n_e, n_e]
+        S_ls [n_c, n_l, n_l]
+        S_ci [n_c, n_c]
+        S_cs [n_c, n_c]
+        
+        R_es [n_c, n_e, n_e]
+        R_ls [n_c, n_l, n_l]
+        R_ci [n_c, n_c]
+        R_cs [n_c, n_c]
+
     Returns:
 
         S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp: numpy.ndarray, as described above
@@ -159,7 +199,7 @@ def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
     return S_xtΛy
 
 def calc_S_xt(S_xtΛy: List[numpy.ndarray]) -> numpy.ndarray:
-    """Calculate S_es, S_ls, C_ci, or C_cs
+    """Calculate S_es, S_ls, S_ci, or S_cs
 
     Calculate either of:
     
@@ -215,7 +255,7 @@ def calc_R_xt(S_xt: numpy.ndarray):
         R_es or R_el: numpy.ndarray, as described. 
     """
 
-    U_xt = numpy.diag(S_xt) # Eq. 21 or 25
+    U_xt = numpy.diag(numpy.sqrt(S_xt)) # Eq. 21 or 25
     R_xt = numpy.inv(U_xt) @ S_xt @ numpy.inv(U_xt).T # Eq. 22 or 26
 
 def calc_Δ_x(R_xt: numpy.ndarray):
@@ -243,3 +283,70 @@ def calc_Δ_x(R_xt: numpy.ndarray):
 
     (popt, pcov) = scipy.optimize.curve_fit(f, Δ, r_xΔ, p0=1)
     return popt
+
+
+
+
+
+def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple]]]]],
+        sym: sympy.Symbol,
+        _d: Optional[Deque]=None) -> Deque:
+    """Given a sensitivity coefficient dictionary, accumulate them for term
+
+    Given a dictionary of sensitivity coefficients (see function
+    annotation) such as returned by calc_u_for_variable), accumulate
+    recursivey the sensitivity coefficients for symbol `sym`.
+
+    Arguments:
+
+        sensdict (Dict[Symbol, Tuple[ndarray,
+                Dict[Symbol, Tuple[ndarray,
+                  Dict[Symbol, Tuple[...]]]]]])
+
+            Collection of sensitivities.  Returned by
+            calc_u_for_variable.
+
+        sym: sympy.Symbol
+
+            Symbol for which to calculate total sensitivity
+            coefficient
+
+        _d: Deque
+
+            THOU SHALT NOT PASS!  Internal recursive use only.
+
+    """
+
+    if _d is None:
+        _d = collections.deque([1])
+
+    if sym in sensdict.keys():
+        _d.append(sensdict[sym][0])
+        return _d
+
+    for (subsym, (sensval, sub_sensdict)) in sensdict.items():
+        _d.append(sensval)
+        try:
+            return accum_sens_coef(sub_sensdict, sym, _d)
+        except KeyError: # not found
+            _d.pop()
+    raise KeyError(f"Term not found: {sym!s}")
+
+def calc_corr_scale_channel(effects, sensRe, ds):
+    """Calculate correlation length scale for channel
+    """
+
+    # For suggested dimensions per term, see docstring of
+    # metrology.calc_S_from_CUR
+
+    for j in effects.keys(): # loop over terms
+        C = accum_sens_coef(sensRe, j)
+        for k in effects[j]: # loop over effects for term
+            R_eΛlkx = k.calc_R_eΛlkx(ds)
+
+            U_eΛls = ... # diagonal
+
+            C_eΛlj = ... # diagonal
+
+            raise NotImplementedError("And now?")
+

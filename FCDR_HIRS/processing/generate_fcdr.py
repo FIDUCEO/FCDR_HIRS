@@ -152,6 +152,7 @@ from .. import models
 from .. import effects
 from .. import measurement_equation as me
 from .. import _fcdr_defs
+from .. import metrology
 
 import fiduceo.fcdr.writer.fcdr_writer
 
@@ -344,10 +345,6 @@ class FCDRGenerator:
         unc_components = dict(self.fcdr.propagate_uncertainty_components(uRe,
             sensRe, compRe))
 
-        # collect sensitivity coefficients for each in
-        # self.fcdr._effects.keys():
-        self.fcdr.accum_sens_coef(sensRe, me.symbols["C_s"])
-
 #        u_from = xarray.Dataset(dict([(f"u_from_{k!s}", v) for (k, v) in
 #                    unc_components.items()]))
         S = self.fcdr.estimate_channel_correlation_matrix(context)
@@ -423,6 +420,7 @@ class FCDRGenerator:
                     if "scanline_earth" in da.coords
                     and "scanline" in da.coords
                     else da for da in stuff_to_merge])
+        metrology.calc_corr_scale_channel(self.fcdr._effects, sensRe, ds)
         # NB: when quantities are gathered, offset and slope and others
         # per calibration_cycle are calculated for the entire context
         # period rather than the core dataset period.  I don't want to

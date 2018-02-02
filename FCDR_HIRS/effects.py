@@ -27,6 +27,42 @@ CorrelationType = collections.namedtuple("CorrelationType",
 CorrelationScale = collections.namedtuple("CorrelationScale",
     CorrelationType._fields)
 
+class Rmodel(metaclass=abc.ABCMeta):
+    """Derive R
+    """
+
+    @abc.abstractmethod
+    def calc_R_eΛlkx(self, ds):
+        """Calculate R_eΛlk for one particular k
+        """
+        ...
+
+class RModelCalib(Rmodel):
+    def calc_R_eΛlkx(self, ds):
+        raise NotImplementedError()
+rmodel_calib = RModelCalib()
+
+class RModelRandom(Rmodel):
+    def calc_R_eΛlkx(self, ds):
+        raise NotImplementedError()
+rmodel_random = RModelRandom()
+
+class RModelCommon(Rmodel):
+    def calc_R_eΛlkx(self, ds):
+        raise ValueError(
+            "We do not calculate error correlation matrices for common effects")
+rmodel_common = RModelCommon()
+
+class RModelPeriodicError(Rmodel):
+    def calc_R_eΛlkx(self, ds):
+        raise NotImplementedError()
+rmodel_periodicerror = RModelPeriodicError()
+
+class RModelRSelf(Rmodel):
+    def calc_R_eΛlkx(self, ds):
+        raise NotImplementedError()
+rmodel_rself = RModelRSelf()
+
 class Effect:
     """For uncertainty effects.
 
@@ -61,6 +97,7 @@ class Effect:
     channels_affected = "all"
     channel_correlations = None
     dimensions = None
+    rmodel = None
 
     def __init__(self, **kwargs):
         later_pairs = []
@@ -208,6 +245,37 @@ class Effect:
 
         return meq.calc_sensitivity_coefficient(s, self.parameter)
 
+    def is_independent(self):
+        """True if this effect is independent
+        """
+
+        return all(i==0 for i in self.correlation_scale)
+
+    def is_structured(self):
+        """True if this effect is structured
+        """
+
+        return not self.is_independent()
+
+    def calc_R_eΛlkx(self, ds):
+        """Return R_eΛlk for single k
+
+        Dimensions [n_c, n_l, n_e, n_e]
+        """
+
+        return self.rmodel.calc_R_eΛlkx(ds)
+
+    def calc_R_lΛex(self):
+        """Return R_lΛes or R_lΛei
+        """
+        raise NotImplementedError("Not implemented")
+
+    def calc_R_cΛpx(self):
+        """Return R_cΛps or R_cΛpi
+        """
+
+        raise NotImplementedError("Not implemented")
+
 def effects() -> Mapping[sympy.Symbol, Set[Effect]]:
     """Initialise a new dictionary with all effects per symbol.
 
@@ -229,7 +297,9 @@ earth_counts_noise = Effect(name="C_Earth",
     correlation_type=_random,
     unit=ureg.count,
     channel_correlations=_I,
-    dimensions=["calibration_cycle"]) # FIXME: update if interpolated (issue#10)
+    dimensions=["calibration_cycle"], # FIXME: update if interpolated (issue#10)
+    rmodel=rmodel_random,
+    ) 
 
 space_counts_noise = Effect(name="C_space",
     description="noise on Space counts",
@@ -237,7 +307,8 @@ space_counts_noise = Effect(name="C_space",
     correlation_type=_calib,
     unit=ureg.count,
     channel_correlations=_I,
-    dimensions=["calibration_cycle"])
+    dimensions=["calibration_cycle"],
+    rmodel=rmodel_calib)
 
 IWCT_counts_noise = Effect(name="C_IWCT",
     description="noise on IWCT counts",
@@ -245,7 +316,8 @@ IWCT_counts_noise = Effect(name="C_IWCT",
     correlation_type=_calib,
     unit=ureg.count,
     channel_correlations=_I,
-    dimensions=["calibration_cycle"])
+    dimensions=["calibration_cycle"],
+    rmodel=rmodel_calib)
 
 SRF_calib = Effect(name="SRF_calib",
     description="Spectral response function calibration",
@@ -254,7 +326,8 @@ SRF_calib = Effect(name="SRF_calib",
     correlation_scale=_inf,
     unit=ureg.nm,
     dimensions=(),
-    channel_correlations=_I)
+    channel_correlations=_I,
+    rmodel=rmodel_common)
 
 # This one does not fit in measurement equation, how to code?
 #
@@ -271,7 +344,8 @@ PRT_counts_noise = Effect(name="C_PRT",
     correlation_type=_calib,
     unit=ureg.count,
     dimensions=(),
-    channel_correlations=_ones)
+    channel_correlations=_ones,
+    rmodel=rmodel_calib)
 
 IWCT_PRT_representation = Effect(
     name="O_TIWCT",
@@ -281,7 +355,8 @@ IWCT_PRT_representation = Effect(
     correlation_scale=_inf,
     unit=ureg.K,
     dimensions=(),
-    channel_correlations=_ones)
+    channel_correlations=_ones,
+    rmodel=rmodel_calib)
 
 IWCT_PRT_counts_to_temp = Effect(
     name="d_PRT",
@@ -294,7 +369,8 @@ IWCT_PRT_counts_to_temp = Effect(
     correlation_scale=_inf,
     unit=ureg.counts/ureg.K, # FIXME WARNING: see https://github.com/FIDUCEO/FCDR_HIRS/issues/43
     dimensions=(),
-    channel_correlations=_ones)
+    channel_correlations=_ones,
+    rmodel=rmodel_calib)
 
 IWCT_type_b = Effect(
     name="O_TPRT",
@@ -304,7 +380,8 @@ IWCT_type_b = Effect(
     correlation_scale=_inf,
     unit=ureg.K,
     dimensions=(),
-    channel_correlations=_ones)
+    channel_correlations=_ones,
+    rmodel=rmodel_calib)
 # set magnitude when I'm sure everything else has been set (order of
 # kwargs not preserved before Python 3.6)
 IWCT_type_b.magnitude=xarray.DataArray(0.1, name="uncertainty", attrs={"units": "K"})
@@ -324,7 +401,8 @@ nonlinearity = Effect(
     correlation_scale=_inf,
     unit=radiance_units["ir"]/ureg.count**2,
     dimensions=(),
-    channel_correlations=blockmat)
+    channel_correlations=blockmat,
+    rmodel=rmodel_common)
 
 nonnonlinearity = Effect(
     name="O_Re",
@@ -334,7 +412,8 @@ nonnonlinearity = Effect(
     correlation_scale=_inf,
     unit=radiance_units["ir"],
     dimensions=(),
-    channel_correlations=nonlinearity.channel_correlations)
+    channel_correlations=nonlinearity.channel_correlations,
+    rmodel=rmodel_common)
 
 Earthshine = Effect(
     name="Earthshine",
@@ -344,7 +423,8 @@ Earthshine = Effect(
           "repeated_rectangles", "triangular_relative"),
     channel_correlations=blockmat,
     dimensions=(),
-    unit=radiance_units["ir"])
+    unit=radiance_units["ir"],
+    rmodel=rmodel_calib)
 
 Rself = Effect(
     name="Rself",
@@ -354,7 +434,8 @@ Rself = Effect(
     correlation_type=("rectangular_absolute", "triangular_relative",
         "triangular_relative", "repeated_rectangles"),
     channel_correlations=blockmat,
-    unit=radiance_units["ir"])
+    unit=radiance_units["ir"],
+    rmodel=rmodel_rself)
 
 Rselfparams = Effect(
     name="Rselfparams",
@@ -363,7 +444,8 @@ Rselfparams = Effect(
     correlation_type=Rself.correlation_type,
     channel_correlations=blockmat,
     dimensions=(),
-    unit=Rself.unit)
+    unit=Rself.unit,
+    rmodel=rmodel_rself)
 
 electronics = Effect(
     name="electronics",
@@ -373,7 +455,8 @@ electronics = Effect(
     correlation_scale=_inf,
     channel_correlations=blockmat,
     dimensions=(),
-    unit=radiance_units["ir"])
+    unit=radiance_units["ir"],
+    rmodel=rmodel_common)
 
 unknown_periodic = Effect(
     name="extraneous_periodic",
@@ -383,7 +466,8 @@ unknown_periodic = Effect(
     #correlation_scale=_inf,
     #channel_correlations=blockmat,
     dimensions=(),
-    unit=radiance_units["ir"])
+    unit=radiance_units["ir"],
+    rmodel=rmodel_periodicerror)
 
 Δα = Effect(
     name="α",
@@ -393,7 +477,8 @@ unknown_periodic = Effect(
     correlation_scale=_inf,
     channel_correlations=_I,
     dimensions=(),
-    unit="1")
+    unit="1",
+    rmodel=rmodel_common)
 
 Δβ = Effect(
     name="β",
@@ -403,7 +488,8 @@ unknown_periodic = Effect(
     correlation_scale=_inf,
     channel_correlations=_I,
     dimensions=(),
-    unit="1/K"),
+    unit="1/K",
+    rmodel=rmodel_common),
 
 Δf_eff = Effect(
     name="f_eff",
@@ -413,4 +499,5 @@ unknown_periodic = Effect(
     correlation_scale=_inf,
     channel_correlations=_I,
     dimensions=(),
-    unit="THz")
+    unit="THz",
+    rmodel=rmodel_common)
