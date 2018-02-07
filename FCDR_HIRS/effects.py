@@ -44,7 +44,25 @@ rmodel_calib = RModelCalib()
 
 class RModelRandom(Rmodel):
     def calc_R_eΛlkx(self, ds):
-        raise NotImplementedError()
+        """Return R_eΛlk for single k
+
+        Dimensions [n_c, n_l, n_e, n_e]
+        """
+
+        return numpy.tile(
+            numpy.eye(ds.dims["scanpos"], dtype="f4"),
+            [ds.dims["calibrated_channel"], ds.dims["scanline_earth"], 1, 1])
+
+    def calc_R_lΛekx(self, ds):
+        """Return R_lΛek for single k
+
+        Dimensions [n_c, n_e, n_l, n_l]
+        """
+
+        return numpy.tile(
+            numpy.eye(ds.dims["scanline_earth"], dtype="f4"),
+            [ds.dims["calibrated_channel"], ds.dims["scanpos"], 1, 1])
+
 rmodel_random = RModelRandom()
 
 class RModelCommon(Rmodel):

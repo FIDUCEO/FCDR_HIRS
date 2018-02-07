@@ -2036,68 +2036,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         return new_adict
 
     def _make_dims_consistent(self, dest, src):
-        srcdims = getattr(src, "dims", ())
-        if "calibration_position" in srcdims:
-            src = src.mean(dim="calibration_position", keep_attrs=True)
-        if (("calibration_cycle" in srcdims
-            or "rself_update_time" in srcdims)
-                and hasattr(dest, "scanline_earth")):
-            dest_time = dest.scanline_earth.astype("u8")
-            d = ("calibration_cycle" if "calibration_cycle" in srcdims else "rself_update_time")
-            src_time = src[d].astype("u8")
-            if (src[d][0] <= dest.scanline_earth[0] and
-                src[d][-1] >= dest.scanline_earth[-1]):
-                kind="zero"
-                bounds_error=True
-                fill_value=None
-            else: # reduced context, this is dangerous
-                logging.warning(
-                    "Problem propagating uncertainties "
-                    "from {!s} to {!s}. "
-                    "Calibration cycles ({:s}) cover "
-                    "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, "
-                    "Earth views cover "
-                    "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, "
-                    "reduced context means calibration cycles "
-                    "do not fully cover earth views, so I cannot "
-                    "use the former to interpolate uncertainties "
-                    "on the latter.  Extrapolating instead. "
-                    "Use with care.  I will flag the data.".format(
-                    dest.name, src.name,
-                    d,
-                    src[d].values[0].astype("M8[ms]").astype(datetime.datetime),
-                    src[d].values[-1].astype("M8[ms]").astype(datetime.datetime),
-                    dest.scanline_earth.values[0].astype("M8[ms]").astype(datetime.datetime),
-                    dest.scanline_earth.values[-1].astype("M8[ms]").astype(datetime.datetime)))
-                kind="zero"
-                bounds_error=False
-                fill_value="extrapolate"
-                self._flags["scanline"][{"scanline_earth": dest.scanline_earth<src[d][0]}] |= _fcdr_defs.FlagsScanline.UNCERTAINTY_SUSPICIOUS
-                self._flags["scanline"][{"scanline_earth": dest.scanline_earth>src[d][-1]}] |= _fcdr_defs.FlagsScanline.UNCERTAINTY_SUSPICIOUS
-                # FIXME: flag - but only part that I have extrapolated.
-                # And need to think, what happened when I applied the
-                # calibration in the first place?  This sort of stuff
-                # happens twice in my code, first at initial calculation,
-                # then at uncertainty calculation!
-
-            fnc = scipy.interpolate.interp1d(
-                src_time, src,
-                kind=kind,
-                bounds_error=bounds_error,
-                axis=src.dims.index(d),
-                fill_value=fill_value)
-            src = UADA(fnc(dest_time),
-                dims=[x.replace(d, "scanline_earth") for
-                        x in src.dims],
-                attrs=src.attrs,
-                encoding=src.encoding)
-
-            src = src.assign_coords(
-                **{k: v
-                    for (k, v) in dest.coords.items()
-                    if all(d in src.dims for d in v.dims)})
-        return src
-
+        return make_debug_fcdr_dims_consistent(
+            dest, src, impossible="warn", flags=self._flags)
 
     def numerically_propagate_ΔL(self, L, ΔL):
         """Temporary method to numerically propagate L to Tb
@@ -2631,6 +2571,81 @@ def _recursively_search_for(sub, var):
             if res is not None:
                 return res
 
+def make_debug_fcdr_dims_consistent(dest, src, impossible="warn",
+                                    flags=None):
+    """From debug FCDR, expand and restrict (temporal) dimensions
+
+    Make the dimension in `src` equal to the dimension in `dest`, by
+    interpolating the dimensions 'calibration_cycle' and
+    'rself_update_time' and collapsing the dimension
+    'calibration_position'.
+    """
+
+    srcdims = getattr(src, "dims", ())
+    if "calibration_position" in srcdims:
+        src = src.mean(dim="calibration_position", keep_attrs=True)
+    if (("calibration_cycle" in srcdims
+        or "rself_update_time" in srcdims)
+            and hasattr(dest, "scanline_earth")):
+        dest_time = dest.scanline_earth.astype("u8")
+        d = ("calibration_cycle" if "calibration_cycle" in srcdims else "rself_update_time")
+        src_time = src[d].astype("u8")
+        if (src[d][0] <= dest.scanline_earth[0] and
+            src[d][-1] >= dest.scanline_earth[-1]):
+            kind="zero"
+            bounds_error=True
+            fill_value=None
+        else:
+            msg = (
+                "Problem propagating uncertainties "
+                "from {!s} to {!s}. "
+                "Calibration cycles ({:s}) cover "
+                "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, "
+                "Earth views cover "
+                "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, "
+                "reduced context means calibration cycles "
+                "do not fully cover earth views, so I cannot "
+                "use the former to interpolate uncertainties "
+                "on the latter.  Extrapolating instead. "
+                "Use with care.  I will flag the data.".format(
+                dest.name, src.name,
+                d,
+                src[d].values[0].astype("M8[ms]").astype(datetime.datetime),
+                src[d].values[-1].astype("M8[ms]").astype(datetime.datetime),
+                dest.scanline_earth.values[0].astype("M8[ms]").astype(datetime.datetime),
+                dest.scanline_earth.values[-1].astype("M8[ms]").astype(datetime.datetime)))
+            if impossible=="warn": # reduced context, this is dangerous
+                logging.warning(msg)
+            else:
+                raise ValueError(msg)
+            kind="zero"
+            bounds_error=False
+            fill_value="extrapolate"
+            flags["scanline"][{"scanline_earth": dest.scanline_earth<src[d][0]}] |= _fcdr_defs.FlagsScanline.UNCERTAINTY_SUSPICIOUS
+            flags["scanline"][{"scanline_earth": dest.scanline_earth>src[d][-1]}] |= _fcdr_defs.FlagsScanline.UNCERTAINTY_SUSPICIOUS
+            # FIXME: flag - but only part that I have extrapolated.
+            # And need to think, what happened when I applied the
+            # calibration in the first place?  This sort of stuff
+            # happens twice in my code, first at initial calculation,
+            # then at uncertainty calculation!
+
+        fnc = scipy.interpolate.interp1d(
+            src_time, src,
+            kind=kind,
+            bounds_error=bounds_error,
+            axis=src.dims.index(d),
+            fill_value=fill_value)
+        src = UADA(fnc(dest_time),
+            dims=[x.replace(d, "scanline_earth") for
+                    x in src.dims],
+            attrs=src.attrs,
+            encoding=src.encoding)
+
+        src = src.assign_coords(
+            **{k: v
+                for (k, v) in dest.coords.items()
+                if all(d in src.dims for d in v.dims)})
+    return src
 
 # Patch xarray.core._ignore_warnings_if to avoid repeatedly hearing the
 # same warnings.  This function contains the catch_warnings contextmanager

@@ -4,6 +4,9 @@
 import functools
 import operator
 import collections
+import itertools
+import logging
+from typing import (List, Dict, Tuple, Deque, Optional)
 
 import numpy
 import scipy.optimize
@@ -13,7 +16,7 @@ import sympy
 import typhon.physics.metrology
 from . import effects
 from . import measurement_equation as me
-from typing import (List, Dict, Tuple, Deque, Optional)
+from .fcdr import make_debug_fcdr_dims_consistent
 
 def evaluate_uncertainty(e, unset="raise"):
     """Evaluate uncertainty for expression.
@@ -153,13 +156,13 @@ def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
         S_ciΛp [n_p, n_c, n_c]
         S_csΛp [n_p, n_c, n_c]
         
-        R_eΛls [n_c, n_l, n_s|j, n_e, n_e]
-        R_lΛes [n_c, n_e, n_s|j, n_l, n_l]
-        R_cΛpi [n_p, n_i|j, n_c, n_c]
-        R_cΛps [n_p, n_s|j, n_c, n_c]
+        R_eΛls [n_c, n_l, n_s, n_e, n_e]
+        R_lΛes [n_c, n_e, n_s, n_l, n_l]
+        R_cΛpi [n_p, n_i, n_c, n_c]
+        R_cΛps [n_p, n_s, n_c, n_c]
         
-        U_eΛls [n_c, n_l, n_s|j, n_e, n_e]
-        U_lΛes [n_c, n_e, n_s|j, n_l, n_l]
+        U_eΛls [n_c, n_l, n_s, n_e, n_e]
+        U_lΛes [n_c, n_e, n_s, n_l, n_l]
         U_cΛpi [n_p, n_i|j, n_c, n_c]
         U_cΛps [n_p, n_s|j, n_c, n_c]
 
@@ -333,20 +336,93 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
     raise KeyError(f"Term not found: {sym!s}")
 
 def calc_corr_scale_channel(effects, sensRe, ds):
-    """Calculate correlation length scale for channel
+    """Calculate correlation length scales per channel
     """
 
     # For suggested dimensions per term, see docstring of
     # metrology.calc_S_from_CUR
 
-    for j in effects.keys(): # loop over terms
+    n_s = n_i = 0
+    for k in itertools.chain.from_iterable(effects.values()):
+        if k.is_structured():
+            n_s += 1
+        elif k.is_independent():
+            n_i += 1
+        else:
+            raise RuntimeError(f"Effect {k!s} neither structured nor "
+                                "independent?! Impossible!")
+
+    n_l = ds.dims["scanline_earth"]
+    n_e = ds.dims["scanpos"]
+    n_c = ds.dims["calibrated_channel"]
+    n_j = len(effects.keys())
+
+    logging.debug("Allocating arrays for correlation calculations")
+    # Note: the following approach is currently very memory-inefficient.
+    # Need to sample along dimension n_l.
+    R_eΛls = xarray.DataArray(
+        numpy.zeros((n_c, n_s, n_l, n_e, n_e), dtype="f4"),
+        dims=("n_c", "n_k", "n_l", "n_e", "n_e")) # FIXME: change dim names
+
+    U_eΛls = xarray.zeros_like(R_eΛls)
+
+    C_eΛlj = xarray.DataArray(
+        numpy.zeros((n_c, n_l, n_j, n_e, n_e), dtype="f4"),
+        dims=("n_c", "n_l", "n_j", "n_e", "n_e"))
+
+    # should the next one be skipped?
+    R_eΛli = xarray.DataArray(
+        numpy.zeros((n_c, n_i, n_l, n_e, n_e), dtype="f4"),
+        dims=("n_c", "n_k", "n_l", "n_e", "n_e")) # FIXME: change dim names
+
+    U_eΛli = xarray.zeros_like(R_eΛli)
+
+    R_lΛes: ...
+    U_lΛes: ...
+    C_lΛej: ...
+    R_lΛei: ...
+    U_eΛei: ...
+
+    cs = itertools.count()
+    ci = itertools.count()
+    for (cj, j) in enumerate(effects.keys()): # loop over terms
+        logging.debug(f"Processing term {cj:d}, {j!s}")
         C = accum_sens_coef(sensRe, j)
-        for k in effects[j]: # loop over effects for term
-            R_eΛlkx = k.calc_R_eΛlkx(ds)
 
-            U_eΛls = ... # diagonal
+        # before the mul, ensure consistent dimensions
 
-            C_eΛlj = ... # diagonal
+        CC = functools.reduce(operator.mul, 
+            [make_debug_fcdr_dims_consistent(ds, x, impossible="error")
+              for x in C]).values
+        # Thanks to https://stackoverflow.com/a/48628917/974555
+        expanded = numpy.zeros(CC.shape + CC.shape[-1:], dtype=CC.dtype)
 
-            raise NotImplementedError("And now?")
+        diagonals = numpy.diagonal(expanded, axis1=-2, axis2=-1)
+        diagonals.setflags(write=True)
+        diagonals[:] = CC
+
+        C_eΛlj[{"n_j": cj}].values[...] = expanded
+        for k in effects[j]: # loop over effects for term (usually exactly one)
+            if k.is_structured():
+                R = R_eΛls
+                U = U_eΛls
+                ck = next(cs)
+            else:
+                R = R_eΛli
+                U = U_eΛli
+                ck = next(ci)
+            R[{"n_k": ck}].values[...] = k.calc_R_eΛlkx(ds)
+
+            # Make sure we have one estimate for every scanline.
+            new_u = make_debug_fcdr_dims_consistent(
+                ds, k.magnitude, impossible="error")
+
+            # We have at most one estimate of U per scanline, so not
+            # only is U diagonal; for U_eΛlk, the value along the diagonal
+            # is constant too.
+            U[{"n_k": ck}].values[...] = (
+                new_u.values[:, :, numpy.newaxis, numpy.newaxis] *
+                numpy.eye(n_e)[numpy.newaxis, numpy.newaxis, :, :])
+
+    raise NotImplementedError("And now?")
 
