@@ -13,6 +13,7 @@ import sympy
 from typing import (Tuple, Mapping, Set)
 
 from typhon.physics.units.common import (radiance_units, ureg)
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 
 from . import measurement_equation as meq
 from . import _fcdr_defs
@@ -402,7 +403,7 @@ IWCT_type_b = Effect(
     rmodel=rmodel_calib)
 # set magnitude when I'm sure everything else has been set (order of
 # kwargs not preserved before Python 3.6)
-IWCT_type_b.magnitude=xarray.DataArray(0.1, name="uncertainty", attrs={"units": "K"})
+IWCT_type_b.magnitude=UADA(0.1, name="uncertainty", attrs={"units": "K"})
 
 blockmat = numpy.vstack((
             numpy.hstack((
@@ -412,15 +413,21 @@ blockmat = numpy.vstack((
                 numpy.zeros(shape=(9,12)),
                 numpy.ones(shape=(9,9))))))
 nonlinearity = Effect(
-    name="nonlinearity",
+    name="a_2",
     description="Nonlinearity",
     parameter=meq.symbols["a_2"],
     correlation_type=_systematic,
     correlation_scale=_inf,
-    unit=radiance_units["ir"]/ureg.count**2,
+    unit=radiance_units["si"]/ureg.count**2,
     dimensions=(),
     channel_correlations=blockmat,
     rmodel=rmodel_common)
+nonlinearity.magnitude=UADA(
+    3e-20, # equivalent to 1e-6 in ir units
+    name="uncertainty",
+    attrs={"units": radiance_units["si"]/ureg.count**2,
+           "note": "Placeholder uncertainty awaiting proper "
+                   "harmonisation"})
 
 nonnonlinearity = Effect(
     name="O_Re",
