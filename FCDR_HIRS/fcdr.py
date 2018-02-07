@@ -1892,7 +1892,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                             if vv[1] is None:
                                 ddto[kk] = (ddto[kk][0],
                                     _recursively_search_for(ddfrom, kk))
-                                assert ddto[kk] is not None, \
+                                assert ddto[kk][1] is not None, \
                                        "Should not be None now :("
                     cached_uncertainties[v.args[0]] = adict[v]
                 # NB: We should have sensitivities.keys() ==
