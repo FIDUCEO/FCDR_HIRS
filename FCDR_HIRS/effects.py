@@ -1,6 +1,7 @@
 """For the uncertainty effects
 """
 
+import math
 import abc
 import collections
 import copy
@@ -33,52 +34,104 @@ class Rmodel(metaclass=abc.ABCMeta):
     """
 
     @abc.abstractmethod
-    def calc_R_eΛlkx(self, ds):
-        """Calculate R_eΛlk for one particular k
+    def calc_R_eΛlkx(self, ds,
+            sampling_l=1, sampling_e=1):
+        """Return R_eΛlk for single k
+
+        Dimensions [n_c, n_l, n_e, n_e]
         """
-        ...
+
+    @abc.abstractmethod
+    def calc_R_lΛekx(self, ds,
+        sampling_l=1, sampling_e=1):
+        """Return R_lΛek for single k
+
+        Dimensions [n_c, n_e, n_l, n_l]
+        """
 
 class RModelCalib(Rmodel):
-    def calc_R_eΛlkx(self, ds):
-        raise NotImplementedError()
+    def calc_R_eΛlkx(self, ds,
+        sampling_l=1, sampling_e=1):
+        """Return R_eΛlk for single k
+
+        Dimensions [n_c, n_l, n_e, n_e]
+        """
+        return numpy.ones(
+            (ds.dims["calibrated_channel"],
+             math.ceil(ds.dims["scanline_earth"]/sampling_l),
+             math.ceil(ds.dims["scanpos"]/sampling_e),
+             math.ceil(ds.dims["scanpos"]/sampling_e)), dtype="f4")
+
+    def calc_R_lΛekx(self, ds,
+            sampling_l=1, sampling_e=1):
+        """Return R_lΛek for single k
+
+        Dimensions [n_c, n_e, n_l, n_l]
+        """
+
+        # wherever scanline_earth shares a calibration_cycle the
+        # correlation is 1; anywhere else, it's 0.
+        ccid = (ds["scanline_earth"]>ds["calibration_cycle"]).sum("calibration_cycle").values
+        R = (ccid[:, numpy.newaxis] == ccid[numpy.newaxis, :]).astype("f4")
+        return numpy.tile(R[::sampling_l, ::sampling_l][
+                numpy.newaxis, numpy.newaxis, :, :],
+            (ds.dims["calibrated_channel"],
+            math.ceil(ds.dims["scanpos"]/sampling_e),
+            1, 1))
+
 rmodel_calib = RModelCalib()
 
 class RModelRandom(Rmodel):
-    def calc_R_eΛlkx(self, ds):
+    def calc_R_eΛlkx(self, ds,
+        sampling_l=1, sampling_e=1):
         """Return R_eΛlk for single k
 
         Dimensions [n_c, n_l, n_e, n_e]
         """
 
         return numpy.tile(
-            numpy.eye(ds.dims["scanpos"], dtype="f4"),
-            [ds.dims["calibrated_channel"], ds.dims["scanline_earth"], 1, 1])
+            numpy.eye(math.ceil(ds.dims["scanpos"]/sampling_e), dtype="f4"),
+            [ds.dims["calibrated_channel"], 
+             math.ceil(ds.dims["scanline_earth"]/sampling_l), 1, 1])
 
-    def calc_R_lΛekx(self, ds):
+    def calc_R_lΛekx(self, ds,
+            sampling_l=1, sampling_e=1):
         """Return R_lΛek for single k
 
         Dimensions [n_c, n_e, n_l, n_l]
         """
 
         return numpy.tile(
-            numpy.eye(ds.dims["scanline_earth"], dtype="f4"),
-            [ds.dims["calibrated_channel"], ds.dims["scanpos"], 1, 1])
+            numpy.eye(math.ceil(ds.dims["scanline_earth"]/sampling_l), dtype="f4"),
+            [ds.dims["calibrated_channel"],
+            math.ceil(ds.dims["scanpos"]/sampling_e), 1, 1])
 
 rmodel_random = RModelRandom()
 
 class RModelCommon(Rmodel):
-    def calc_R_eΛlkx(self, ds):
+    def calc_R_eΛlkx(self, ds,
+            sampling_l=1, sampling_e=1):
         raise ValueError(
             "We do not calculate error correlation matrices for common effects")
+    calc_R_lΛekx = calc_R_eΛlkx
+
 rmodel_common = RModelCommon()
 
 class RModelPeriodicError(Rmodel):
-    def calc_R_eΛlkx(self, ds):
+    def calc_R_eΛlkx(self, ds,
+            sampling_l=1, sampling_e=1):
+        raise NotImplementedError()
+    def calc_R_lΛekx(self, ds,
+            sampling_l=1, sampling_e=1):
         raise NotImplementedError()
 rmodel_periodicerror = RModelPeriodicError()
 
 class RModelRSelf(Rmodel):
-    def calc_R_eΛlkx(self, ds):
+    def calc_R_eΛlkx(self, ds,
+            sampling_l=1, sampling_e=1):
+        raise NotImplementedError()
+    def calc_R_lΛekx(self, ds,
+            sampling_l=1, sampling_e=1):
         raise NotImplementedError()
 rmodel_rself = RModelRSelf()
 
@@ -268,26 +321,39 @@ class Effect:
         """True if this effect is independent
         """
 
-        return all(i==0 for i in self.correlation_scale)
+        return all(x=="random" for x in self.correlation_type)
+
+    def is_common(self):
+        """True if this effect is common
+        """
+        return all(x=="rectangular_absolute" for x in
+                self.correlation_type) and all(numpy.isinf(i) for i in
+                self.correlation_scale)
 
     def is_structured(self):
         """True if this effect is structured
         """
 
-        return not self.is_independent()
+        return not self.is_independent() and not self.is_common()
 
-    def calc_R_eΛlkx(self, ds):
+    def calc_R_eΛlkx(self, ds,
+            sampling_l=1, sampling_e=1):
         """Return R_eΛlk for single k
 
         Dimensions [n_c, n_l, n_e, n_e]
         """
 
-        return self.rmodel.calc_R_eΛlkx(ds)
+        return self.rmodel.calc_R_eΛlkx(ds,
+            sampling_l=sampling_l,
+            sampling_e=sampling_e)
 
-    def calc_R_lΛex(self):
+    def calc_R_lΛekx(self, ds,
+            sampling_l=1, sampling_e=1):
         """Return R_lΛes or R_lΛei
         """
-        raise NotImplementedError("Not implemented")
+        return self.rmodel.calc_R_lΛekx(ds,
+            sampling_l=sampling_l,
+            sampling_e=sampling_e)
 
     def calc_R_cΛpx(self):
         """Return R_cΛps or R_cΛpi

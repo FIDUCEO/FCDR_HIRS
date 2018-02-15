@@ -1,11 +1,14 @@
 """For any metrology-related functions
 """
 
+import math
 import functools
 import operator
 import collections
 import itertools
 import logging
+import numbers
+import numexpr
 from typing import (List, Dict, Tuple, Deque, Optional)
 
 import numpy
@@ -86,9 +89,9 @@ def prepare():
 # for debugging purposes?
 #
 
-def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
-                    U_xΛyt: List[List[numpy.ndarray]],
-                    C_xΛyj: List[numpy.ndarray]) -> numpy.ndarray:
+def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
+                    U_xΛyt_diag: numpy.ndarray,
+                    C_xΛyt_diag: numpy.ndarray) -> numpy.ndarray:
     """Calculate S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp
 
     Calculate either of those:
@@ -117,37 +120,37 @@ def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
 
     Arguments:
 
-        One of R_eΛls, R_lΛes, R_cΛpi, or R_cΛps: List[List[numpy.ndarray]],
-            for each terms, either the list of all
-            cross-element error correlation matrices, or the list of all
-            cross-line error correlation matrices, for one effect, that
-            all affect that particular term in the measurement equation. 
-            The outer list has the length corresponding to the number of
-            terms (n_j), the inner list the number of structured effects for each
-            particular term (n_s|j), except in the case of R_cΛpi, where
-            it's the number of independent effects for that term.
+        One of R_eΛls, R_lΛes, R_cΛpi, or R_cΛps: xarray.DataArray
+            with dimensions [n_c, n_s, n_e, n_l, n_l] or [n_c, n_s, n_l,
+            n_e, n_e] or .
+            For each channel (c) and each effect (k), either a collection
+            of cross-element error correlation matrices for each line, or
+            of cross-line error correlation matrices for each element.
             Defined by §3.2.3.
 
-        One of U_eΛls, U_lΛes, U_cΛpi, or U_cΛps: List[List[numpy.ndarray]],
-            for all terms, either a list of all
-            cross-element term uncertainty matrices or a list of all
-            cross-line term uncertainty matrices, for one effect, that
-            all affect the same term in the measurement equation.  Those
-            matrices are diagonal.  Defined by §3.2.6.
+        Diagonals of one of U_eΛls, U_lΛes, U_cΛpi, or U_cΛps: xarray.DataArray
+            Same dimensions as previous but minus the final dimension,
+            because it only stores the diagonals.
+            Considering §3.2.6, consider that the final dimension shows
+            the diagonals of any U_eΛls, U_lΛes, U_cΛpi, or U_cΛps.
+            Defined by §3.2.6.
 
-        One of C_eΛlj, C_lΛej, C_cΛpj: List[numpy.ndarray], for all terms,
-            either cross-element
-            sensitivity matrices per term or cross-line sensitivity matrices per
-            term.  These matrices are diagonal.  Defined by §3.2.9.
+        One of C_eΛls, C_lΛes, C_cΛps, C_cΛpi: xarray.DataArray
+            Contains the sensitivity diagonals _per effect_.  Although
+            sensitivity is defined per term and not per effect, I need
+            them per effect.  Most terms have exactly one effect defined
+            anyway.  Dimensions therefore the same as U_eΛls and friends.
+            Defined by §3.2.9.
 
     You probably want to vectorise this over an entire image.  Probable
     dimensions:
 
         One per term:
         
-        C_eΛlj [n_c, n_l, n_j, n_e, n_e]
-        C_lΛej [n_c, n_e, n_j, n_l, n_l]
-        C_cΛpj [n_p, n_j, n_c, n_c]
+        C_eΛls [n_c, n_s, n_l, n_e, n_e] (last 2 diagonal, not explicitly calculated)
+        C_lΛes [n_c, n_s, n_e, n_l, n_l] (last 2 diagonal)
+        C_cΛps [n_p, n_s, n_c, n_c] (last 2 diagonal)
+        C_cΛpi [n_p, n_i, n_c, n_c] (last 2 diagonal)
         
         One per effect:
         
@@ -161,10 +164,10 @@ def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
         R_cΛpi [n_p, n_i, n_c, n_c]
         R_cΛps [n_p, n_s, n_c, n_c]
         
-        U_eΛls [n_c, n_l, n_s, n_e, n_e]
-        U_lΛes [n_c, n_e, n_s, n_l, n_l]
-        U_cΛpi [n_p, n_i|j, n_c, n_c]
-        U_cΛps [n_p, n_s|j, n_c, n_c]
+        U_eΛls [n_c, n_l, n_s, n_e, n_e] (last 2 diagonal)
+        U_lΛes [n_c, n_e, n_s, n_l, n_l] (last 2 diagonal)
+        U_cΛpi [n_p, n_i|j, n_c, n_c] (last 2 diagonal)
+        U_cΛps [n_p, n_s|j, n_c, n_c] (last 2 diagonal)
 
         One total:
         
@@ -183,22 +186,20 @@ def calc_S_from_CUR(R_xΛyt: List[List[numpy.ndarray]],
         S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp: numpy.ndarray, as described above
     """
 
-    if not (len(R_xΛyt) == len(U_xΛyt) == len(C_xΛyj)):
-        raise ValueError("R, U, C must have same length")
+    if not C_xΛyt_diag.dims == U_xΛyt_diag.dims == R_xΛyt.dims[:4]:
+        raise ValueError("R, U, C wrong dimensions")
 
-    # How much can be vectorised here?  The arrays may be jagged?  And
-    # this function itself also needs to be called many times (for every
-    # line) — expensive?
-    agg = []
-    for j in range(len(C_xΛyj)):
-        if not (len(R_xΛyt[j]) == len(U_xΛyt[j])):
-            raise ValueError(f"R and U nr. {j:d} must have same length")
-        for s in range(len(R_xΛyt[j])):
-            # equation 20 or 24
-            agg.append(C_xΛyj[j] @ U_xΛyt[j][s] @ R_xΛyt[j][s] @ U_xΛyt[j][s].T @ C_xΛyj[j].T)
-
-    S_xtΛy = functools.reduce(operator.add, agg)
-
+    # can work with diagonals only:
+    #
+    # U @ R @ U.T == (diag(U)[:, newaxis]*R)*diag(U)
+    #
+    # Prepare for numexpr
+    U = U_xΛyt_diag.values[..., numpy.newaxis]
+    UT = U.swapaxes(-1, -2)
+    C = C_xΛyt_diag.values[..., numpy.newaxis]
+    CT = C.swapaxes(-1, -2)
+    R = R_xΛyt
+    S_xtΛy = numexpr.evaluate("C * U * R * UT * CT")
     return S_xtΛy
 
 def calc_S_xt(S_xtΛy: List[numpy.ndarray]) -> numpy.ndarray:
@@ -258,8 +259,11 @@ def calc_R_xt(S_xt: numpy.ndarray):
         R_es or R_el: numpy.ndarray, as described. 
     """
 
-    U_xt = numpy.diag(numpy.sqrt(S_xt)) # Eq. 21 or 25
-    R_xt = numpy.inv(U_xt) @ S_xt @ numpy.inv(U_xt).T # Eq. 22 or 26
+    U_xt_diag = numpy.sqrt(numpy.diagonal(S_xt, axis1=-2, axis2=-1))
+    dUi = (1/U_xt_diag)[..., numpy.newaxis]
+    dUiT = dUi.swapaxes(-1, -2)
+    R_xt = numexpr.evaluate("dUi * S_xt * dUiT") # equivalent to Ui@S@Ui.T when written fully
+    return R_xt
 
 def calc_Δ_x(R_xt: numpy.ndarray):
     """Calculate optimum Δ_e or Δ_l
@@ -278,13 +282,15 @@ def calc_Δ_x(R_xt: numpy.ndarray):
             effects, per channel.  Can be obtained from calc_R_xt.
     """
 
-    Δ_ref = numpy.arange(R_xt.shape[0])
-    r_xΔ = numpy.array([numpy.diag(M, k=-i).mean() for i in Δ_ref])
+    Δ_ref = numpy.arange(R_xt.shape[3])
+    r_xΔ = numpy.array([numpy.diagonal(R_xt, i, 2, 3).mean(-1) for i in Δ_ref])
 
     def f(Δ, Δ_e):
         return numpy.exp(-Δ/Δ_e)
 
-    (popt, pcov) = scipy.optimize.curve_fit(f, Δ, r_xΔ, p0=1)
+    # I don't suppose I can vectorise this one… here for effect 0, element
+    # 18…
+    (popt, pcov) = scipy.optimize.curve_fit(f, Δ_ref, r_xΔ[:, 0, 18], p0=1)
     return popt
 
 
@@ -335,7 +341,8 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
             _d.pop()
     raise KeyError(f"Term not found: {sym!s}")
 
-def calc_corr_scale_channel(effects, sensRe, ds):
+def calc_corr_scale_channel(effects, sensRe, ds, 
+        sampling_l=5, sampling_e=1):
     """Calculate correlation length scales per channel
     """
 
@@ -348,81 +355,156 @@ def calc_corr_scale_channel(effects, sensRe, ds):
             n_s += 1
         elif k.is_independent():
             n_i += 1
+        elif k.is_common():
+            continue
         else:
             raise RuntimeError(f"Effect {k!s} neither structured nor "
                                 "independent?! Impossible!")
 
+    # for the full n_l this is too memory-intensive.  Need to split in
+    # smaller parts.
     n_l = ds.dims["scanline_earth"]
     n_e = ds.dims["scanpos"]
     n_c = ds.dims["calibrated_channel"]
     n_j = len(effects.keys())
 
     logging.debug("Allocating arrays for correlation calculations")
-    # Note: the following approach is currently very memory-inefficient.
-    # Need to sample along dimension n_l.
+
     R_eΛls = xarray.DataArray(
-        numpy.zeros((n_c, n_s, n_l, n_e, n_e), dtype="f4"),
-        dims=("n_c", "n_k", "n_l", "n_e", "n_e")) # FIXME: change dim names
+        numpy.zeros((n_c, n_s, 
+            math.ceil(n_l/sampling_l),
+            math.ceil(n_e/sampling_e),
+            math.ceil(n_e/sampling_e)), dtype="f4"),
+        dims=("n_c", "n_s", "n_l", "n_e", "n_e"))
 
-    U_eΛls = xarray.zeros_like(R_eΛls)
+    R_lΛes = xarray.DataArray(
+        numpy.zeros((n_c, n_s, 
+            math.ceil(n_e/sampling_e),
+            math.ceil(n_l/sampling_l),
+            math.ceil(n_l/sampling_l)), dtype="f4"),
+        dims=("n_c", "n_s", "n_e", "n_l", "n_l"))
 
-    C_eΛlj = xarray.DataArray(
-        numpy.zeros((n_c, n_l, n_j, n_e, n_e), dtype="f4"),
-        dims=("n_c", "n_l", "n_j", "n_e", "n_e"))
+    # sparse and diagonal, avoid wasting memory?
+    U_eΛls_diag = xarray.DataArray(
+        numpy.zeros((n_c, n_s,
+            math.ceil(n_l/sampling_l),
+            math.ceil(n_e/sampling_e)), dtype="f4"),
+        dims=("n_c", "n_s", "n_l", "n_e")) # last n_e superfluous
+
+    U_lΛes_diag = U_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
+    # Equivalent to:
+    #
+    # U_lΛes_diag = xarray.DataArray(
+    #     numpy.zeros((n_c, n_s,
+    #         math.ceil(n_e/sampling_e),
+    #         math.ceil(n_l/sampling_l)), dtype="f4"),
+    #     dims=("n_c", "n_s", "n_e", "n_l")) # last n_l superfluous
+    #
+    # U_eΛls_diag and U_lΛes_diag are views of the same data, thus saving
+    # memory.
+
+    # Actual dimension of C_eΛlj would be [n_c, n_j, n_l, n_e, n_e], but
+    # I'm storing it on the dimensions of [n_c, n_k, n_l, n_e] (diagonals)
+    # so I can apply it directly with the corresponding U_eΛlk and R_eΛlk.
+    C_eΛls_diag = xarray.DataArray(
+        numpy.zeros((n_c, n_s, math.ceil(n_l/sampling_l),
+            math.ceil(n_e/sampling_e)), dtype="f4"),
+        dims=("n_c", "n_s", "n_l", "n_e")) # last n_e superfluous
+    C_lΛes_diag = C_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
 
     # should the next one be skipped?
-    R_eΛli = xarray.DataArray(
-        numpy.zeros((n_c, n_i, n_l, n_e, n_e), dtype="f4"),
-        dims=("n_c", "n_k", "n_l", "n_e", "n_e")) # FIXME: change dim names
+#    R_eΛli = xarray.DataArray(
+#        numpy.zeros((n_c, n_i, n_l//sampling_l,
+#                     n_e//sampling_e,
+#                     n_e//sampling_e), dtype="f4"),
+#        dims=("n_c", "n_k", "n_l", "n_e", "n_e")) # FIXME: change dim names
 
-    U_eΛli = xarray.zeros_like(R_eΛli)
+    #U_eΛli = xarray.zeros_like(R_eΛli)
 
-    R_lΛes: ...
-    U_lΛes: ...
-    C_lΛej: ...
-    R_lΛei: ...
-    U_eΛei: ...
+#    U_lΛes: ...
+#    C_lΛej: ...
+#    R_lΛei: ...
+#    U_eΛei: ...
 
-    cs = itertools.count()
-    ci = itertools.count()
+    ccs = itertools.count()
+    cci = itertools.count()
     for (cj, j) in enumerate(effects.keys()): # loop over terms
         logging.debug(f"Processing term {cj:d}, {j!s}")
-        C = accum_sens_coef(sensRe, j)
+        try:
+            C = accum_sens_coef(sensRe, j)
+        except KeyError as k:
+            logging.error(f"I have {len(effects[j]):d} effects associated "
+                f"with term {j!s}, but I have no sensitivity coefficient "
+                "for this term.  I don't think I used it in the "
+                "measurement equation.  For the purposes of the" 
+                "correlation length calculation, I will ignore it.  "
+                "Sorry!")
+            continue
 
         # before the mul, ensure consistent dimensions
 
-        CC = functools.reduce(operator.mul, 
-            [make_debug_fcdr_dims_consistent(ds, x, impossible="error")
-              for x in C]).values
-        # Thanks to https://stackoverflow.com/a/48628917/974555
-        expanded = numpy.zeros(CC.shape + CC.shape[-1:], dtype=CC.dtype)
+        if all(isinstance(x, numbers.Number) for x in C): # scalar, no units
+            CC = numpy.product(C)
+        else:
+            CC = functools.reduce(operator.mul, 
+                [make_debug_fcdr_dims_consistent(ds, x, impossible="error")
+                  for x in C]).sel(scanline_earth=ds["scanline_earth"]).sel(
+                    scanline_earth=slice(None, None, sampling_l),
+                    scanpos=slice(None, None, sampling_e)).values
+#        # Thanks to https://stackoverflow.com/a/48628917/974555
+#        expanded = numpy.zeros(CC.shape + CC.shape[-1:], dtype=CC.dtype)
+#
+#        diagonals = numpy.diagonal(expanded, axis1=-2, axis2=-1)
+#        diagonals.setflags(write=True)
+#        diagonals[:] = CC
 
-        diagonals = numpy.diagonal(expanded, axis1=-2, axis2=-1)
-        diagonals.setflags(write=True)
-        diagonals[:] = CC
-
-        C_eΛlj[{"n_j": cj}].values[...] = expanded
+        #C_eΛlj[{"n_j": cj}].values[...] = expanded
         for k in effects[j]: # loop over effects for term (usually exactly one)
-            if k.is_structured():
-                R = R_eΛls
-                U = U_eΛls
-                ck = next(cs)
-            else:
-                R = R_eΛli
-                U = U_eΛli
-                ck = next(ci)
-            R[{"n_k": ck}].values[...] = k.calc_R_eΛlkx(ds)
+            if k.magnitude is None:
+                logging.warn(f"Magnitude for {k.name:s} is None, not "
+                    "considering for correlation scale calculations.")
+                continue
+            elif k.is_independent() or k.is_common():
+                continue # don't bother with indy or common
 
+            try:
+                R_eΛlkx = k.calc_R_eΛlkx(ds,
+                        sampling_l=sampling_l, sampling_e=sampling_e)
+                R_lΛekx = k.calc_R_lΛekx(ds,
+                        sampling_l=sampling_l, sampling_e=sampling_e)
+            except NotImplementedError:
+                logging.error("No method to estimate R_eΛlk or R_lΛek "
+                    f"implemented for effect {k!s}")
+                continue
+
+            cs = next(ccs)
+
+            R_eΛls[{"n_s": cs}].values[...] = R_eΛlkx
+            R_lΛes[{"n_s": cs}].values[...] = R_lΛekx
             # Make sure we have one estimate for every scanline.
             new_u = make_debug_fcdr_dims_consistent(
-                ds, k.magnitude, impossible="error")
+                ds, k.magnitude, impossible="error").sel(
+                    scanline_earth=slice(None, None, sampling_l))
 
             # We have at most one estimate of U per scanline, so not
             # only is U diagonal; for U_eΛlk, the value along the diagonal
             # is constant too.
-            U[{"n_k": ck}].values[...] = (
-                new_u.values[:, :, numpy.newaxis, numpy.newaxis] *
-                numpy.eye(n_e)[numpy.newaxis, numpy.newaxis, :, :])
+            U_eΛls_diag[{"n_s": cs}].values[...] = new_u.values[..., numpy.newaxis]
+#            U_eΛlk[{"n_k": ck}].values[...] = (
+#                new_u.values[:, :, numpy.newaxis, numpy.newaxis] *
+#                numpy.eye(math.ceil(n_e/sampling_e))[numpy.newaxis, numpy.newaxis, :, :])
+            # not sure if next line is correct
+#            U_lΛek[{"n_k": ck}].values[...] = (
+#                new_u.values[:, :, numpy.newaxis, numpy.newaxis] *
+#                numpy.eye(math.ceil(n_l/sampling_l))[numpy.newaxis, numpy.newaxis, :, :])
+            C_eΛls_diag[{"n_s": cs}].values[...] = CC
+
+    # use value of cs to consider how many to pass on?
+
+    S_lsΛe = calc_S_from_CUR(R_lΛes, U_lΛes_diag, C_lΛes_diag)
+    S_ls = calc_S_xt(S_lsΛe)
+    R_ls = calc_R_xt(S_ls)
+    Δ_l = calc_Δ_x(R_ls)
 
     raise NotImplementedError("And now?")
 

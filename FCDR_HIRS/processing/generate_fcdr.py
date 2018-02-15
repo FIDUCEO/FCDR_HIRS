@@ -277,13 +277,16 @@ class FCDRGenerator:
         longer periods, use the higher level method `process`.
         """
 
-        piece = self.get_piece(from_, to)
+        (piece, sensRe) = self.get_piece(from_, to, return_more=True)
 #        self.store_piece(piece)
         for piece in self.fragmentate(piece):
             piece = self.add_orbit_info_to_piece(piece)
+            metrology.calc_corr_scale_channel(
+                self.fcdr._effects, sensRe, piece)
+
             self.store_piece(piece)
 
-    def get_piece(self, from_, to):
+    def get_piece(self, from_, to, return_more=False):
         """Get FCDR piece for period.
 
         Returns a single xarray.Dataset
@@ -420,7 +423,6 @@ class FCDRGenerator:
                     if "scanline_earth" in da.coords
                     and "scanline" in da.coords
                     else da for da in stuff_to_merge])
-        metrology.calc_corr_scale_channel(self.fcdr._effects, sensRe, ds)
         # NB: when quantities are gathered, offset and slope and others
         # per calibration_cycle are calculated for the entire context
         # period rather than the core dataset period.  I don't want to
@@ -440,7 +442,10 @@ class FCDRGenerator:
         # set uncertainty flag when extended uncertainty larger than value
         ds["quality_pixel_bitmask"].values[((2*ds["u_R_Earth"]) > ds["R_e"]).transpose(*ds["quality_pixel_bitmask"].dims).values] |= _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
 
-        return ds
+        if return_more:
+            return (ds, sensRe)
+        else:
+            return ds
 
     def add_attributes(self, ds):
         """Add attributes to piece.
