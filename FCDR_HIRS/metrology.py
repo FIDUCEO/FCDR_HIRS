@@ -231,7 +231,7 @@ def calc_S_xt(S_xtΛy: List[numpy.ndarray]) -> numpy.ndarray:
         S_es, S_el, S_ci, or S_cs: numpy.ndarray, as described.
     """
 
-    return numpy.average(S_xtΛy, 0) # Eq. 20, 24, 27, or 30
+    return S_xtΛy.mean("n_s") # Eq. 20, 24, 27, or 30
 
 def calc_R_xt(S_xt: numpy.ndarray):
     """Calculate R_es, R_ls, R_ci, or R_cs
@@ -263,7 +263,7 @@ def calc_R_xt(S_xt: numpy.ndarray):
     dUi = (1/U_xt_diag)[..., numpy.newaxis]
     dUiT = dUi.swapaxes(-1, -2)
     R_xt = numexpr.evaluate("dUi * S_xt * dUiT") # equivalent to Ui@S@Ui.T when written fully
-    return R_xt
+    return xarray.DataArray(R_xt, dims=S_xt.dims)
 
 def calc_Δ_x(R_xt: numpy.ndarray):
     """Calculate optimum Δ_e or Δ_l
@@ -282,15 +282,19 @@ def calc_Δ_x(R_xt: numpy.ndarray):
             effects, per channel.  Can be obtained from calc_R_xt.
     """
 
-    Δ_ref = numpy.arange(R_xt.shape[3])
-    r_xΔ = numpy.array([numpy.diagonal(R_xt, i, 2, 3).mean(-1) for i in Δ_ref])
+    Δ_ref = xarray.DataArray(
+        numpy.arange(R_xt["n_l"].size),
+        dims=("n_l",))
+    r_xΔ = xarray.DataArray(
+        numpy.array([numpy.diagonal(R_xt, i, -2, -1).mean(-1) for i in Δ_ref]),
+        dims=("n_l", "n_c", "n_e"))
 
     def f(Δ, Δ_e):
         return numpy.exp(-Δ/Δ_e)
 
-    # I don't suppose I can vectorise this one… here for effect 0, element
-    # 18…
-    (popt, pcov) = scipy.optimize.curve_fit(f, Δ_ref, r_xΔ[:, 0, 18], p0=1)
+    # I don't suppose I can vectorise this one… here for channel 8, element 28…
+    (popt, pcov) = scipy.optimize.curve_fit(f, Δ_ref,
+                    r_xΔ.sel(n_c=8, n_e=28), p0=1)
     return popt
 
 
@@ -474,7 +478,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                         sampling_l=sampling_l, sampling_e=sampling_e)
             except NotImplementedError:
                 logging.error("No method to estimate R_eΛlk or R_lΛek "
-                    f"implemented for effect {k!s}")
+                    f"implemented for effect {k.name:s}")
                 continue
 
             cs = next(ccs)
@@ -504,7 +508,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     S_lsΛe = calc_S_from_CUR(R_lΛes, U_lΛes_diag, C_lΛes_diag)
     S_ls = calc_S_xt(S_lsΛe)
     R_ls = calc_R_xt(S_ls)
-    Δ_l = calc_Δ_x(R_ls)
+    Δ_l = calc_Δ_x(R_ls)*sampling_l
 
     raise NotImplementedError("And now?")
 
