@@ -200,7 +200,7 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
     CT = C.swapaxes(-1, -2)
     R = R_xΛyt
     S_xtΛy = numexpr.evaluate("C * U * R * UT * CT")
-    return S_xtΛy
+    return xarray.DataArray(S_xtΛy, dims=R_xΛyt.dims)
 
 def calc_S_xt(S_xtΛy: List[numpy.ndarray]) -> numpy.ndarray:
     """Calculate S_es, S_ls, S_ci, or S_cs
