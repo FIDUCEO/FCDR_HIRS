@@ -243,6 +243,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 for nm in ([self.prim_name, self.sec_name] if self.mode == "hirs" else [self.sec_name])
                 for fld in ["channel", "pixel", "scanline"]]] & 0x01)!=0
         ok = ~functools.reduce(operator.or_, [v.values for v in donotuse.data_vars.values()])
+        # skip values with zero uncertainties.  Those should not exist,
+        # but https://github.com/FIDUCEO/FCDR_HIRS/issues/161 .
+        to_check = ds[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
+        bad = (tocheck==0).any("calibrated_channel")
+        ok &= sum([v.values for v in bad.data_vars.values()])==0 
         if ok.sum() == 0:
             raise MatchupError("No matchups pass filters")
         ds = ds[{mdim:ok}]
