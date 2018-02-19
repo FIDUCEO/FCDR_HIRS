@@ -84,6 +84,7 @@ import pathlib
 from .. import matchups
 
 import typhon.datasets
+import typhon.datasets.dataset
 import typhon.datasets._tovs_defs
 
 from typhon.physics.units.common import ureg, radiance_units as rad_u
@@ -246,7 +247,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # skip values with zero uncertainties.  Those should not exist,
         # but https://github.com/FIDUCEO/FCDR_HIRS/issues/161 .
         to_check = ds[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
-        bad = (tocheck==0).any("calibrated_channel")
+        bad = (to_check==0).any("calibrated_channel")
         ok &= sum([v.values for v in bad.data_vars.values()])==0 
         if ok.sum() == 0:
             raise MatchupError("No matchups pass filters")
@@ -609,7 +610,7 @@ def combine_hirs():
             p.satname1, p.satname2)
 
         ds = hmc.as_xarray_dataset()
-    except (typhon.datasets.DataFileError, MatchupError) as e:
+    except (typhon.datasets.dataset.DataFileError, MatchupError) as e:
         print(f"No results: {e.args[0]:s}", file=sys.stderr)
         sys.exit(1)
     with tempfile.TemporaryDirectory() as tmpdir:
