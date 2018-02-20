@@ -440,7 +440,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             logging.error(f"I have {len(effects[j]):d} effects associated "
                 f"with term {j!s}, but I have no sensitivity coefficient "
                 "for this term.  I don't think I used it in the "
-                "measurement equation.  For the purposes of the" 
+                "measurement equation.  For the purposes of the " 
                 "correlation length calculation, I will ignore it.  "
                 "Sorry!")
             continue
@@ -463,6 +463,8 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 #        diagonals[:] = CC
 
         #C_eΛlj[{"n_j": cj}].values[...] = expanded
+        if len(effects[j]) == 0:
+            warnings.warn(f"Zero effects for term {j!s}!", UserWarning)
         for k in effects[j]: # loop over effects for term (usually exactly one)
             if k.magnitude is None:
                 logging.warn(f"Magnitude for {k.name:s} is None, not "

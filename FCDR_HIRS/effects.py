@@ -49,6 +49,17 @@ class Rmodel(metaclass=abc.ABCMeta):
         Dimensions [n_c, n_e, n_l, n_l]
         """
 
+def calc_R_eΛlkx_allones(ds, sampling_l=1, sampling_e=1):
+    """Return R_eΛlk for single k with all ones
+
+    Dimensions [n_c, n_l, n_e, n_e]
+    """
+    return numpy.ones(
+        (ds.dims["calibrated_channel"],
+         math.ceil(ds.dims["scanline_earth"]/sampling_l),
+         math.ceil(ds.dims["scanpos"]/sampling_e),
+         math.ceil(ds.dims["scanpos"]/sampling_e)), dtype="f4")
+
 class RModelCalib(Rmodel):
     def calc_R_eΛlkx(self, ds,
         sampling_l=1, sampling_e=1):
@@ -56,11 +67,8 @@ class RModelCalib(Rmodel):
 
         Dimensions [n_c, n_l, n_e, n_e]
         """
-        return numpy.ones(
-            (ds.dims["calibrated_channel"],
-             math.ceil(ds.dims["scanline_earth"]/sampling_l),
-             math.ceil(ds.dims["scanpos"]/sampling_e),
-             math.ceil(ds.dims["scanpos"]/sampling_e)), dtype="f4")
+        return calc_R_eΛlk_allones(ds, sampling_l=sampling_l,
+            sampling_e=sampling_e)
 
     def calc_R_lΛekx(self, ds,
             sampling_l=1, sampling_e=1):
@@ -129,10 +137,27 @@ rmodel_periodicerror = RModelPeriodicError()
 class RModelRSelf(Rmodel):
     def calc_R_eΛlkx(self, ds,
             sampling_l=1, sampling_e=1):
-        raise NotImplementedError()
+        """Return R_eΛlk for single k
+
+        Dimensions [n_c, n_l, n_e, n_e]
+        """
+        return calc_R_eΛlk_allones(ds, sampling_l=sampling_l,
+            sampling_e=sampling_e)
     def calc_R_lΛekx(self, ds,
             sampling_l=1, sampling_e=1):
-        raise NotImplementedError()
+        # same for all channels anyway
+        rss = ds["Rself_start"].sel(calibrated_channel=1)
+        # blocks of ones per common Rself_start
+        R = numpy.zeros((Rself_start.size, Rself_start.size), dtype="f4")
+        (_, ii) = numpy.unique(rss, return_index=True)
+        for iii in len(ii):
+            s = ii[iii]
+            try:
+                e = ii[iii+1]
+            except IndexError:
+                e = len(rss)
+            R[s:e, s:e] = 1
+        return R
 rmodel_rself = RModelRSelf()
 
 class Effect:
