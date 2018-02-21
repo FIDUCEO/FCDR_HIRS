@@ -106,7 +106,7 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
 
         (f, a) = matplotlib.pyplot.subplots(2, 5, figsize=(30, 10))
         invalid = numpy.zeros(
-            shape=(self.M.shape),
+            shape=(self.ds.shape),
             dtype="?")
 
         # only plot those where data are unmasked for all three variables
@@ -118,12 +118,12 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
                 y = numpy.ma.masked_invalid(self.Mcs[v][:, ch-1])
             else:
                 x = numpy.ma.masked_invalid(
-                    self.M["hirs-{:s}_{:s}_ch{:02d}".format(prim, v, ch)][:, 3, 3])
+                    self.ds["hirs-{:s}_{:s}_ch{:02d}".format(prim, v, ch)][:, 3, 3])
                 y = numpy.ma.masked_invalid(
-                    self.M["hirs-{:s}_{:s}_ch{:02d}".format(sec, v, ch)][:, 3, 3])
+                    self.ds["hirs-{:s}_{:s}_ch{:02d}".format(sec, v, ch)][:, 3, 3])
             is_measurement = (
-                (self.M["hirs-{:s}_scanline_type".format(prim)][:, 3, 3] == 0) &
-                (self.M["hirs-{:s}_scanline_type".format(sec)][:, 3, 3] == 0))
+                (self.ds["hirs-{:s}_scanline_type".format(prim)][:, 3, 3] == 0) &
+                (self.ds["hirs-{:s}_scanline_type".format(sec)][:, 3, 3] == 0))
             x.mask |= ~is_measurement
             y.mask |= ~is_measurement
             invalid |= x.mask
@@ -205,14 +205,14 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
         f.subplots_adjust(hspace=0.2, wspace=0.4, right=0.8)
         f.suptitle("HIRS-HIRS {:s}-{:s} ch. {:d}\n{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}".format(
             prim, sec, ch,
-            self.M["time"][0].astype(datetime.datetime),
-            self.M["time"][-1].astype(datetime.datetime)))
+            self.ds["time"][0].astype(datetime.datetime),
+            self.ds["time"][-1].astype(datetime.datetime)))
 
         graphics.print_or_show(f, False,
             "hirshirs/hirshirs_{:s}_{:s}_{:%Y%m%d%H%M}_{:%Y%m%d%H%M}_ch{:d}.png".format(
                 prim, sec,
-                self.M["time"][0].astype(datetime.datetime),
-                self.M["time"][-1].astype(datetime.datetime), ch))
+                self.ds["time"][0].astype(datetime.datetime),
+                self.ds["time"][-1].astype(datetime.datetime), ch))
 
 def main():
     """Main function, expects commandline input.
