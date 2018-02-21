@@ -609,7 +609,8 @@ class HIRSMatchupCombiner:
                 locator_args={"prim": prim_name, "sec": sec_name},
                 fields={"hirs-{:s}_{:s}".format(s, field)
                     for field in ("x", "y", "time", "lza", "file_name", "lat", "lon",
-                                  "acquisition_time", "scanpos") + tuple(
+                                  "acquisition_time", "scanpos",
+                                  "scanline_type") + tuple(
                                     f"{fld:s}_ch{ch:02d}"
                                         for fld in ("bt", "radiance", "counts")
                                         for ch in range(1, 20))
