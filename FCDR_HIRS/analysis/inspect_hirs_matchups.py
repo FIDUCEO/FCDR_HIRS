@@ -95,8 +95,8 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
             Channel number
 
         """
-        prim = self.prim
-        sec = self.sec
+        prim = self.prim_name
+        sec = self.sec_name
         xlab = "HIRS {prim:s}".format(prim=prim.upper())
         ylab = "HIRS {sec:s}".format(sec=sec.upper())
         Δylab = "HIRS {prim:s}-{sec:s}".format(prim=prim.upper(),
