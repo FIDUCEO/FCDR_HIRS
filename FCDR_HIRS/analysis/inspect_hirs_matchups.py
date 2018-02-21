@@ -102,11 +102,13 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
         Δylab = "HIRS {prim:s}-{sec:s}".format(prim=prim.upper(),
             sec=sec.upper())
 
-        v_all = ("counts", "radiance", "radiance_fid", "bt", "bt_fid")
+        #v_all = ("counts", "radiance", "radiance_fid", "bt", "bt_fid")
+        v_all = ("counts", "radiance", "bt") # for fid, need to take from
+                                             # self.Mcp
 
         (f, a) = matplotlib.pyplot.subplots(2, 5, figsize=(30, 10))
         invalid = numpy.zeros(
-            shape=(self.ds.shape),
+            shape=(self.ds.dims["matchup_count"]),
             dtype="?")
 
         # only plot those where data are unmasked for all three variables
@@ -205,14 +207,15 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
         f.subplots_adjust(hspace=0.2, wspace=0.4, right=0.8)
         f.suptitle("HIRS-HIRS {:s}-{:s} ch. {:d}\n{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}".format(
             prim, sec, ch,
-            self.ds["time"][0].astype(datetime.datetime),
-            self.ds["time"][-1].astype(datetime.datetime)))
+            self.ds["time"][0].values.astype("M8[ms]").astype(datetime.datetime),
+            self.ds["time"][-1].values.astype("M8[ms]").astype(datetime.datetime)))
 
         graphics.print_or_show(f, False,
             "hirshirs/hirshirs_{:s}_{:s}_{:%Y%m%d%H%M}_{:%Y%m%d%H%M}_ch{:d}.png".format(
                 prim, sec,
-                self.ds["time"][0].astype(datetime.datetime),
-                self.ds["time"][-1].astype(datetime.datetime), ch))
+                self.ds["time"][0].values.astype("M8[ms]").astype(datetime.datetime),
+                self.ds["time"][-1].values.astype("M8[ms]").astype(datetime.datetime),
+                ch))
 
 def main():
     """Main function, expects commandline input.

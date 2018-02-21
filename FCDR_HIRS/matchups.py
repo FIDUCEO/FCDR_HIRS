@@ -610,8 +610,9 @@ class HIRSMatchupCombiner:
                 fields={"hirs-{:s}_{:s}".format(s, field)
                     for field in ("x", "y", "time", "lza", "file_name", "lat", "lon",
                                   "acquisition_time", "scanpos") + tuple(
-                                    "bt_ch{:02d}".format(ch) for ch in
-                                    range(1, 20))
+                                    f"{fld:s}_ch{ch:02d}"
+                                        for fld in ("bt", "radiance", "counts")
+                                        for ch in range(1, 20))
                     for s in (prim_name, sec_name)}|{self.msd_field},
                 pseudo_fields={
                     "time_{:s}".format(prim_name):
