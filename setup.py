@@ -25,8 +25,14 @@ cp = subprocess.run(
     check=True)
 so = cp.stdout 
 
+cp = subprocess.run(
+    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+    stdout=subprocess.PIPE,
+    check=True)
+br = cp.stdout
+
 version = so.strip().decode("ascii").lstrip("v").replace("-",
-    "+dev", 1).replace("-", ".")
+    "+dev", 1).replace("-", ".") + "." + br.strip().decode("ascii")
 
 setup(
     name='FCDR_HIRS',
