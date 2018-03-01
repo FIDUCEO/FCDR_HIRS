@@ -119,7 +119,7 @@ class HIRSMatchupCombiner:
          'temperature_scanmotor',
          'temperature_secondary_telescope',
          #'toa_brightness_temperature',
-         #'toa_outgoing_radiance_per_unit_frequency',
+         'toa_outgoing_radiance_per_unit_frequency',
          'u_C_Earth',
          'u_C_IWCT',
          'u_C_PRT',

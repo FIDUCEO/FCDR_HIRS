@@ -509,6 +509,16 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             numpy.array([next(cc) if x in structured else 0
                 for x in take_for_each], dtype="i4"))
 
+        # add diagnostics
+        harm[f"nominal_measurand_{i:d}"] = (("M",),
+            ds[f"{sat:s}_R_e"].sel(calibrated_channel=channel))
+
+        harm[f"lon{i:d}"] = ds[f"{sat:s}_longitude"]
+        harm[f"lat{i:d}"] = ds[f"{sat:s}_latitude"]
+        
+        harm[f"nominal_measurand_original_{i:d}"] = (("M",),
+            ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"])
+
     def _add_harm_for_iasi(self, harm, channel, ok):
         # fill X1
 
