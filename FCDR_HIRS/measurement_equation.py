@@ -85,16 +85,6 @@ expressions[sym["c"]] = sympy.sympify(scipy.constants.speed_of_light)
 expressions[sym["h"]] = sympy.sympify(scipy.constants.Planck)
 expressions[sym["k_b"]] = sympy.sympify(scipy.constants.Boltzmann)
 
-expressions_simplified = {}
-expressions_simplified[sym["R_e"]] = (sym["S"] * (sym["C_E"] - sym["C_s"])
-        + sym["h_2"]* (sym["C_E"]**2 - sym["C_s"]**2)
-        - (sym["R_selfE"] + sym["h_1"]))
-expressions_simplified[sym["S"]] = -(sym["R_IWCT"] -
-    sym["h_2"] * (sym["C_IWCT"]**2 - sym["C_s"]**2))/(sym["C_IWCT"] - sym["C_s"])
-expressions_simplified[sym["R_IWCT"]] = ((sym["ε"] + sym["h_3"]) * sym["B"])
-expressions_simplified[sym["B"]] = expressions[sym["B"]] # correct if version=="β"
-expressions_simplified[sym["Tstar"]] = sym["α"] + sym["β"]*sym["T_IWCT"]
-
 units = {}
 units[sym["c"]] = ureg.c
 units[sym["h"]] = ureg.h
@@ -186,6 +176,21 @@ names = {
     sym["T_bstar"]: "T_bstar",
 }
 
+
+# version for simplified harmonisation
+
+expression_Re_simplified = recursive_substitution(
+    expressions[symbols["R_e"]],
+    expressions=expressions,
+    stop_at=symbols["T_IWCT"]).subs(
+        {symbols["R_selfIWCT"]: 0,
+         symbols["O_RIWCT"]: 0,
+         symbols["O_Re"]: 0,
+         symbols["R_refl"]: 0,
+         symbols["R_selfs"]: 0,
+         symbols["a_4"]: symbols["h_1"],
+         symbols["a_3"]: symbols["h_3"],
+         symbols["a_2"]: symbols["h_2"]})
 
 def substitute_until_explicit(expr, s2):
     oldexpr = None

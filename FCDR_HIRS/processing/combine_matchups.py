@@ -84,6 +84,7 @@ import pathlib
 from .. import matchups
 
 import typhon.datasets
+import typhon.datasets.dataset
 import typhon.datasets._tovs_defs
 
 from typhon.physics.units.common import ureg, radiance_units as rad_u
@@ -243,6 +244,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 for nm in ([self.prim_name, self.sec_name] if self.mode == "hirs" else [self.sec_name])
                 for fld in ["channel", "pixel", "scanline"]]] & 0x01)!=0
         ok = ~functools.reduce(operator.or_, [v.values for v in donotuse.data_vars.values()])
+        # skip values with zero uncertainties.  Those should not exist,
+        # but https://github.com/FIDUCEO/FCDR_HIRS/issues/161 .
+        to_check = ds[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
+        bad = (to_check==0).any("calibrated_channel")
+        ok &= sum([v.values for v in bad.data_vars.values()])==0 
+        ok &= numpy.isfinite(ds["n18_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
+        ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
+               (ds[f"{self.sec_name:s}_scantype"] == 0)).values
         if ok.sum() == 0:
             raise MatchupError("No matchups pass filters")
         ds = ds[{mdim:ok}]
@@ -282,10 +291,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         else:
             self._add_harm_for_hirs(harm, channel, self.prim_name, 1, ds, daa,
                                     take_for_each, wmats, independent,
-                                    structured, cc, mdim)
+                                    structured, cc, mdim, ok)
         self._add_harm_for_hirs(harm, channel, self.sec_name, 2, ds, daa,
                                 take_for_each, wmats, independent,
-                                structured, cc, mdim)
+                                structured, cc, mdim, ok)
 
         # dimension matchup only:
         #
@@ -448,7 +457,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         return (u_matrix_val, u_matrix_row_count)
 
     def _add_harm_for_hirs(self, harm, channel, sat, i, ds, daa, take_for_each,
-                           wmats, independent, structured, cc, mdim):
+                           wmats, independent, structured, cc, mdim, ok):
         # fill X1, X2
 
         harm[f"X{i:d}"] = (
@@ -503,6 +512,25 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             numpy.array([next(cc) if x in structured else 0
                 for x in take_for_each], dtype="i4"))
 
+        # add diagnostics
+        harm[f"nominal_measurand{i:d}"] = (("M",),
+            ds[f"{sat:s}_R_e"].sel(calibrated_channel=channel))
+
+        harm[f"lon{i:d}"] = ds[f"{sat:s}_longitude"]
+        harm[f"lat{i:d}"] = ds[f"{sat:s}_latitude"]
+        
+        harm[f"nominal_measurand_original{i:d}"] = (("M",),
+            ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))
+
+        sdsidx = {"matchup_count": ok}
+        harm[f"row{i:d}"] = (("M",),
+            self.ds[f"hirs-{sat:s}_y"][sdsidx])
+        harm[f"column{i:d}"] = (("M",),
+            self.ds[f"hirs-{sat:s}_x"][sdsidx])
+
+        harm[f"matchup_distance"] = (("M",),
+            self.ds["matchup_spherical_distance"][sdsidx])
+
     def _add_harm_for_iasi(self, harm, channel, ok):
         # fill X1
 
@@ -546,6 +574,20 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         harm["w_matrix_use1"] = (("m1",), numpy.array([0], dtype="i4"))
         harm["u_matrix_use1"] = (("m1",), numpy.array([0], dtype="i4"))
+
+        # add diagnostics
+        harm[f"nominal_measurand1"] = (("M",),
+            ds["ref_radiance"].sel(calibrated_channel=channel))
+
+        harm[f"lon1"] = (("M",), ds[f"ref_longitude"])
+        harm[f"lat1"] = (("M",), ds[f"ref_latitude"])
+        
+        harm[f"nominal_measurand_original1"] = harm[f"nominal_measurand1"]
+
+        harm[f"column1"] = (("M",), ds[f"ref_column"])
+        harm[f"row1"] = (("M",), ds[f"ref_row"])
+
+        harm[f"matchup_distance"] = ((), 0)
 
     def write(self, outfile):
         ds = self.as_xarray_dataset()
@@ -604,7 +646,7 @@ def combine_hirs():
             p.satname1, p.satname2)
 
         ds = hmc.as_xarray_dataset()
-    except (typhon.datasets.DataFileError, MatchupError) as e:
+    except (typhon.datasets.dataset.DataFileError, MatchupError) as e:
         print(f"No results: {e.args[0]:s}", file=sys.stderr)
         sys.exit(1)
     with tempfile.TemporaryDirectory() as tmpdir:

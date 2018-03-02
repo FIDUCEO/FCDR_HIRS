@@ -9,7 +9,7 @@ import typhon.physics.units
 from .. import fcdr
 from .. import measurement_equation as me
 
-table_file = "/work/scratch2/gholl/Harmonisation_matchups/HIRS/coef_ch{ch:d}.dat"
+table_file = "/group_workspaces/cems2/fiduceo/Data/Harmonisation_matchups/HIRS/coef_ch{ch:d}.dat"
 
 def write_table_for_channel(ch, fn):
     """Write table for channel to file
@@ -37,12 +37,11 @@ def write_table_for_channel(ch, fn):
                      f"{float(Δf_eff):<10.3e} {float(Δα):<10.4e} {float(Δβ):<10.4e}\n")
 
 def main():
-    expr = me.recursive_substitution(
-        me.expressions_simplified[me.symbols["R_e"]],
-        expressions=me.expressions_simplified)
+    expr = me.expression_Re_simplified
     print("Full expression:")
     sympy.pprint(expr)
     print(sympy.latex(expr))
+    print(expr)
     print("Free symbols:")
     free = expr.free_symbols.copy()
     print(free)

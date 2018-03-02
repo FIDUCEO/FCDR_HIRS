@@ -119,7 +119,7 @@ class HIRSMatchupCombiner:
          'temperature_scanmotor',
          'temperature_secondary_telescope',
          #'toa_brightness_temperature',
-         #'toa_outgoing_radiance_per_unit_frequency',
+         'toa_outgoing_radiance_per_unit_frequency',
          'u_C_Earth',
          'u_C_IWCT',
          'u_C_PRT',
@@ -186,7 +186,7 @@ class HIRSMatchupCombiner:
             ds = hh.read_period(start_date, end_date,
                 locator_args={"prim": prim_name, "sec": sec_name},
                 fields={"hirs-{:s}_{:s}".format(s, field)
-                    for field in ("x", "y", "time", "lza", "file_name",
+                    for field in ("x", "y", "time", "lza", "file_name", "lat", "lon",
                                   "acquisition_time", "scanpos") + tuple(
                                     "bt_ch{:02d}".format(ch) for ch in
                                     range(1, 20))
@@ -422,6 +422,10 @@ class KrModelIASIRef(KrModel):
         srf = SRF.fromArtsXML(
             typhon.datasets.tovs.norm_tovs_name(self.sec_name).upper(),
             "hirs", channel)
-        return ureg.Quantity(
-            numpy.zeros(shape=self.ds.dims["line"])+0.1,
-            "K").to(rad_u["si"], "radiance", srf=srf)
+        return abs(
+            ureg.Quantity(
+                self.ds["metopa_T_b"].sel(calibrated_channel=channel).values, "K"
+                    ).to(rad_u["si"], "radiance", srf=srf) -
+            ureg.Quantity(
+                self.ds["metopa_T_b"].sel(calibrated_channel=channel).values+0.1, "K"
+                    ).to(rad_u["si"], "radiance", srf=srf))

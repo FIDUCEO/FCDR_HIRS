@@ -126,6 +126,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     # Estimate noise levels from space and IWCT views
     # Use noise levels to propagate through calibration and BT conversion
 
+    def __new__(cls, name=None, **kwargs):
+        if name is None and "satname" in kwargs:
+            name = "fcdr_hirs_" + kwargs["satname"]
+        return super().__new__(cls, name, **kwargs)
+
     def __init__(self, read="L1B", *args, satname, **kwargs):
         for nm in {satname}|self.satellites[satname]:
             try:
