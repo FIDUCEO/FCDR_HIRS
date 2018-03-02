@@ -186,7 +186,7 @@ class HIRSMatchupCombiner:
             ds = hh.read_period(start_date, end_date,
                 locator_args={"prim": prim_name, "sec": sec_name},
                 fields={"hirs-{:s}_{:s}".format(s, field)
-                    for field in ("x", "y", "time", "lza", "file_name",
+                    for field in ("x", "y", "time", "lza", "file_name", "lat", "lon",
                                   "acquisition_time", "scanpos") + tuple(
                                     "bt_ch{:02d}".format(ch) for ch in
                                     range(1, 20))
