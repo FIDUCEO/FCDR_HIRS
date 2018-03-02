@@ -671,7 +671,7 @@ class FCDRGenerator:
             day=from_time.day,
             hour=from_time.hour,
             minute=from_time.minute,
-            second=to_time.second,
+            second=from_time.second,
             year_end=to_time.year,
             month_end=to_time.month,
             day_end=to_time.day,
