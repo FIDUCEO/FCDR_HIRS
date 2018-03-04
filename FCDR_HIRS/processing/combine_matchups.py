@@ -254,6 +254,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         to_check = ds[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
         bad = (to_check==0).any("calibrated_channel")
         ok &= sum([v.values for v in bad.data_vars.values()])==0 
+        # here check only sec; prim only checkid if prim not iasi
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
         ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
                (ds[f"{self.sec_name:s}_scantype"] == 0)).values
