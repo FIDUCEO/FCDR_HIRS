@@ -256,10 +256,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         ok &= sum([v.values for v in bad.data_vars.values()])==0 
         # here check only sec; prim only checkid if prim not iasi
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
-        ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
-               (ds[f"{self.sec_name:s}_scantype"] == 0)).values
         ok &= self.kmodel.filter(mdim)
         ok &= self.krmodel.filter(mdim)
+        if self.prim_name != "iasi":
+            ok &= numpy.isfinite(ds[f"{self.prim_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
+            ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
+                   (ds[f"{self.sec_name:s}_scantype"] == 0)).values
+        else:
+            ok &= (ds[f"{self.sec_name:s}_scantype"] == 0).values
         if ok.sum() == 0:
             raise MatchupError("No matchups pass filters")
         ds = ds[{mdim:ok}]
@@ -538,16 +542,22 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))
         harm[f"nominal_measurand_original{i:d}"].attrs.update(ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel).attrs)
 
-        sdsidx = {"matchup_count": ok}
-        harm[f"row{i:d}"] = (("M",),
-            self.ds[f"hirs-{sat:s}_y"][sdsidx])
-        harm[f"column{i:d}"] = (("M",),
-            self.ds[f"hirs-{sat:s}_x"][sdsidx])
-
-        harm[f"matchup_distance"] = (("M",),
-            self.ds["matchup_spherical_distance"][sdsidx])
-        harm[f"matchup_distance"].attrs.update(self.ds["matchup_spherical_distance"][sdsidx].attrs)
-        
+        if self.mode == "reference":
+            sdsidx = {"line": ok}
+            harm[f"row{i:d}"] = (("M",),
+                self.ds["mon_row"][sdsidx])
+            harm[f"column{i:d}"] = (("M",),
+                self.ds["mon_column"][sdsidx])
+            # matchup distance should be set by self._add_harm_for_iasi
+        else:
+            sdsidx = {"matchup_count": ok}
+            harm[f"row{i:d}"] = (("M",),
+                self.ds[f"hirs-{sat:s}_y"][sdsidx])
+            harm[f"column{i:d}"] = (("M",),
+                self.ds[f"hirs-{sat:s}_x"][sdsidx])
+            harm[f"matchup_distance"] = (("M",),
+                self.ds["matchup_spherical_distance"][sdsidx])
+            harm[f"matchup_distance"].attrs.update(self.ds["matchup_spherical_distance"][sdsidx].attrs)
 
     def _add_harm_for_iasi(self, harm, channel, ok):
         # fill X1
@@ -594,16 +604,16 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm["u_matrix_use1"] = (("m1",), numpy.array([0], dtype="i4"))
 
         # add diagnostics
-        harm[f"nominal_measurand1"] = (("M",),
-            ds["ref_radiance"].sel(calibrated_channel=channel))
+#        harm[f"nominal_measurand2"] = (("M",),
+#            self.ds["mon_radiance"].sel(ch_mon=channel))
 
-        harm[f"lon1"] = (("M",), ds[f"ref_longitude"])
-        harm[f"lat1"] = (("M",), ds[f"ref_latitude"])
+        harm[f"lon1"] = (("M",), self.ds[f"ref_longitude"][ok])
+        harm[f"lat1"] = (("M",), self.ds[f"ref_latitude"][ok])
         
-        harm[f"nominal_measurand_original1"] = harm[f"nominal_measurand1"]
+#        harm[f"nominal_measurand_original1"] = harm[f"nominal_measurand1"]
 
-        harm[f"column1"] = (("M",), ds[f"ref_column"])
-        harm[f"row1"] = (("M",), ds[f"ref_row"])
+        harm[f"column1"] = (("M",), self.ds[f"ref_column"][ok])
+        harm[f"row1"] = (("M",), self.ds[f"ref_row"][ok])
 
         harm[f"matchup_distance"] = ((), 0)
 
@@ -795,12 +805,15 @@ def merge_all(*files):
     ds_new["u_matrix_row_count"] = xarray.concat([da["u_matrix_row_count"] for da in ds_all], dim="dummy").sum("dummy", dtype="i4").astype("i4")
 
     identicals = ["w_matrix_use1", "w_matrix_use2", "u_matrix_use1", "u_matrix_use2"]
+    if ds_all[0].sensor_1_name == "iasi":
+        identicals.append("matchup_distance")
     for k in ds_all[0].data_vars.keys()-ds_new.keys():
         if "M" in ds_all[0][k].dims:
             ds_new[k] = xarray.concat([da[k] for da in ds_all], dim="M")
         else:
             if not ("m1" in ds_all[0][k].dims or 
-                    "m2" in ds_all[0][k].dims):
+                    "m2" in ds_all[0][k].dims or
+                    k in identicals):
                 raise RuntimeError(f"I forgot about {k:s}?") 
             identicals.append(k)
 
