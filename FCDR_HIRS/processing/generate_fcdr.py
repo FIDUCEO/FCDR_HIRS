@@ -281,8 +281,11 @@ class FCDRGenerator:
 #        self.store_piece(piece)
         for piece in self.fragmentate(piece):
             piece = self.add_orbit_info_to_piece(piece)
-            metrology.calc_corr_scale_channel(
+            (Δ_l, Δ_e, R_ci, R_cs) = metrology.calc_corr_scale_channel(
                 self.fcdr._effects, sensRe, piece)
+
+            # add those to the piece, not in TBs format yet
+
 
             self.store_piece(piece)
 

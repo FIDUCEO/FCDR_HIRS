@@ -282,9 +282,10 @@ def calc_Δ_x(R_xt: numpy.ndarray):
             effects, per channel.  Can be obtained from calc_R_xt.
     """
 
+    dim = R_xt.dims[-1]
     Δ_ref = xarray.DataArray(
-        numpy.arange(R_xt["n_l"].size),
-        dims=("n_l",))
+        numpy.arange(R_xt[dim].size),
+        dims=(dim,))
     r_xΔ = xarray.DataArray(
         numpy.array([numpy.diagonal(R_xt, i, -2, -1).mean(-1) for i in Δ_ref]),
         dims=("n_l", "n_c", "n_e"))
@@ -512,5 +513,17 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     R_ls = calc_R_xt(S_ls)
     Δ_l = calc_Δ_x(R_ls)*sampling_l
 
-    raise NotImplementedError("And now?")
+    S_esΛl = calc_S_from_CUR(R_eΛls, U_eΛls_diag, C_eΛls_diag)
+    S_es = calc_S_xt(S_esΛl)
+    R_es = calc_R_xt(S_es)
+    Δ_e = calc_Δ_x(R_es)*sampling_e
 
+    S_ciΛp = calc_S_from_CUR(R_cΛip, U_cΛip_diag, C_cΛip_diag)
+    S_ci = calc_S_xt(S_ciΛp)
+    R_ci = calc_R_xt(S_ci)
+
+    S_csΛp = calc_S_from_CUR(R_cΛsp, U_cΛsp_diag, C_cΛsp_diag)
+    S_cs = calc_S_xt(S_csΛp)
+    R_cs = calc_R_xt(S_cs)
+
+    return (Δ_l, Δ_e, R_ci, R_cs)

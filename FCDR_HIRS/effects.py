@@ -67,7 +67,7 @@ class RModelCalib(Rmodel):
 
         Dimensions [n_c, n_l, n_e, n_e]
         """
-        return calc_R_eΛlk_allones(ds, sampling_l=sampling_l,
+        return calc_R_eΛlkx_allones(ds, sampling_l=sampling_l,
             sampling_e=sampling_e)
 
     def calc_R_lΛekx(self, ds,
@@ -141,23 +141,23 @@ class RModelRSelf(Rmodel):
 
         Dimensions [n_c, n_l, n_e, n_e]
         """
-        return calc_R_eΛlk_allones(ds, sampling_l=sampling_l,
+        return calc_R_eΛlkx_allones(ds, sampling_l=sampling_l,
             sampling_e=sampling_e)
     def calc_R_lΛekx(self, ds,
             sampling_l=1, sampling_e=1):
         # same for all channels anyway
         rss = ds["Rself_start"].sel(calibrated_channel=1)
         # blocks of ones per common Rself_start
-        R = numpy.zeros((Rself_start.size, Rself_start.size), dtype="f4")
+        R = numpy.zeros((rss.size, rss.size), dtype="f4")
         (_, ii) = numpy.unique(rss, return_index=True)
-        for iii in len(ii):
+        for iii in range(len(ii)):
             s = ii[iii]
             try:
                 e = ii[iii+1]
             except IndexError:
                 e = len(rss)
             R[s:e, s:e] = 1
-        return R
+        return R[::sampling_l, ::sampling_l]
 rmodel_rself = RModelRSelf()
 
 class Effect:
