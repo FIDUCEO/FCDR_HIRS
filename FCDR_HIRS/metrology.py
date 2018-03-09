@@ -91,7 +91,7 @@ def prepare():
 
 def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
                     U_xΛyt_diag: numpy.ndarray,
-                    C_xΛyt_diag: numpy.ndarray) -> numpy.ndarray:
+                    C_xΛyt_diag: numpy.ndarray):
     """Calculate S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp
 
     Calculate either of those:
@@ -199,8 +199,10 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
     C = C_xΛyt_diag.values[..., numpy.newaxis]
     CT = C.swapaxes(-1, -2)
     R = R_xΛyt
-    S_xtΛy = numexpr.evaluate("C * U * R * UT * CT")
-    return xarray.DataArray(S_xtΛy, dims=R_xΛyt.dims)
+    S_xΛyt = numexpr.evaluate("C * U * R * UT * CT")
+    S_xtΛy = S_xΛyt.sum(1)
+    return xarray.DataArray(S_xtΛy,
+        dims=R_xΛyt.dims[0:1] + R_xΛyt.dims[2:])
 
 def calc_S_xt(S_xtΛy: List[numpy.ndarray]) -> numpy.ndarray:
     """Calculate S_es, S_ls, S_ci, or S_cs
@@ -231,7 +233,7 @@ def calc_S_xt(S_xtΛy: List[numpy.ndarray]) -> numpy.ndarray:
         S_es, S_el, S_ci, or S_cs: numpy.ndarray, as described.
     """
 
-    return S_xtΛy.mean("n_s") # Eq. 20, 24, 27, or 30
+    return S_xtΛy.mean(S_xtΛy.dims[1]) # Eq. 20, 24, 27, or 30 (FIXME: or n_e or n_p)
 
 def calc_R_xt(S_xt: numpy.ndarray):
     """Calculate R_es, R_ls, R_ci, or R_cs
@@ -288,17 +290,20 @@ def calc_Δ_x(R_xt: numpy.ndarray):
         dims=(dim,))
     r_xΔ = xarray.DataArray(
         numpy.array([numpy.diagonal(R_xt, i, -2, -1).mean(-1) for i in Δ_ref]),
-        dims=("n_l", "n_c", "n_e"))
+        dims=("n_p", "n_c"))
 
     def f(Δ, Δ_e):
         return numpy.exp(-Δ/Δ_e)
 
-    # I don't suppose I can vectorise this one… here for channel 8, element 28…
-    (popt, pcov) = scipy.optimize.curve_fit(f, Δ_ref,
-                    r_xΔ.sel(n_c=8, n_e=28), p0=1)
+    # I don't suppose I can vectorise this one…
+    popt = xarray.DataArray(
+        numpy.array([scipy.optimize.curve_fit(f, Δ_ref, r_xΔ.sel(n_c=c),
+            p0=1) for c in r_xΔ["n_c"]]).squeeze(),
+        dims=("n_c", "val"),
+        coords={"n_c": r_xΔ["n_c"],
+                "val": ["popt", "pcov"]})
+
     return popt
-
-
 
 
 
@@ -506,7 +511,13 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 #                numpy.eye(math.ceil(n_l/sampling_l))[numpy.newaxis, numpy.newaxis, :, :])
             C_eΛls_diag[{"n_s": cs}].values[...] = CC
 
-    # use value of cs to consider how many to pass on?
+    # use value of cs to consider how many to pass on
+    R_lΛes = R_lΛes.sel(n_s=slice(cs))
+    U_lΛes_diag = U_lΛes_diag.sel(n_s=slice(cs))
+    C_lΛes_diag = C_lΛes_diag.sel(n_s=slice(cs))
+    R_eΛls = R_eΛls.sel(n_s=slice(cs))
+    U_eΛls_diag = U_eΛls_diag.sel(n_s=slice(cs))
+    C_eΛls_diag = C_eΛls_diag.sel(n_s=slice(cs))
 
     S_lsΛe = calc_S_from_CUR(R_lΛes, U_lΛes_diag, C_lΛes_diag)
     S_ls = calc_S_xt(S_lsΛe)
