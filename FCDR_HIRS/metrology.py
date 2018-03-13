@@ -394,6 +394,22 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             math.ceil(n_l/sampling_l)), dtype="f4"),
         dims=("n_c", "n_s", "n_e", "n_l", "n_l"))
 
+    R_cΛpi = xarray.DataArray(
+        numpy.zeros(
+           (math.ceil(n_p/(sampling_e*sampling_l)),
+            n_i,
+            n_c,
+            n_c), dtype="f4"),
+        dims=("n_p", "n_i", "n_c", "n_c"))
+
+    R_cΛps = xarray.DataArray(
+        numpy.zeros(
+           (math.ceil(n_p/(sampling_e*sampling_l)),
+            n_s,
+            n_c,
+            n_c), dtype="f4"),
+        dims=("n_p", "n_s", "n_c", "n_c"))
+
     # sparse and diagonal, avoid wasting memory?
     U_eΛls_diag = xarray.DataArray(
         numpy.zeros((n_c, n_s,
@@ -476,8 +492,19 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                 logging.warn(f"Magnitude for {k.name:s} is None, not "
                     "considering for correlation scale calculations.")
                 continue
-            elif k.is_independent() or k.is_common():
-                continue # don't bother with indy or common
+            elif k.is_independent():
+                # FIXME: for independent, still need to consider
+                # inter-channel:
+                # R_cΛpi 
+                ci = next(cci)
+                R_cΛpi = k.calc_R_cΛpi(ds,
+                    sampling_p=sampling_l*sampling_e)
+                R_cΛpi[{"n_i": ci}].values[...] = R_cΛpi
+                # FIXME: U_cΛpi_diag, C_cΛpi_diag
+                continue
+            elif k.is_common():
+                continue # don't bother with common, should all be
+                         # harmonised anyway
 
             try:
                 R_eΛlkx = k.calc_R_eΛlkx(ds,
@@ -511,6 +538,11 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 #                numpy.eye(math.ceil(n_l/sampling_l))[numpy.newaxis, numpy.newaxis, :, :])
             C_eΛls_diag[{"n_s": cs}].values[...] = CC
 
+            R_cΛps = k.calc_R_cΛps(ds,
+                sampling_p=sampling_l*sampling_e)
+            R_cΛps[{"n_s": cs}].values[...] = R_cΛps
+
+            # FIXME: U_cΛps_diag, C_cΛps_diag
     # use value of cs to consider how many to pass on
     R_lΛes = R_lΛes.sel(n_s=slice(cs))
     U_lΛes_diag = U_lΛes_diag.sel(n_s=slice(cs))
@@ -529,11 +561,11 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     R_es = calc_R_xt(S_es)
     Δ_e = calc_Δ_x(R_es)*sampling_e
 
-    S_ciΛp = calc_S_from_CUR(R_cΛip, U_cΛip_diag, C_cΛip_diag)
+    S_ciΛp = calc_S_from_CUR(R_cΛpi, U_cΛpi_diag, C_cΛpi_diag)
     S_ci = calc_S_xt(S_ciΛp)
     R_ci = calc_R_xt(S_ci)
 
-    S_csΛp = calc_S_from_CUR(R_cΛsp, U_cΛsp_diag, C_cΛsp_diag)
+    S_csΛp = calc_S_from_CUR(R_cΛps, U_cΛps_diag, C_cΛps_diag)
     S_cs = calc_S_xt(S_csΛp)
     R_cs = calc_R_xt(S_cs)
 
