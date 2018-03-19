@@ -375,6 +375,8 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     # smaller parts.
     n_l = ds.dims["scanline_earth"]
     n_e = ds.dims["scanpos"]
+    n_p = n_l*n_e
+    sampling_p=sampling_l*sampling_e
     n_c = ds.dims["calibrated_channel"]
     n_j = len(effects.keys())
 
@@ -396,7 +398,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 
     R_cΛpi = xarray.DataArray(
         numpy.zeros(
-           (math.ceil(n_p/(sampling_e*sampling_l)),
+           (math.ceil(n_p/(sampling_p)),
             n_i,
             n_c,
             n_c), dtype="f4"),
@@ -498,7 +500,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                 # R_cΛpi 
                 ci = next(cci)
                 R_cΛpi = k.calc_R_cΛpi(ds,
-                    sampling_p=sampling_l*sampling_e)
+                    sampling_p=sampling_p)
                 R_cΛpi[{"n_i": ci}].values[...] = R_cΛpi
                 # FIXME: U_cΛpi_diag, C_cΛpi_diag
                 continue

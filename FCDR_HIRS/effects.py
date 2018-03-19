@@ -380,11 +380,12 @@ class Effect:
             sampling_l=sampling_l,
             sampling_e=sampling_e)
 
-    def calc_R_cΛpx(self):
-        """Return R_cΛps or R_cΛpi
+    def calc_R_cΛpkx(self, ds,
+            sampling_p=5):
+        """Return R_cΛpk for this effect
         """
-
-        raise NotImplementedError("Not implemented")
+        return self.rmodel.calc_R_cΛpk(ds,
+            sampling_p=sampling_p)
 
 def effects() -> Mapping[sympy.Symbol, Set[Effect]]:
     """Initialise a new dictionary with all effects per symbol.
