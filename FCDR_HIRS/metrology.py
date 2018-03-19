@@ -509,9 +509,9 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                          # harmonised anyway
 
             try:
-                R_eΛlkx = k.calc_R_eΛlkx(ds,
+                R_eΛlk = k.calc_R_eΛlk(ds,
                         sampling_l=sampling_l, sampling_e=sampling_e)
-                R_lΛekx = k.calc_R_lΛekx(ds,
+                R_lΛek = k.calc_R_lΛek(ds,
                         sampling_l=sampling_l, sampling_e=sampling_e)
             except NotImplementedError:
                 logging.error("No method to estimate R_eΛlk or R_lΛek "
@@ -520,8 +520,8 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 
             cs = next(ccs)
 
-            R_eΛls[{"n_s": cs}].values[...] = R_eΛlkx
-            R_lΛes[{"n_s": cs}].values[...] = R_lΛekx
+            R_eΛls[{"n_s": cs}].values[...] = R_eΛlk
+            R_lΛes[{"n_s": cs}].values[...] = R_lΛek
             # Make sure we have one estimate for every scanline.
             new_u = make_debug_fcdr_dims_consistent(
                 ds, k.magnitude, impossible="error").sel(

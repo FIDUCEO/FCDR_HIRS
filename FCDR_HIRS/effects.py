@@ -34,7 +34,7 @@ class Rmodel(metaclass=abc.ABCMeta):
     """
 
     @abc.abstractmethod
-    def calc_R_eΛlkx(self, ds,
+    def calc_R_eΛlk(self, ds,
             sampling_l=1, sampling_e=1):
         """Return R_eΛlk for single k
 
@@ -42,14 +42,14 @@ class Rmodel(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def calc_R_lΛekx(self, ds,
+    def calc_R_lΛek(self, ds,
         sampling_l=1, sampling_e=1):
         """Return R_lΛek for single k
 
         Dimensions [n_c, n_e, n_l, n_l]
         """
 
-def calc_R_eΛlkx_allones(ds, sampling_l=1, sampling_e=1):
+def calc_R_eΛlk_allones(ds, sampling_l=1, sampling_e=1):
     """Return R_eΛlk for single k with all ones
 
     Dimensions [n_c, n_l, n_e, n_e]
@@ -61,16 +61,16 @@ def calc_R_eΛlkx_allones(ds, sampling_l=1, sampling_e=1):
          math.ceil(ds.dims["scanpos"]/sampling_e)), dtype="f4")
 
 class RModelCalib(Rmodel):
-    def calc_R_eΛlkx(self, ds,
+    def calc_R_eΛlk(self, ds,
         sampling_l=1, sampling_e=1):
         """Return R_eΛlk for single k
 
         Dimensions [n_c, n_l, n_e, n_e]
         """
-        return calc_R_eΛlkx_allones(ds, sampling_l=sampling_l,
+        return calc_R_eΛlk_allones(ds, sampling_l=sampling_l,
             sampling_e=sampling_e)
 
-    def calc_R_lΛekx(self, ds,
+    def calc_R_lΛek(self, ds,
             sampling_l=1, sampling_e=1):
         """Return R_lΛek for single k
 
@@ -90,7 +90,7 @@ class RModelCalib(Rmodel):
 rmodel_calib = RModelCalib()
 
 class RModelRandom(Rmodel):
-    def calc_R_eΛlkx(self, ds,
+    def calc_R_eΛlk(self, ds,
         sampling_l=1, sampling_e=1):
         """Return R_eΛlk for single k
 
@@ -102,7 +102,7 @@ class RModelRandom(Rmodel):
             [ds.dims["calibrated_channel"], 
              math.ceil(ds.dims["scanline_earth"]/sampling_l), 1, 1])
 
-    def calc_R_lΛekx(self, ds,
+    def calc_R_lΛek(self, ds,
             sampling_l=1, sampling_e=1):
         """Return R_lΛek for single k
 
@@ -117,33 +117,33 @@ class RModelRandom(Rmodel):
 rmodel_random = RModelRandom()
 
 class RModelCommon(Rmodel):
-    def calc_R_eΛlkx(self, ds,
+    def calc_R_eΛlk(self, ds,
             sampling_l=1, sampling_e=1):
         raise ValueError(
             "We do not calculate error correlation matrices for common effects")
-    calc_R_lΛekx = calc_R_eΛlkx
+    calc_R_lΛek = calc_R_eΛlk
 
 rmodel_common = RModelCommon()
 
 class RModelPeriodicError(Rmodel):
-    def calc_R_eΛlkx(self, ds,
+    def calc_R_eΛlk(self, ds,
             sampling_l=1, sampling_e=1):
         raise NotImplementedError()
-    def calc_R_lΛekx(self, ds,
+    def calc_R_lΛek(self, ds,
             sampling_l=1, sampling_e=1):
         raise NotImplementedError()
 rmodel_periodicerror = RModelPeriodicError()
 
 class RModelRSelf(Rmodel):
-    def calc_R_eΛlkx(self, ds,
+    def calc_R_eΛlk(self, ds,
             sampling_l=1, sampling_e=1):
         """Return R_eΛlk for single k
 
         Dimensions [n_c, n_l, n_e, n_e]
         """
-        return calc_R_eΛlkx_allones(ds, sampling_l=sampling_l,
+        return calc_R_eΛlk_allones(ds, sampling_l=sampling_l,
             sampling_e=sampling_e)
-    def calc_R_lΛekx(self, ds,
+    def calc_R_lΛek(self, ds,
             sampling_l=1, sampling_e=1):
         # same for all channels anyway
         rss = ds["Rself_start"].sel(calibrated_channel=1)
@@ -361,26 +361,26 @@ class Effect:
 
         return not self.is_independent() and not self.is_common()
 
-    def calc_R_eΛlkx(self, ds,
+    def calc_R_eΛlk(self, ds,
             sampling_l=1, sampling_e=1):
         """Return R_eΛlk for single k
 
         Dimensions [n_c, n_l, n_e, n_e]
         """
 
-        return self.rmodel.calc_R_eΛlkx(ds,
+        return self.rmodel.calc_R_eΛlk(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
 
-    def calc_R_lΛekx(self, ds,
+    def calc_R_lΛek(self, ds,
             sampling_l=1, sampling_e=1):
         """Return R_lΛes or R_lΛei
         """
-        return self.rmodel.calc_R_lΛekx(ds,
+        return self.rmodel.calc_R_lΛek(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
 
-    def calc_R_cΛpkx(self, ds,
+    def calc_R_cΛpk(self, ds,
             sampling_p=5):
         """Return R_cΛpk for this effect
         """
