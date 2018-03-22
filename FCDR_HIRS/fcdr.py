@@ -31,12 +31,7 @@ from . import effects
 from . import measurement_equation as me
 from . import filters
 from . import _fcdr_defs
-
-class FCDRError(typhon.datasets.dataset.InvalidDataError):
-    pass
-
-class FCDRWarning(UserWarning):
-    pass
+from .exceptions import (FCDRError, FCDRWarning) # used to be here
 
 class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     """Produce, write, study, and read HIRS FCDR.

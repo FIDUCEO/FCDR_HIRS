@@ -149,25 +149,25 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
         
         C_eΛls [n_c, n_s, n_l, n_e, n_e] (last 2 diagonal, not explicitly calculated)
         C_lΛes [n_c, n_s, n_e, n_l, n_l] (last 2 diagonal)
-        C_cΛps [n_p, n_s, n_c, n_c] (last 2 diagonal)
-        C_cΛpi [n_p, n_i, n_c, n_c] (last 2 diagonal)
+        C_cΛps [n_s, n_l, n_e, n_c, n_c] (last 2 diagonal)
+        C_cΛpi [n_i, n_l, n_e, n_c, n_c] (last 2 diagonal)
         
         One per effect:
         
         S_esΛl [n_c, n_l, n_e, n_e]
         S_lsΛe [n_c, n_e, n_l, n_l]
-        S_ciΛp [n_p, n_c, n_c]
-        S_csΛp [n_p, n_c, n_c]
+        S_ciΛp [n_l, n_e, n_c, n_c]
+        S_csΛp [n_l, n_e, n_c, n_c]
         
         R_eΛls [n_c, n_l, n_s, n_e, n_e]
         R_lΛes [n_c, n_e, n_s, n_l, n_l]
-        R_cΛpi [n_p, n_i, n_c, n_c]
-        R_cΛps [n_p, n_s, n_c, n_c]
+        R_cΛpi [n_l, n_e, n_i, n_c, n_c]
+        R_cΛps [n_l, n_e, n_s, n_c, n_c]
         
         U_eΛls [n_c, n_l, n_s, n_e, n_e] (last 2 diagonal)
         U_lΛes [n_c, n_e, n_s, n_l, n_l] (last 2 diagonal)
-        U_cΛpi [n_p, n_i|j, n_c, n_c] (last 2 diagonal)
-        U_cΛps [n_p, n_s|j, n_c, n_c] (last 2 diagonal)
+        U_cΛpi [n_l, n_e, n_i|j, n_c, n_c] (last 2 diagonal)
+        U_cΛps [n_l, n_e, n_s|j, n_c, n_c] (last 2 diagonal)
 
         One total:
         
@@ -375,8 +375,6 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     # smaller parts.
     n_l = ds.dims["scanline_earth"]
     n_e = ds.dims["scanpos"]
-    n_p = n_l*n_e
-    sampling_p=sampling_l*sampling_e
     n_c = ds.dims["calibrated_channel"]
     n_j = len(effects.keys())
 
@@ -398,28 +396,39 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 
     R_cΛpi = xarray.DataArray(
         numpy.zeros(
-           (math.ceil(n_p/(sampling_p)),
+           (math.ceil(n_l/sampling_l),
+            math.ceil(n_e/sampling_e),
             n_i,
             n_c,
             n_c), dtype="f4"),
-        dims=("n_p", "n_i", "n_c", "n_c"))
+        dims=("n_l", "n_e", "n_i", "n_c", "n_c"))
 
     R_cΛps = xarray.DataArray(
         numpy.zeros(
-           (math.ceil(n_p/(sampling_e*sampling_l)),
+           (math.ceil(n_l/(sampling_l)),
+            math.ceil(n_e/(sampling_e)),
             n_s,
             n_c,
             n_c), dtype="f4"),
-        dims=("n_p", "n_s", "n_c", "n_c"))
+        dims=("n_l", "n_e", "n_s", "n_c", "n_c"))
 
-    # sparse and diagonal, avoid wasting memory?
+    # store only diagonals for optimised memory consumption and
+    # calculation speed
     U_eΛls_diag = xarray.DataArray(
         numpy.zeros((n_c, n_s,
             math.ceil(n_l/sampling_l),
             math.ceil(n_e/sampling_e)), dtype="f4"),
-        dims=("n_c", "n_s", "n_l", "n_e")) # last n_e superfluous
+        dims=("n_c", "n_s", "n_l", "n_e"))
 
     U_lΛes_diag = U_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
+    U_cΛps_diag = U_eΛls_diag.transpose("n_l", "n_e", "n_s", "n_c")
+
+    U_cΛpi_diag = xarray.DataArray(
+        numpy.zeros((
+            math.ceil(n_l/sampling_l),
+            math.ceil(n_e/sampling_e),
+            n_i, n_c), dtype="f4"),
+        dims=("n_l", "n_e", "n_i", "n_c"))
     # Equivalent to:
     #
     # U_lΛes_diag = xarray.DataArray(
@@ -439,6 +448,11 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             math.ceil(n_e/sampling_e)), dtype="f4"),
         dims=("n_c", "n_s", "n_l", "n_e")) # last n_e superfluous
     C_lΛes_diag = C_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
+    C_cΛps_diag = C_eΛls_diag.transpose("n_l", "n_e", "n_s", "n_c")
+
+    C_cΛpi_diag = xarray.DataArray(
+        numpy.zeros_like(U_cΛpi_diag.values),
+        dims=("n_l", "n_e", "n_i", "n_c"))
 
     # should the next one be skipped?
 #    R_eΛli = xarray.DataArray(
@@ -494,19 +508,26 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                 logging.warn(f"Magnitude for {k.name:s} is None, not "
                     "considering for correlation scale calculations.")
                 continue
-            elif k.is_independent():
-                # FIXME: for independent, still need to consider
-                # inter-channel:
-                # R_cΛpi 
-                ci = next(cci)
-                R_cΛpi = k.calc_R_cΛpi(ds,
-                    sampling_p=sampling_p)
-                R_cΛpi[{"n_i": ci}].values[...] = R_cΛpi
-                # FIXME: U_cΛpi_diag, C_cΛpi_diag
-                continue
-            elif k.is_common():
+
+            if k.is_common():
                 continue # don't bother with common, should all be
                          # harmonised anyway
+
+            # Make sure we have one estimate for every scanline.
+            new_u = make_debug_fcdr_dims_consistent(
+                ds, k.magnitude, impossible="error").sel(
+                    scanline_earth=slice(None, None, sampling_l))
+
+            if k.is_independent():
+                # for independent, still need to consider
+                # inter-channel: R_cΛpi 
+                ci = next(cci)
+                R_cΛpi[{"n_i": ci}].values[...] = k.calc_R_cΛpk(ds,
+                    sampling_l=sampling_l,
+                    sampling_e=sampling_e)
+                U_cΛpi_diag[{"n_i": ci}].values[...] = new_u.T.values[:, numpy.newaxis, :]
+                C_cΛpi_diag[{"n_i": ci}].values[...] = CC.transpose((1, 2, 0))
+                continue
 
             try:
                 R_eΛlk = k.calc_R_eΛlk(ds,
@@ -522,10 +543,6 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 
             R_eΛls[{"n_s": cs}].values[...] = R_eΛlk
             R_lΛes[{"n_s": cs}].values[...] = R_lΛek
-            # Make sure we have one estimate for every scanline.
-            new_u = make_debug_fcdr_dims_consistent(
-                ds, k.magnitude, impossible="error").sel(
-                    scanline_earth=slice(None, None, sampling_l))
 
             # We have at most one estimate of U per scanline, so not
             # only is U diagonal; for U_eΛlk, the value along the diagonal
@@ -540,9 +557,9 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 #                numpy.eye(math.ceil(n_l/sampling_l))[numpy.newaxis, numpy.newaxis, :, :])
             C_eΛls_diag[{"n_s": cs}].values[...] = CC
 
-            R_cΛps = k.calc_R_cΛps(ds,
-                sampling_p=sampling_l*sampling_e)
-            R_cΛps[{"n_s": cs}].values[...] = R_cΛps
+            R_cΛps[{"n_s": cs}].values[...] = k.calc_R_cΛpk(ds,
+                sampling_l=sampling_l,
+                sampling_e=sampling_e)
 
             # FIXME: U_cΛps_diag, C_cΛps_diag
     # use value of cs to consider how many to pass on

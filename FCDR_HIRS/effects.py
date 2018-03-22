@@ -6,6 +6,7 @@ import abc
 import collections
 import copy
 import numbers
+import warnings
 
 import numpy
 import xarray
@@ -18,6 +19,7 @@ from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 
 from . import measurement_equation as meq
 from . import _fcdr_defs
+from .exceptions import FCDRWarning
 
 WARNING = ("VERY EARLY TRIAL VERSION! "
            "DO NOT USE THE CONTENTS OF THIS PRODUCT FOR ANY PURPOSE UNDER ANY CIRCUMSTANCES! "
@@ -47,6 +49,14 @@ class Rmodel(metaclass=abc.ABCMeta):
         """Return R_lΛek for single k
 
         Dimensions [n_c, n_e, n_l, n_l]
+        """
+
+    @abc.abstractmethod
+    def calc_R_cΛpk(self, ds,
+        sampling_l=1, sampling_e=1):
+        """Return R_cΛpk for single k
+
+        Dimensions [n_l, n_e, n_c, n_c]
         """
 
 def calc_R_eΛlk_allones(ds, sampling_l=1, sampling_e=1):
@@ -87,9 +97,46 @@ class RModelCalib(Rmodel):
             math.ceil(ds.dims["scanpos"]/sampling_e),
             1, 1))
 
+    def calc_R_cΛpk(self, ds,
+        sampling_l=1, sampling_e=1):
+        """Return R_cΛpk for single k
+
+        Dimensions [n_l, n_e, n_c, n_c]
+        """
+        
+        # ERROR WARNING FIXME: This needs to be updated.  See #223
+        warnings.warn("Inter-channel correlation not implemented "
+            "for calibration-scale correlations.  See #223.",
+            FCDRWarning)
+        return numpy.tile(
+            numpy.eye(ds.dims["calibrated_channel"], dtype="f4"),
+            [math.ceil(ds.dims["scanline_earth"]/sampling_l),
+             math.ceil(ds.dims["scanpos"]/sampling_e), 1, 1])
+
 rmodel_calib = RModelCalib()
 
+class RModelCalibPRT(RModelCalib):
+    def calc_R_cΛpk(self, ds,
+        sampling_l=1, sampling_e=1):
+        """Return R_cΛpk for single k
+
+        Dimensions [n_l, n_e, n_c, n_c]
+        """
+        return numpy.ones(
+            (math.ceil(ds.dims["scanline_earth"]/sampling_l),
+             math.ceil(ds.dims["scanpos"]/sampling_e),
+             ds.dims["calibrated_channel"]),
+             dtype="f4")
+        
+rmodel_calib_prt = RModelCalibPRT()
+
 class RModelRandom(Rmodel):
+    """R Model for fully random effects.
+
+    That means even between channels to be random.
+    See also #224.
+    """
+
     def calc_R_eΛlk(self, ds,
         sampling_l=1, sampling_e=1):
         """Return R_eΛlk for single k
@@ -114,6 +161,18 @@ class RModelRandom(Rmodel):
             [ds.dims["calibrated_channel"],
             math.ceil(ds.dims["scanpos"]/sampling_e), 1, 1])
 
+    def calc_R_cΛpk(self, ds,
+        sampling_l=1, sampling_e=1):
+        """Return R_cΛpk for single k
+
+        Dimensions [n_l, n_e, n_c, n_c]
+        """
+
+        return numpy.tile(
+            numpy.eye(ds.dims["calibrated_channel"], dtype="f4"),
+            [math.ceil(ds.dims["scanline_earth"]/sampling_l),
+             math.ceil(ds.dims["scanpos"]/sampling_e), 1, 1])
+
 rmodel_random = RModelRandom()
 
 class RModelCommon(Rmodel):
@@ -122,6 +181,16 @@ class RModelCommon(Rmodel):
         raise ValueError(
             "We do not calculate error correlation matrices for common effects")
     calc_R_lΛek = calc_R_eΛlk
+
+    def calc_R_cΛpk(self, ds,
+        sampling_l=1,
+        sampling_e=1):
+        """Return R_cΛpk for single k
+
+        Dimensions [n_l, n_e, n_c, n_c]
+        """
+
+        raise NotImplementedError("Not implemented yet")
 
 rmodel_common = RModelCommon()
 
@@ -132,6 +201,16 @@ class RModelPeriodicError(Rmodel):
     def calc_R_lΛek(self, ds,
             sampling_l=1, sampling_e=1):
         raise NotImplementedError()
+
+    def calc_R_cΛpk(self, ds,
+        sampling_l=1,
+        sampling_e=1):
+        """Return R_cΛpk for single k
+
+        Dimensions [n_l, n_e, n_c, n_c]
+        """
+
+        raise NotImplementedError("Not implemented yet")
 rmodel_periodicerror = RModelPeriodicError()
 
 class RModelRSelf(Rmodel):
@@ -158,6 +237,26 @@ class RModelRSelf(Rmodel):
                 e = len(rss)
             R[s:e, s:e] = 1
         return R[::sampling_l, ::sampling_l]
+
+    def calc_R_cΛpk(self, ds,
+        sampling_l=1, sampling_e=1):
+        """Return R_cΛpk for single k
+
+        Dimensions [n_l, n_e, n_c, n_c]
+        """
+
+        warnings.warn("Inter-channel correlation not implemented "
+            "for self-emission model.  See "
+            "https://github.com/FIDUCEO/FCDR_HIRS/labels/self-emission . "
+            "Arbitrarily assuming inter-channel correlation = 0.5.")
+        (nc, nl, ne) = (ds.dims["calibrated_channel"],
+                        ds.dims["scanline_earth"],
+                        ds.dims["scanpos"])
+        return numpy.tile(
+            (5*numpy.ones((nc,nc), dtype="f4")
+             + 5*numpy.eye(nc, dtype="f4"))/10,
+            [math.ceil(ds.dims["scanline_earth"]/sampling_l),
+             math.ceil(ds.dims["scanpos"]/sampling_e), 1, 1])
 rmodel_rself = RModelRSelf()
 
 class Effect:
@@ -381,11 +480,12 @@ class Effect:
             sampling_e=sampling_e)
 
     def calc_R_cΛpk(self, ds,
-            sampling_p=5):
+            sampling_l=1, sampling_e=1):
         """Return R_cΛpk for this effect
         """
         return self.rmodel.calc_R_cΛpk(ds,
-            sampling_p=sampling_p)
+            sampling_l=sampling_l,
+            sampling_e=sampling_e)
 
 def effects() -> Mapping[sympy.Symbol, Set[Effect]]:
     """Initialise a new dictionary with all effects per symbol.
@@ -456,7 +556,7 @@ PRT_counts_noise = Effect(name="C_PRT",
     unit=ureg.count,
     dimensions=(),
     channel_correlations=_ones,
-    rmodel=rmodel_calib)
+    rmodel=rmodel_calib_prt)
 
 IWCT_PRT_representation = Effect(
     name="O_TIWCT",
@@ -467,7 +567,7 @@ IWCT_PRT_representation = Effect(
     unit=ureg.K,
     dimensions=(),
     channel_correlations=_ones,
-    rmodel=rmodel_calib)
+    rmodel=rmodel_calib_prt)
 
 IWCT_PRT_counts_to_temp = Effect(
     name="d_PRT",
@@ -481,7 +581,7 @@ IWCT_PRT_counts_to_temp = Effect(
     unit=ureg.counts/ureg.K, # FIXME WARNING: see https://github.com/FIDUCEO/FCDR_HIRS/issues/43
     dimensions=(),
     channel_correlations=_ones,
-    rmodel=rmodel_calib)
+    rmodel=rmodel_calib_prt)
 
 IWCT_type_b = Effect(
     name="O_TPRT",
@@ -492,7 +592,7 @@ IWCT_type_b = Effect(
     unit=ureg.K,
     dimensions=(),
     channel_correlations=_ones,
-    rmodel=rmodel_calib)
+    rmodel=rmodel_calib_prt)
 # set magnitude when I'm sure everything else has been set (order of
 # kwargs not preserved before Python 3.6)
 IWCT_type_b.magnitude=UADA(0.1, name="uncertainty", attrs={"units": "K"})
