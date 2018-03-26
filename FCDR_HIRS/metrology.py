@@ -210,7 +210,7 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
     S_xΛyt = numexpr.evaluate("C * U * R * UT * CT")
     S_xtΛy = S_xΛyt.sum(int(per_channel))
     return xarray.DataArray(S_xtΛy,
-        dims=R_xΛyt.dims[0:1] + R_xΛyt.dims[2:])
+        dims=R_xΛyt.dims[0:int(per_channel)] + R_xΛyt.dims[(1+int(per_channel)):])
 
 def calc_S_xt(S_xtΛy: List[numpy.ndarray],
               per_channel: bool=None) -> numpy.ndarray:
@@ -581,12 +581,20 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 
             # FIXME: U_cΛps_diag, C_cΛps_diag
     # use value of cs to consider how many to pass on
-    R_lΛes = R_lΛes.sel(n_s=slice(cs))
-    U_lΛes_diag = U_lΛes_diag.sel(n_s=slice(cs))
-    C_lΛes_diag = C_lΛes_diag.sel(n_s=slice(cs))
-    R_eΛls = R_eΛls.sel(n_s=slice(cs))
-    U_eΛls_diag = U_eΛls_diag.sel(n_s=slice(cs))
-    C_eΛls_diag = C_eΛls_diag.sel(n_s=slice(cs))
+    tcs = next(ccs)
+    tci = next(cci)
+    R_lΛes = R_lΛes.sel(n_s=slice(tcs))
+    U_lΛes_diag = U_lΛes_diag.sel(n_s=slice(tcs))
+    C_lΛes_diag = C_lΛes_diag.sel(n_s=slice(tcs))
+    R_eΛls = R_eΛls.sel(n_s=slice(tcs))
+    U_eΛls_diag = U_eΛls_diag.sel(n_s=slice(tcs))
+    C_eΛls_diag = C_eΛls_diag.sel(n_s=slice(tcs))
+    R_cΛps = R_cΛps.sel(n_s=slice(tcs))
+    U_cΛps_diag = U_cΛps_diag.sel(n_s=slice(tcs))
+    C_cΛps_diag = C_cΛps_diag.sel(n_s=slice(tcs))
+    R_cΛpi = R_cΛpi.sel(n_i=slice(tci))
+    U_cΛpi_diag = U_cΛpi_diag.sel(n_i=slice(tci))
+    C_cΛpi_diag = C_cΛpi_diag.sel(n_i=slice(tci))
 
     S_lsΛe = calc_S_from_CUR(R_lΛes, U_lΛes_diag, C_lΛes_diag)
     S_ls = calc_S_xt(S_lsΛe)
