@@ -369,7 +369,7 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
     raise KeyError(f"Term not found: {sym!s}")
 
 def calc_corr_scale_channel(effects, sensRe, ds, 
-        sampling_l=5, sampling_e=1):
+        sampling_l=8, sampling_e=1):
     """Calculate correlation length scales per channel
     """
 

@@ -281,16 +281,7 @@ class FCDRGenerator:
 #        self.store_piece(piece)
         for piece in self.fragmentate(piece):
             piece = self.add_orbit_info_to_piece(piece)
-            (Δ_l, Δ_e, R_ci, R_cs) = metrology.calc_corr_scale_channel(
-                self.fcdr._effects, sensRe, piece)
 
-            # add those to the piece, not in TBs format yet
-            piece["cross_line_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_l.sel(val="popt").values)
-            piece["cross_element_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_e.sel(val="popt").values)
-            piece["cross_channel_error_correlation_matrix_independent_effects"] = (
-                ("calibration_channel", "calibration_channel"), R_ci)
-            piece["cross_channel_error_correlation_matrix_structured_effects"] = (
-                ("calibration_channel", "calibration_channel"), R_cs)
 
             self.store_piece(piece)
 
@@ -449,6 +440,17 @@ class FCDRGenerator:
 
         # set uncertainty flag when extended uncertainty larger than value
         ds["quality_pixel_bitmask"].values[((2*ds["u_R_Earth"]) > ds["R_e"]).transpose(*ds["quality_pixel_bitmask"].dims).values] |= _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
+
+        (Δ_l, Δ_e, R_ci, R_cs) = metrology.calc_corr_scale_channel(
+            self.fcdr._effects, sensRe, ds)
+
+        # add those to the ds, not in TBs format yet
+        ds["cross_line_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_l.sel(val="popt").values)
+        ds["cross_element_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_e.sel(val="popt").values)
+        ds["cross_channel_error_correlation_matrix_independent_effects"] = (
+            ("calibration_channel", "calibration_channel"), R_ci)
+        ds["cross_channel_error_correlation_matrix_structured_effects"] = (
+            ("calibration_channel", "calibration_channel"), R_cs)
 
         if return_more:
             return (ds, sensRe)
