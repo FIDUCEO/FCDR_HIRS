@@ -91,7 +91,8 @@ def prepare():
 
 def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
                     U_xΛyt_diag: numpy.ndarray,
-                    C_xΛyt_diag: numpy.ndarray):
+                    C_xΛyt_diag: numpy.ndarray,
+                    per_channel: bool=None):
     """Calculate S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp
 
     Calculate either of those:
@@ -142,6 +143,10 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
             anyway.  Dimensions therefore the same as U_eΛls and friends.
             Defined by §3.2.9.
 
+        Boolean "per_channel".  If not given, this will be inferred from
+        the presence of a dimension "n_c" within the leading ndim-1
+        dimensions of U.
+
     You probably want to vectorise this over an entire image.  Probable
     dimensions:
 
@@ -186,8 +191,11 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
         S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp: numpy.ndarray, as described above
     """
 
-    if not C_xΛyt_diag.dims == U_xΛyt_diag.dims == R_xΛyt.dims[:4]:
+    if not C_xΛyt_diag.dims == U_xΛyt_diag.dims == R_xΛyt.dims[:-1]:
         raise ValueError("R, U, C wrong dimensions")
+
+    if per_channel is None:
+        per_channel = "n_c" in U_xΛyt_diag.dims[:-1]
 
     # can work with diagonals only:
     #
@@ -200,11 +208,12 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
     CT = C.swapaxes(-1, -2)
     R = R_xΛyt
     S_xΛyt = numexpr.evaluate("C * U * R * UT * CT")
-    S_xtΛy = S_xΛyt.sum(1)
+    S_xtΛy = S_xΛyt.sum(int(per_channel))
     return xarray.DataArray(S_xtΛy,
         dims=R_xΛyt.dims[0:1] + R_xΛyt.dims[2:])
 
-def calc_S_xt(S_xtΛy: List[numpy.ndarray]) -> numpy.ndarray:
+def calc_S_xt(S_xtΛy: List[numpy.ndarray],
+              per_channel: bool=None) -> numpy.ndarray:
     """Calculate S_es, S_ls, S_ci, or S_cs
 
     Calculate either of:
@@ -228,12 +237,20 @@ def calc_S_xt(S_xtΛy: List[numpy.ndarray]) -> numpy.ndarray:
         List of values of relevant matrix, or ndarray with outermost dimension
         being the scanline.  You can obtain those from calc_S_from_CUR
 
+    per_channel: bool
+
+        Boolean "per_channel".  If not given, this will be inferred from
+        the presence of a dimension "n_c" within the leading ndim-1
+        dimensions of U.
+
     Returns:
 
         S_es, S_el, S_ci, or S_cs: numpy.ndarray, as described.
     """
 
-    return S_xtΛy.mean(S_xtΛy.dims[1]) # Eq. 20, 24, 27, or 30 (FIXME: or n_e or n_p)
+    if per_channel is None:
+        per_channel = S_xtΛy.dims[0] == "n_c"
+    return S_xtΛy.mean(S_xtΛy.dims[int(per_channel)]) # Eq. 20, 24, 27, or 30 (FIXME: or n_e or n_p)
 
 def calc_R_xt(S_xt: numpy.ndarray):
     """Calculate R_es, R_ls, R_ci, or R_cs
@@ -396,21 +413,21 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 
     R_cΛpi = xarray.DataArray(
         numpy.zeros(
-           (math.ceil(n_l/sampling_l),
+           (n_i,
+            math.ceil(n_l/sampling_l),
             math.ceil(n_e/sampling_e),
-            n_i,
             n_c,
             n_c), dtype="f4"),
-        dims=("n_l", "n_e", "n_i", "n_c", "n_c"))
+        dims=("n_i", "n_l", "n_e", "n_c", "n_c"))
 
     R_cΛps = xarray.DataArray(
         numpy.zeros(
-           (math.ceil(n_l/(sampling_l)),
+           (n_s,
+            math.ceil(n_l/(sampling_l)),
             math.ceil(n_e/(sampling_e)),
-            n_s,
             n_c,
             n_c), dtype="f4"),
-        dims=("n_l", "n_e", "n_s", "n_c", "n_c"))
+        dims=("n_s", "n_l", "n_e", "n_c", "n_c"))
 
     # store only diagonals for optimised memory consumption and
     # calculation speed
@@ -425,10 +442,11 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 
     U_cΛpi_diag = xarray.DataArray(
         numpy.zeros((
+            n_i,
             math.ceil(n_l/sampling_l),
             math.ceil(n_e/sampling_e),
-            n_i, n_c), dtype="f4"),
-        dims=("n_l", "n_e", "n_i", "n_c"))
+            n_c), dtype="f4"),
+        dims=("n_i", "n_l", "n_e", "n_c"))
     # Equivalent to:
     #
     # U_lΛes_diag = xarray.DataArray(
@@ -448,11 +466,11 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             math.ceil(n_e/sampling_e)), dtype="f4"),
         dims=("n_c", "n_s", "n_l", "n_e")) # last n_e superfluous
     C_lΛes_diag = C_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
-    C_cΛps_diag = C_eΛls_diag.transpose("n_l", "n_e", "n_s", "n_c")
+    C_cΛps_diag = C_eΛls_diag.transpose("n_s", "n_l", "n_e", "n_c")
 
     C_cΛpi_diag = xarray.DataArray(
         numpy.zeros_like(U_cΛpi_diag.values),
-        dims=("n_l", "n_e", "n_i", "n_c"))
+        dims=("n_i", "n_l", "n_e", "n_c"))
 
     # should the next one be skipped?
 #    R_eΛli = xarray.DataArray(
@@ -580,11 +598,21 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     R_es = calc_R_xt(S_es)
     Δ_e = calc_Δ_x(R_es)*sampling_e
 
-    S_ciΛp = calc_S_from_CUR(R_cΛpi, U_cΛpi_diag, C_cΛpi_diag)
+    S_ciΛp = calc_S_from_CUR(
+        xarray.DataArray(
+        typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))
+            .values.transpose(0, 3, 1, 2), dims=("n_i", "n_p", "n_c", "n_c")),
+        U_cΛpi_diag.stack(n_p=("n_l", "n_e")).transpose("n_i", "n_p", "n_c"),
+        C_cΛpi_diag.stack(n_p=("n_l", "n_e")).transpose("n_i", "n_p", "n_c"))
     S_ci = calc_S_xt(S_ciΛp)
     R_ci = calc_R_xt(S_ci)
 
-    S_csΛp = calc_S_from_CUR(R_cΛps, U_cΛps_diag, C_cΛps_diag)
+    S_csΛp = calc_S_from_CUR(
+        xarray.DataArray(
+        typhon.utils.stack_xarray_repdim(R_cΛps, n_p=("n_l", "n_e"))
+            .values.transpose(0, 3, 1, 2), dims=("n_s", "n_p", "n_c", "n_c")),
+        U_cΛps_diag.stack(n_p=("n_l", "n_e")).transpose("n_s", "n_p", "n_c"),
+        C_cΛps_diag.stack(n_p=("n_l", "n_e")).transpose("n_s", "n_p", "n_c"))
     S_cs = calc_S_xt(S_csΛp)
     R_cs = calc_R_xt(S_cs)
 

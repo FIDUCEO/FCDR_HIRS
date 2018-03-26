@@ -285,7 +285,12 @@ class FCDRGenerator:
                 self.fcdr._effects, sensRe, piece)
 
             # add those to the piece, not in TBs format yet
-
+            piece["cross_line_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_l.sel(val="popt").values)
+            piece["cross_element_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_e.sel(val="popt").values)
+            piece["cross_channel_error_correlation_matrix_independent_effects"] = (
+                ("calibration_channel", "calibration_channel"), R_ci)
+            piece["cross_channel_error_correlation_matrix_structured_effects"] = (
+                ("calibration_channel", "calibration_channel"), R_cs)
 
             self.store_piece(piece)
 
