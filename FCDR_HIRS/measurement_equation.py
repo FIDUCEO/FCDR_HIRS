@@ -105,7 +105,9 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False,
     o = None
     intermediates = set()
     if isinstance(e, sympy.Symbol) and e in expressions.keys():
-        return recursive_substitution(expressions[e])
+        return recursive_substitution(expressions[e],
+            stop_at=stop_at, return_intermediates=return_intermediates,
+            expressions=expressions)
     while o != e:
         o = e
         for sym in typhon.physics.metrology.recursive_args(e):
@@ -127,6 +129,20 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False,
 #                            aliases.get(e,e),
 #                            e)))
 #        for e in symbols.values()}
+
+# make sure no symbol occurs in multiple sub-measurement equations
+expressions[sym["R_e"]] = recursive_substitution(sym["R_e"],
+    stop_at=sym["R_IWCT"])
+del expressions[sym["a_0"]]
+del expressions[sym["a_1"]]
+all_args = set()
+for (s, e) in expressions.items():
+    if s in (sym["T_b"], sym["T_bstar"]): # exempted
+        continue
+    new_args = typhon.physics.metrology.recursive_args(e)
+    if new_args & all_args:
+        raise ValueError("Duplicate symbols found")
+    all_args |= new_args
 
 dependencies = {}
 for s in symbols.values():

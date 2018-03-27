@@ -152,6 +152,7 @@ from .. import models
 from .. import effects
 from .. import measurement_equation as me
 from .. import _fcdr_defs
+from .. import metrology
 
 import fiduceo.fcdr.writer.fcdr_writer
 
@@ -276,13 +277,15 @@ class FCDRGenerator:
         longer periods, use the higher level method `process`.
         """
 
-        piece = self.get_piece(from_, to)
+        (piece, sensRe) = self.get_piece(from_, to, return_more=True)
 #        self.store_piece(piece)
         for piece in self.fragmentate(piece):
             piece = self.add_orbit_info_to_piece(piece)
+
+
             self.store_piece(piece)
 
-    def get_piece(self, from_, to):
+    def get_piece(self, from_, to, return_more=False):
         """Get FCDR piece for period.
 
         Returns a single xarray.Dataset
@@ -343,6 +346,7 @@ class FCDRGenerator:
             return_more=True)
         unc_components = dict(self.fcdr.propagate_uncertainty_components(uRe,
             sensRe, compRe))
+
 #        u_from = xarray.Dataset(dict([(f"u_from_{k!s}", v) for (k, v) in
 #                    unc_components.items()]))
         S = self.fcdr.estimate_channel_correlation_matrix(context)
@@ -437,7 +441,21 @@ class FCDRGenerator:
         # set uncertainty flag when extended uncertainty larger than value
         ds["quality_pixel_bitmask"].values[((2*ds["u_R_Earth"]) > ds["R_e"]).transpose(*ds["quality_pixel_bitmask"].dims).values] |= _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
 
-        return ds
+        (Δ_l, Δ_e, R_ci, R_cs) = metrology.calc_corr_scale_channel(
+            self.fcdr._effects, sensRe, ds)
+
+        # add those to the ds, not in TBs format yet
+        ds["cross_line_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_l.sel(val="popt").values)
+        ds["cross_element_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_e.sel(val="popt").values)
+        ds["cross_channel_error_correlation_matrix_independent_effects"] = (
+            ("calibration_channel", "calibration_channel"), R_ci)
+        ds["cross_channel_error_correlation_matrix_structured_effects"] = (
+            ("calibration_channel", "calibration_channel"), R_cs)
+
+        if return_more:
+            return (ds, sensRe)
+        else:
+            return ds
 
     def add_attributes(self, ds):
         """Add attributes to piece.
