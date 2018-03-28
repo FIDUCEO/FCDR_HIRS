@@ -7,6 +7,7 @@ import collections
 import copy
 import numbers
 import warnings
+import itertools
 
 import numpy
 import xarray
@@ -225,17 +226,26 @@ class RModelRSelf(Rmodel):
     def calc_R_lΛek(self, ds,
             sampling_l=1, sampling_e=1):
         # same for all channels anyway
-        rss = ds["Rself_start"].sel(calibrated_channel=1)
-        # blocks of ones per common Rself_start
-        R = numpy.zeros((rss.size, rss.size), dtype="f4")
-        (_, ii) = numpy.unique(rss, return_index=True)
-        for iii in range(len(ii)):
-            s = ii[iii]
-            try:
-                e = ii[iii+1]
-            except IndexError:
-                e = len(rss)
-            R[s:e, s:e] = 1
+        # linearly decreasing from 1 (at t=0) to 0 (at t=25m).
+        # We'd rather include negative correlatinos (going to -1 at t=50m)
+        # but the CURUC recipes don't support those anyway.  This
+        # assumption is derived from the idea that if the self-emission
+        # overestimates by x at time t, it may underestimate by x half an
+        # orbit later.
+        sz = ds.dims["scanline_earth"]
+        R = numpy.zeros((sz, sz), dtype="f4")
+        r = 1
+        i = itertools.count()
+        while True:
+            d = next(i)
+            r = 1 - (ds["scanline_earth"][d] - ds["scanline_earth"][0])/numpy.timedelta64(25, 'm')
+            if r <= 0:
+                break
+            for s in (+1, -1):
+                diag = numpy.diagonal(R, s*d)
+                diag.setflags(write=True)
+                diag[:] = r
+
         return R[::sampling_l, ::sampling_l]
 
     def calc_R_cΛpk(self, ds,
