@@ -295,6 +295,30 @@ FCDR_data_vars_props = dict(
         ("scanline_earth", "scanpos", "calibrated_channel"),
         {"long_name": "Bitmask for quality per pixel"},
         _u1_coding),
+    cross_line_radiance_error_correlation_length_scale_structured_effects = (
+        "cross_line_radiance_error_correlation_length_scale_structured_effects",
+        ("calibrated_channel",),
+        {"long_name": "Cross line radiance error correlation length scale for structured effects",
+         "units": "scanlines"},
+        _u2_coding),
+    cross_element_radiance_error_correlation_length_scale_structured_effects = (
+        "cross_element_radiance_error_correlation_length_scale_structured_effects",
+        ("calibrated_channel",),
+        {"long_name": "Cross element radiance error correlation length scale for structured effocts",
+         "units": "scanlines"},
+        _u2_coding),
+    cross_channel_error_correlation_matrix_independent_effects = (
+        "cross_channel_error_correlation_matrix_independent_effects",
+        ("calibrated_channel", "calibrated_channel"),
+        {"long_name": "Channel error correlation matrix for independent effects",
+         "units": "scanlines"},
+        _corr_coding),
+    cross_channel_error_correlation_matrix_structured_effects = (
+        "cross_channel_error_correlation_matrix_structured_effects",
+        ("calibrated_channel", "calibrated_channel"),
+        {"long_name": "Channel error correlation matrix for structured effects",
+         "units": "scanlines"},
+        _corr_coding),
 )
 
 p = FCDR_data_vars_props
@@ -346,6 +370,10 @@ FCDR_easy_encodings = dict(
     channel_correlation_matrix = _corr_coding,
     LUT_BT = _temp_coding,
     LUT_radiance = _coding,
+    cross_line_radiance_error_correlation_length_scale_structured_effects = _u2_coding,
+    cross_element_radiance_error_correlation_length_scale_structured_effects = _u2_coding,
+    cross_channel_error_correlation_matrix_independent_effects = _corr_coding,
+    cross_channel_error_correlation_matrix_structured_effects = _corr_coding,
 )
 
 # this should ensure #70 as long as u>0.01K

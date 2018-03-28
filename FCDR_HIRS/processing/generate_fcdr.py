@@ -600,7 +600,11 @@ class FCDRGenerator:
             channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
                 channel=slice(19)).rename({"channel": "calibrated_channel"}),
             LUT_BT=piece["LUT_BT"],
-            LUT_radiance=piece["LUT_radiance"]
+            LUT_radiance=piece["LUT_radiance"],
+            cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
+            cross_element_radiance_error_correlation_length_scale_structured_effects=piece["cross_element_radiance_error_correlation_length_scale_structured_effects"],
+            cross_channel_error_correlation_matrix_independent_effects=piece["cross_channel_error_correlation_matrix_independent_effects"],
+            cross_channel_error_correlation_matrix_structured_effects=piece["cross_channel_error_correlation_matrix_structured_effects"],
                 )
 #            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
 #            u_non_random=UADA(piece["u_R_Earth_nonrandom"]).to(rad_u["ir"], "radiance"))
