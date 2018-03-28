@@ -156,6 +156,7 @@ setup(
             "hirs_orbit_map=FCDR_HIRS.analysis.map_single_orbit:main",
             "write_hirs_harm_meta=FCDR_HIRS.analysis.write_harm_meta:main",
             "merge_hirs_harmonisation=FCDR_HIRS.processing.combine_matchups:merge_files",
+            "convert_hirs_harmonisation_parameters=FCDR_HIRS.processing.convert_harm_params:main",
         ],
     },
 )
