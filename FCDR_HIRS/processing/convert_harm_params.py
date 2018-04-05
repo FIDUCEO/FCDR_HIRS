@@ -7,13 +7,16 @@ convert_hirs_harmonisation_parameters /group_workspaces/cems2/fiduceo/Users/rqua
 """
 
 import sys
+import copy
 import argparse
 import itertools
 
+import numpy
 import xarray
 import pprint
 
 import typhon.datasets.tovs
+from .. import fcdr
 
 preamble='''"""Harmonisation definitions.
 
@@ -68,21 +71,31 @@ def get_harm_dict(files):
     if len(files) != 19:
         raise ValueError("Must pass 19 paths")
 
+    all_sats = {typhon.datasets.tovs.norm_tovs_name(sat) for sat in
+                fcdr.list_all_satellites()}
     D = {}
-    harms = {}
-    u_harms = {}
+    harms = {sat: {ch: {} for ch in range(1, 20)} for sat in all_sats}
+    u_harms = copy.deepcopy(harms)
+    sats_found = set()
     for (ch, fn) in enumerate(files, 1):
         with xarray.open_dataset(fn) as ds:
             for i in range(ds.dims["n"]):
                 sat = ds["parameter_sensors"][i].item().decode("ascii").strip()
                 sat = typhon.datasets.tovs.norm_tovs_name(sat)
+                sats_found.add(sat)
                 if not sat in D.keys():
                     D[sat] = {ch: itertools.count() for ch in range(1, 20)}
-                    harms[sat] = {ch: {} for ch in range(1, 20)}
-                    u_harms[sat] = {ch: {} for ch in range(1, 20)}
                 c = next(D[sat][ch])
                 harms[sat][ch][c] = ds["parameter"][i].item() * scaling[c]
                 u_harms[sat][ch][c] = ds["parameter_uncertainty"][i].item() * scaling[c]
+    
+    for sat in all_sats - sats_found:
+        for ch in range(1, 20):
+            for i in range(3):
+                harms[sat][ch][i] = 0
+                u_harms[sat][ch][i] = numpy.array(
+                    [u_harms[sat][ch][i] for sat in sats_found]
+                        ).mean()
     return (harms, u_harms)
 
 def write_harm_dict(fp, harms, write_preamble=True):

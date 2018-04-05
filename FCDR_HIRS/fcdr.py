@@ -973,8 +973,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             u_counts_earth = counts_space = counts_iwct = u_counts_space = u_counts_iwct = par(
                 attrs={"units": "counts"})
 
-            a2 = UADA(0, name="a2", coords={"calibrated_channel": ch}, attrs={"units":
-                str(rad_u["si"]/(ureg.count**2))})
+            a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
+                name="a2", coords={"calibrated_channel": ch},
+                attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
             Rself_start = Rself_end = xarray.DataArray(
                 [numpy.datetime64(0, 's')], dims=["time_rself"])
