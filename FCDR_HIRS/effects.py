@@ -625,6 +625,28 @@ nonlinearity = Effect(
     channel_correlations=blockmat,
     rmodel=rmodel_common)
 
+emissivitycorrection = Effect(
+    name="a_3",
+    description="Emissivity correction",
+    parameter=meq.symbols["a_3"],
+    correlation_type=_systematic,
+    correlation_scale=_inf,
+    unit=ureg.dimensionless,
+    dimensions=(),
+    channel_correlations=_ones,
+    rmodel=rmodel_common)
+
+selfemissionbias = Effect(
+    name="a_4",
+    description="Self-emission bias",
+    parameter=meq.symbols["a_4"],
+    correlation_type=_systematic,
+    correlation_scale=_inf,
+    unit=ureg.dimensionless,
+    dimensions=(),
+    channel_correlations=_ones,
+    rmodel=rmodel_common)
+
 nonnonlinearity = Effect(
     name="O_Re",
     description="Wrongness of nonlinearity",

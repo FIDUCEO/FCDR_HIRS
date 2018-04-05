@@ -567,7 +567,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             da = UADA(
                 numpy.asarray(quantity,
                     dtype=("f4" if hasattr(quantity, "mask") else
-                        quantity.dtype)), # masking only for floats
+                        quantity.dtype if hasattr(quantity, "dtype") else
+                        type(quantity))), # masking only for floats
                 dims=dims if dims is not None else [d for d in self._data_vars_props[name][1] if d not in dropdims],
                 attrs=self._data_vars_props[name][2],
                 encoding=self._data_vars_props[name][3])
@@ -740,6 +741,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             attrs=counts_space.attrs)
         slope = ΔL/Δcounts
 
+        # nonlinearity
         a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
             name="a2", coords={"calibrated_channel": ch},
             attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
@@ -1319,9 +1321,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # executed whether I have good data or not.
 
         ε = UADA(0.98, name="emissivity")
+        # emissivity correction
         a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][1],
             name="correction to emissivity")
-        harmonisation_parameters [1]
+        # self-emission bias
         a_4 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][0],
             name="harmonisation bias")
         if not has_Rself: # need to set manually
