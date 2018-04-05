@@ -31,6 +31,7 @@ from . import effects
 from . import measurement_equation as me
 from . import filters
 from . import _fcdr_defs
+from . import _harm_defs
 from .exceptions import (FCDRError, FCDRWarning) # used to be here
 
 class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
@@ -739,9 +740,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             attrs=counts_space.attrs)
         slope = ΔL/Δcounts
 
-        # non-linearity is set to 0 for now
-        a2 = UADA(0, name="a2", coords={"calibrated_channel": ch}, attrs={"units":
-            str(rad_u["si"]/(ureg.count**2))})
+        a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
+            name="a2", coords={"calibrated_channel": ch},
+            attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
+#        a2 = UADA(0, name="a2", coords={"calibrated_channel": ch}, attrs={"units":
+#            str(rad_u["si"]/(ureg.count**2))})
 
         offset = -counts_space**2 * a2 -slope * counts_space
 
@@ -1311,10 +1314,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # end if n_within_context == 0.  From here only code that can be
         # executed whether I have good data or not.
 
-        ε = UADA(1, name="emissivity")
-        a_3 = UADA(self.ε-1, name="correction to emissivity")
-        a_4 = UADA(0, name="harmonisation bias",
-            attrs={"units": rad_u["si"]})
+        ε = UADA(0.98, name="emissivity")
+        a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][1],
+            name="correction to emissivity")
+        harmonisation_parameters [1]
+        a_4 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][0],
+            name="harmonisation bias")
         if not has_Rself: # need to set manually
             newcoor = dict(
                 Rself_start=xarray.DataArray(

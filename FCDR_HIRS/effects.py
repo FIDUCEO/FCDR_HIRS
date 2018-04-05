@@ -625,11 +625,9 @@ nonlinearity = Effect(
     channel_correlations=blockmat,
     rmodel=rmodel_common)
 nonlinearity.magnitude=UADA(
-    3e-20, # equivalent to 1e-6 in ir units
+    3e-20, # FIXME replace by harm!
     name="uncertainty",
-    attrs={"units": str(radiance_units["si"]/ureg.count**2),
-           "note": "Placeholder uncertainty awaiting proper "
-                   "harmonisation"})
+    attrs={"units": str(radiance_units["si"]/ureg.count**2)})
 
 nonnonlinearity = Effect(
     name="O_Re",
