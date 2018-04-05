@@ -29,6 +29,8 @@ For example, to get a₀ for noaa18:
 
 `harmonisation_parameters["noaa18"][12][0]`
 
+Corresponding uncertainties are contained in
+`harmonisation_parameters_uncertainty`.  Covariance is not yet supported.
 Harmonisation parameters are derived using software developed by Ralf Quast.
 """
 
@@ -59,6 +61,8 @@ scaling = [1e-15, 1e-21, 1e-3]
 
 def get_harm_dict(files):
     """Convert all.
+
+    Returns (harms, u_harms)
     """
 
     if len(files) != 19:
@@ -66,6 +70,7 @@ def get_harm_dict(files):
 
     D = {}
     harms = {}
+    u_harms = {}
     for (ch, fn) in enumerate(files, 1):
         with xarray.open_dataset(fn) as ds:
             for i in range(ds.dims["n"]):
@@ -74,15 +79,20 @@ def get_harm_dict(files):
                 if not sat in D.keys():
                     D[sat] = {ch: itertools.count() for ch in range(1, 20)}
                     harms[sat] = {ch: {} for ch in range(1, 20)}
+                    u_harms[sat] = {ch: {} for ch in range(1, 20)}
                 c = next(D[sat][ch])
                 harms[sat][ch][c] = ds["parameter"][i].item() * scaling[c]
-    return harms
+                u_harms[sat][ch][c] = ds["parameter_uncertainty"][i].item() * scaling[c]
+    return (harms, u_harms)
 
 def write_harm_dict(fp, harms, write_preamble=True):
     if write_preamble:
         fp.write(preamble)
 
-    print("harmonisation_parameters = ", pprint.pformat(harms),
+    print("harmonisation_parameters = ", pprint.pformat(harms[0]),
+            file=fp)
+
+    print("harmonisation_parameter_uncertainties = ", pprint.pformat(harms[1]),
             file=fp)
 
 def main():

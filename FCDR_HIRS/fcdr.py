@@ -800,6 +800,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 calibrated_channel=ch, **coords)
             self._tuck_quantity_channel("a_2", a2,
                 calibrated_channel=ch)
+            self._tuck_effect_channel("a_2",
+                _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][2],
+                ch)
             self._tuck_quantity_channel("B", L_iwct.assign_coords(time=slope.coords["time"]),
                 calibrated_channel=ch)
         return (time,
@@ -1388,8 +1391,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 ε, name=me.names[me.symbols["ε"]])
             self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
                 a_3, name=me.names[me.symbols["a_3"]])
+            self._tuck_effect_channel("a_3",
+                _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][1],
+                ch)
             self._quantities[me.symbols["a_4"]] = self._quantity_to_xarray(
                 a_4, name=me.names[me.symbols["a_4"]])
+            self._tuck_effect_channel("a_4",
+                _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][0],
+                ch)
         rad_wn = rad_wn.rename({"time": "scanline_earth"})
 
 
