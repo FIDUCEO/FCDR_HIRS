@@ -89,6 +89,10 @@ Add missing months January-February 1985 for NOAA-7 (reported by MS).
 
 Fix encoding for radiances in debug version.
 
+Added correlation length scales and channel error correlations, according
+to recipes developed by Merchant et al (GH #212, #228).
+
+Use first results from harmonisation (NOAA-16 onwards).
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
