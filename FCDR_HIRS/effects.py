@@ -624,12 +624,28 @@ nonlinearity = Effect(
     dimensions=(),
     channel_correlations=blockmat,
     rmodel=rmodel_common)
-nonlinearity.magnitude=UADA(
-    3e-20, # equivalent to 1e-6 in ir units
-    name="uncertainty",
-    attrs={"units": str(radiance_units["si"]/ureg.count**2),
-           "note": "Placeholder uncertainty awaiting proper "
-                   "harmonisation"})
+
+emissivitycorrection = Effect(
+    name="a_3",
+    description="Emissivity correction",
+    parameter=meq.symbols["a_3"],
+    correlation_type=_systematic,
+    correlation_scale=_inf,
+    unit=ureg.dimensionless,
+    dimensions=(),
+    channel_correlations=_ones,
+    rmodel=rmodel_common)
+
+selfemissionbias = Effect(
+    name="a_4",
+    description="Self-emission bias",
+    parameter=meq.symbols["a_4"],
+    correlation_type=_systematic,
+    correlation_scale=_inf,
+    unit=ureg.dimensionless,
+    dimensions=(),
+    channel_correlations=_ones,
+    rmodel=rmodel_common)
 
 nonnonlinearity = Effect(
     name="O_Re",

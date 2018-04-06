@@ -31,6 +31,7 @@ from . import effects
 from . import measurement_equation as me
 from . import filters
 from . import _fcdr_defs
+from . import _harm_defs
 from .exceptions import (FCDRError, FCDRWarning) # used to be here
 
 class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
@@ -300,13 +301,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         return out
 
-    def custom_calibrate(self, counts, slope, offset, a2, Rself):
+    def custom_calibrate(self, counts, slope, offset, a2, Rself, a_4=0):
         """Calibrate with my own slope and offset
 
         All arguments should be xarray.DataArray or preferably
         UnitsAwareDataArrays.
         """
-        return offset + slope * counts + a2 * counts**2 - Rself
+        return offset + slope * counts + a2 * counts**2 - Rself + a_4
 #        return (offset[:, numpy.newaxis]
 #              + slope[:, numpy.newaxis] * counts
 #              + a2 * counts**2
@@ -474,6 +475,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     numpy.array(ds.dims["prt_number_iwt"], "u1"),
                     name=me.names[me.symbols["N"]])
 
+        # emissivity correction
+        # order: see e-mail RQ 2018-04-06
+        a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
+            name="correction to emissivity")
+        if a_3 > 0.02:
+            warnings.warn(f"Channel {ch:d}: ε + a₃ > 1!  Perhaps there is a "
+                "problem with the blackbody?", FCDRWarning)
+
         # FIXME: for consistency, should replace this one also with
         # band-corrections — at least temporarily.  Perhaps this wants to
         # be implemented inside the blackbody_radiance method…
@@ -481,7 +490,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # NB: pint seems to silently drop xarray.DataArray information,
         # see https://github.com/hgrecco/pint/issues/479
         # instead use UADA
-        L_iwct = self.ε * srf.blackbody_radiance(
+        L_iwct = (self.ε + a_3).item() * srf.blackbody_radiance(
             ureg.Quantity(T_iwct.values, ureg.K))
         #L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
         L_iwct = UADA(L_iwct,
@@ -566,7 +575,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             da = UADA(
                 numpy.asarray(quantity,
                     dtype=("f4" if hasattr(quantity, "mask") else
-                        quantity.dtype)), # masking only for floats
+                        quantity.dtype if hasattr(quantity, "dtype") else
+                        type(quantity))), # masking only for floats
                 dims=dims if dims is not None else [d for d in self._data_vars_props[name][1] if d not in dropdims],
                 attrs=self._data_vars_props[name][2],
                 encoding=self._data_vars_props[name][3])
@@ -739,9 +749,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             attrs=counts_space.attrs)
         slope = ΔL/Δcounts
 
-        # non-linearity is set to 0 for now
-        a2 = UADA(0, name="a2", coords={"calibrated_channel": ch}, attrs={"units":
-            str(rad_u["si"]/(ureg.count**2))})
+        # nonlinearity
+        # order: see e-mail RQ 2018-04-06
+        a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][1],
+            name="a2", coords={"calibrated_channel": ch},
+            attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
         offset = -counts_space**2 * a2 -slope * counts_space
 
@@ -797,6 +809,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 calibrated_channel=ch, **coords)
             self._tuck_quantity_channel("a_2", a2,
                 calibrated_channel=ch)
+            self._tuck_effect_channel("a_2",
+                _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][1],
+                ch)
             self._tuck_quantity_channel("B", L_iwct.assign_coords(time=slope.coords["time"]),
                 calibrated_channel=ch)
         return (time,
@@ -883,6 +898,16 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         has_context = context is not None
         context = context if has_context else ds
 
+        # emissivity correction
+        # order: see e-mail RQ 2018-04-06
+        a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
+            name="correction to emissivity",
+            attrs={"units": "dimensionless"})
+        # self-emission bias
+        # order: see e-mail RQ 2018-04-06
+        a_4 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][0],
+            name="harmonisation bias",
+            attrs={"units": rad_u["si"]})
 
         dsix = self.within_enough_context(ds, context, ch, 1)
         n_within_context = ds.loc[dsix]["time"].size
@@ -930,7 +955,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # need to set to dummy:
             #
             # Rself, u_Rself, R_selfIWCT, R_selfs, R_self_start, R_self_end,
-            # C_E, R_E, T_b, R_refl, α, Δα, β, Δβ, fstar, Δλ_eff, a_3, a_4
+            # C_E, R_E, T_b, R_refl, α, Δα, β, Δβ, fstar, Δλ_eff
             
             # full Earth count dimensions
             par = functools.partial(UADA,
@@ -967,8 +992,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             u_counts_earth = counts_space = counts_iwct = u_counts_space = u_counts_iwct = par(
                 attrs={"units": "counts"})
 
-            a2 = UADA(0, name="a2", coords={"calibrated_channel": ch}, attrs={"units":
-                str(rad_u["si"]/(ureg.count**2))})
+            a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][1],
+                name="a2", coords={"calibrated_channel": ch},
+                attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
             Rself_start = Rself_end = xarray.DataArray(
                 [numpy.datetime64(0, 's')], dims=["time_rself"])
@@ -1271,14 +1297,15 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             if Rrefl_model is None:
                 warnings.warn("No Earthshine model defined, assuming 0!",
                     FCDRWarning)
-                R_refl = UADA(numpy.zeros(shape=offset.shape),
-                        coords=offset.coords,
+                R_refl = UADA(numpy.zeros(shape=offset["time"].shape),
+                        coords=offset["time"].coords,
+                        name="R_refl",
                         attrs={"units": str(rad_u["si"])})
             else:
                 raise NotImplementedError("Evalutation of Earthshine "
                     "model not implemented yet")
             rad_wn = self.custom_calibrate(C_Earth, interp_slope,
-                interp_offset, a2, Rself)
+                interp_offset, a2, Rself, a_4)
 
             bad = self.filter_earthcounts.filter_outliers(C_Earth.values)
             # I need to compare to space counts.
@@ -1311,10 +1338,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # end if n_within_context == 0.  From here only code that can be
         # executed whether I have good data or not.
 
-        ε = UADA(1, name="emissivity")
-        a_3 = UADA(self.ε-1, name="correction to emissivity")
-        a_4 = UADA(0, name="harmonisation bias",
-            attrs={"units": rad_u["si"]})
         if not has_Rself: # need to set manually
             newcoor = dict(
                 Rself_start=xarray.DataArray(
@@ -1380,11 +1403,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 calibrated_channel=ch)
             self._tuck_effect_channel("f_eff", Δλ_eff.to(ureg.GHz, "sp"), ch)
             self._quantities[me.symbols["ε"]] = self._quantity_to_xarray(
-                ε, name=me.names[me.symbols["ε"]])
+                self.ε, name=me.names[me.symbols["ε"]])
             self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
                 a_3, name=me.names[me.symbols["a_3"]])
+            self._tuck_effect_channel("a_3",
+                _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][2],
+                ch)
             self._quantities[me.symbols["a_4"]] = self._quantity_to_xarray(
                 a_4, name=me.names[me.symbols["a_4"]])
+            self._tuck_effect_channel("a_4",
+                _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][0],
+                ch)
         rad_wn = rad_wn.rename({"time": "scanline_earth"})
 
 
@@ -1805,7 +1834,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # Before I proceed, I want to check for zero arguments; this
         # might mean that I need to evaluate less.  Hence two runs through
         # args: first to check the zeroes, then to see what's left.
-        for v in args:
+        for v in sorted(args, key=str):
             if isinstance(v, fu):
                 # comparing .values to avoid entering
                 # xarray.core.nputils.array_eq which has a catch_warnings
@@ -1851,7 +1880,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         adict = {}
         sub_sensitivities = {}
         sub_components = {}
-        for v in args:
+        for v in sorted(args, key=str):
             # check which one of the four aforementioned applies
             if isinstance(v, fu):
                 # it's an uncertainty function
