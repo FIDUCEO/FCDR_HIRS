@@ -1297,8 +1297,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             if Rrefl_model is None:
                 warnings.warn("No Earthshine model defined, assuming 0!",
                     FCDRWarning)
-                R_refl = UADA(numpy.zeros(shape=offset.shape),
-                        coords=offset.coords,
+                R_refl = UADA(numpy.zeros(shape=offset["time"].shape),
+                        coords=offset["time"].coords,
+                        name="R_refl",
                         attrs={"units": str(rad_u["si"])})
             else:
                 raise NotImplementedError("Evalutation of Earthshine "
