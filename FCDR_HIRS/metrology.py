@@ -23,6 +23,7 @@ from . import effects
 from . import measurement_equation as me
 from .fcdr import make_debug_fcdr_dims_consistent
 from . import _fcdr_defs
+from .exceptions import FCDRError
 
 def evaluate_uncertainty(e, unset="raise"):
     """Evaluate uncertainty for expression.
@@ -462,6 +463,9 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     # Decide how to treat 
     brokenchan = bad.any("n_e").all("n_l")
     brokenline = bad.sel(n_c=~brokenchan).any("n_e").any("n_c")
+    if brokenchan.all() or brokenline.all():
+        raise FCDRError("No valid data found, cannot calculate "
+            "correlation length scales")
 
     ## Allocation ##
 

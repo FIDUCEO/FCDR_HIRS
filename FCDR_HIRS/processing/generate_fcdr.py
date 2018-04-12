@@ -445,16 +445,20 @@ class FCDRGenerator:
         # set uncertainty flag when extended uncertainty larger than value
         ds["quality_pixel_bitmask"].values[((2*ds["u_R_Earth"]) > ds["R_e"]).transpose(*ds["quality_pixel_bitmask"].dims).values] |= _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
 
-        (Δ_l, Δ_e, R_ci, R_cs) = metrology.calc_corr_scale_channel(
-            self.fcdr._effects, sensRe, ds, flags=self.fcdr._flags)
-
-        # add those to the ds, not in TBs format yet
-        ds["cross_line_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_l.sel(val="popt").values)
-        ds["cross_element_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_e.sel(val="popt").values)
-        ds["cross_channel_error_correlation_matrix_independent_effects"] = (
-            ("calibration_channel", "calibration_channel"), R_ci)
-        ds["cross_channel_error_correlation_matrix_structured_effects"] = (
-            ("calibration_channel", "calibration_channel"), R_cs)
+        try:
+            (Δ_l, Δ_e, R_ci, R_cs) = metrology.calc_corr_scale_channel(
+                self.fcdr._effects, sensRe, ds, flags=self.fcdr._flags)
+        except fcdr.FCDRError as e:
+            logging.error("Failed to calculate correlation length scales: "
+                          f"{e.args[0]}")
+        else:
+            # add those to the ds, not in TBs format yet
+            ds["cross_line_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_l.sel(val="popt").values)
+            ds["cross_element_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_e.sel(val="popt").values)
+            ds["cross_channel_error_correlation_matrix_independent_effects"] = (
+                ("calibration_channel", "calibration_channel"), R_ci)
+            ds["cross_channel_error_correlation_matrix_structured_effects"] = (
+                ("calibration_channel", "calibration_channel"), R_cs)
 
         if return_more:
             return (ds, sensRe)
@@ -604,14 +608,18 @@ class FCDRGenerator:
             channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
                 channel=slice(19)).rename({"channel": "calibrated_channel"}),
             LUT_BT=piece["LUT_BT"],
-            LUT_radiance=piece["LUT_radiance"],
-            cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
-            cross_element_radiance_error_correlation_length_scale_structured_effects=piece["cross_element_radiance_error_correlation_length_scale_structured_effects"],
-            cross_channel_error_correlation_matrix_independent_effects=piece["cross_channel_error_correlation_matrix_independent_effects"],
-            cross_channel_error_correlation_matrix_structured_effects=piece["cross_channel_error_correlation_matrix_structured_effects"],
-                )
-#            u_random=UADA(piece["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
-#            u_non_random=UADA(piece["u_R_Earth_nonrandom"]).to(rad_u["ir"], "radiance"))
+            LUT_radiance=piece["LUT_radiance"])
+        try:
+            newcont.extend(**dict(
+                cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
+                cross_element_radiance_error_correlation_length_scale_structured_effects=piece["cross_element_radiance_error_correlation_length_scale_structured_effects"],
+                cross_channel_error_correlation_matrix_independent_effects=piece["cross_channel_error_correlation_matrix_independent_effects"],
+                cross_channel_error_correlation_matrix_structured_effects=piece["cross_channel_error_correlation_matrix_structured_effects"],
+                    ))
+        except KeyError:
+            # assuming they're missing because their calculation failed
+            logging.debug("Correlation length scales missing in debug FCDR." 
+                "See above, I guess their calculation failed.")
 
         if self.fcdr.version >= 3:
             newcont.update(
