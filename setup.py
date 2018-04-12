@@ -31,8 +31,8 @@ cp = subprocess.run(
     check=True)
 br = cp.stdout
 
-version = so.strip().decode("ascii").lstrip("v").replace("-",
-    "+dev", 1).replace("-", ".") + "." + br.strip().decode("ascii")
+version = so.strip().decode("utf-8").lstrip("v").replace("-",
+    "+dev", 1).replace("-", ".") + "." + br.strip().decode("utf-8")
 
 setup(
     name='FCDR_HIRS',
