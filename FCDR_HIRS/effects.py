@@ -238,7 +238,10 @@ class RModelRSelf(Rmodel):
         i = itertools.count()
         while True:
             d = next(i)
-            r = 1 - (ds["scanline_earth"][d] - ds["scanline_earth"][0])/numpy.timedelta64(25, 'm')
+            try:
+                r = 1 - (ds["scanline_earth"][d] - ds["scanline_earth"][0])/numpy.timedelta64(25, 'm')
+            except IndexError: # not enough lines in orbit
+                break
             if r <= 0:
                 break
             for s in (+1, -1):
