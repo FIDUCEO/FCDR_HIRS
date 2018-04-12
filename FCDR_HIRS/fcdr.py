@@ -979,6 +979,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # NB: dtype must be ns, https://github.com/pydata/xarray/issues/1494
             par = functools.partial(UADA,
                 numpy.zeros(shape=0),
+                dims=("time",),
                 coords={"time": numpy.zeros(shape=0, dtype="M8[ns]")})
 
             B = offset = a_0 = L_iwct = u_Rself = RselfIWCT = Rselfspace = \
