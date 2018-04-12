@@ -447,7 +447,8 @@ class FCDRGenerator:
 
         try:
             (Δ_l, Δ_e, R_ci, R_cs) = metrology.calc_corr_scale_channel(
-                self.fcdr._effects, sensRe, ds, flags=self.fcdr._flags)
+                self.fcdr._effects, sensRe, ds, flags=self.fcdr._flags,
+                robust=True)
         except fcdr.FCDRError as e:
             logging.error("Failed to calculate correlation length scales: "
                           f"{e.args[0]}")
