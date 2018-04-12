@@ -23,6 +23,7 @@ from . import effects
 from . import measurement_equation as me
 from .fcdr import make_debug_fcdr_dims_consistent
 from . import _fcdr_defs
+from .exceptions import FCDRError
 
 def evaluate_uncertainty(e, unset="raise"):
     """Evaluate uncertainty for expression.
@@ -377,7 +378,8 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
     raise KeyError(f"Term not found: {sym!s}")
 
 def calc_corr_scale_channel(effects, sensRe, ds, 
-        sampling_l=8, sampling_e=1, flags=None):
+        sampling_l=8, sampling_e=1, flags=None,
+        robust=False):
     """Calculate correlation length scales per channel
 
     Arguments:
@@ -414,6 +416,12 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             Flags such as collected during FCDR generation.  This is used
             to know what scanlines, elements, or channels to skip (missing
             data).
+
+        robust: bool
+
+            If True and nothing can be calculated, log a warning and
+            return objects full of fill values.  If False and nothing can
+            be calculated, raise an error.
     """
 
     # For suggested dimensions per term, see docstring of
@@ -462,6 +470,22 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     # Decide how to treat 
     brokenchan = bad.any("n_e").all("n_l")
     brokenline = bad.sel(n_c=~brokenchan).any("n_e").any("n_c")
+    if brokenchan.all() or brokenline.all():
+        errmsg = ("No valid data found, cannot calculate "
+            "correlation length scales")
+        if robust:
+            logging.error(errmsg)
+            Δ_e = Δ_l = xarray.DataArray(
+                numpy.zeros((n_c, 2))*numpy.nan,
+                dims=("n_c", "val"),
+                coords={"n_c": all_coords["n_c"], "val": ["popt", "pcov"]})
+            R_ci = R_cs = xarray.DataArray(
+                numpy.zeros((n_c, n_c))*numpy.nan,
+                dims=("n_c", "n_c"),
+                coords={"n_c": all_coords["n_c"]})
+            return (Δ_l, Δ_e, R_ci, R_cs)
+        else:
+            raise FCDRError(errmsg)
 
     ## Allocation ##
 
