@@ -8,9 +8,11 @@ import collections
 import itertools
 import logging
 import numbers
-import numexpr
+import copy
+
 from typing import (List, Dict, Tuple, Deque, Optional)
 
+import numexpr
 import numpy
 import scipy.optimize
 import xarray
@@ -20,6 +22,7 @@ import typhon.physics.metrology
 from . import effects
 from . import measurement_equation as me
 from .fcdr import make_debug_fcdr_dims_consistent
+from . import _fcdr_defs
 
 def evaluate_uncertainty(e, unset="raise"):
     """Evaluate uncertainty for expression.
@@ -209,8 +212,11 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
     R = R_xΛyt
     S_xΛyt = numexpr.evaluate("C * U * R * UT * CT")
     S_xtΛy = S_xΛyt.sum(int(per_channel))
+    newcoords = copy.deepcopy(R_xΛyt.coords)
+    del newcoords[R_xΛyt.dims[int(per_channel)]]
     return xarray.DataArray(S_xtΛy,
-        dims=R_xΛyt.dims[0:int(per_channel)] + R_xΛyt.dims[(1+int(per_channel)):])
+        dims=R_xΛyt.dims[0:int(per_channel)] + R_xΛyt.dims[(1+int(per_channel)):],
+        coords=newcoords)
 
 def calc_S_xt(S_xtΛy: List[numpy.ndarray],
               per_channel: bool=None) -> numpy.ndarray:
@@ -282,7 +288,7 @@ def calc_R_xt(S_xt: numpy.ndarray):
     dUi = (1/U_xt_diag)[..., numpy.newaxis]
     dUiT = dUi.swapaxes(-1, -2)
     R_xt = numexpr.evaluate("dUi * S_xt * dUiT") # equivalent to Ui@S@Ui.T when written fully
-    return xarray.DataArray(R_xt, dims=S_xt.dims)
+    return xarray.DataArray(R_xt, dims=S_xt.dims, coords=S_xt.coords)
 
 def calc_Δ_x(R_xt: numpy.ndarray):
     """Calculate optimum Δ_e or Δ_l
@@ -307,7 +313,9 @@ def calc_Δ_x(R_xt: numpy.ndarray):
         dims=(dim,))
     r_xΔ = xarray.DataArray(
         numpy.array([numpy.diagonal(R_xt, i, -2, -1).mean(-1) for i in Δ_ref]),
-        dims=("n_p", "n_c"))
+        dims=("n_p", "n_c"),
+        coords={"n_p": R_xt.coords[R_xt.dims[1]].values, # may be n_l or n_e
+                "n_c": R_xt.coords["n_c"]})
 
     def f(Δ, Δ_e):
         return numpy.exp(-Δ/Δ_e)
@@ -315,7 +323,7 @@ def calc_Δ_x(R_xt: numpy.ndarray):
     # I don't suppose I can vectorise this one…
     popt = xarray.DataArray(
         numpy.array([scipy.optimize.curve_fit(f, Δ_ref, r_xΔ.sel(n_c=c),
-            p0=1) for c in r_xΔ["n_c"]]).squeeze(),
+            p0=1) for c in r_xΔ["n_c"]])[..., 0],
         dims=("n_c", "val"),
         coords={"n_c": r_xΔ["n_c"],
                 "val": ["popt", "pcov"]})
@@ -369,8 +377,43 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
     raise KeyError(f"Term not found: {sym!s}")
 
 def calc_corr_scale_channel(effects, sensRe, ds, 
-        sampling_l=8, sampling_e=1):
+        sampling_l=8, sampling_e=1, flags=None):
     """Calculate correlation length scales per channel
+
+    Arguments:
+
+        effects: Mapping[symbol, Collection[effect]]
+
+            Dictionary containing, for each term in the measurement
+            equation (sympy symbols), a collection (such a set) of all
+            effects (instances of the Effect class) for this particular
+            symbol.
+
+        sensRe: Dict[Symbol, Tuple[ndarray,
+                    Dict[Symbol, Tuple[ndarray,
+                        Dict[Symbol, Tuple[...]]]]]]
+
+            Collection of sensitivities such as returned by
+            the calc_u_for_variable method of the FCDR class.
+
+        ds: Dataset
+
+            xarray Dataset containing the debug version of the FCDR.
+
+        sampling_l: int
+
+            Sampling level between lines.  Defaults to 8.
+
+        sampling_e: int
+
+            Sampling level between elements.  Defaults to 1 (i.e. consider
+            all elements).
+
+        flags: Mapping[str, DataArray]
+
+            Flags such as collected during FCDR generation.  This is used
+            to know what scanlines, elements, or channels to skip (missing
+            data).
     """
 
     # For suggested dimensions per term, see docstring of
@@ -393,7 +436,34 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     n_l = ds.dims["scanline_earth"]
     n_e = ds.dims["scanpos"]
     n_c = ds.dims["calibrated_channel"]
-    n_j = len(effects.keys())
+
+    all_coords = {
+        "n_c": numpy.arange(1, 20),
+        "n_s": numpy.arange(0, n_s),
+        "n_l": numpy.arange(0, n_l, sampling_l),
+        "n_e": numpy.arange(0, n_e, sampling_e),
+        "n_i": numpy.arange(0, n_i)}
+
+    bad = (((flags["channel"].isel(scanline_earth=all_coords["n_l"]) &
+            _fcdr_defs.FlagsChannel.DO_NOT_USE)!=0) |
+           ((flags["scanline"].isel(scanline_earth=all_coords["n_l"]) &
+            _fcdr_defs.FlagsScanline.DO_NOT_USE)!=0) |
+           ((flags["pixel"].isel(scanline_earth=all_coords["n_l"]) &
+            _fcdr_defs.FlagsPixel.DO_NOT_USE)!=0))
+
+    bad = bad.rename(
+        {"scanline_earth": "n_l",
+         "scanpos": "n_e",
+         "calibrated_channel": "n_c"}).assign_coords(
+            n_l=all_coords["n_l"],
+            n_e=all_coords["n_e"],
+            n_c=all_coords["n_c"])
+
+    # Decide how to treat 
+    brokenchan = bad.any("n_e").all("n_l")
+    brokenline = bad.sel(n_c=~brokenchan).any("n_e").any("n_c")
+
+    ## Allocation ##
 
     logging.debug("Allocating arrays for correlation calculations")
 
@@ -402,14 +472,18 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             math.ceil(n_l/sampling_l),
             math.ceil(n_e/sampling_e),
             math.ceil(n_e/sampling_e)), dtype="f4"),
-        dims=("n_c", "n_s", "n_l", "n_e", "n_e"))
+        dims=("n_c", "n_s", "n_l", "n_e", "n_e"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_s", "n_l", "n_e"}})
 
     R_lΛes = xarray.DataArray(
         numpy.zeros((n_c, n_s, 
             math.ceil(n_e/sampling_e),
             math.ceil(n_l/sampling_l),
             math.ceil(n_l/sampling_l)), dtype="f4"),
-        dims=("n_c", "n_s", "n_e", "n_l", "n_l"))
+        dims=("n_c", "n_s", "n_e", "n_l", "n_l"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_s", "n_l", "n_e"}})
 
     R_cΛpi = xarray.DataArray(
         numpy.zeros(
@@ -418,7 +492,9 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             math.ceil(n_e/sampling_e),
             n_c,
             n_c), dtype="f4"),
-        dims=("n_i", "n_l", "n_e", "n_c", "n_c"))
+        dims=("n_i", "n_l", "n_e", "n_c", "n_c"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_i", "n_l", "n_e"}})
 
     R_cΛps = xarray.DataArray(
         numpy.zeros(
@@ -427,7 +503,9 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             math.ceil(n_e/(sampling_e)),
             n_c,
             n_c), dtype="f4"),
-        dims=("n_s", "n_l", "n_e", "n_c", "n_c"))
+        dims=("n_s", "n_l", "n_e", "n_c", "n_c"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_s", "n_l", "n_e"}})
 
     # store only diagonals for optimised memory consumption and
     # calculation speed
@@ -435,7 +513,9 @@ def calc_corr_scale_channel(effects, sensRe, ds,
         numpy.zeros((n_c, n_s,
             math.ceil(n_l/sampling_l),
             math.ceil(n_e/sampling_e)), dtype="f4"),
-        dims=("n_c", "n_s", "n_l", "n_e"))
+        dims=("n_c", "n_s", "n_l", "n_e"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_s", "n_l", "n_e"}})
 
     U_lΛes_diag = U_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
     U_cΛps_diag = U_eΛls_diag.transpose("n_l", "n_e", "n_s", "n_c")
@@ -446,7 +526,9 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             math.ceil(n_l/sampling_l),
             math.ceil(n_e/sampling_e),
             n_c), dtype="f4"),
-        dims=("n_i", "n_l", "n_e", "n_c"))
+        dims=("n_i", "n_l", "n_e", "n_c"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_i", "n_l", "n_e"}})
     # Equivalent to:
     #
     # U_lΛes_diag = xarray.DataArray(
@@ -464,13 +546,17 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     C_eΛls_diag = xarray.DataArray(
         numpy.zeros((n_c, n_s, math.ceil(n_l/sampling_l),
             math.ceil(n_e/sampling_e)), dtype="f4"),
-        dims=("n_c", "n_s", "n_l", "n_e")) # last n_e superfluous
+        dims=("n_c", "n_s", "n_l", "n_e"), # last n_e superfluous
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_s", "n_l", "n_e"}})
     C_lΛes_diag = C_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
     C_cΛps_diag = C_eΛls_diag.transpose("n_s", "n_l", "n_e", "n_c")
 
     C_cΛpi_diag = xarray.DataArray(
         numpy.zeros_like(U_cΛpi_diag.values),
-        dims=("n_i", "n_l", "n_e", "n_c"))
+        dims=("n_i", "n_l", "n_e", "n_c"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_i", "n_l", "n_e"}})
 
     # should the next one be skipped?
 #    R_eΛli = xarray.DataArray(
@@ -485,6 +571,8 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 #    C_lΛej: ...
 #    R_lΛei: ...
 #    U_eΛei: ...
+
+    ## Copying data to correct format ##
 
     ccs = itertools.count()
     cci = itertools.count()
@@ -518,7 +606,6 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 #        diagonals.setflags(write=True)
 #        diagonals[:] = CC
 
-        #C_eΛlj[{"n_j": cj}].values[...] = expanded
         if len(effects[j]) == 0:
             warnings.warn(f"Zero effects for term {j!s}!", UserWarning)
         for k in effects[j]: # loop over effects for term (usually exactly one)
@@ -596,32 +683,67 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     U_cΛpi_diag = U_cΛpi_diag.sel(n_i=slice(tci))
     C_cΛpi_diag = C_cΛpi_diag.sel(n_i=slice(tci))
 
+    ## Apply recipes ##
+
     S_lsΛe = calc_S_from_CUR(R_lΛes, U_lΛes_diag, C_lΛes_diag)
     S_ls = calc_S_xt(S_lsΛe)
     R_ls = calc_R_xt(S_ls)
-    Δ_l = calc_Δ_x(R_ls)*sampling_l
+    R_ls_safe = xarray.DataArray(
+        R_ls.values[:, :, ~brokenline.values][:, ~brokenline.values, :][~brokenchan.values, :, :],
+        dims=R_ls.dims,
+        coords={"n_c": all_coords["n_c"][~brokenchan.values],
+                "n_l": all_coords["n_l"][~brokenline.values]})
+    Δ_l = calc_Δ_x(R_ls_safe)*sampling_l
+
+    # verify that bad data in result is due to known bad data in input.
+    # We only need to check a single row or column in S_lsΛe because this
+    # matrix is symmetric.
+#    if not numpy.array_equal(
+#            numpy.isnan(C_lΛes_diag).any("n_s"),
+#            numpy.isnan(S_lsΛe.values[:, :, :, 0])):
+#        raise ValueError("Unexpected nan propagation")
 
     S_esΛl = calc_S_from_CUR(R_eΛls, U_eΛls_diag, C_eΛls_diag)
     S_es = calc_S_xt(S_esΛl)
     R_es = calc_R_xt(S_es)
     Δ_e = calc_Δ_x(R_es)*sampling_e
 
+    R_cΛpi_stacked = typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))
     S_ciΛp = calc_S_from_CUR(
         xarray.DataArray(
-        typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))
-            .values.transpose(0, 3, 1, 2), dims=("n_i", "n_p", "n_c", "n_c")),
+            R_cΛpi_stacked.values.transpose(0, 3, 1, 2),
+            dims=("n_i", "n_p", "n_c", "n_c"),
+            coords=R_cΛpi_stacked.coords),
         U_cΛpi_diag.stack(n_p=("n_l", "n_e")).transpose("n_i", "n_p", "n_c"),
         C_cΛpi_diag.stack(n_p=("n_l", "n_e")).transpose("n_i", "n_p", "n_c"))
     S_ci = calc_S_xt(S_ciΛp)
     R_ci = calc_R_xt(S_ci)
 
+    R_cΛps_stacked = typhon.utils.stack_xarray_repdim(R_cΛps, n_p=("n_l", "n_e"))
     S_csΛp = calc_S_from_CUR(
         xarray.DataArray(
-        typhon.utils.stack_xarray_repdim(R_cΛps, n_p=("n_l", "n_e"))
-            .values.transpose(0, 3, 1, 2), dims=("n_s", "n_p", "n_c", "n_c")),
+            R_cΛps_stacked.values.transpose(0, 3, 1, 2),
+            dims=("n_s", "n_p", "n_c", "n_c"),
+            coords=R_cΛps_stacked.coords),
         U_cΛps_diag.stack(n_p=("n_l", "n_e")).transpose("n_s", "n_p", "n_c"),
         C_cΛps_diag.stack(n_p=("n_l", "n_e")).transpose("n_s", "n_p", "n_c"))
     S_cs = calc_S_xt(S_csΛp)
     R_cs = calc_R_xt(S_cs)
 
-    return (Δ_l, Δ_e, R_ci, R_cs)
+    # fill missing channels
+
+    Δ_l_all = xarray.DataArray(
+        numpy.zeros((n_c, 2)),
+        dims=Δ_l.dims,
+        coords={"n_c": all_coords["n_c"], "val": Δ_l["val"]})
+    Δ_l_all.loc[{"n_c": Δ_l["n_c"]}] = Δ_l
+    Δ_l_all[{"n_c": brokenchan}] = numpy.nan
+
+    Δ_e_all = xarray.DataArray(
+        numpy.zeros((n_c, 2)),
+        dims=Δ_e.dims,
+        coords={"n_c": all_coords["n_c"], "val": Δ_e["val"]})
+    Δ_e_all.loc[{"n_c": Δ_e["n_c"]}] = Δ_e
+    Δ_e_all[{"n_c": brokenchan}] = numpy.nan
+
+    return (Δ_l_all, Δ_e_all, R_ci, R_cs)
