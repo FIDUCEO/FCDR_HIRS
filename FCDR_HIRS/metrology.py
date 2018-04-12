@@ -290,7 +290,7 @@ def calc_R_xt(S_xt: numpy.ndarray):
     R_xt = numexpr.evaluate("dUi * S_xt * dUiT") # equivalent to Ui@S@Ui.T when written fully
     return xarray.DataArray(R_xt, dims=S_xt.dims, coords=S_xt.coords)
 
-def calc_Δ_x(R_xt: numpy.ndarray):
+def calc_Δ_x(R_xt: xarray.DataArray):
     """Calculate optimum Δ_e or Δ_l
 
     Calculate optimum correlation length scale, either across elements,
@@ -301,7 +301,7 @@ def calc_Δ_x(R_xt: numpy.ndarray):
 
     Arguments:
 
-        R_es or R_ls: numpy.ndarray
+        R_es or R_ls: xarray.DataArray
 
             Either cross-element or cross-line radiance error correlation matrix, structured
             effects, per channel.  Can be obtained from calc_R_xt.
@@ -309,10 +309,10 @@ def calc_Δ_x(R_xt: numpy.ndarray):
 
     dim = R_xt.dims[-1]
     Δ_ref = xarray.DataArray(
-        numpy.arange(R_xt[dim].size),
+        R_xt.coords[dim],
         dims=(dim,))
     r_xΔ = xarray.DataArray(
-        numpy.array([numpy.diagonal(R_xt, i, -2, -1).mean(-1) for i in Δ_ref]),
+        numpy.array([numpy.diagonal(R_xt, i, -2, -1).mean(-1) for i in range(R_xt.shape[-1])]),
         dims=("n_p", "n_c"),
         coords={"n_p": R_xt.coords[R_xt.dims[1]].values, # may be n_l or n_e
                 "n_c": R_xt.coords["n_c"]})
@@ -693,7 +693,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
         dims=R_ls.dims,
         coords={"n_c": all_coords["n_c"][~brokenchan.values],
                 "n_l": all_coords["n_l"][~brokenline.values]})
-    Δ_l = calc_Δ_x(R_ls_safe)*sampling_l
+    Δ_l = calc_Δ_x(R_ls_safe)
 
     # verify that bad data in result is due to known bad data in input.
     # We only need to check a single row or column in S_lsΛe because this
@@ -706,7 +706,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     S_esΛl = calc_S_from_CUR(R_eΛls, U_eΛls_diag, C_eΛls_diag)
     S_es = calc_S_xt(S_esΛl)
     R_es = calc_R_xt(S_es)
-    Δ_e = calc_Δ_x(R_es)*sampling_e
+    Δ_e = calc_Δ_x(R_es)
 
     R_cΛpi_stacked = typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))
     S_ciΛp = calc_S_from_CUR(
