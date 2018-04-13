@@ -1330,7 +1330,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # NB, need to test if this takes care of most remaining
             # bad outliers!  May need an entire rerun of the archive for
             # that...
-            self._flags["pixel"].loc[{"calibrated_channel": ch}].values[bad] |= (
+            self._flags["pixel"].loc[{"calibrated_channel": ch}].values[bad.values] |= (
                 _fcdr_defs.FlagsPixel.DO_NOT_USE|_fcdr_defs.FlagsPixel.OUTLIER_NOS)
             # 
             coords = {"calibration_cycle": time.values}
