@@ -37,7 +37,8 @@ warning_modes = dict(
     no_files = "Directories searched appear to contain no matching files.",
     Lself_suspect = "When trying to fit or test self-emission model",
     calibzero = "Found cases where counts_space == counts_iwct == 0.",
-    remaining_timeseq = "Still has time sequence issues")
+    remaining_timeseq = "Still has time sequence issues",
+    magnitude_none = "is None, not considering for correlation scale calculations.")
 
 # alternative: collections.Counter
 error_counts = dict.fromkeys(error_modes, 0)
