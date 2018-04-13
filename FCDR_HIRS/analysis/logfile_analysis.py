@@ -20,6 +20,7 @@ error_modes = dict(
     no_header ="Could not find header",
     non_integer_records = "truncated",
     too_few_scanlines = "File contains only",
+    too_few_scanlines_2 = "scanlines in period",
     firstline_unable = "Unable to filter firstline",
     incomplete_records = "but I found only",
     unsorted_time = "returned data with unsorted time")

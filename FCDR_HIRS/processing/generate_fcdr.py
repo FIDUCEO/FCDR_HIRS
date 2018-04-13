@@ -303,6 +303,12 @@ class FCDRGenerator:
                 f"{from_:%Y-%m-%d %H:%M}--{to:%Y-%m-%d %H:%M}.  NB: "
                 "if this error message happens consistently there is a "
                 "bug!")
+        elif subset.dims["time"] < 3:
+            raise fcdr.FCDRError(f"Found only {subset.dims['time']:d} "
+                "scanlines in period "
+                f"{from_:%Y-%m-%d %H:%M}--{to:%Y-%m-%d %H:%M}.  NB: "
+                "if this error message happens consistently there is a "
+                "bug!")
         context = self.dd.data
 #        if not (context["time"].values[0] < subset["time"].values[0] <
 #                subset["time"].values[-1] < context["time"].values[-1]):
