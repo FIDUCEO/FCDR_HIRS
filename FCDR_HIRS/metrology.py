@@ -730,7 +730,12 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     S_esΛl = calc_S_from_CUR(R_eΛls, U_eΛls_diag, C_eΛls_diag)
     S_es = calc_S_xt(S_esΛl)
     R_es = calc_R_xt(S_es)
-    Δ_e = calc_Δ_x(R_es)
+    R_es_safe = xarray.DataArray(
+        R_es.values[~brokenchan.values, :, :],
+        dims=R_es.dims,
+        coords={"n_c": all_coords["n_c"][~brokenchan.values],
+                "n_e": all_coords["n_e"]})
+    Δ_e = calc_Δ_x(R_es_safe)
 
     R_cΛpi_stacked = typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))
     S_ciΛp = calc_S_from_CUR(
