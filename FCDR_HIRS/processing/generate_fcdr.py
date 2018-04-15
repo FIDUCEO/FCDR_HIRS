@@ -617,7 +617,7 @@ class FCDRGenerator:
             LUT_BT=piece["LUT_BT"],
             LUT_radiance=piece["LUT_radiance"])
         try:
-            newcont.extend(**dict(
+            newcont.update(**dict(
                 cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
                 cross_element_radiance_error_correlation_length_scale_structured_effects=piece["cross_element_radiance_error_correlation_length_scale_structured_effects"],
                 cross_channel_error_correlation_matrix_independent_effects=piece["cross_channel_error_correlation_matrix_independent_effects"],
