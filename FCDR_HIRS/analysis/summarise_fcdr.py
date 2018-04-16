@@ -30,7 +30,7 @@ def parse_cmdline():
              "hardcoded by type.")
 
     parser.add_argument("--version", action="store", type=str,
-        default="0.7",
+        default="0.8pre",
         help="Version to use.")
 #            "or plot from them")
 
@@ -111,8 +111,8 @@ class FCDRSummary(HomemadeDataset):
 
     fields = {
         "debug":
-            ["T_b", "u_T_b_random", "u_T_b_nonrandom",
-            "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
+            ["T_b", "u_T_b_independent", "u_T_b_structured",
+            "R_e", "u_R_Earth_independent", "u_R_Earth_structured",
             "u_C_Earth"],
         "easy":
             ["bt", "u_independent", "u_structured"],
@@ -122,11 +122,11 @@ class FCDRSummary(HomemadeDataset):
         {
         **{field: (("edges",), [170, 320]) for field in ("T_b", "bt")},
         **{field: (("edges",), [0, 200]) for field in 
-            ["u_T_b_random", "u_T_b_nonrandom",
+            ["u_T_b_independent", "u_T_b_structured",
              "u_independent", "u_structured"]},
         **{field: (("channel", "edges"),
                    [[0, 200]]*10+[[0, 100]]*2+[[0,10]]*7)
-            for field in ("R_e", "u_R_Earth_random", "u_R_Earth_nonrandom")},
+            for field in ("R_e", "u_R_Earth_independent", "u_R_Earth_structured")},
         "u_C_Earth": (("edges",), [-4097, 4098]),
         },
         coords={"channel": numpy.arange(1, 20)})
@@ -199,7 +199,7 @@ class FCDRSummary(HomemadeDataset):
             except DataFileError:
                 continue
             if fcdr_type == "debug":
-                bad = (2*ds["u_R_Earth_nonrandom"] > ds["R_e"])
+                bad = (2*ds["u_R_Earth_structured"] > ds["R_e"])
             else: # should be "easy"
                 bad = (2*ds["u_structured"] > ds["bt"])
             for field in fields[fcdr_type]:
@@ -278,9 +278,9 @@ class FCDRSummary(HomemadeDataset):
         summary = self.read_period(start, end,
             locator_args={"data_version": "v"+self.data_version,
                 "fcdr_type": fcdr_type})
-        #fields = ["T_b", "u_T_b_random", "u_T_b_nonrandom"]
+        #fields = ["T_b", "u_T_b_independent", "u_T_b_structured"]
 
-#        for field in ("u_T_b_random", "u_R_Earth_random", "u_C_Earth"):
+#        for field in ("u_T_b_independent", "u_R_Earth_independent", "u_C_Earth"):
 #            summary[field] *= numpy.sqrt(48) # workaround #125, remove after fix
         for channel in range(1, 20):
             total_title = (f"HIRS {self.satname:s} ch {channel:d} "

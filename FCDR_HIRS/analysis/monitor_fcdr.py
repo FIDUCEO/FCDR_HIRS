@@ -53,8 +53,8 @@ class FCDRMonitor:
                "-{te:%Y%m%d%H%M}.png")
     figtit = ("HIRS FCDR v{self.version:s} with uncertainties {self.satname:s} ch. {ch:d}, "
               "{tb:%Y-%m-%d %H:%M}--{te:%Y-%m-%d %H:%M} (scanpos {sp:d})")
-    fields=["T_b", "u_T_b_random", "u_T_b_nonrandom",
-        "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
+    fields=["T_b", "u_T_b_independent", "u_T_b_structured",
+        "R_e", "u_R_Earth_independent", "u_R_Earth_structured",
         'u_from_R_selfE', 'u_from_a_0', 'u_from_a_2', 'u_from_a_1',
         'u_from_C_s', 'u_from_C_IWCT', 'u_from_R_IWCT', 'u_from_B',
         'u_from_Tstar', 'u_from_β', 'u_from_α', 'u_from_T_IWCT',
@@ -84,7 +84,7 @@ class FCDRMonitor:
 #            gridspec_kw={"width_ratios": [3, 1], "hspace": 1},
 #            figsize=(18, 3*nrow))
 
-#        bad = (2*ds["u_R_Earth_nonrandom"] > ds["R_e"])
+#        bad = (2*ds["u_R_Earth_structured"] > ds["R_e"])
 #        for v in self.fields:
 #            ds[v][bad] = numpy.nan 
 
@@ -113,7 +113,7 @@ class FCDRMonitor:
             )!=0
         
         # This doesn't work
-        # ds[["T_b","u_T_b_random","u_T_b_nonrandom"]][{"scanline_earth": bad}] = numpy.nan
+        # ds[["T_b","u_T_b_independent","u_T_b_structured"]][{"scanline_earth": bad}] = numpy.nan
         for fld in {f for f in self.fields
                     if f.startswith("u_")
                     or f in {"T_b", "R_e"}}:
@@ -121,8 +121,8 @@ class FCDRMonitor:
 
         self._plot_var_with_unc(
             ds["T_b"],
-            ds["u_T_b_random"],
-            ds["u_T_b_nonrandom"],
+            ds["u_T_b_independent"],
+            ds["u_T_b_structured"],
             a_tb, a_tb_h, a_tb_u, a_tb_u_h)
 
         dsu = ds[[x for x in ds.data_vars.keys() if x.startswith("u_from_")]]
@@ -171,26 +171,26 @@ class FCDRMonitor:
 
         self._plot_var_with_unc(
             UADA(ds["R_e"]).to(rad_u["ir"], "radiance"),
-            UADA(ds["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
-            UADA(ds["u_R_Earth_nonrandom"]).to(rad_u["ir"], "radiance"),
+            UADA(ds["u_R_Earth_independent"]).to(rad_u["ir"], "radiance"),
+            UADA(ds["u_R_Earth_structured"]).to(rad_u["ir"], "radiance"),
             a_L, a_L_h, a_L_u, a_L_u_h)
 
         c = next(counter)
         gridsize = 50
         cmap = "viridis"
         self._plot_hexbin(
-            ds["T_b"], ds["u_T_b_random"],
+            ds["T_b"], ds["u_T_b_independent"],
             fig.add_subplot(gs[c, 0]))
         self._plot_hexbin(
-            ds["T_b"], ds["u_T_b_nonrandom"],
+            ds["T_b"], ds["u_T_b_structured"],
             fig.add_subplot(gs[c, 1]))
         self._plot_hexbin(
             UADA(ds["R_e"]).to(rad_u["ir"], "radiance"),
-            UADA(ds["u_R_Earth_random"]).to(rad_u["ir"], "radiance"),
+            UADA(ds["u_R_Earth_independent"]).to(rad_u["ir"], "radiance"),
             fig.add_subplot(gs[c, 2]))
         hb = self._plot_hexbin(
             UADA(ds["R_e"]).to(rad_u["ir"], "radiance"),
-            UADA(ds["u_R_Earth_nonrandom"]).to(rad_u["ir"], "radiance"),
+            UADA(ds["u_R_Earth_structured"]).to(rad_u["ir"], "radiance"),
             fig.add_subplot(gs[c, 3]))
         # todo: colorbar
 
