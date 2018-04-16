@@ -113,10 +113,10 @@ class OrbitPlotter:
             t1 = trans[:, :, 1]
             self._plot_to(ax_all[0], cax_all[0], t0, t1, dsx["bt"].values,
                 "BT [K]")
-            self._plot_to(ax_all[1], cax_all[1], t0, t1, dsx["u_random"].values,
+            self._plot_to(ax_all[1], cax_all[1], t0, t1, dsx["u_independent"].values,
                 "Independent uncertainty [K]",
                 is_uncertainty=True)
-            self._plot_to(ax_all[2], cax_all[2], t0, t1, dsx["u_non_random"].values,
+            self._plot_to(ax_all[2], cax_all[2], t0, t1, dsx["u_structured"].values,
                 "Structured uncertainty [K]",
                 is_uncertainty=True)
         # flags are plotted for all cases, flagged or not
@@ -188,7 +188,7 @@ class OrbitPlotter:
                 joiner=",\n")
 
     def write(self):
-        p = self.path
+        p = self.path.absolute()
         pyatmlab.graphics.print_or_show(
             self.fig, False,
             "orbitplots/"
