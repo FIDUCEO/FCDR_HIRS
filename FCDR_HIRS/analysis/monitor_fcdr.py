@@ -55,7 +55,7 @@ class FCDRMonitor:
               "{tb:%Y-%m-%d %H:%M}--{te:%Y-%m-%d %H:%M} (scanpos {sp:d})")
     fields=["T_b", "u_T_b_random", "u_T_b_nonrandom",
         "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
-        'u_from_R_selfE', 'u_from_a_0', 'u_from_a_2', 'u_from_a_1',
+        'u_from_R_selfE', 'u_from_a_2', 
         'u_from_C_s', 'u_from_C_IWCT', 'u_from_R_IWCT', 'u_from_B',
         'u_from_Tstar', 'u_from_β', 'u_from_α', 'u_from_T_IWCT',
         'u_from_O_TIWCT', 'u_from_fstar', 'u_from_R_refl', 'u_from_C_E',
