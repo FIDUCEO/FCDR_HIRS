@@ -332,164 +332,140 @@ def calc_Δ_x(R_xt: xarray.DataArray):
     return popt
 
 
+def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
+    """Allocate empty xarray DataArrays for CURUC recipes.
 
-def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple]]]]],
-        sym: sympy.Symbol,
-        _d: Optional[Deque]=None) -> Deque:
-    """Given a sensitivity coefficient dictionary, accumulate them for term
-
-    Given a dictionary of sensitivity coefficients (see function
-    annotation) such as returned by calc_u_for_variable), accumulate
-    recursivey the sensitivity coefficients for symbol `sym`.
-
+    Allocate empty xarray DataArrays that are needed to calculate all
+    necessary CURUC recipe inputs.  You will need to fill all resulting
+    DataArrays.  The DataArrays are subsampled according to the desired
+    sampling.
     Arguments:
 
-        sensdict (Dict[Symbol, Tuple[ndarray,
-                Dict[Symbol, Tuple[ndarray,
-                  Dict[Symbol, Tuple[...]]]]]])
+        n_c [int]
 
-            Collection of sensitivities.  Returned by
-            calc_u_for_variable.
+            Number of channels.
 
-        sym: sympy.Symbol
+        n_l [int]
 
-            Symbol for which to calculate total sensitivity
-            coefficient
+            Number of scanlines.
 
-        _d: Deque
+        n_e [int]
 
-            THOU SHALT NOT PASS!  Internal recursive use only.
+            Number of elements in a scanline.
 
+        n_s [int]
+
+            Number of systematic effects.
+
+        n_i [int]
+
+            Number if independent effects.
+
+        sampling_l [int]
+
+            Sampling rate per line.  Defaults to 1.
+
+        sampling_e [int]
+
+            Sampling rate per element.  Defaults to 1.
+
+    Returns:
+
+    Tuple with 13 elements:
+
+    - R_eΛls [n_c, n_s, n_l, n_e, n_e]
+
+        Cross-element correlation matrix for each line, structured effect,
+        and channel.
+
+    - R_lΛes [n_c, n_s, n_e, n_l, n_l]
+
+        Cross-line correlation matrix for each element, structured effect,
+        and channel.
+
+    - R_cΛpi [n_i, n_l, n_e, n_c, n_c]
+
+        Cross-channel correlation matrix for each element, line, and
+        independent effect.  To get the same data in the form [n_i, n_p,
+        n_c, n_c], call `typhon.utils.stack_xarray_repdim(R_cΛpi,
+        n_p=("n_l", "n_e"))`.
+
+    - R_cΛps [n_s, n_l, n_e, n_c, n_c]
+
+        Cross-channel correlation matrix for each element, line, and
+        structured effect.  Get a view per pixel analogously to R_cΛpi
+        above.
+
+    - U_eΛls_diag [n_c, n_s, n_l, n_e]
+
+        Diagonals for the uncertainties corresponding to the cross-element
+        correlation matrix for each line, structured effect, and channel.
+        Note that this DataArray is a view of the same memory as
+        U_lΛes_diag or U_cΛps_diag, so if you fill one the other ones will
+        appear filled as well.
+
+    - U_lΛes_diag [n_c, n_s, n_e, n_l]
+
+        Diagonals for the uncertainties corresponding to the cross-line
+        correlation matrix for each element, structured effect, and
+        channel.  Note that this DataArray is a view of the same memory as
+        U_eΛls_diag or U_cΛps_diag, so if you fill one the other ones will
+        be filled as well.
+
+    - U_cΛps_diag [n_l, n_e, n_s, n_c]
+
+        Diagonals for the uncertainties corresponding to the cross-channel
+        correlation matrix for each element, line, and structured effect.
+        Note that this DataArray is a view of the same memory as
+        U_lΛes_diag or U_eΛls_diag, so if you fill one the other ones will
+        appear filled as well.
+
+    - U_cΛpi_diag [n_i, n_l, n_e, n_c]
+
+        Diagonals for the uncertainties corresponding to the cross-channel
+        correlation matrix for each element, line, and independent effect.
+
+    - C_eΛls_diag [n_c, n_s, n_l, n_e]
+
+        Diagonals for the sensitivities corresponding to the cross-element
+        correlation matrix for each line, structured effect, and channel.
+        Note that this DataArray is a view of the same memory as
+        C_lΛes_diag and C_cΛps_diag.
+
+    - C_lΛes_diag [n_c, n_s, n_e, n_l]
+
+        Diagonals for the sensitivities corresponding to the cross-line
+        correlation matrix for each element, structured effect, and
+        channel.  Note that this DataArray is a view of the same memory as
+        C_eΛls_diag and C_cΛps_diag.
+
+    - C_cΛps_diag [n_l, n_e, n_s, n_c]
+
+        Diagonals for the sensitivities corresponding to the cross-channel
+        correlation matrix for each element, line, and structured effect.
+        Note that this DataArray is a view of the same memory as
+        C_eΛls_diag and C_lΛes_diag.
+
+    - C_cΛpi_diag [n_i, n_l, n_e, n_c]
+
+        Diagonals for the sensitivities corresponding to the cross-channel
+        correlation matrix for each element, line, and independent effect.
+
+    - all_coords [dict]
+
+        Dictionary with coordinates for n_c, n_s, n_l, n_e, n_i.
     """
-
-    if _d is None:
-        _d = collections.deque([1])
-
-    if sym in sensdict.keys():
-        _d.append(sensdict[sym][0])
-        return _d
-
-    for (subsym, (sensval, sub_sensdict)) in sensdict.items():
-        _d.append(sensval)
-        try:
-            return accum_sens_coef(sub_sensdict, sym, _d)
-        except KeyError: # not found
-            _d.pop()
-    raise KeyError(f"Term not found: {sym!s}")
-
-def calc_corr_scale_channel(effects, sensRe, ds, 
-        sampling_l=8, sampling_e=1, flags=None,
-        robust=False):
-    """Calculate correlation length scales per channel
-
-    Arguments:
-
-        effects: Mapping[symbol, Collection[effect]]
-
-            Dictionary containing, for each term in the measurement
-            equation (sympy symbols), a collection (such a set) of all
-            effects (instances of the Effect class) for this particular
-            symbol.
-
-        sensRe: Dict[Symbol, Tuple[ndarray,
-                    Dict[Symbol, Tuple[ndarray,
-                        Dict[Symbol, Tuple[...]]]]]]
-
-            Collection of sensitivities such as returned by
-            the calc_u_for_variable method of the FCDR class.
-
-        ds: Dataset
-
-            xarray Dataset containing the debug version of the FCDR.
-
-        sampling_l: int
-
-            Sampling level between lines.  Defaults to 8.
-
-        sampling_e: int
-
-            Sampling level between elements.  Defaults to 1 (i.e. consider
-            all elements).
-
-        flags: Mapping[str, DataArray]
-
-            Flags such as collected during FCDR generation.  This is used
-            to know what scanlines, elements, or channels to skip (missing
-            data).
-
-        robust: bool
-
-            If True and nothing can be calculated, log a warning and
-            return objects full of fill values.  If False and nothing can
-            be calculated, raise an error.
-    """
-
-    # For suggested dimensions per term, see docstring of
-    # metrology.calc_S_from_CUR
-
-    n_s = n_i = 0
-    for k in itertools.chain.from_iterable(effects.values()):
-        if k.is_structured():
-            n_s += 1
-        elif k.is_independent():
-            n_i += 1
-        elif k.is_common():
-            continue
-        else:
-            raise RuntimeError(f"Effect {k!s} neither structured nor "
-                                "independent?! Impossible!")
-
-    # for the full n_l this is too memory-intensive.  Need to split in
-    # smaller parts.
-    n_l = ds.dims["scanline_earth"]
-    n_e = ds.dims["scanpos"]
-    n_c = ds.dims["calibrated_channel"]
-
-    all_coords = {
-        "n_c": numpy.arange(1, 20),
-        "n_s": numpy.arange(0, n_s),
-        "n_l": numpy.arange(0, n_l, sampling_l),
-        "n_e": numpy.arange(0, n_e, sampling_e),
-        "n_i": numpy.arange(0, n_i)}
-
-    bad = (((flags["channel"].isel(scanline_earth=all_coords["n_l"]) &
-            _fcdr_defs.FlagsChannel.DO_NOT_USE)!=0) |
-           ((flags["scanline"].isel(scanline_earth=all_coords["n_l"]) &
-            _fcdr_defs.FlagsScanline.DO_NOT_USE)!=0) |
-           ((flags["pixel"].isel(scanline_earth=all_coords["n_l"]) &
-            _fcdr_defs.FlagsPixel.DO_NOT_USE)!=0))
-
-    bad = bad.rename(
-        {"scanline_earth": "n_l",
-         "scanpos": "n_e",
-         "calibrated_channel": "n_c"}).assign_coords(
-            n_l=all_coords["n_l"],
-            n_e=all_coords["n_e"],
-            n_c=all_coords["n_c"])
-
-    # Decide how to treat 
-    brokenchan = bad.any("n_e").all("n_l")
-    brokenline = bad.sel(n_c=~brokenchan).any("n_e").any("n_c")
-    if brokenchan.all() or brokenline.all():
-        errmsg = ("No valid data found, cannot calculate "
-            "correlation length scales")
-        if robust:
-            logging.error(errmsg)
-            Δ_e = Δ_l = xarray.DataArray(
-                numpy.zeros((n_c, 2))*numpy.nan,
-                dims=("n_c", "val"),
-                coords={"n_c": all_coords["n_c"], "val": ["popt", "pcov"]})
-            R_ci = R_cs = xarray.DataArray(
-                numpy.zeros((n_c, n_c))*numpy.nan,
-                dims=("n_c", "n_c"),
-                coords={"n_c": all_coords["n_c"]})
-            return (Δ_l, Δ_e, R_ci, R_cs)
-        else:
-            raise FCDRError(errmsg)
 
     ## Allocation ##
 
     logging.debug("Allocating arrays for correlation calculations")
+
+    all_coords = {
+        "n_c": numpy.arange(1, n_c+1),
+        "n_s": numpy.arange(0, n_s),
+        "n_l": numpy.arange(0, n_l, sampling_l),
+        "n_e": numpy.arange(0, n_e, sampling_e),
+        "n_i": numpy.arange(0, n_i)}
 
     R_eΛls = xarray.DataArray(
         numpy.zeros((n_c, n_s, 
@@ -582,19 +558,346 @@ def calc_corr_scale_channel(effects, sensRe, ds,
         coords={k:v for (k, v) in all_coords.items()
                 if k in {"n_c", "n_i", "n_l", "n_e"}})
 
-    # should the next one be skipped?
-#    R_eΛli = xarray.DataArray(
-#        numpy.zeros((n_c, n_i, n_l//sampling_l,
-#                     n_e//sampling_e,
-#                     n_e//sampling_e), dtype="f4"),
-#        dims=("n_c", "n_k", "n_l", "n_e", "n_e")) # FIXME: change dim names
+    return (R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
+            U_eΛls_diag, U_lΛes_diag, U_cΛps_diag, U_cΛpi_diag,
+            C_eΛls_diag, C_lΛes_diag, C_cΛps_diag, C_cΛpi_diag, all_coords)
 
-    #U_eΛli = xarray.zeros_like(R_eΛli)
+def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
+        U_eΛls_diag, U_lΛes_diag, U_cΛps_diag, U_cΛpi_diag,
+        C_eΛls_diag, C_lΛes_diag, C_cΛps_diag, C_cΛpi_diag,
+        all_coords, brokenchan, brokenline):
+    """Apply CURUC recipes.
 
-#    U_lΛes: ...
-#    C_lΛej: ...
-#    R_lΛei: ...
-#    U_eΛei: ...
+    Arguments correspond to the ones returned by allocate_curuc:
+
+    - R_eΛls [n_c, n_s, n_l, n_e, n_e]
+
+        Cross-element correlation matrix for each line, structured effect,
+        and channel.
+
+    - R_lΛes [n_c, n_s, n_e, n_l, n_l]
+
+        Cross-line correlation matrix for each element, structured effect,
+        and channel.
+
+    - R_cΛpi [n_i, n_l, n_e, n_c, n_c]
+
+        Cross-channel correlation matrix for each element, line, and
+        independent effect.
+
+    - R_cΛps [n_s, n_l, n_e, n_c, n_c]
+
+        Cross-channel correlation matrix for each element, line, and
+        structured effect.
+
+    - U_eΛls_diag [n_c, n_s, n_l, n_e]
+
+        Diagonals for the uncertainties corresponding to the cross-element
+        correlation matrix for each line, structured effect, and channel.
+
+    - U_lΛes_diag [n_c, n_s, n_e, n_l]
+
+        Diagonals for the uncertainties corresponding to the cross-line
+        correlation matrix for each element, structured effect, and
+        channel.
+
+    - U_cΛps_diag [n_l, n_e, n_s, n_c]
+
+        Diagonals for the uncertainties corresponding to the cross-channel
+        correlation matrix for each element, line, and structured effect.
+
+    - U_cΛpi_diag [n_i, n_l, n_e, n_c]
+
+        Diagonals for the uncertainties corresponding to the cross-channel
+        correlation matrix for each element, line, and independent effect.
+
+    - C_eΛls_diag [n_c, n_s, n_l, n_e]
+
+        Diagonals for the sensitivities corresponding to the cross-element
+        correlation matrix for each line, structured effect, and channel.
+
+    - C_lΛes_diag [n_c, n_s, n_e, n_l]
+
+        Diagonals for the sensitivities corresponding to the cross-line
+        correlation matrix for each element, structured effect, and
+        channel.
+
+    - C_cΛps_diag [n_l, n_e, n_s, n_c]
+
+        Diagonals for the sensitivities corresponding to the cross-channel
+        correlation matrix for each element, line, and structured effect.
+
+    - C_cΛpi_diag [n_i, n_l, n_e, n_c]
+
+        Diagonals for the sensitivities corresponding to the cross-channel
+        correlation matrix for each element, line, and independent effect.
+
+    - all_coords [dict]
+
+        Dictionary with coordinates for n_c, n_s, n_l, n_e, n_i.
+
+    - brokenchan [n_c]
+        
+        Masked array, True for channels that should be skipped.
+
+    - brokenline [n_l]
+
+        Masked array, True for lines that should be skipped.
+
+    Returns:
+
+        Tuple with:
+
+        Δ_l_all [n_c]
+
+            Cross-line correlation length scale for each channel.
+
+        Δ_e_all [n_c]
+
+            Cross-element correlation length scale for each channel.
+
+        R_ci [n_c, n_c]
+
+            Cross-channel correlation matrix for independent effects.
+
+        R_cs [n_c, n_c]
+
+            Cross-channel correlation matrix for structured effects.
+    """
+
+
+    # FIXME: verify input correctness?
+
+    n_c = brokenchan.size
+
+    ## Apply recipes ##
+
+    S_lsΛe = calc_S_from_CUR(R_lΛes, U_lΛes_diag, C_lΛes_diag)
+    S_ls = calc_S_xt(S_lsΛe)
+    R_ls = calc_R_xt(S_ls)
+    R_ls_safe = xarray.DataArray(
+        R_ls.values[:, :, ~brokenline.values][:, ~brokenline.values, :][~brokenchan.values, :, :],
+        dims=R_ls.dims,
+        coords={"n_c": all_coords["n_c"][~brokenchan.values],
+                "n_l": all_coords["n_l"][~brokenline.values]})
+    Δ_l = calc_Δ_x(R_ls_safe)
+
+    # verify that bad data in result is due to known bad data in input.
+    # We only need to check a single row or column in S_lsΛe because this
+    # matrix is symmetric.
+#    if not numpy.array_equal(
+#            numpy.isnan(C_lΛes_diag).any("n_s"),
+#            numpy.isnan(S_lsΛe.values[:, :, :, 0])):
+#        raise ValueError("Unexpected nan propagation")
+
+    S_esΛl = calc_S_from_CUR(R_eΛls, U_eΛls_diag, C_eΛls_diag)
+    S_es = calc_S_xt(S_esΛl)
+    R_es = calc_R_xt(S_es)
+    R_es_safe = xarray.DataArray(
+        R_es.values[~brokenchan.values, :, :],
+        dims=R_es.dims,
+        coords={"n_c": all_coords["n_c"][~brokenchan.values],
+                "n_e": all_coords["n_e"]})
+    Δ_e = calc_Δ_x(R_es_safe)
+
+    R_cΛpi_stacked = typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))
+    S_ciΛp = calc_S_from_CUR(
+        xarray.DataArray(
+            R_cΛpi_stacked.values.transpose(0, 3, 1, 2),
+            dims=("n_i", "n_p", "n_c", "n_c"),
+            coords=R_cΛpi_stacked.coords),
+        U_cΛpi_diag.stack(n_p=("n_l", "n_e")).transpose("n_i", "n_p", "n_c"),
+        C_cΛpi_diag.stack(n_p=("n_l", "n_e")).transpose("n_i", "n_p", "n_c"))
+    S_ci = calc_S_xt(S_ciΛp)
+    R_ci = calc_R_xt(S_ci)
+
+    R_cΛps_stacked = typhon.utils.stack_xarray_repdim(R_cΛps, n_p=("n_l", "n_e"))
+    S_csΛp = calc_S_from_CUR(
+        xarray.DataArray(
+            R_cΛps_stacked.values.transpose(0, 3, 1, 2),
+            dims=("n_s", "n_p", "n_c", "n_c"),
+            coords=R_cΛps_stacked.coords),
+        U_cΛps_diag.stack(n_p=("n_l", "n_e")).transpose("n_s", "n_p", "n_c"),
+        C_cΛps_diag.stack(n_p=("n_l", "n_e")).transpose("n_s", "n_p", "n_c"))
+    S_cs = calc_S_xt(S_csΛp)
+    R_cs = calc_R_xt(S_cs)
+
+    # fill missing channels
+
+    Δ_l_all = xarray.DataArray(
+        numpy.zeros((n_c, 2)),
+        dims=Δ_l.dims,
+        coords={"n_c": all_coords["n_c"], "val": Δ_l["val"]})
+    Δ_l_all.loc[{"n_c": Δ_l["n_c"]}] = Δ_l
+    Δ_l_all[{"n_c": brokenchan}] = numpy.nan
+
+    Δ_e_all = xarray.DataArray(
+        numpy.zeros((n_c, 2)),
+        dims=Δ_e.dims,
+        coords={"n_c": all_coords["n_c"], "val": Δ_e["val"]})
+    Δ_e_all.loc[{"n_c": Δ_e["n_c"]}] = Δ_e
+    Δ_e_all[{"n_c": brokenchan}] = numpy.nan
+
+    
+    return (Δ_l_all, Δ_e_all, R_ci, R_cs)
+
+def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple]]]]],
+        sym: sympy.Symbol,
+        _d: Optional[Deque]=None) -> Deque:
+    """Given a sensitivity coefficient dictionary, accumulate them for term
+
+    Given a dictionary of sensitivity coefficients (see function
+    annotation) such as returned by calc_u_for_variable), accumulate
+    recursivey the sensitivity coefficients for symbol `sym`.
+
+    Arguments:
+
+        sensdict (Dict[Symbol, Tuple[ndarray,
+                Dict[Symbol, Tuple[ndarray,
+                  Dict[Symbol, Tuple[...]]]]]])
+
+            Collection of sensitivities.  Returned by
+            calc_u_for_variable.
+
+        sym: sympy.Symbol
+
+            Symbol for which to calculate total sensitivity
+            coefficient
+
+        _d: Deque
+
+            THOU SHALT NOT PASS!  Internal recursive use only.
+
+    """
+
+    if _d is None:
+        _d = collections.deque([1])
+
+    if sym in sensdict.keys():
+        _d.append(sensdict[sym][0])
+        return _d
+
+    for (subsym, (sensval, sub_sensdict)) in sensdict.items():
+        _d.append(sensval)
+        try:
+            return accum_sens_coef(sub_sensdict, sym, _d)
+        except KeyError: # not found
+            _d.pop()
+    raise KeyError(f"Term not found: {sym!s}")
+
+def calc_corr_scale_channel(effects, sensRe, ds, 
+        sampling_l=8, sampling_e=1, flags=None,
+        robust=False):
+    """Calculate correlation length scales per channel
+
+    Note that this function expects quite specific data structured
+    corresponding to what happens to be the FCDR_HIRS implementation.
+    Consider if using the lower-level functions allocate_curuc and
+    apply_curuc may be easier.
+
+    Arguments:
+
+        effects: Mapping[symbol, Collection[effect]]
+
+            Dictionary containing, for each term in the measurement
+            equation (sympy symbols), a collection (such a set) of all
+            effects (instances of the Effect class) for this particular
+            symbol.
+
+        sensRe: Dict[Symbol, Tuple[ndarray,
+                    Dict[Symbol, Tuple[ndarray,
+                        Dict[Symbol, Tuple[...]]]]]]
+
+            Collection of sensitivities such as returned by
+            the calc_u_for_variable method of the FCDR class.
+
+        ds: Dataset
+
+            xarray Dataset containing the debug version of the FCDR.
+
+        sampling_l: int
+
+            Sampling level between lines.  Defaults to 8.
+
+        sampling_e: int
+
+            Sampling level between elements.  Defaults to 1 (i.e. consider
+            all elements).
+
+        flags: Mapping[str, DataArray]
+
+            Flags such as collected during FCDR generation.  This is used
+            to know what scanlines, elements, or channels to skip (missing
+            data).
+
+        robust: bool
+
+            If True and nothing can be calculated, log a warning and
+            return objects full of fill values.  If False and nothing can
+            be calculated, raise an error.
+    """
+
+    # For suggested dimensions per term, see docstring of
+    # metrology.calc_S_from_CUR
+
+    n_s = n_i = 0
+    for k in itertools.chain.from_iterable(effects.values()):
+        if k.is_structured():
+            n_s += 1
+        elif k.is_independent():
+            n_i += 1
+        elif k.is_common():
+            continue
+        else:
+            raise RuntimeError(f"Effect {k!s} neither structured nor "
+                                "independent?! Impossible!")
+
+    # for the full n_l this is too memory-intensive.  Need to split in
+    # smaller parts.
+    n_l = ds.dims["scanline_earth"]
+    n_e = ds.dims["scanpos"]
+    n_c = ds.dims["calibrated_channel"]
+
+    (R_eΛls, R_lΛes, R_cΛpi, R_cΛps, U_eΛls_diag, U_lΛes_diag,
+        U_cΛps_diag, U_cΛpi_diag, C_eΛls_diag, C_lΛes_diag,
+        C_cΛps_diag, C_cΛpi_diag, all_coords) = allocate_curuc(
+            n_c, n_l, n_e, n_s, n_i, sampling_l, sampling_e)
+
+    bad = (((flags["channel"].isel(scanline_earth=all_coords["n_l"]) &
+            _fcdr_defs.FlagsChannel.DO_NOT_USE)!=0) |
+           ((flags["scanline"].isel(scanline_earth=all_coords["n_l"]) &
+            _fcdr_defs.FlagsScanline.DO_NOT_USE)!=0) |
+           ((flags["pixel"].isel(scanline_earth=all_coords["n_l"]) &
+            _fcdr_defs.FlagsPixel.DO_NOT_USE)!=0))
+
+    bad = bad.rename(
+        {"scanline_earth": "n_l",
+         "scanpos": "n_e",
+         "calibrated_channel": "n_c"}).assign_coords(
+            n_l=all_coords["n_l"],
+            n_e=all_coords["n_e"],
+            n_c=all_coords["n_c"])
+
+    # Decide how to treat 
+    brokenchan = bad.any("n_e").all("n_l")
+    brokenline = bad.sel(n_c=~brokenchan).any("n_e").any("n_c")
+    if brokenchan.all() or brokenline.all():
+        errmsg = ("No valid data found, cannot calculate "
+            "correlation length scales")
+        if robust:
+            logging.error(errmsg)
+            Δ_e = Δ_l = xarray.DataArray(
+                numpy.zeros((n_c, 2))*numpy.nan,
+                dims=("n_c", "val"),
+                coords={"n_c": all_coords["n_c"], "val": ["popt", "pcov"]})
+            R_ci = R_cs = xarray.DataArray(
+                numpy.zeros((n_c, n_c))*numpy.nan,
+                dims=("n_c", "n_c"),
+                coords={"n_c": all_coords["n_c"]})
+            return (Δ_l, Δ_e, R_ci, R_cs)
+        else:
+            raise FCDRError(errmsg)
+
 
     ## Copying data to correct format ##
 
@@ -707,72 +1010,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     U_cΛpi_diag = U_cΛpi_diag.sel(n_i=slice(tci))
     C_cΛpi_diag = C_cΛpi_diag.sel(n_i=slice(tci))
 
-    ## Apply recipes ##
-
-    S_lsΛe = calc_S_from_CUR(R_lΛes, U_lΛes_diag, C_lΛes_diag)
-    S_ls = calc_S_xt(S_lsΛe)
-    R_ls = calc_R_xt(S_ls)
-    R_ls_safe = xarray.DataArray(
-        R_ls.values[:, :, ~brokenline.values][:, ~brokenline.values, :][~brokenchan.values, :, :],
-        dims=R_ls.dims,
-        coords={"n_c": all_coords["n_c"][~brokenchan.values],
-                "n_l": all_coords["n_l"][~brokenline.values]})
-    Δ_l = calc_Δ_x(R_ls_safe)
-
-    # verify that bad data in result is due to known bad data in input.
-    # We only need to check a single row or column in S_lsΛe because this
-    # matrix is symmetric.
-#    if not numpy.array_equal(
-#            numpy.isnan(C_lΛes_diag).any("n_s"),
-#            numpy.isnan(S_lsΛe.values[:, :, :, 0])):
-#        raise ValueError("Unexpected nan propagation")
-
-    S_esΛl = calc_S_from_CUR(R_eΛls, U_eΛls_diag, C_eΛls_diag)
-    S_es = calc_S_xt(S_esΛl)
-    R_es = calc_R_xt(S_es)
-    R_es_safe = xarray.DataArray(
-        R_es.values[~brokenchan.values, :, :],
-        dims=R_es.dims,
-        coords={"n_c": all_coords["n_c"][~brokenchan.values],
-                "n_e": all_coords["n_e"]})
-    Δ_e = calc_Δ_x(R_es_safe)
-
-    R_cΛpi_stacked = typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))
-    S_ciΛp = calc_S_from_CUR(
-        xarray.DataArray(
-            R_cΛpi_stacked.values.transpose(0, 3, 1, 2),
-            dims=("n_i", "n_p", "n_c", "n_c"),
-            coords=R_cΛpi_stacked.coords),
-        U_cΛpi_diag.stack(n_p=("n_l", "n_e")).transpose("n_i", "n_p", "n_c"),
-        C_cΛpi_diag.stack(n_p=("n_l", "n_e")).transpose("n_i", "n_p", "n_c"))
-    S_ci = calc_S_xt(S_ciΛp)
-    R_ci = calc_R_xt(S_ci)
-
-    R_cΛps_stacked = typhon.utils.stack_xarray_repdim(R_cΛps, n_p=("n_l", "n_e"))
-    S_csΛp = calc_S_from_CUR(
-        xarray.DataArray(
-            R_cΛps_stacked.values.transpose(0, 3, 1, 2),
-            dims=("n_s", "n_p", "n_c", "n_c"),
-            coords=R_cΛps_stacked.coords),
-        U_cΛps_diag.stack(n_p=("n_l", "n_e")).transpose("n_s", "n_p", "n_c"),
-        C_cΛps_diag.stack(n_p=("n_l", "n_e")).transpose("n_s", "n_p", "n_c"))
-    S_cs = calc_S_xt(S_csΛp)
-    R_cs = calc_R_xt(S_cs)
-
-    # fill missing channels
-
-    Δ_l_all = xarray.DataArray(
-        numpy.zeros((n_c, 2)),
-        dims=Δ_l.dims,
-        coords={"n_c": all_coords["n_c"], "val": Δ_l["val"]})
-    Δ_l_all.loc[{"n_c": Δ_l["n_c"]}] = Δ_l
-    Δ_l_all[{"n_c": brokenchan}] = numpy.nan
-
-    Δ_e_all = xarray.DataArray(
-        numpy.zeros((n_c, 2)),
-        dims=Δ_e.dims,
-        coords={"n_c": all_coords["n_c"], "val": Δ_e["val"]})
-    Δ_e_all.loc[{"n_c": Δ_e["n_c"]}] = Δ_e
-    Δ_e_all[{"n_c": brokenchan}] = numpy.nan
-
-    return (Δ_l_all, Δ_e_all, R_ci, R_cs)
+    return apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
+        U_eΛls_diag, U_lΛes_diag, U_cΛps_diag, U_cΛpi_diag,
+        C_eΛls_diag, C_lΛes_diag, C_cΛps_diag, C_cΛpi_diag,
+        all_coords, brokenchan, brokenline)
