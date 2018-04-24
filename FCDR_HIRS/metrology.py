@@ -332,6 +332,236 @@ def calc_Δ_x(R_xt: xarray.DataArray):
     return popt
 
 
+def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
+    """Allocate empty xarray DataArrays for CURUC recipes.
+
+    Allocate empty xarray DataArrays that are needed to calculate all
+    necessary CURUC recipe inputs.  You will need to fill all resulting
+    DataArrays.  The DataArrays are subsampled according to the desired
+    sampling.
+    Arguments:
+
+        n_c [int]
+
+            Number of channels.
+
+        n_l [int]
+
+            Number of scanlines.
+
+        n_e [int]
+
+            Number of elements in a scanline.
+
+        n_s [int]
+
+            Number of systematic effects.
+
+        n_i [int]
+
+            Number if independent effects.
+
+        sampling_l [int]
+
+            Sampling rate per line.  Defaults to 1.
+
+        sampling_e [int]
+
+            Sampling rate per element.  Defaults to 1.
+
+    Returns:
+
+    Tuple with 13 elements:
+
+    - R_eΛls [n_c, n_s, n_l, n_e, n_e]
+
+        Cross-element correlation matrix for each line, structured effect,
+        and channel.
+
+    - R_lΛes [n_c, n_s, n_e, n_l, n_l]
+
+        Cross-line correlation matrix for each element, structured effect,
+        and channel.
+
+    - R_cΛpi [n_i, n_l, n_e, n_c, n_c]
+
+        Cross-channel correlation matrix for each element, line, and
+        independent effect.  To get the same data in the form [n_i, n_p,
+        n_c, n_c], call `typhon.utils.stack_xarray_repdim(R_cΛpi,
+        n_p=("n_l", "n_e"))`.
+
+    - R_cΛps [n_s, n_l, n_e, n_c, n_c]
+
+        Cross-channel correlation matrix for each element, line, and
+        structured effect.  Get a view per pixel analogously to R_cΛpi
+        above.
+
+    - U_eΛls_diag [n_c, n_s, n_l, n_e]
+
+        Diagonals for the uncertainties corresponding to the cross-element
+        correlation matrix for each line, structured effect, and channel.
+        Note that this DataArray is a view of the same memory as
+        U_lΛes_diag or U_cΛps_diag, so if you fill one the other ones will
+        appear filled as well.
+
+    - U_lΛes_diag [n_c, n_s, n_e, n_l]
+
+        Diagonals for the uncertainties corresponding to the cross-line
+        correlation matrix for each element, structured effect, and
+        channel.  Note that this DataArray is a view of the same memory as
+        U_eΛls_diag or U_cΛps_diag, so if you fill one the other ones will
+        be filled as well.
+
+    - U_cΛps_diag [n_l, n_e, n_s, n_c]
+
+        Diagonals for the uncertainties corresponding to the cross-channel
+        correlation matrix for each element, line, and structured effect.
+        Note that this DataArray is a view of the same memory as
+        U_lΛes_diag or U_eΛls_diag, so if you fill one the other ones will
+        appear filled as well.
+
+    - U_cΛpi_diag [n_i, n_l, n_e, n_c]
+
+        Diagonals for the uncertainties corresponding to the cross-channel
+        correlation matrix for each element, line, and independent effect.
+
+    - C_eΛls_diag [n_c, n_s, n_l, n_e]
+
+        Diagonals for the sensitivities corresponding to the cross-element
+        correlation matrix for each line, structured effect, and channel.
+        Note that this DataArray is a view of the same memory as
+        C_lΛes_diag and C_cΛps_diag.
+
+    - C_lΛes_diag [n_c, n_s, n_e, n_l]
+
+        Diagonals for the sensitivities corresponding to the cross-line
+        correlation matrix for each element, structured effect, and
+        channel.  Note that this DataArray is a view of the same memory as
+        C_eΛls_diag and C_cΛps_diag.
+
+    - C_cΛps_diag [n_l, n_e, n_s, n_c]
+
+        Diagonals for the sensitivities corresponding to the cross-channel
+        correlation matrix for each element, line, and structured effect.
+        Note that this DataArray is a view of the same memory as
+        C_eΛls_diag and C_lΛes_diag.
+
+    - C_cΛpi_diag [n_i, n_l, n_e, n_c]
+
+        Diagonals for the sensitivities corresponding to the cross-channel
+        correlation matrix for each element, line, and independent effect.
+
+    - all_coords [dict]
+
+        Dictionary with coordinates for n_c, n_s, n_l, n_e, n_i.
+    """
+
+    ## Allocation ##
+
+    logging.debug("Allocating arrays for correlation calculations")
+
+    all_coords = {
+        "n_c": numpy.arange(1, n_c+1),
+        "n_s": numpy.arange(0, n_s),
+        "n_l": numpy.arange(0, n_l, sampling_l),
+        "n_e": numpy.arange(0, n_e, sampling_e),
+        "n_i": numpy.arange(0, n_i)}
+
+    R_eΛls = xarray.DataArray(
+        numpy.zeros((n_c, n_s, 
+            math.ceil(n_l/sampling_l),
+            math.ceil(n_e/sampling_e),
+            math.ceil(n_e/sampling_e)), dtype="f4"),
+        dims=("n_c", "n_s", "n_l", "n_e", "n_e"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_s", "n_l", "n_e"}})
+
+    R_lΛes = xarray.DataArray(
+        numpy.zeros((n_c, n_s, 
+            math.ceil(n_e/sampling_e),
+            math.ceil(n_l/sampling_l),
+            math.ceil(n_l/sampling_l)), dtype="f4"),
+        dims=("n_c", "n_s", "n_e", "n_l", "n_l"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_s", "n_l", "n_e"}})
+
+    R_cΛpi = xarray.DataArray(
+        numpy.zeros(
+           (n_i,
+            math.ceil(n_l/sampling_l),
+            math.ceil(n_e/sampling_e),
+            n_c,
+            n_c), dtype="f4"),
+        dims=("n_i", "n_l", "n_e", "n_c", "n_c"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_i", "n_l", "n_e"}})
+
+    R_cΛps = xarray.DataArray(
+        numpy.zeros(
+           (n_s,
+            math.ceil(n_l/(sampling_l)),
+            math.ceil(n_e/(sampling_e)),
+            n_c,
+            n_c), dtype="f4"),
+        dims=("n_s", "n_l", "n_e", "n_c", "n_c"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_s", "n_l", "n_e"}})
+
+    # store only diagonals for optimised memory consumption and
+    # calculation speed
+    U_eΛls_diag = xarray.DataArray(
+        numpy.zeros((n_c, n_s,
+            math.ceil(n_l/sampling_l),
+            math.ceil(n_e/sampling_e)), dtype="f4"),
+        dims=("n_c", "n_s", "n_l", "n_e"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_s", "n_l", "n_e"}})
+
+    U_lΛes_diag = U_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
+    U_cΛps_diag = U_eΛls_diag.transpose("n_l", "n_e", "n_s", "n_c")
+
+    U_cΛpi_diag = xarray.DataArray(
+        numpy.zeros((
+            n_i,
+            math.ceil(n_l/sampling_l),
+            math.ceil(n_e/sampling_e),
+            n_c), dtype="f4"),
+        dims=("n_i", "n_l", "n_e", "n_c"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_i", "n_l", "n_e"}})
+    # Equivalent to:
+    #
+    # U_lΛes_diag = xarray.DataArray(
+    #     numpy.zeros((n_c, n_s,
+    #         math.ceil(n_e/sampling_e),
+    #         math.ceil(n_l/sampling_l)), dtype="f4"),
+    #     dims=("n_c", "n_s", "n_e", "n_l")) # last n_l superfluous
+    #
+    # U_eΛls_diag and U_lΛes_diag are views of the same data, thus saving
+    # memory.
+
+    # Actual dimension of C_eΛlj would be [n_c, n_j, n_l, n_e, n_e], but
+    # I'm storing it on the dimensions of [n_c, n_k, n_l, n_e] (diagonals)
+    # so I can apply it directly with the corresponding U_eΛlk and R_eΛlk.
+    C_eΛls_diag = xarray.DataArray(
+        numpy.zeros((n_c, n_s, math.ceil(n_l/sampling_l),
+            math.ceil(n_e/sampling_e)), dtype="f4"),
+        dims=("n_c", "n_s", "n_l", "n_e"), # last n_e superfluous
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_s", "n_l", "n_e"}})
+    C_lΛes_diag = C_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
+    C_cΛps_diag = C_eΛls_diag.transpose("n_s", "n_l", "n_e", "n_c")
+
+    C_cΛpi_diag = xarray.DataArray(
+        numpy.zeros_like(U_cΛpi_diag.values),
+        dims=("n_i", "n_l", "n_e", "n_c"),
+        coords={k:v for (k, v) in all_coords.items()
+                if k in {"n_c", "n_i", "n_l", "n_e"}})
+
+    return (R_eΛls, R_lΛes, R_cΛpi, R_cΛps, U_eΛls_diag, U_lΛes_diag,
+            U_cΛps_diag, U_cΛpi_diag, C_eΛls_diag, C_lΛes_diag,
+            C_cΛps_diag, C_cΛpi_diag, all_coords)
+
 
 def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple]]]]],
         sym: sympy.Symbol,
@@ -445,12 +675,10 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     n_e = ds.dims["scanpos"]
     n_c = ds.dims["calibrated_channel"]
 
-    all_coords = {
-        "n_c": numpy.arange(1, 20),
-        "n_s": numpy.arange(0, n_s),
-        "n_l": numpy.arange(0, n_l, sampling_l),
-        "n_e": numpy.arange(0, n_e, sampling_e),
-        "n_i": numpy.arange(0, n_i)}
+    (R_eΛls, R_lΛes, R_cΛpi, R_cΛps, U_eΛls_diag, U_lΛes_diag,
+        U_cΛps_diag, u_cΛpi_diag, C_eΛls_diag, C_lΛes_diag,
+        C_cΛps_diag, C_cΛpi_diag, all_coords) = allocate_curuc(
+            n_c, n_l, n_e, n_s, n_i, sampling_l, sampling_e)
 
     bad = (((flags["channel"].isel(scanline_earth=all_coords["n_l"]) &
             _fcdr_defs.FlagsChannel.DO_NOT_USE)!=0) |
@@ -487,114 +715,6 @@ def calc_corr_scale_channel(effects, sensRe, ds,
         else:
             raise FCDRError(errmsg)
 
-    ## Allocation ##
-
-    logging.debug("Allocating arrays for correlation calculations")
-
-    R_eΛls = xarray.DataArray(
-        numpy.zeros((n_c, n_s, 
-            math.ceil(n_l/sampling_l),
-            math.ceil(n_e/sampling_e),
-            math.ceil(n_e/sampling_e)), dtype="f4"),
-        dims=("n_c", "n_s", "n_l", "n_e", "n_e"),
-        coords={k:v for (k, v) in all_coords.items()
-                if k in {"n_c", "n_s", "n_l", "n_e"}})
-
-    R_lΛes = xarray.DataArray(
-        numpy.zeros((n_c, n_s, 
-            math.ceil(n_e/sampling_e),
-            math.ceil(n_l/sampling_l),
-            math.ceil(n_l/sampling_l)), dtype="f4"),
-        dims=("n_c", "n_s", "n_e", "n_l", "n_l"),
-        coords={k:v for (k, v) in all_coords.items()
-                if k in {"n_c", "n_s", "n_l", "n_e"}})
-
-    R_cΛpi = xarray.DataArray(
-        numpy.zeros(
-           (n_i,
-            math.ceil(n_l/sampling_l),
-            math.ceil(n_e/sampling_e),
-            n_c,
-            n_c), dtype="f4"),
-        dims=("n_i", "n_l", "n_e", "n_c", "n_c"),
-        coords={k:v for (k, v) in all_coords.items()
-                if k in {"n_c", "n_i", "n_l", "n_e"}})
-
-    R_cΛps = xarray.DataArray(
-        numpy.zeros(
-           (n_s,
-            math.ceil(n_l/(sampling_l)),
-            math.ceil(n_e/(sampling_e)),
-            n_c,
-            n_c), dtype="f4"),
-        dims=("n_s", "n_l", "n_e", "n_c", "n_c"),
-        coords={k:v for (k, v) in all_coords.items()
-                if k in {"n_c", "n_s", "n_l", "n_e"}})
-
-    # store only diagonals for optimised memory consumption and
-    # calculation speed
-    U_eΛls_diag = xarray.DataArray(
-        numpy.zeros((n_c, n_s,
-            math.ceil(n_l/sampling_l),
-            math.ceil(n_e/sampling_e)), dtype="f4"),
-        dims=("n_c", "n_s", "n_l", "n_e"),
-        coords={k:v for (k, v) in all_coords.items()
-                if k in {"n_c", "n_s", "n_l", "n_e"}})
-
-    U_lΛes_diag = U_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
-    U_cΛps_diag = U_eΛls_diag.transpose("n_l", "n_e", "n_s", "n_c")
-
-    U_cΛpi_diag = xarray.DataArray(
-        numpy.zeros((
-            n_i,
-            math.ceil(n_l/sampling_l),
-            math.ceil(n_e/sampling_e),
-            n_c), dtype="f4"),
-        dims=("n_i", "n_l", "n_e", "n_c"),
-        coords={k:v for (k, v) in all_coords.items()
-                if k in {"n_c", "n_i", "n_l", "n_e"}})
-    # Equivalent to:
-    #
-    # U_lΛes_diag = xarray.DataArray(
-    #     numpy.zeros((n_c, n_s,
-    #         math.ceil(n_e/sampling_e),
-    #         math.ceil(n_l/sampling_l)), dtype="f4"),
-    #     dims=("n_c", "n_s", "n_e", "n_l")) # last n_l superfluous
-    #
-    # U_eΛls_diag and U_lΛes_diag are views of the same data, thus saving
-    # memory.
-
-    # Actual dimension of C_eΛlj would be [n_c, n_j, n_l, n_e, n_e], but
-    # I'm storing it on the dimensions of [n_c, n_k, n_l, n_e] (diagonals)
-    # so I can apply it directly with the corresponding U_eΛlk and R_eΛlk.
-    C_eΛls_diag = xarray.DataArray(
-        numpy.zeros((n_c, n_s, math.ceil(n_l/sampling_l),
-            math.ceil(n_e/sampling_e)), dtype="f4"),
-        dims=("n_c", "n_s", "n_l", "n_e"), # last n_e superfluous
-        coords={k:v for (k, v) in all_coords.items()
-                if k in {"n_c", "n_s", "n_l", "n_e"}})
-    C_lΛes_diag = C_eΛls_diag.transpose("n_c", "n_s", "n_e", "n_l")
-    C_cΛps_diag = C_eΛls_diag.transpose("n_s", "n_l", "n_e", "n_c")
-
-    C_cΛpi_diag = xarray.DataArray(
-        numpy.zeros_like(U_cΛpi_diag.values),
-        dims=("n_i", "n_l", "n_e", "n_c"),
-        coords={k:v for (k, v) in all_coords.items()
-                if k in {"n_c", "n_i", "n_l", "n_e"}})
-
-    # should the next one be skipped?
-#    R_eΛli = xarray.DataArray(
-#        numpy.zeros((n_c, n_i, n_l//sampling_l,
-#                     n_e//sampling_e,
-#                     n_e//sampling_e), dtype="f4"),
-#        dims=("n_c", "n_k", "n_l", "n_e", "n_e")) # FIXME: change dim names
-
-    #U_eΛli = xarray.zeros_like(R_eΛli)
-
-#    U_lΛes: ...
-#    C_lΛej: ...
-#    R_lΛei: ...
-#    U_eΛei: ...
 
     ## Copying data to correct format ##
 
