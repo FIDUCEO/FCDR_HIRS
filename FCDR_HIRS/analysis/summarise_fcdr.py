@@ -391,7 +391,7 @@ def summarise():
     elif p.mode == "plot":
 #        sumdat = summary.plot_period(start, end, 5, fields=["u_C_Earth"],
 #            ptiles=[50], pstyles=["-"], fcdr_type=p.type)
-        summary.plot_period_hists(start, end, "easy")
+        summary.plot_period_hists(start, end, p.type)
 #            fields=["bt", "u_independent", "u_structured"],
 #            fcdr_type="easy")
         summary.plot_period_ptiles(start, end,
