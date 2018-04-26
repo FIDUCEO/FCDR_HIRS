@@ -1,5 +1,3 @@
-#!/usr/bin/env python3.5
-
 import logging
 import numpy
 import argparse
@@ -2979,6 +2977,3 @@ def main():
             vis.plot_expected_range(lab="{start:%Y%m%d}-{end:%Y%m%d}".format(
                 start=start, end=end), channels=p.channels)
         logging.info("Done")
-
-if __name__ == "__main__":
-    main()
