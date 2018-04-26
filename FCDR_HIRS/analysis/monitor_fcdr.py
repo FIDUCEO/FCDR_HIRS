@@ -77,7 +77,7 @@ class FCDRMonitor:
     def plot_timeseries(self, ch, sp=28):
         counter = itertools.count()
         ds = self.ds.sel(calibrated_channel=ch, scanpos=sp, minor_frame=sp)
-        nrow = 7
+        nrow = 8
         gs = matplotlib.gridspec.GridSpec(nrow, 4)
         fig = matplotlib.pyplot.figure(figsize=(18, 3*nrow))
 #        (fig, axes) = matplotlib.pyplot.subplots(nrow, 2,
@@ -132,8 +132,10 @@ class FCDRMonitor:
         c = next(counter)
         # although exact same width as other time series would be
         # desirable, the colourbar currently messes this up /anyway/, so
-        # we might as well take the full width
-        a_flags = fig.add_subplot(gs[c, :])
+        # we might as well take the full width.  Use double height,
+        # because there are many flags and each should be readable
+        # individually.
+        a_flags = fig.add_subplot(gs[c:c+2, :])
         perc_all = []
         labels = []
         period = ("5min" if
@@ -161,6 +163,7 @@ class FCDRMonitor:
 
 #        a_tb_u_h = fig.add_subplot(gs[c, 3])
 
+        next(counter)
         c = next(counter)
         a_L = fig.add_subplot(gs[c, :3])
         a_L_h = fig.add_subplot(gs[c, 3])
