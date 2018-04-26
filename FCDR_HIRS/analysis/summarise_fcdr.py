@@ -343,6 +343,12 @@ class FCDRSummary(HomemadeDataset):
         
         tit = f"HIRS {self.satname:s} {start:%Y-%m-%d}--{end:%Y-%m-%d}"
 
+        if fcdr_type == "easy":
+            lab_struc = "structured"
+            lab_indy = "independent"
+        else:
+            lab_struc = "T_b_nonrandom"
+            lab_indy = "T_b_random"
         # The dynamic range of structured uncertainties varies a lot
         # between channels.  Plotting together channels with large
         # differences in dynamic range of structured uncertainty may lead
@@ -350,8 +356,8 @@ class FCDRSummary(HomemadeDataset):
         # according to how much of the x-axis they need in their
         # histograms.
         idx_p95 = (summary.dims["bin_index"] -
-                  ((summary["hist_u_structured"].sum("date").cumsum("bin_index") /
-                    summary["hist_u_structured"].sum("date").sum("bin_index")) >
+                  ((summary[f"hist_u_{lab_struc:s}"].sum("date").cumsum("bin_index") /
+                    summary[f"hist_u_{lab_struc:s}"].sum("date").sum("bin_index")) >
                         .95).sum("bin_index"))
         ch_order = idx_p95.channel[idx_p95.values.argsort()]
         
@@ -362,16 +368,16 @@ class FCDRSummary(HomemadeDataset):
                 # take off last value because bins are the edges so
                 # this array is one longer than the corresponding hist
                 # values
-                x = summary["bins_u_independent"].sel(channel=ch)[:-1]
-                y = summary["hist_u_independent"].sel(channel=ch).sum("date")
-                a.plot(x, y, label=f"Ch. {ch:d}, independent",
+                x = summary[f"bins_u_{lab_indy:s}"].sel(channel=ch)[:-1]
+                y = summary[f"hist_u_{lab_indy:s}"].sel(channel=ch).sum("date")
+                a.plot(x, y, label=f"Ch. {ch:d}, {lab_indy:s}",
                     color=f"C{k:d}", linestyle="--")
-                y = summary["hist_u_structured"].sel(channel=ch).sum("date")
-                a.plot(x, y, label=f"Ch. {ch:d}, structured",
+                y = summary[f"hist_u_{lab_struc:s}"].sel(channel=ch).sum("date")
+                a.plot(x, y, label=f"Ch. {ch:d}, {lab_struc:s}",
                     color=f"C{k:d}", linestyle="-")
             a.legend()
             a.set_xlim([0,
-                float(summary["bins_u_structured"].sel(channel=chs[0]).isel(bin_edges=idx_hi))])
+                float(summary[f"bins_u_{lab_struc:s}"].sel(channel=chs[0]).isel(bin_edges=idx_hi))])
             a.set_xlabel("Brightness temperature uncertainty [K]")
             a.set_ylabel("Total number of pixels")
         f.suptitle(tit)
