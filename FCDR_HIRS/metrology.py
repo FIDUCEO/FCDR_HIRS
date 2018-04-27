@@ -15,6 +15,7 @@ from typing import (List, Dict, Tuple, Deque, Optional)
 import numexpr
 import numpy
 import scipy.optimize
+import scipy.interpolate
 import xarray
 import sympy
 
@@ -291,7 +292,8 @@ def calc_R_xt(S_xt: numpy.ndarray):
     R_xt = numexpr.evaluate("dUi * S_xt * dUiT") # equivalent to Ui@S@Ui.T when written fully
     return xarray.DataArray(R_xt, dims=S_xt.dims, coords=S_xt.coords)
 
-def calc_Δ_x(R_xt: xarray.DataArray):
+def calc_Δ_x(R_xt: xarray.DataArray,
+             return_vector: bool):
     """Calculate optimum Δ_e or Δ_l
 
     Calculate optimum correlation length scale, either across elements,
@@ -306,6 +308,29 @@ def calc_Δ_x(R_xt: xarray.DataArray):
 
             Either cross-element or cross-line radiance error correlation matrix, structured
             effects, per channel.  Can be obtained from calc_R_xt.
+
+        return_vector: bool
+
+            If true, return the full vector of average correlation length
+            scales per distance.
+
+    Returns:
+
+        popt: xarray.DataArray
+
+            xarray.DataArray object containing in one column the optimal
+            correlation length scales, and in the other column the
+            corresponding covariances, `pcov`, such as returned by
+            `scipy.optimize.curve_fit`.  For each channel.
+
+        r_xΔ: xarray.DataArray
+
+            Only returned if return_vector is True.  xarray.DataArray
+            object that describes, for each element or line separation,
+            the average correlation length.  Note that this is still
+            subsampled by sampling_l and/or sampling_e.  For each channel.
+            Note that the dimension along pixel is always Δ_p, changed
+            from Δ_e or Δ_l.  That may change in the future.
     """
 
     dim = R_xt.dims[-1]
@@ -329,7 +354,10 @@ def calc_Δ_x(R_xt: xarray.DataArray):
         coords={"n_c": r_xΔ["n_c"],
                 "val": ["popt", "pcov"]})
 
-    return popt
+    if return_vector:
+        return (popt, r_xΔ)
+    else:
+        return popt
 
 
 def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
@@ -565,7 +593,8 @@ def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
 def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         U_eΛls_diag, U_lΛes_diag, U_cΛps_diag, U_cΛpi_diag,
         C_eΛls_diag, C_lΛes_diag, C_cΛps_diag, C_cΛpi_diag,
-        all_coords, brokenchan, brokenline):
+        all_coords, brokenchan, brokenline, return_vectors=False,
+        interpolate_lengths=False, cutoff_l=None, cutoff_e=None):
     """Apply CURUC recipes.
 
     Arguments correspond to the ones returned by allocate_curuc:
@@ -638,11 +667,41 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
 
     - brokenchan [n_c]
         
-        Masked array, True for channels that should be skipped.
+        xarray.DataArray, dtype bool, 1-D, dimension "n_c", True for
+        channels that should be skipped.
 
     - brokenline [n_l]
 
-        Masked array, True for lines that should be skipped.
+        xarray.DataArray, dtype bool, 1-D, dimension "n_l", True for
+        lines that should be skipped.
+
+    - return_vectors [bool]
+
+        Optional, defaults to False.  If True, in addition of returning
+        optimal length scales, also return the full vectors with average
+        correlation per separation length.
+
+    - interpolate_lengths [bool]
+
+        Only needed if return_vectors is True.  Interpolate skipped lines.
+        If False, average correlation is only given for lengths according
+        to the sampling interval.  For example, with sampling_l=5, it's
+        only given every 5 lines.  If True, a spline interpolation is
+        applied and average correlation length is returned at every
+        separation.
+
+    - cutoff_l [int]
+
+        Only needed if return_vectors is True.  Cutoff lengths for
+        lengths.  Note that `apply_curuc` may not know that the total
+        n_l and n_e of the image is, because sampling may have cut off
+        the tail.  Therefore, if you want to get full vectors returned,
+        you must pass a value here.  I suggest you pass the same value you
+        put in to n_l when calling `allocate_curuc`.
+
+    - cutoff_e [int]
+
+        As cutoff_l, but for number of elements.
 
     Returns:
 
@@ -663,6 +722,21 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         R_cs [n_c, n_c]
 
             Cross-channel correlation matrix for structured effects.
+
+        Δ_l_all_full [n_c, n_l]
+
+            Only returned if return_vectors input argument is True.
+
+            Average cross-line correlation length for each channel and
+            length.
+
+        Δ_e_all_full [n_c, n_e]
+
+            Only returned if return_vectors input argument is True.
+
+            Average cross-line correlation length for each channel and
+            element.
+            
     """
 
 
@@ -680,7 +754,7 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         dims=R_ls.dims,
         coords={"n_c": all_coords["n_c"][~brokenchan.values],
                 "n_l": all_coords["n_l"][~brokenline.values]})
-    Δ_l = calc_Δ_x(R_ls_safe)
+    (Δ_l, Δ_l_full) = calc_Δ_x(R_ls_safe, return_vector=True)
 
     # verify that bad data in result is due to known bad data in input.
     # We only need to check a single row or column in S_lsΛe because this
@@ -698,7 +772,7 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         dims=R_es.dims,
         coords={"n_c": all_coords["n_c"][~brokenchan.values],
                 "n_e": all_coords["n_e"]})
-    Δ_e = calc_Δ_x(R_es_safe)
+    (Δ_e, Δ_e_full) = calc_Δ_x(R_es_safe, return_vector=True)
 
     R_cΛpi_stacked = typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))
     S_ciΛp = calc_S_from_CUR(
@@ -723,6 +797,9 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
     R_cs = calc_R_xt(S_cs)
 
     # fill missing channels
+    #
+    # FIXME: those Δ_l_all, Δ_e_all, Δ_l_full_all, Δ_e_full_all fillings
+    # violate DRY and need to be put in a function of some sorts.
 
     Δ_l_all = xarray.DataArray(
         numpy.zeros((n_c, 2)),
@@ -738,8 +815,82 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
     Δ_e_all.loc[{"n_c": Δ_e["n_c"]}] = Δ_e
     Δ_e_all[{"n_c": brokenchan}] = numpy.nan
 
+    if interpolate_lengths:
+        if cutoff_l is None or cutoff_e is None:
+            raise TypeError("If interpolate_lengths is True, you must pass "
+                "both cutoff_l and cutoff_e.")
+        Δ_l_full = interpolate_Δ_x(Δ_l_full, cutoff_l)
+        Δ_e_full = interpolate_Δ_x(Δ_e_full, cutoff_e)
+
+        # those still don't contain all the channels; fill the other
+        # channels with nans again
+        #
+        # it's also not at all pretty that those n_e and n_l are changed
+        # to n_p by calc_Δ_x
+
+        Δ_l_full_all = xarray.DataArray(
+            numpy.zeros((cutoff_l, n_c)),
+            dims=Δ_l_full.dims,
+            coords={"n_p": Δ_l_full.coords["n_p"],
+                    "n_c": all_coords["n_c"]})
+        Δ_l_full_all.loc[{"n_c": Δ_l["n_c"]}] = Δ_l_full
+        Δ_l_full_all[{"n_c": brokenchan}] = numpy.nan
+
+        Δ_e_full_all = xarray.DataArray(
+            numpy.zeros((cutoff_e, n_c)),
+            dims=Δ_e_full.dims,
+            coords={"n_p": Δ_e_full.coords["n_p"],
+                    "n_c": all_coords["n_c"]})
+        Δ_e_full_all.loc[{"n_c": Δ_e["n_c"]}] = Δ_e_full
+        Δ_e_full_all[{"n_c": brokenchan}] = numpy.nan
     
-    return (Δ_l_all, Δ_e_all, R_ci, R_cs)
+    return (Δ_l_all, Δ_e_all, R_ci, R_cs) + (
+        (Δ_l_full_all, Δ_e_full_all) if return_vectors else ())
+
+def interpolate_Δ_x(Δ_x, cutoff):
+    """Interpolate Δ_e or Δ_l vectors to fill sampling gaps
+
+    When the full vectors for Δ_e or Δ_l are calculated, this is only done
+    at intervals corresponding to sampling_e and sampling_l.  This
+    function applies a spline interpolation to have correlation estimates
+    at intermediate values.  If the last element of Δ_x is smaller than
+    the cutoff, the remainder are filled with zeroes (this happens if
+    n_l%sampling_l≠0).
+    
+    You usually don't need to call this function directly, as it is called
+    by apply_curuc if you pass interpolate_lengths=True.
+
+    Arguments:
+
+        Δ_x [xarray.DataArray n_p × n_c]
+
+            As returned by calc_Δ_x if return_vector is True.
+
+        cutoff [int]
+
+            Total desired lengths, usually equal to n_l or n_e.
+    """
+   
+    rv = xarray.DataArray(
+        numpy.zeros((cutoff, Δ_x["n_c"].size), dtype="f4"),
+        dims=Δ_x.dims,
+        coords={"n_c": Δ_x.coords["n_c"],
+                "n_p": numpy.arange(cutoff)})
+
+    for c in Δ_x["n_c"]:
+        yref = Δ_x.sel(n_c=c).values
+        xref = Δ_x["n_p"].values
+        # use slinear to ensure we always remain between -1 and 1
+        f = scipy.interpolate.interp1d(xref, yref, kind="slinear",
+            fill_value=(-1, 0), assume_sorted=False, bounds_error=False)
+        rv.loc[{"n_c":c}] = f(rv["n_p"])
+        if (rv.loc[{"n_c":c}]==-1).any():
+            raise ValueError("Could not interpolate correlation lengths, "
+                "it appears I had no information on correlation length 0, "
+                "which is very weird indeed and almost certainly either a "
+                "bug or the consequence of very weird input data.")
+
+    return rv
 
 def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy.Symbol, Tuple]]]]],
         sym: sympy.Symbol,
@@ -787,7 +938,8 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
 
 def calc_corr_scale_channel(effects, sensRe, ds, 
         sampling_l=8, sampling_e=1, flags=None,
-        robust=False):
+        robust=False, return_vectors=False,
+        interpolate_lengths=False):
     """Calculate correlation length scales per channel
 
     Note that this function expects quite specific data structured
@@ -835,6 +987,25 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             If True and nothing can be calculated, log a warning and
             return objects full of fill values.  If False and nothing can
             be calculated, raise an error.
+
+        return_vectors: bool
+
+            Optional, defaults to False.  If True, in addition of returning
+            optimal length scales, also return the full vectors with average
+            correlation per separation length.
+
+        interpolate_lengths [bool]
+
+            Only needed if return_vectors is True.  Interpolate skipped lines.
+            If False, average correlation is only given for lengths according
+            to the sampling interval.  For example, with sampling_l=5, it's
+            only given every 5 lines.  If True, a spline interpolation is
+            applied and average correlation length is returned at every
+            separation.
+
+    Returns:
+
+        As for `apply_curuc`.
     """
 
     # For suggested dimensions per term, see docstring of
@@ -1013,4 +1184,6 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     return apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         U_eΛls_diag, U_lΛes_diag, U_cΛps_diag, U_cΛpi_diag,
         C_eΛls_diag, C_lΛes_diag, C_cΛps_diag, C_cΛpi_diag,
-        all_coords, brokenchan, brokenline)
+        all_coords, brokenchan, brokenline, return_vectors=return_vectors,
+        interpolate_lengths=interpolate_lengths, cutoff_l=n_l,
+        cutoff_e=n_e)
