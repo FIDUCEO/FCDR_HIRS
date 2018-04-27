@@ -46,7 +46,7 @@ logging.basicConfig(
     level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
 
 import pathlib
-#import itertools
+import itertools
 import datetime
 import xarray
 #import matplotlib
@@ -66,6 +66,7 @@ converter.register()
 from typhon.datasets.dataset import (DataFileError, HomemadeDataset)
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.datasets.tovs import norm_tovs_name
 import pyatmlab.graphics
 from .. import fcdr
 
@@ -135,9 +136,19 @@ class FCDRSummary(HomemadeDataset):
     def __init__(self, *args, satname, **kwargs):
         super().__init__(*args, satname=satname, **kwargs)
 
+        # special value 'all' used in summary plotting
+        if satname == "all":
+            self.start_date = datetime.datetime(1978, 1, 1)
+            self.end_date = datetime.datetime(2018, 1, 1)
+        else:
+            self.sethirs(satname)
+
+            self.start_date = self.hirs.start_date
+            self.end_date = self.hirs.end_date
+
+    def sethirs(self, satname):
+        self.satname = satname
         self.hirs = fcdr.which_hirs_fcdr(satname, read="L1C")
-        self.start_date = self.hirs.start_date
-        self.end_date = self.hirs.end_date
 
     def create_summary(self, start_date, end_date,
             fields=None,
@@ -273,65 +284,117 @@ class FCDRSummary(HomemadeDataset):
     def plot_period_ptiles(self, start, end, fields,
             ptiles=[5, 25, 50, 75, 95],
             pstyles=[":", "--", "-", "--", ":"],
-            pcolors=["C2", "C1", "C0", "C1", "C2"],
-            fcdr_type="debug"):
-        summary = self.read_period(start, end,
-            locator_args={"data_version": "v"+self.data_version,
-                "fcdr_type": fcdr_type})
-        #fields = ["T_b", "u_T_b_independent", "u_T_b_structured"]
+            fcdr_type="debug",
+            sats=None):
+        if sats is None:
+            sats = self.satname
 
-#        for field in ("u_T_b_independent", "u_R_Earth_independent", "u_C_Earth"):
-#            summary[field] *= numpy.sqrt(48) # workaround #125, remove after fix
+        if sats == "all":
+            sats = sorted([norm_tovs_name(s) for s in
+                    fcdr.list_all_satellites()])
+            satlabel = ""
+        else:
+            sats = [sats]
+            satlabel = self.satname + " "
+        
+        figs = {}
         for channel in range(1, 20):
-            total_title = (f"HIRS {self.satname:s} ch {channel:d} "
-                           f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
-            (f, a_all) = matplotlib.pyplot.subplots(figsize=(20, 4.5*len(fields)),
+            figs[channel] = matplotlib.pyplot.subplots(figsize=(20, 4.5*len(fields)),
                 nrows=len(fields), ncols=1, squeeze=False)
-            for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
-                summary[fld].values[summary[fld]==0] = numpy.nan # workaround #126, redundant after fix
-                for (ptile, ls, color) in zip(sorted(ptiles), pstyles, pcolors):
-                    summary[fld].sel(channel=channel).sel(ptile=ptile).plot(
-                        ax=a, label=str(ptile), linestyle=ls, color=color)
-    #            summary[fld].sel(channel=channel).T.plot.pcolormesh(
-    #                ax=a, vmin=200 if fld=="T_b" else 0)
-                if len(fields) > 1: # more than one subplot
-                    a.set_title(titles.get(fld, f"{fld:s}"))
-                else:
-                    if fld in titles.keys():
-                        a.set_title(total_title + ", " + titles[fld])
+                
+        ranges = xarray.DataArray(
+            numpy.zeros((len(sats), 19, len(fields), 2), dtype="f4"),
+            dims=("satname", "channel", "field", "extremum"),
+            coords={"satname": sats, "channel": range(1, 20),
+                "field": fields,
+                "extremum": ["lo", "hi"]})
+
+        oldsatname = self.satname
+        sc = itertools.count()
+        for sat in sats:
+            if sat != self.satname:
+                self.satname = sat
+            try:
+                summary = self.read_period(start, end,
+                    locator_args={"data_version": "v"+self.data_version,
+                        "fcdr_type": fcdr_type,
+                        "satname": sat})
+            except DataFileError:
+                continue
+            else:
+                si = next(sc)
+            
+            if len(sats) == 1:
+                pcolors = ["C2", "C1", "C0", "C1", "C2"]
+            else:
+                pcolors = [f"C{si%10:d}"]*5
+
+            for channel in range(1, 20):
+                total_title = (f"HIRS {satlabel:s}ch. {channel:d} "
+                               f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
+                (f, a_all) = figs[channel]
+                for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
+                    summary[fld].values[summary[fld]==0] = numpy.nan # workaround #126, redundant after fix
+                    for (ptile, ls, color) in zip(sorted(ptiles), pstyles, pcolors):
+                        if len(sats)==1:
+                            label = f"p-{ptile:d}"
+                        elif si==0:
+                            label = f"{sat:s} p-{ptile:d}"
+                        elif ptile==50:
+                            label = sat
+                        else:
+                            label = "" # https://stackoverflow.com/a/50068622/974555
+                        # Do I need to avoid xarray.DataArray.plot if I
+                        # want to suppress the label?
+                        # https://stackoverflow.com/q/50068423/974555
+                        L = summary[fld].sel(channel=channel).sel(ptile=ptile).plot(
+                            ax=a, label=label, linestyle=ls, color=color)
+                    if len(fields) > 1: # more than one subplot
+                        a.set_title(titles.get(fld, f"{fld:s}"))
                     else:
-                        a.set_title(total_title)
-                if fld in labels.keys():
-                    a.set_ylabel(labels[fld])
-                if len(ptiles) > 1:
-                    a.legend([f"p-{p:d}" for p in reversed(ptiles)])
-                a.grid(axis="both")
-            if len(fields) > 1:
-                f.suptitle(total_title)
-            f.autofmt_xdate()
+                        if fld in titles.keys():
+                            a.set_title(total_title + ", " + titles[fld])
+                        else:
+                            a.set_title(total_title)
+                    if fld in labels.keys():
+                        a.set_ylabel(labels[fld])
+                    if len(ptiles)>1 or len(sats)>1:
+                        a.legend(loc="upper left", bbox_to_anchor=(1, 1))
+                    a.grid(axis="both")
+                # prepare some info for later, with zoomed-in y-axes
+                for (fld, a) in zip(fields, a_all.ravel()):
+                    lo = scipy.stats.mstats.mquantiles(
+                        numpy.ma.masked_invalid(
+                            summary[fld].sel(channel=channel).sel(ptile=25).values),
+                        prob=0.05,
+                        alphap=0, betap=0)
+                    hi = scipy.stats.mstats.mquantiles(
+                        numpy.ma.masked_invalid(
+                            summary[fld].sel(channel=channel).sel(ptile=75).values),
+                        prob=.95,
+                        alphap=0, betap=0)
+                    ranges.loc[{"satname": sat, "channel": channel,
+                                "field": fld}].values[...] = [lo, hi]
+                if len(fields) > 1:
+                    f.suptitle(total_title)
+                f.autofmt_xdate()
+        for channel in range(1, 20):
+            (f, a_all) = figs[channel]
             pyatmlab.graphics.print_or_show(f, None, 
-                self.plot_file.format(satname=self.satname, start=start,
+                self.plot_file.format(satname=satlabel, start=start,
                 end=end, channel=channel, data_version=self.data_version))
-            # another versien with zoomed-in y-axes
+        # another set with zoomed-in y-axes
+        for channel in range(1, 20):
+            (f, a_all) = figs[channel]
             for (fld, a) in zip(fields, a_all.ravel()):
-                lo = scipy.stats.mstats.mquantiles(
-                    numpy.ma.masked_invalid(
-                        summary[fld].sel(channel=channel).sel(ptile=25).values),
-                    prob=0.05,
-                    alphap=0, betap=0)
-                hi = scipy.stats.mstats.mquantiles(
-                    numpy.ma.masked_invalid(
-                        summary[fld].sel(channel=channel).sel(ptile=75).values),
-                    prob=.95,
-                    alphap=0, betap=0)
-#                if fld.startswith("u"):
-#                    a.set_ylim([0, hi])
-#                else:
+                lo = ranges.loc[{"channel": channel, "field": fld, "extremum": "lo"}].min()
+                hi = ranges.loc[{"channel": channel, "field": fld, "extremum": "hi"}].max()
                 a.set_ylim([lo, hi])
             pyatmlab.graphics.print_or_show(f, None, 
-                self.plot_file.format(satname=self.satname, start=start,
+                self.plot_file.format(satname=satlabel, start=start,
                     end=end, channel=channel,
                     data_version=self.data_version)[:-1] + "_zoom.")
+        self.satname = oldsatname
 
 
     def plot_period_hists(self, start, end, fcdr_type="easy"):
@@ -397,7 +460,9 @@ def summarise():
     elif p.mode == "plot":
 #        sumdat = summary.plot_period(start, end, 5, fields=["u_C_Earth"],
 #            ptiles=[50], pstyles=["-"], fcdr_type=p.type)
-        summary.plot_period_hists(start, end, p.type)
+        if p.satname != "all":
+            # plotting "all" not supported for hists
+            summary.plot_period_hists(start, end, p.type)
 #            fields=["bt", "u_independent", "u_structured"],
 #            fcdr_type="easy")
         summary.plot_period_ptiles(start, end,
