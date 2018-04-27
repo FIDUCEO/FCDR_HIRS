@@ -290,8 +290,8 @@ class FCDRSummary(HomemadeDataset):
             sats = self.satname
 
         if sats == "all":
-            sats = sorted([norm_tovs_name(s) for s in
-                    fcdr.list_all_satellites()])
+            sats = sorted({norm_tovs_name(s) for s in
+                    fcdr.list_all_satellites()})
             satlabel = ""
         else:
             sats = [sats]
@@ -318,7 +318,8 @@ class FCDRSummary(HomemadeDataset):
                 summary = self.read_period(start, end,
                     locator_args={"data_version": "v"+self.data_version,
                         "fcdr_type": fcdr_type,
-                        "satname": sat})
+                        "satname": sat},
+                    NO_CACHE=True)
             except DataFileError:
                 continue
             else:
@@ -334,9 +335,11 @@ class FCDRSummary(HomemadeDataset):
                                f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
                 (f, a_all) = figs[channel]
                 for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
-                    summary[fld].values[summary[fld]==0] = numpy.nan # workaround #126, redundant after fix
+                    #summary[fld].values[summary[fld]==0] = numpy.nan # workaround #126, redundant after fix
                     for (ptile, ls, color) in zip(sorted(ptiles), pstyles, pcolors):
-                        if len(sats)==1:
+                        if i==0:
+                            label = ""
+                        elif len(sats)==1:
                             label = f"p-{ptile:d}"
                         elif si==0:
                             label = f"{sat:s} p-{ptile:d}"
@@ -347,7 +350,7 @@ class FCDRSummary(HomemadeDataset):
                         # Do I need to avoid xarray.DataArray.plot if I
                         # want to suppress the label?
                         # https://stackoverflow.com/q/50068423/974555
-                        L = summary[fld].sel(channel=channel).sel(ptile=ptile).plot(
+                        summary[fld].sel(channel=channel).sel(ptile=ptile).plot(
                             ax=a, label=label, linestyle=ls, color=color)
                     if len(fields) > 1: # more than one subplot
                         a.set_title(titles.get(fld, f"{fld:s}"))
@@ -358,7 +361,7 @@ class FCDRSummary(HomemadeDataset):
                             a.set_title(total_title)
                     if fld in labels.keys():
                         a.set_ylabel(labels[fld])
-                    if len(ptiles)>1 or len(sats)>1:
+                    if i>0 and (len(ptiles)>1 or len(sats)>1):
                         a.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     a.grid(axis="both")
                 # prepare some info for later, with zoomed-in y-axes
@@ -378,6 +381,8 @@ class FCDRSummary(HomemadeDataset):
                 if len(fields) > 1:
                     f.suptitle(total_title)
                 f.autofmt_xdate()
+            summary.close()
+            del summary
         for channel in range(1, 20):
             (f, a_all) = figs[channel]
             pyatmlab.graphics.print_or_show(f, None, 
