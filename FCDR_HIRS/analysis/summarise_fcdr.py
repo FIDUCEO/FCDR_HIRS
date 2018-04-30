@@ -368,7 +368,7 @@ class FCDRSummary(HomemadeDataset):
                             a.set_title(total_title)
                     if fld in labels.keys():
                         a.set_ylabel(labels[fld])
-                    if i>0 and (len(ptiles)>1 or len(sats)>1):
+                    if i==0 and (len(ptiles)>1 or len(sats)>1):
                         a.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     a.grid(axis="both")
                 # prepare some info for later, with zoomed-in y-axes
