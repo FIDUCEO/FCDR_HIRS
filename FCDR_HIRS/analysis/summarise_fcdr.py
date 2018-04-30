@@ -33,6 +33,15 @@ def parse_cmdline():
         help="Version to use.")
 #            "or plot from them")
 
+    parser.add_argument("--ptiles", action="store", type=int,
+        nargs="*",
+        default=[5, 25, 50, 75, 95],
+        help="Percentiles to plot.  Recommended to plot at least always 50.")
+
+    parser.add_argument("--pstyles", action="store", type=str,
+        default=": -- - -- :",
+        help="Style for percentiles.  Should be single string argument "
+            "to prevent styles misinterpreted as flag hyphens.")
     p = parser.parse_args()
     return p
 parsed_cmdline = parse_cmdline()
@@ -98,7 +107,7 @@ class FCDRSummary(HomemadeDataset):
     time_field = "date"
     read_returns = "xarray"
     plot_file = ("hirs_summary/"
-        "FCDR_hirs_summary_{satname:s}_ch{channel:d}_{start:%Y%m%d}-{end:%Y%m%d}"
+        "FCDR_hirs_summary_{satname:s}_ch{channel:d}_{start:%Y%m%d}-{end:%Y%m%d}_p{ptilestr:s}"
         "v{data_version:s}.")
     plot_hist_file = ("hirs_summary/"
         "FCDR_hirs_hist_{satname:s}_{start:%Y%m%d}-{end:%Y%m%d}"
@@ -396,7 +405,8 @@ class FCDRSummary(HomemadeDataset):
             (f, a_all) = figs[channel]
             pyatmlab.graphics.print_or_show(f, None, 
                 self.plot_file.format(satname=satlabel, start=start,
-                end=end, channel=channel, data_version=self.data_version))
+                end=end, channel=channel, data_version=self.data_version,
+                ptilestr=','.join(str(p) for p in ptiles)))
         # another set with zoomed-in y-axes
         for channel in range(1, 20):
             (f, a_all) = figs[channel]
@@ -481,4 +491,6 @@ def summarise():
 #            fcdr_type="easy")
         summary.plot_period_ptiles(start, end,
             fields=["bt", "u_independent", "u_structured"],
-            fcdr_type="easy")
+            fcdr_type="easy",
+            ptiles=p.ptiles,
+            pstyles=p.pstyles.split())
