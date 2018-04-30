@@ -312,7 +312,7 @@ class FCDRSummary(HomemadeDataset):
                 nrows=len(fields), ncols=1, squeeze=False)
                 
         ranges = xarray.DataArray(
-            numpy.zeros((len(sats), 19, len(fields), 2), dtype="f4"),
+            numpy.full((len(sats), 19, len(fields), 2), numpy.nan, dtype="f4"),
             dims=("satname", "channel", "field", "extremum"),
             coords={"satname": sats, "channel": range(1, 20),
                 "field": fields,
