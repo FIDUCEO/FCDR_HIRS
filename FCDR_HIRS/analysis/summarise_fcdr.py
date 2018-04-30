@@ -2,7 +2,6 @@
 """
 
 import matplotlib
-#matplotlib.use("Agg") # now in matplotlibrc
 from .. import common
 import argparse
 
@@ -49,11 +48,6 @@ import pathlib
 import itertools
 import datetime
 import xarray
-#import matplotlib
-#matplotlib.use("Agg")
-#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
-#import matplotlib.pyplot
-#import matplotlib.gridspec
 import numpy
 import pandas
 import scipy.stats
@@ -112,26 +106,35 @@ class FCDRSummary(HomemadeDataset):
 
     fields = {
         "debug":
-            ["T_b", "u_T_b_independent", "u_T_b_structured",
-            "R_e", "u_R_Earth_independent", "u_R_Earth_structured",
+            ["T_b", "u_T_b_random", "u_T_b_nonrandom",
+            "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
             "u_C_Earth"],
         "easy":
             ["bt", "u_independent", "u_structured"],
           }
+    
+    # extra fields needed in analysis but not summarised
+    extra_fields = {
+        "debug":
+            ["quality_scanline_bitmask", "quality_channel_bitmask",
+             "quality_pixel_bitmask"],
+        "easy":
+            ["quality_scanline_bitmask", "quality_channel_bitmask"],
+        }
 
     hist_range = xarray.Dataset(
         {
         **{field: (("edges",), [170, 320]) for field in ("T_b", "bt")},
-        **{field: (("edges",), [0, 200]) for field in 
-            ["u_T_b_independent", "u_T_b_structured",
+        **{field: (("edges",), [0, 50]) for field in 
+            ["u_T_b_random", "u_T_b_nonrandom",
              "u_independent", "u_structured"]},
         **{field: (("channel", "edges"),
                    [[0, 200]]*10+[[0, 100]]*2+[[0,10]]*7)
-            for field in ("R_e", "u_R_Earth_independent", "u_R_Earth_structured")},
+            for field in ("R_e", "u_R_Earth_random", "u_R_Earth_nonrandom")},
         "u_C_Earth": (("edges",), [-4097, 4098]),
         },
         coords={"channel": numpy.arange(1, 20)})
-    nbins = 50000
+    nbins = 2000
 
     def __init__(self, *args, satname, **kwargs):
         super().__init__(*args, satname=satname, **kwargs)
@@ -204,15 +207,19 @@ class FCDRSummary(HomemadeDataset):
                 ds = self.hirs.read_period(sd, ed,
                     locator_args={"data_version": self.data_version,
                                   "fcdr_type": fcdr_type},
-                    fields=fields[fcdr_type])
+                    fields=fields[fcdr_type]+self.extra_fields[fcdr_type])
                 if fcdr_type=="easy" and ds["u_structured"].dims == ():
                     raise DataFileError("See https://github.com/FIDUCEO/FCDR_HIRS/issues/171")
             except DataFileError:
                 continue
             if fcdr_type == "debug":
-                bad = (2*ds["u_R_Earth_structured"] > ds["R_e"])
+                bad = ((2*ds["u_R_Earth_nonrandom"] > ds["R_e"]) |
+                        (ds["quality_scanline_bitmask"] & 1) |
+                        (ds["quality_channel_bitmask"] & 1))
             else: # should be "easy"
-                bad = (2*ds["u_structured"] > ds["bt"])
+                bad = ((2*ds["u_structured"] > ds["bt"]) |
+                       (ds["quality_scanline_bitmask"].astype("uint8") & 1) |
+                       (ds["quality_channel_bitmask"].astype("uint8") & 1))
             for field in fields[fcdr_type]:
                 if field != "u_C_Earth":
                     # workaround for https://github.com/FIDUCEO/FCDR_HIRS/issues/152
