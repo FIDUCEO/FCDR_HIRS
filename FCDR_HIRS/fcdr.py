@@ -2586,7 +2586,7 @@ def list_all_satellites():
     return {x.lower() for x in S}
 
 def list_all_satellites_chronologically():
-    return ["tirosn"] + [f"noaa{i:d}" for i in range(6, 20) if i!=13] + [
+    return ["tirosn"] + [f"noaa{i:02d}" for i in range(6, 20) if i!=13] + [
         "metopa", "metopb"]
 
 def _recursively_search_for(sub, var):
