@@ -417,7 +417,8 @@ class FCDRSummary(HomemadeDataset):
             pyatmlab.graphics.print_or_show(f, None, 
                 self.plot_file.format(satname=satlabel, start=start,
                     end=end, channel=channel,
-                    data_version=self.data_version)[:-1] + "_zoom.")
+                    data_version=self.data_version,
+                    ptilestr=','.join(str(p) for p in ptiles))[:-1] + "_zoom.")
         self.satname = oldsatname
 
 
