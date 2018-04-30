@@ -300,8 +300,7 @@ class FCDRSummary(HomemadeDataset):
             sats = self.satname
 
         if sats == "all":
-            sats = sorted({norm_tovs_name(s) for s in
-                    fcdr.list_all_satellites()})
+            sats = fcdr.list_all_satellites_chronologically()
             satlabel = ""
         else:
             sats = [sats]
