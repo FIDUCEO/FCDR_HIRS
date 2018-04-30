@@ -214,12 +214,12 @@ class FCDRSummary(HomemadeDataset):
                 continue
             if fcdr_type == "debug":
                 bad = ((2*ds["u_R_Earth_nonrandom"] > ds["R_e"]) |
-                        (ds["quality_scanline_bitmask"] & 1) |
-                        (ds["quality_channel_bitmask"] & 1))
+                        ((ds["quality_scanline_bitmask"] & 1)!=0) |
+                        ((ds["quality_channel_bitmask"] & 1)!=0))
             else: # should be "easy"
                 bad = ((2*ds["u_structured"] > ds["bt"]) |
-                       (ds["quality_scanline_bitmask"].astype("uint8") & 1) |
-                       (ds["quality_channel_bitmask"].astype("uint8") & 1))
+                       ((ds["quality_scanline_bitmask"].astype("uint8") & 1)!=0) |
+                       ((ds["quality_channel_bitmask"].astype("uint8") & 1)!=0))
             for field in fields[fcdr_type]:
                 if field != "u_C_Earth":
                     # workaround for https://github.com/FIDUCEO/FCDR_HIRS/issues/152
@@ -231,6 +231,9 @@ class FCDRSummary(HomemadeDataset):
                     da = ds[field]
                 if not da.notnull().any():
                     # hopeless
+                    logging.warning(f"All bad data for {self.satname:s} "
+                        f"{sd.year:d}-{sd.month:d}-{sd.day:d}–{ed.year:d}-{ed.month:d}-{ed.day}, not "
+                        f"summarising {field:s}.")
                     continue
                 # cannot apply limits here https://github.com/scipy/scipy/issues/7342
                 # and need to mask nans, see
