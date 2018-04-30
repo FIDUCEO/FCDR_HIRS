@@ -347,7 +347,7 @@ class FCDRSummary(HomemadeDataset):
                 for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
                     #summary[fld].values[summary[fld]==0] = numpy.nan # workaround #126, redundant after fix
                     for (ptile, ls, color) in zip(sorted(ptiles), pstyles, pcolors):
-                        if i==0:
+                        if i!=0:
                             label = ""
                         elif len(sats)==1:
                             label = f"p-{ptile:d}"
