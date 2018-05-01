@@ -338,6 +338,8 @@ class FCDRSummary(HomemadeDataset):
                         "fcdr_type": fcdr_type,
                         "satname": sat},
                     NO_CACHE=True)
+                if all(summary.isnull().all()[fields].all().variables.values()):
+                    raise DataFileError(f"All data invalid for {sat:s}!")
             except DataFileError:
                 continue
             else:
