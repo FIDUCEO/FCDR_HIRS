@@ -33,20 +33,20 @@ def main():
         datetime.datetime(2004, 4, 1),
         datetime.datetime(2004, 4, 2),
         locator_args={"data_version": "0.8pre", "fcdr_type": "debug"},
-        fields=("u_T_b_structured", "u_T_b_independent", "T_b"))
+        fields=("u_T_b_nonrandom", "u_T_b_random", "T_b"))
     
     with tempfile.TemporaryDirectory() as td:
         ds = dsref.copy()
         out_as_bt = pathlib.Path(td + "/u_as_bt.nc")
         out_as_perc = pathlib.Path(td + "/u_as_perc.nc")
-        ds["u_T_b_structured"].encoding = codings["as_bt"]
-        ds["u_T_b_independent"].encoding = codings["as_bt"]
+        ds["u_T_b_nonrandom"].encoding = codings["as_bt"]
+        ds["u_T_b_random"].encoding = codings["as_bt"]
         ds.to_netcdf(str(out_as_bt))
         ds = dsref.copy()
-        ds["u_T_b_structured"] /= ds["T_b"]
-        ds["u_T_b_independent"] /= ds["T_b"]
-        ds["u_T_b_structured"].encoding = codings["as_perc"]
-        ds["u_T_b_independent"].encoding = codings["as_perc"]
+        ds["u_T_b_nonrandom"] /= ds["T_b"]
+        ds["u_T_b_random"] /= ds["T_b"]
+        ds["u_T_b_nonrandom"].encoding = codings["as_perc"]
+        ds["u_T_b_random"].encoding = codings["as_perc"]
         ds.to_netcdf(str(out_as_perc))
         print("as bt", out_as_bt.stat().st_size)
         print("as perc", out_as_perc.stat().st_size)
