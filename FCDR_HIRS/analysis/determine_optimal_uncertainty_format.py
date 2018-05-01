@@ -32,7 +32,7 @@ def main():
     dsref = hirs.read_period(
         datetime.datetime(2004, 4, 1),
         datetime.datetime(2004, 4, 2),
-        locator_args={"data_version": "0.5pre", "fcdr_type": "debug"},
+        locator_args={"data_version": "0.8pre", "fcdr_type": "debug"},
         fields=("u_T_b_nonrandom", "u_T_b_random", "T_b"))
     
     with tempfile.TemporaryDirectory() as td:

@@ -55,7 +55,7 @@ class FCDRMonitor:
               "{tb:%Y-%m-%d %H:%M}--{te:%Y-%m-%d %H:%M} (scanpos {sp:d})")
     fields=["T_b", "u_T_b_random", "u_T_b_nonrandom",
         "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
-        'u_from_R_selfE', 'u_from_a_0', 'u_from_a_2', 'u_from_a_1',
+        'u_from_R_selfE', 'u_from_a_2', 
         'u_from_C_s', 'u_from_C_IWCT', 'u_from_R_IWCT', 'u_from_B',
         'u_from_Tstar', 'u_from_β', 'u_from_α', 'u_from_T_IWCT',
         'u_from_O_TIWCT', 'u_from_fstar', 'u_from_R_refl', 'u_from_C_E',
@@ -77,7 +77,7 @@ class FCDRMonitor:
     def plot_timeseries(self, ch, sp=28):
         counter = itertools.count()
         ds = self.ds.sel(calibrated_channel=ch, scanpos=sp, minor_frame=sp)
-        nrow = 7
+        nrow = 8
         gs = matplotlib.gridspec.GridSpec(nrow, 4)
         fig = matplotlib.pyplot.figure(figsize=(18, 3*nrow))
 #        (fig, axes) = matplotlib.pyplot.subplots(nrow, 2,
@@ -132,8 +132,10 @@ class FCDRMonitor:
         c = next(counter)
         # although exact same width as other time series would be
         # desirable, the colourbar currently messes this up /anyway/, so
-        # we might as well take the full width
-        a_flags = fig.add_subplot(gs[c, :])
+        # we might as well take the full width.  Use double height,
+        # because there are many flags and each should be readable
+        # individually.
+        a_flags = fig.add_subplot(gs[c:c+2, :])
         perc_all = []
         labels = []
         period = ("5min" if
@@ -161,6 +163,7 @@ class FCDRMonitor:
 
 #        a_tb_u_h = fig.add_subplot(gs[c, 3])
 
+        next(counter)
         c = next(counter)
         a_L = fig.add_subplot(gs[c, :3])
         a_L_h = fig.add_subplot(gs[c, 3])

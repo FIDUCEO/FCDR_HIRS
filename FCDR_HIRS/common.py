@@ -20,7 +20,7 @@ def add_to_argparse(parser,
         parser.add_argument("satname", action="store", type=str.lower,
             help="Satellite name",
             metavar="satname",
-            choices=sorted(list_all_satellites()))
+            choices=sorted(list_all_satellites())+["all"])
     elif include_sat == 2:
         parser.add_argument("satname1", action="store", type=str,
             help="Satellite name, primary",

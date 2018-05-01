@@ -2576,12 +2576,18 @@ def which_hirs_fcdr(satname, *args, **kwargs):
 
 def list_all_satellites():
     """Return a set with all possible satellite names of any kind
+
+    Includes duplicates!
     """
     S = set()
     for h in {HIRS2FCDR, HIRS3FCDR, HIRS4FCDR}:
         for sats in h.satellites.values():
             S |= sats
     return {x.lower() for x in S}
+
+def list_all_satellites_chronologically():
+    return ["tirosn"] + [f"noaa{i:02d}" for i in range(6, 20) if i!=13] + [
+        "metopa", "metopb"]
 
 def _recursively_search_for(sub, var):
     """Search if 'var' already exists in the tree for

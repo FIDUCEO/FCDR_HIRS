@@ -2,7 +2,6 @@
 """
 
 import matplotlib
-#matplotlib.use("Agg") # now in matplotlibrc
 from .. import common
 import argparse
 
@@ -30,10 +29,19 @@ def parse_cmdline():
              "hardcoded by type.")
 
     parser.add_argument("--version", action="store", type=str,
-        default="0.7",
+        default="0.8pre",
         help="Version to use.")
 #            "or plot from them")
 
+    parser.add_argument("--ptiles", action="store", type=int,
+        nargs="*",
+        default=[5, 25, 50, 75, 95],
+        help="Percentiles to plot.  Recommended to plot at least always 50.")
+
+    parser.add_argument("--pstyles", action="store", type=str,
+        default=": -- - -- :",
+        help="Style for percentiles.  Should be single string argument "
+            "to prevent styles misinterpreted as flag hyphens.")
     p = parser.parse_args()
     return p
 parsed_cmdline = parse_cmdline()
@@ -46,14 +54,9 @@ logging.basicConfig(
     level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
 
 import pathlib
-#import itertools
+import itertools
 import datetime
 import xarray
-#import matplotlib
-#matplotlib.use("Agg")
-#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
-#import matplotlib.pyplot
-#import matplotlib.gridspec
 import numpy
 import pandas
 import scipy.stats
@@ -66,6 +69,7 @@ converter.register()
 from typhon.datasets.dataset import (DataFileError, HomemadeDataset)
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.datasets.tovs import norm_tovs_name
 import pyatmlab.graphics
 from .. import fcdr
 
@@ -103,7 +107,7 @@ class FCDRSummary(HomemadeDataset):
     time_field = "date"
     read_returns = "xarray"
     plot_file = ("hirs_summary/"
-        "FCDR_hirs_summary_{satname:s}_ch{channel:d}_{start:%Y%m%d}-{end:%Y%m%d}"
+        "FCDR_hirs_summary_{satname:s}_ch{channel:d}_{start:%Y%m%d}-{end:%Y%m%d}_p{ptilestr:s}"
         "v{data_version:s}.")
     plot_hist_file = ("hirs_summary/"
         "FCDR_hirs_hist_{satname:s}_{start:%Y%m%d}-{end:%Y%m%d}"
@@ -117,11 +121,20 @@ class FCDRSummary(HomemadeDataset):
         "easy":
             ["bt", "u_independent", "u_structured"],
           }
+    
+    # extra fields needed in analysis but not summarised
+    extra_fields = {
+        "debug":
+            ["quality_scanline_bitmask", "quality_channel_bitmask",
+             "quality_pixel_bitmask"],
+        "easy":
+            ["quality_scanline_bitmask", "quality_channel_bitmask"],
+        }
 
     hist_range = xarray.Dataset(
         {
         **{field: (("edges",), [170, 320]) for field in ("T_b", "bt")},
-        **{field: (("edges",), [0, 200]) for field in 
+        **{field: (("edges",), [0, 50]) for field in 
             ["u_T_b_random", "u_T_b_nonrandom",
              "u_independent", "u_structured"]},
         **{field: (("channel", "edges"),
@@ -130,14 +143,24 @@ class FCDRSummary(HomemadeDataset):
         "u_C_Earth": (("edges",), [-4097, 4098]),
         },
         coords={"channel": numpy.arange(1, 20)})
-    nbins = 50000
+    nbins = 2000
 
     def __init__(self, *args, satname, **kwargs):
         super().__init__(*args, satname=satname, **kwargs)
 
+        # special value 'all' used in summary plotting
+        if satname == "all":
+            self.start_date = datetime.datetime(1978, 1, 1)
+            self.end_date = datetime.datetime(2018, 1, 1)
+        else:
+            self.sethirs(satname)
+
+            self.start_date = self.hirs.start_date
+            self.end_date = self.hirs.end_date
+
+    def sethirs(self, satname):
+        self.satname = satname
         self.hirs = fcdr.which_hirs_fcdr(satname, read="L1C")
-        self.start_date = self.hirs.start_date
-        self.end_date = self.hirs.end_date
 
     def create_summary(self, start_date, end_date,
             fields=None,
@@ -193,15 +216,19 @@ class FCDRSummary(HomemadeDataset):
                 ds = self.hirs.read_period(sd, ed,
                     locator_args={"data_version": self.data_version,
                                   "fcdr_type": fcdr_type},
-                    fields=fields[fcdr_type])
+                    fields=fields[fcdr_type]+self.extra_fields[fcdr_type])
                 if fcdr_type=="easy" and ds["u_structured"].dims == ():
                     raise DataFileError("See https://github.com/FIDUCEO/FCDR_HIRS/issues/171")
             except DataFileError:
                 continue
             if fcdr_type == "debug":
-                bad = (2*ds["u_R_Earth_nonrandom"] > ds["R_e"])
+                bad = ((2*ds["u_R_Earth_nonrandom"] > ds["R_e"]) |
+                        ((ds["quality_scanline_bitmask"] & 1)!=0) |
+                        ((ds["quality_channel_bitmask"] & 1)!=0))
             else: # should be "easy"
-                bad = (2*ds["u_structured"] > ds["bt"])
+                bad = ((2*ds["u_structured"] > ds["bt"]) |
+                       ((ds["quality_scanline_bitmask"].astype("uint8") & 1)!=0) |
+                       ((ds["quality_channel_bitmask"].astype("uint8") & 1)!=0))
             for field in fields[fcdr_type]:
                 if field != "u_C_Earth":
                     # workaround for https://github.com/FIDUCEO/FCDR_HIRS/issues/152
@@ -213,6 +240,9 @@ class FCDRSummary(HomemadeDataset):
                     da = ds[field]
                 if not da.notnull().any():
                     # hopeless
+                    logging.warning(f"All bad data for {self.satname:s} "
+                        f"{sd.year:d}-{sd.month:d}-{sd.day:d}–{ed.year:d}-{ed.month:d}-{ed.day}, not "
+                        f"summarising {field:s}.")
                     continue
                 # cannot apply limits here https://github.com/scipy/scipy/issues/7342
                 # and need to mask nans, see
@@ -273,65 +303,128 @@ class FCDRSummary(HomemadeDataset):
     def plot_period_ptiles(self, start, end, fields,
             ptiles=[5, 25, 50, 75, 95],
             pstyles=[":", "--", "-", "--", ":"],
-            pcolors=["C2", "C1", "C0", "C1", "C2"],
-            fcdr_type="debug"):
-        summary = self.read_period(start, end,
-            locator_args={"data_version": "v"+self.data_version,
-                "fcdr_type": fcdr_type})
-        #fields = ["T_b", "u_T_b_random", "u_T_b_nonrandom"]
+            fcdr_type="debug",
+            sats=None):
+        if sats is None:
+            sats = self.satname
 
-#        for field in ("u_T_b_random", "u_R_Earth_random", "u_C_Earth"):
-#            summary[field] *= numpy.sqrt(48) # workaround #125, remove after fix
+        allsats = fcdr.list_all_satellites_chronologically()
+        if sats == "all":
+            sats = allsats
+            satlabel = ""
+        else:
+            sats = [sats]
+            satlabel = self.satname + " "
+        
+        figs = {}
         for channel in range(1, 20):
-            total_title = (f"HIRS {self.satname:s} ch {channel:d} "
-                           f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
-            (f, a_all) = matplotlib.pyplot.subplots(figsize=(20, 4.5*len(fields)),
+            figs[channel] = matplotlib.pyplot.subplots(figsize=(20, 4.5*len(fields)),
                 nrows=len(fields), ncols=1, squeeze=False)
-            for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
-                summary[fld].values[summary[fld]==0] = numpy.nan # workaround #126, redundant after fix
-                for (ptile, ls, color) in zip(sorted(ptiles), pstyles, pcolors):
-                    summary[fld].sel(channel=channel).sel(ptile=ptile).plot(
-                        ax=a, label=str(ptile), linestyle=ls, color=color)
-    #            summary[fld].sel(channel=channel).T.plot.pcolormesh(
-    #                ax=a, vmin=200 if fld=="T_b" else 0)
-                if len(fields) > 1: # more than one subplot
-                    a.set_title(titles.get(fld, f"{fld:s}"))
-                else:
-                    if fld in titles.keys():
-                        a.set_title(total_title + ", " + titles[fld])
+                
+        ranges = xarray.DataArray(
+            numpy.full((len(sats), 19, len(fields), 2), numpy.nan, dtype="f4"),
+            dims=("satname", "channel", "field", "extremum"),
+            coords={"satname": sats, "channel": range(1, 20),
+                "field": fields,
+                "extremum": ["lo", "hi"]})
+
+        oldsatname = self.satname
+        sc = itertools.count()
+        for sat in sats:
+            if sat != self.satname:
+                self.satname = sat
+            try:
+                summary = self.read_period(start, end,
+                    locator_args={"data_version": "v"+self.data_version,
+                        "fcdr_type": fcdr_type,
+                        "satname": sat},
+                    NO_CACHE=True)
+                if all(summary.isnull().all()[fields].all().variables.values()):
+                    raise DataFileError(f"All data invalid for {sat:s}!")
+            except DataFileError:
+                continue
+            else:
+                si = next(sc)
+            
+            np = len(ptiles)
+            if len(sats) == 1:
+                pcolors = [f"C{i:d}" for i in
+                    range(math.ceil(-np/2), math.ceil(np/2))]
+            else:
+                pcolors = [f"C{allsats.index(sat)%10:d}"]*np
+
+            for channel in range(1, 20):
+                total_title = (f"HIRS {satlabel:s}ch. {channel:d} "
+                               f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
+                (f, a_all) = figs[channel]
+                for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
+                    #summary[fld].values[summary[fld]==0] = numpy.nan # workaround #126, redundant after fix
+                    for (ptile, ls, color) in zip(sorted(ptiles), pstyles, pcolors):
+                        if i!=0:
+                            label = ""
+                        elif len(sats)==1:
+                            label = f"p-{ptile:d}"
+                        elif si==0:
+                            label = f"{sat:s} p-{ptile:d}"
+                        elif ptile==50:
+                            label = sat
+                        else:
+                            label = "" # https://stackoverflow.com/a/50068622/974555
+                        # Do I need to avoid xarray.DataArray.plot if I
+                        # want to suppress the label?
+                        # https://stackoverflow.com/q/50068423/974555
+                        summary[fld].sel(channel=channel).sel(ptile=ptile).plot(
+                            ax=a, label=label, linestyle=ls, color=color)
+                    if len(fields) > 1: # more than one subplot
+                        a.set_title(titles.get(fld, f"{fld:s}"))
                     else:
-                        a.set_title(total_title)
-                if fld in labels.keys():
-                    a.set_ylabel(labels[fld])
-                if len(ptiles) > 1:
-                    a.legend([f"p-{p:d}" for p in reversed(ptiles)])
-                a.grid(axis="both")
-            if len(fields) > 1:
-                f.suptitle(total_title)
-            f.autofmt_xdate()
+                        if fld in titles.keys():
+                            a.set_title(total_title + ", " + titles[fld])
+                        else:
+                            a.set_title(total_title)
+                    if fld in labels.keys():
+                        a.set_ylabel(labels[fld])
+                    if i==0 and (len(ptiles)>1 or len(sats)>1):
+                        a.legend(loc="upper left", bbox_to_anchor=(1, 1))
+                    a.grid(True, axis="both")
+                # prepare some info for later, with zoomed-in y-axes
+                for (fld, a) in zip(fields, a_all.ravel()):
+                    lo = scipy.stats.mstats.mquantiles(
+                        numpy.ma.masked_invalid(
+                            summary[fld].sel(channel=channel).sel(ptile=25).values),
+                        prob=0.05,
+                        alphap=0, betap=0)
+                    hi = scipy.stats.mstats.mquantiles(
+                        numpy.ma.masked_invalid(
+                            summary[fld].sel(channel=channel).sel(ptile=75).values),
+                        prob=.95,
+                        alphap=0, betap=0)
+                    ranges.loc[{"satname": sat, "channel": channel,
+                                "field": fld}].values[...] = [lo, hi]
+                if len(fields) > 1:
+                    f.suptitle(total_title)
+                f.autofmt_xdate()
+            summary.close()
+            del summary
+        for channel in range(1, 20):
+            (f, a_all) = figs[channel]
             pyatmlab.graphics.print_or_show(f, None, 
-                self.plot_file.format(satname=self.satname, start=start,
-                end=end, channel=channel, data_version=self.data_version))
-            # another versien with zoomed-in y-axes
+                self.plot_file.format(satname=satlabel, start=start,
+                end=end, channel=channel, data_version=self.data_version,
+                ptilestr=','.join(str(p) for p in ptiles)))
+        # another set with zoomed-in y-axes
+        for channel in range(1, 20):
+            (f, a_all) = figs[channel]
             for (fld, a) in zip(fields, a_all.ravel()):
-                lo = scipy.stats.mstats.mquantiles(
-                    numpy.ma.masked_invalid(
-                        summary[fld].sel(channel=channel).sel(ptile=25).values),
-                    prob=0.05,
-                    alphap=0, betap=0)
-                hi = scipy.stats.mstats.mquantiles(
-                    numpy.ma.masked_invalid(
-                        summary[fld].sel(channel=channel).sel(ptile=75).values),
-                    prob=.95,
-                    alphap=0, betap=0)
-#                if fld.startswith("u"):
-#                    a.set_ylim([0, hi])
-#                else:
+                lo = ranges.loc[{"channel": channel, "field": fld, "extremum": "lo"}].min()
+                hi = ranges.loc[{"channel": channel, "field": fld, "extremum": "hi"}].max()
                 a.set_ylim([lo, hi])
             pyatmlab.graphics.print_or_show(f, None, 
-                self.plot_file.format(satname=self.satname, start=start,
+                self.plot_file.format(satname=satlabel, start=start,
                     end=end, channel=channel,
-                    data_version=self.data_version)[:-1] + "_zoom.")
+                    data_version=self.data_version,
+                    ptilestr=','.join(str(p) for p in ptiles))[:-1] + "_zoom.")
+        self.satname = oldsatname
 
 
     def plot_period_hists(self, start, end, fcdr_type="easy"):
@@ -343,6 +436,12 @@ class FCDRSummary(HomemadeDataset):
         
         tit = f"HIRS {self.satname:s} {start:%Y-%m-%d}--{end:%Y-%m-%d}"
 
+        if fcdr_type == "easy":
+            lab_struc = "structured"
+            lab_indy = "independent"
+        else:
+            lab_struc = "T_b_nonrandom"
+            lab_indy = "T_b_random"
         # The dynamic range of structured uncertainties varies a lot
         # between channels.  Plotting together channels with large
         # differences in dynamic range of structured uncertainty may lead
@@ -350,8 +449,8 @@ class FCDRSummary(HomemadeDataset):
         # according to how much of the x-axis they need in their
         # histograms.
         idx_p95 = (summary.dims["bin_index"] -
-                  ((summary["hist_u_structured"].sum("date").cumsum("bin_index") /
-                    summary["hist_u_structured"].sum("date").sum("bin_index")) >
+                  ((summary[f"hist_u_{lab_struc:s}"].sum("date").cumsum("bin_index") /
+                    summary[f"hist_u_{lab_struc:s}"].sum("date").sum("bin_index")) >
                         .95).sum("bin_index"))
         ch_order = idx_p95.channel[idx_p95.values.argsort()]
         
@@ -362,16 +461,16 @@ class FCDRSummary(HomemadeDataset):
                 # take off last value because bins are the edges so
                 # this array is one longer than the corresponding hist
                 # values
-                x = summary["bins_u_independent"].sel(channel=ch)[:-1]
-                y = summary["hist_u_independent"].sel(channel=ch).sum("date")
-                a.plot(x, y, label=f"Ch. {ch:d}, independent",
+                x = summary[f"bins_u_{lab_indy:s}"].sel(channel=ch)[:-1]
+                y = summary[f"hist_u_{lab_indy:s}"].sel(channel=ch).sum("date")
+                a.plot(x, y, label=f"Ch. {ch:d}, {lab_indy:s}",
                     color=f"C{k:d}", linestyle="--")
-                y = summary["hist_u_structured"].sel(channel=ch).sum("date")
-                a.plot(x, y, label=f"Ch. {ch:d}, structured",
+                y = summary[f"hist_u_{lab_struc:s}"].sel(channel=ch).sum("date")
+                a.plot(x, y, label=f"Ch. {ch:d}, {lab_struc:s}",
                     color=f"C{k:d}", linestyle="-")
             a.legend()
             a.set_xlim([0,
-                float(summary["bins_u_structured"].sel(channel=chs[0]).isel(bin_edges=idx_hi))])
+                float(summary[f"bins_u_{lab_struc:s}"].sel(channel=chs[0]).isel(bin_edges=idx_hi))])
             a.set_xlabel("Brightness temperature uncertainty [K]")
             a.set_ylabel("Total number of pixels")
         f.suptitle(tit)
@@ -391,9 +490,13 @@ def summarise():
     elif p.mode == "plot":
 #        sumdat = summary.plot_period(start, end, 5, fields=["u_C_Earth"],
 #            ptiles=[50], pstyles=["-"], fcdr_type=p.type)
-        summary.plot_period_hists(start, end, "easy")
+        if p.satname != "all":
+            # plotting "all" not supported for hists
+            summary.plot_period_hists(start, end, p.type)
 #            fields=["bt", "u_independent", "u_structured"],
 #            fcdr_type="easy")
         summary.plot_period_ptiles(start, end,
             fields=["bt", "u_independent", "u_structured"],
-            fcdr_type="easy")
+            fcdr_type="easy",
+            ptiles=p.ptiles,
+            pstyles=p.pstyles.split())
