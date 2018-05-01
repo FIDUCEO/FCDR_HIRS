@@ -281,16 +281,17 @@ import typhon.plots
 import typhon.math
 import typhon.math.stats
 
-import pyatmlab.datasets.tovs
+import typhon.datasets.tovs
 import pyatmlab.io
-import pyatmlab.config
+import typhon.config
 import pyatmlab.physics
 import pyatmlab.graphics
-import pyatmlab.stats
 import pyatmlab.db
 
-from typhon.physics.constants import (micro, centi, tera, nano)
+from typhon.constants import (micro, centi, tera, nano)
 from typhon.physics.units import ureg, radiance_units as rad_u
+
+from .. import fcdr
 
 hirs_iasi_matchup = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS")
 
@@ -724,7 +725,7 @@ class LUTAnalysis:
         
 
     def lut_visualise_multi(self, sat="NOAA18"):
-#        basedir = pyatmlab.config.conf["main"]["lookup_table_dir"]
+#        basedir = typhon.config.conf["main"]["lookup_table_dir"]
 #        subname = ("large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,"
 #                   "ch7,ch8,ch9,ch10,ch11,ch12_{npc:d}_{fact:.1f}")
         for channels in {range(1, 13), # all thermal
@@ -812,7 +813,7 @@ class LUTAnalysis:
             for n in all_n:
                 logging.info("Binning, scale={:.1f}, n={:d}".format(
                     bin_scale, n))
-                bnd = pyatmlab.stats.bin_nd(
+                bnd = typhon.math.stats.bin_nd(
                     [pca.Y[:, i] for i in range(n)],
                     bins[:n])
                 (no, frac, lowest, med, highest) = self._calc_bin_stats(bnd)
@@ -865,7 +866,7 @@ class LUTAnalysis:
         tot = int(scipy.misc.comb(12, N))
         logging.info("Studying {:d} combinations".format(tot))
         for (k, combi) in enumerate(itertools.combinations(chans, N)):
-            bnd =  pyatmlab.stats.bin_nd([btflat[i] for i in combi], 
+            bnd =  typhon.math.stats.bin_nd([btflat[i] for i in combi], 
                                          [bins[i] for i in combi])
             (frac, lowest, med, highest) = self._calc_bin_stats(bnd)
             logging.info("{:d}/{:d} channel combination {!s}: {:.3%} {:d}/{:d}/{:d}".format(
@@ -892,10 +893,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
     styles = ("solid", "dashed", "dash_dot", "dotted")
     markers = "os^p*hv<>"
 
-    allsats = (pyatmlab.datasets.tovs.HIRS2FCDR.satellites |
-               pyatmlab.datasets.tovs.HIRS3FCDR.satellites |
-               pyatmlab.datasets.tovs.HIRS4FCDR.satellites)
-    allsats = {re.sub(r"0(\d)", r"\1", sat).upper() for sat in allsats}
+    allsats = {re.sub(r"0(\d)", "r\1", typhon.datasets.tovs.norm_tovs_name(x)).upper() for x in fcdr.list_all_satellites()}
 
     x = dict(#converter=dict(
 #                wavelength=pyatmlab.physics.frequency2wavelength,
@@ -929,7 +927,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
     @property
     def iasi(self):
         if self._iasi is None:
-            self._iasi = pyatmlab.datasets.tovs.IASINC(name="iasinc")
+            self._iasi = typhon.datasets.tovs.IASIEPS(name="iasinc")
         return self._iasi
 
     @iasi.setter
@@ -961,26 +959,23 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def __init__(self, mode="Viju", usecache=True):
         #logging.info("Finding and reading IASI")
         if mode == "iasinc":
-            self.iasi = pyatmlab.datasets.tovs.IASINC(name="iasinc")
+            self.iasi = typhon.datasets.tovs.IASIEPS(name="iasinc")
             self.choice = [(38, 47), (37, 29), (100, 51), (52, 11)]
             #self.gran = self.iasi.read(next(self.graniter))
         elif mode == "iasisub":
-            self.iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
+            self.iasi = typhon.datasets.tovs.IASISub(name="iasisub")
         self.graniter = self.iasi.find_granules()
         self.usecache = usecache
 
-        hconf = pyatmlab.config.conf["hirs"]
+        hconf = typhon.config.conf["hirs"]
         srfs = {}
         for sat in self.allsats:
             try:
-                (hirs_centres, hirs_srf) = pyatmlab.io.read_arts_srf(
-                    hconf["srf_backend_f"].format(sat=sat),
-                    hconf["srf_backend_response"].format(sat=sat))
+                srfs[sat] = [typhon.physics.units.em.SRF.fromArtsXML(sat,
+                    "hirs", ch) for ch in range(1, 20)]
             except FileNotFoundError as msg:
                 logging.error("Skipping {:s}: {!s}".format(
                               sat, msg))
-            else:
-                srfs[sat] = [pyatmlab.physics.SRF(f, w) for (f, w) in hirs_srf]
         self.srfs = srfs
 #        for coor in self.choice:
 #            logging.info("Considering {coor!s}: Latitude {lat:.1f}°, "
@@ -1000,7 +995,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             y = self.get_tb_spectrum()
             y_label = "Brightness temperature [K]"
         elif unit == "specrad_freq":
-            y = pyatmlab.physics.specrad_wavenumber2frequency(specrad_wavenum)
+            y = typhon.physics.units.em.specrad_wavenumber2frequency(specrad_wavenum)
             y_label = "Spectral radiance [W m^-2 sr^-1 Hz^-1]"
         elif unit == "specrad_wavenum":
             y = ureg.Quantity(specrad_wavenum,
@@ -1014,14 +1009,11 @@ class IASI_HIRS_analyser(LUTAnalysis):
         """Calculate spectrum of brightness temperatures
         """
         specrad_freq = self.get_y(unit="specrad_freq")
-#        specrad_wavenum = self.gran["spectral_radiance"]
-#        specrad_freq = pyatmlab.physics.specrad_wavenumber2frequency(
-#                            specrad_wavenum)
 
         with numpy.errstate(divide="warn", invalid="warn"):
             logging.info("...converting {:d} spectra to BTs...".format(
                 specrad_freq.shape[0]))
-            Tb = pyatmlab.physics.specrad_frequency_to_planck_bt(
+            Tb = typhon.physics.units.em.specrad_frequency_to_planck_bt(
                 specrad_freq, self.iasi.frequency)
         return Tb
 
@@ -1363,7 +1355,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         Based on Weinreb (1981), plot T_e as a function of T.  For
         details, see pyatmlab.physics.estimate_effective_temperature.
         """
-        hconf = pyatmlab.config.conf["hirs"]
+        hconf = typhon.config.conf["hirs"]
         (hirs_centres, hirs_srf) = pyatmlab.io.read_arts_srf(
             hconf["srf_backend_f"].format(sat=sat),
             hconf["srf_backend_response"].format(sat=sat))
@@ -1374,7 +1366,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 zip(self.colors, hirs_centres, hirs_srf)):
             Te = pyatmlab.physics.estimate_effective_temperature(
                     f[numpy.newaxis, :], W, f_c, T[:, numpy.newaxis])
-            wl_um = pyatmlab.physics.frequency2wavelength(f_c)/micro
+            wl_um = typhon.physics.units.em.frequency2wavelength(f_c)/micro
             a.plot(T, (Te-T), color=color,
                    label="ch. {:d} ({:.2f} µm)".format(i+1, wl_um))
             if (Te-T).max() > 0.1 and i!=18:
@@ -1393,12 +1385,6 @@ class IASI_HIRS_analyser(LUTAnalysis):
         """Plot BT deviation for mono-/polychromatic Planck
         """
 
-#        hconf = pyatmlab.config.conf["hirs"]
-#        (centres, srfs) = pyatmlab.io.read_arts_srf(
-#            hconf["srf_backend_f"].format(sat=sat),
-#            hconf["srf_backend_response"].format(sat=sat))
-#        srfs = [pyatmlab.physics.SRF(f, w) for (f, w) in srfs]
-
         (fig, a) = matplotlib.pyplot.subplots(2, sharex=True)
         for (i, color, srf) in zip(range(20), self.colors, self.srfs[sat]):
             T = numpy.linspace(srf.T_lookup_table.min(),
@@ -1406,12 +1392,12 @@ class IASI_HIRS_analyser(LUTAnalysis):
                                5*srf.T_lookup_table.size)
             L = srf.blackbody_radiance(T)
             freq = srf.centroid()
-            wl_um = pyatmlab.physics.frequency2wavelength(freq)/micro
+            wl_um = typhon.physics.units.em.frequency2wavelength(freq)/micro
             lab = "ch. {:d} ({:.2f} µm)".format(i+1, wl_um)
             a[0].plot(T[::20], (srf.channel_radiance2bt(L)-T)[::20],
                       color=color, label=lab)
             a[1].plot(T,
-                      pyatmlab.physics.specrad_frequency_to_planck_bt(L, freq)-T,
+                      typhon.physics.units.em.specrad_frequency_to_planck_bt(L, freq)-T,
                       color=color, label=lab)
         a[0].set_title("Deviation with lookup table")
         a[1].set_title("Deviation with monochromatic approximation")
@@ -1490,10 +1476,6 @@ class IASI_HIRS_analyser(LUTAnalysis):
         #dx = numpy.linspace(-30, 30, 7) * ureg.nm
         #dx = dx_many[70:140:10]
         # diff in um for human-readability
-#        d_um = (pyatmlab.physics.frequency2wavelength(
-#                    self.srfs[satellite][channel-1].centroid()) 
-#              - pyatmlab.physics.frequency2wavelength(
-#                    self.srfs[satellite][channel-1].centroid()-dx))
         sh = self.calc_bt_srf_shift(satellite, channel, dx)
         nsh = sh[:, :, sh.shape[2]//2]
         dsh = sh - nsh[:, :, numpy.newaxis]
@@ -1947,7 +1929,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             L_master
         """
         sat2 = sat2 or sat
-        iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
+        iasi = typhon.datasets.tovs.IASISub(name="iasisub")
         if not noise_quantity in {"bt", "radiance"}:
             raise ValueError("Unrecognised noise_quantity: "
                 "{:s}".format(noise_quantity))
@@ -1968,12 +1950,12 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 filters={lambda M: M[numpy.random.random(M.shape[0])<iasi_frac]})
         self.M1 = M1
         #M1_limited = typhon.math.array.limit_ndarray(M1, limits=limits)
-        L_full_testing = pyatmlab.physics.specrad_wavenumber2frequency(
+        L_full_testing = typhon.physics.units.em.specrad_wavenumber2frequency(
             M1["spectral_radiance"][::5, 2, :8461] * unit_specrad_wn)
         if db == "same":
             L_spectral_db = L_full_testing
         elif db == "similar":
-            L_spectral_db = pyatmlab.physics.specrad_wavenumber2frequency(
+            L_spectral_db = typhon.physics.units.em.specrad_wavenumber2frequency(
                 M1["spectral_radiance"][2::5, 2, :8461] * unit_specrad_wn)
         elif db == "different":
             M2 = self.M2 if self.M2 is not None else iasi.read_period(start=start2, end=end2,
@@ -1981,7 +1963,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 limits=limits)
             self.M2 = M2
             #M2_limited = typhon.math.array.limit_ndarray(M2, limits=limits)
-            L_spectral_db = pyatmlab.physics.specrad_wavenumber2frequency(
+            L_spectral_db = typhon.physics.units.em.specrad_wavenumber2frequency(
                 M2["spectral_radiance"][::3, 1, :8461] * unit_specrad_wn)
         else:
             raise ValueError("Unrecognised option for db: {:s}".format(db))
@@ -2516,10 +2498,10 @@ class IASI_HIRS_analyser(LUTAnalysis):
         # to estimate propagation through calibration, use real HIRS
         # measurements.  Memory intensive; rad_wn_all will be
         # N * m * 56 * 4 bytes, or around 3 GB/day when N=100.
-        h = pyatmlab.datasets.tovs.which_hirs_fcdr(sat.lower())
+        h = fcdr.which_hirs_fcdr(sat.lower())
         M = h.read_period(hirs_start, hirs_end,
             locator_args={"satname": sat.lower()},
-            reader_args={"filter_firstline": False},
+            reader_args={"filter_firstline": False}, # FIXME: update to new format
             fields=["time", "hrs_scntyp", "counts", "temp_iwt", "lat",
                     "lon", "hrs_scnlin"])
         rad_wn_all = ureg.Quantity(
@@ -2737,9 +2719,8 @@ def main():
 
     with numpy.errstate(all="raise"):
         vis = IASI_HIRS_analyser(usecache=p.cache)
-        if not isinstance(vis.iasi, pyatmlab.datasets.tovs.IASISub):
-            vis.iasi = pyatmlab.datasets.tovs.IASISub(name="iasisub")
-        #h = pyatmlab.datasets.tovs.HIRS3(name="hirs")
+        if not isinstance(vis.iasi, typhon.datasets.tovs.IASISub):
+            vis.iasi = typhon.datasets.tovs.IASISub(name="iasisub")
 
         if p.makelut:
             print("Making LUT only")
