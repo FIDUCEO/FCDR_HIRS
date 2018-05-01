@@ -381,7 +381,7 @@ class FCDRSummary(HomemadeDataset):
                         a.set_ylabel(labels[fld])
                     if i==0 and (len(ptiles)>1 or len(sats)>1):
                         a.legend(loc="upper left", bbox_to_anchor=(1, 1))
-                    a.grid(axis="both")
+                    a.grid(True, axis="both")
                 # prepare some info for later, with zoomed-in y-axes
                 for (fld, a) in zip(fields, a_all.ravel()):
                     lo = scipy.stats.mstats.mquantiles(
