@@ -234,9 +234,7 @@ def parse_cmdline():
 
     p = parser.parse_args()
     return p
-
-if __name__ == "__main__":
-    parsed_cmdline = parse_cmdline()
+parsed_cmdline = parse_cmdline()
 
 if parsed_cmdline.log == "":
     logging.basicConfig(
