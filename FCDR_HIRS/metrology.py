@@ -338,9 +338,12 @@ def calc_Δ_x(R_xt: xarray.DataArray,
         R_xt.coords[dim],
         dims=(dim,))
     r_xΔ = xarray.DataArray(
-        numpy.array([numpy.diagonal(R_xt, i, -2, -1).mean(-1) for i in range(R_xt.shape[-1])]),
-        dims=("n_p", "n_c"),
-        coords={"n_p": R_xt.coords[R_xt.dims[1]].values, # may be n_l or n_e
+        numpy.array(
+            [numpy.ma.masked_invalid(
+                numpy.diagonal(R_xt, i, -2, -1)).mean(-1)
+                for i in range(R_xt.shape[-1])]),
+        dims=("Δp", "n_c"),
+        coords={"Δp": R_xt.coords[R_xt.dims[1]].values,
                 "n_c": R_xt.coords["n_c"]})
 
     def f(Δ, Δ_e):
@@ -749,12 +752,18 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
     S_lsΛe = calc_S_from_CUR(R_lΛes, U_lΛes_diag, C_lΛes_diag)
     S_ls = calc_S_xt(S_lsΛe)
     R_ls = calc_R_xt(S_ls)
-    R_ls_safe = xarray.DataArray(
-        R_ls.values[:, :, ~brokenline.values][:, ~brokenline.values, :][~brokenchan.values, :, :],
+    R_ls_goodchans = xarray.DataArray(
+        R_ls.values[~brokenchan.values, :, :],
         dims=R_ls.dims,
         coords={"n_c": all_coords["n_c"][~brokenchan.values],
-                "n_l": all_coords["n_l"][~brokenline.values]})
-    (Δ_l, Δ_l_full) = calc_Δ_x(R_ls_safe, return_vector=True)
+                "n_l": all_coords["n_l"]})
+    # setting bad lines to nan.  Simply removing them is incorrect,
+    # because it will mean that the k-diagonal may contain correlations
+    # corresponding to points more than k scanlines apart from the
+    # diagonal.
+    R_ls_goodchans.values[:, brokenline.values, :] = numpy.nan
+    R_ls_goodchans.values[:, :, brokenline.values] = numpy.nan
+    (Δ_l, Δ_l_full) = calc_Δ_x(R_ls_goodchans, return_vector=True)
 
     # verify that bad data in result is due to known bad data in input.
     # We only need to check a single row or column in S_lsΛe because this
@@ -767,12 +776,12 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
     S_esΛl = calc_S_from_CUR(R_eΛls, U_eΛls_diag, C_eΛls_diag)
     S_es = calc_S_xt(S_esΛl)
     R_es = calc_R_xt(S_es)
-    R_es_safe = xarray.DataArray(
+    R_es_goodchans = xarray.DataArray(
         R_es.values[~brokenchan.values, :, :],
         dims=R_es.dims,
         coords={"n_c": all_coords["n_c"][~brokenchan.values],
                 "n_e": all_coords["n_e"]})
-    (Δ_e, Δ_e_full) = calc_Δ_x(R_es_safe, return_vector=True)
+    (Δ_e, Δ_e_full) = calc_Δ_x(R_es_goodchans, return_vector=True)
 
     R_cΛpi_stacked = typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))
     S_ciΛp = calc_S_from_CUR(
@@ -831,7 +840,7 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         Δ_l_full_all = xarray.DataArray(
             numpy.zeros((cutoff_l, n_c)),
             dims=Δ_l_full.dims,
-            coords={"n_p": Δ_l_full.coords["n_p"],
+            coords={"Δp": Δ_l_full.coords["Δp"],
                     "n_c": all_coords["n_c"]})
         Δ_l_full_all.loc[{"n_c": Δ_l["n_c"]}] = Δ_l_full
         Δ_l_full_all[{"n_c": brokenchan}] = numpy.nan
@@ -839,7 +848,7 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         Δ_e_full_all = xarray.DataArray(
             numpy.zeros((cutoff_e, n_c)),
             dims=Δ_e_full.dims,
-            coords={"n_p": Δ_e_full.coords["n_p"],
+            coords={"Δp": Δ_e_full.coords["Δp"],
                     "n_c": all_coords["n_c"]})
         Δ_e_full_all.loc[{"n_c": Δ_e["n_c"]}] = Δ_e_full
         Δ_e_full_all[{"n_c": brokenchan}] = numpy.nan
@@ -875,15 +884,15 @@ def interpolate_Δ_x(Δ_x, cutoff):
         numpy.zeros((cutoff, Δ_x["n_c"].size), dtype="f4"),
         dims=Δ_x.dims,
         coords={"n_c": Δ_x.coords["n_c"],
-                "n_p": numpy.arange(cutoff)})
+                "Δp": numpy.arange(cutoff)})
 
     for c in Δ_x["n_c"]:
         yref = Δ_x.sel(n_c=c).values
-        xref = Δ_x["n_p"].values
+        xref = Δ_x["Δp"].values
         # use slinear to ensure we always remain between -1 and 1
         f = scipy.interpolate.interp1d(xref, yref, kind="slinear",
             fill_value=(-1, 0), assume_sorted=False, bounds_error=False)
-        rv.loc[{"n_c":c}] = f(rv["n_p"])
+        rv.loc[{"n_c":c}] = f(rv["Δp"])
         if (rv.loc[{"n_c":c}]==-1).any():
             raise ValueError("Could not interpolate correlation lengths, "
                 "it appears I had no information on correlation length 0, "

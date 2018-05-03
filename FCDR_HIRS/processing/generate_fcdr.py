@@ -467,9 +467,9 @@ class FCDRGenerator:
             ds["cross_channel_error_correlation_matrix_structured_effects"] = (
                 ("calibrated_channel", "calibrated_channel"), R_cs)
             ds["cross_line_radiance_error_correlation_length_average"] = (
-                ("scanline_earth", "calibrated_channel"), Δ_l_full.values)
+                ("delta_scanline_earth", "calibrated_channel"), Δ_l_full.values)
             ds["cross_element_radiance_error_correlation_length_average"] = (
-                ("scanpos", "calibrated_channel"), Δ_e_full.values)
+                ("delta_scanpos", "calibrated_channel"), Δ_e_full.values)
 
         if return_more:
             return (ds, sensRe)
