@@ -157,6 +157,7 @@ setup(
             "write_hirs_harm_meta=FCDR_HIRS.analysis.write_harm_meta:main",
             "merge_hirs_harmonisation=FCDR_HIRS.processing.combine_matchups:merge_files",
             "convert_hirs_harmonisation_parameters=FCDR_HIRS.processing.convert_harm_params:main",
+            "hirs_curuc_checker=FCDR_HIRS.analysis.inspect_orbit_curuc:main",
         ],
     },
 )
