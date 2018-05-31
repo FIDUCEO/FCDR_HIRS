@@ -452,9 +452,9 @@ class FCDRGenerator:
         ds["quality_pixel_bitmask"].values[((2*ds["u_R_Earth"]) > ds["R_e"]).transpose(*ds["quality_pixel_bitmask"].dims).values] |= _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
 
         try:
-            (Δ_l, Δ_e, R_ci, R_cs) = metrology.calc_corr_scale_channel(
+            (Δ_l, Δ_e, R_ci, R_cs, Δ_l_full, Δ_e_full) = metrology.calc_corr_scale_channel(
                 self.fcdr._effects, sensRe, ds, flags=self.fcdr._flags,
-                robust=True)
+                robust=True, return_vectors=True, interpolate_lengths=True)
         except fcdr.FCDRError as e:
             logging.error("Failed to calculate correlation length scales: "
                           f"{e.args[0]}")
@@ -463,9 +463,13 @@ class FCDRGenerator:
             ds["cross_line_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_l.sel(val="popt").values)
             ds["cross_element_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_e.sel(val="popt").values)
             ds["cross_channel_error_correlation_matrix_independent_effects"] = (
-                ("calibration_channel", "calibration_channel"), R_ci)
+                ("calibrated_channel", "calibrated_channel"), R_ci)
             ds["cross_channel_error_correlation_matrix_structured_effects"] = (
-                ("calibration_channel", "calibration_channel"), R_cs)
+                ("calibrated_channel", "calibrated_channel"), R_cs)
+            ds["cross_line_radiance_error_correlation_length_average"] = (
+                ("delta_scanline_earth", "calibrated_channel"), Δ_l_full.values)
+            ds["cross_element_radiance_error_correlation_length_average"] = (
+                ("delta_scanpos", "calibrated_channel"), Δ_e_full.values)
 
         if return_more:
             return (ds, sensRe)
