@@ -1074,7 +1074,21 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                 numpy.zeros((n_c, n_c))*numpy.nan,
                 dims=("n_c", "n_c"),
                 coords={"n_c": all_coords["n_c"]})
-            return (Δ_l, Δ_e, R_ci, R_cs)
+        
+            Δ_l_full_all = xarray.DataArray(
+                numpy.zeros((n_l, n_c)),
+                dims=("Δp", "n_c"),
+                coords={"Δp": numpy.arange(n_l),
+                        "n_c": all_coords["n_c"]})
+
+            Δ_e_full_all = xarray.DataArray(
+                numpy.zeros((n_e, n_c)),
+                dims=("Δp", "n_c"),
+                coords={"Δp": numpy.arange(n_e),
+                        "n_c": all_coords["n_c"]})
+
+            return (Δ_l, Δ_e, R_ci, R_cs) + (
+                (Δ_l_full_all, Δ_e_full_all) if return_vectors else ())
         else:
             raise FCDRError(errmsg)
 
