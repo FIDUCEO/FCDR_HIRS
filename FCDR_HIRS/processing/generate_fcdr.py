@@ -592,7 +592,7 @@ class FCDRGenerator:
         easy = easy.drop(easy.data_vars.keys() &
             {"scnlintime", "scnlinf", "scantype", "qualind",
              "linqualflags", "chqualflags", "mnfrqualflags",
-             "quality_pixel_bitmask"})
+             "quality_pixel_bitmask", "data_quality_bitmask"})
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
