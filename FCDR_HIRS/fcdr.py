@@ -87,7 +87,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     # changed e-mail address to fiduceo-coordinator
     #
     # v0.6: changed y-coordinate which now simply continues numerically
-    format_version="0.6"
+    #
+    # v0.7: various changes, adapted to Tom Blocks format, now with SRFs,
+    # LUTs, correlation lengths and scales, and new encodings
+    format_version="0.7"
 
     realisations = 100
     srfs = None

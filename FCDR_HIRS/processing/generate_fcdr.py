@@ -616,21 +616,24 @@ class FCDRGenerator:
 #            qualind=piece["quality_flags"].sel(time=t_earth),
             u_independent=piece["u_T_b_random"],
             u_structured=piece["u_T_b_nonrandom"],
-            channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
-                channel=slice(19)).rename({"channel": "calibrated_channel"}),
+#            channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
+#                channel=slice(19)).rename({"channel": "calibrated_channel"}),
             LUT_BT=piece["LUT_BT"],
             LUT_radiance=piece["LUT_radiance"])
         try:
             newcont.update(**dict(
                 cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
                 cross_element_radiance_error_correlation_length_scale_structured_effects=piece["cross_element_radiance_error_correlation_length_scale_structured_effects"],
-                cross_channel_error_correlation_matrix_independent_effects=piece["cross_channel_error_correlation_matrix_independent_effects"],
-                cross_channel_error_correlation_matrix_structured_effects=piece["cross_channel_error_correlation_matrix_structured_effects"],
+                channel_correlation_matrix_independent=piece["cross_channel_error_correlation_matrix_independent_effects"],
+                channel_correlation_matrix_structured=piece["cross_channel_error_correlation_matrix_structured_effects"],
+                cross_element_radiance_error_correlation_length_average=piece["cross_element_radiance_error_correlation_length_average"],
+                cross_line_radiance_error_correlation_length_average=piece["cross_line_radiance_error_correlation_length_average"],
                     ))
-        except KeyError:
+        except KeyError as e:
             # assuming they're missing because their calculation failed
-            logging.debug("Correlation length scales missing in debug FCDR." 
-                "See above, I guess their calculation failed.")
+            logging.warning("Correlation length scales missing in debug FCDR." 
+                "See above, I guess their calculation failed. "
+                f"For the record: {e.args[0]}")
 
         if self.fcdr.version >= 3:
             newcont.update(
@@ -665,7 +668,10 @@ class FCDRGenerator:
             channel=numpy.arange(1, 20))
 
         for k in easy.variables.keys():
-            easy[k].encoding = _fcdr_defs.FCDR_easy_encodings[k]
+            # see
+            # https://github.com/FIDUCEO/FCDR_HIRS/issues/215#issuecomment-393879944
+            # for why the following line is deactivated (commented out)
+            #easy[k].encoding = _fcdr_defs.FCDR_easy_encodings[k]
             # when any of those keys is set in
             # both in attrs and encoding, writing to disk fails with:
             # ValueError: Failed hard to prevent overwriting key '_FillValue'
