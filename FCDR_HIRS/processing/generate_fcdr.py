@@ -416,6 +416,7 @@ class FCDRGenerator:
         qc = xarray.Dataset(self.fcdr._quantities)
         qc = xarray.Dataset(
             {str(k): v for (k, v) in self.fcdr._quantities.items()})
+        (SRF_weights, SRF_frequencies) = self.get_srfs()
         # uncertainty scanline coordinate conflicts with subset scanline
         # coordinate, drop the former
         stuff_to_merge = [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
@@ -425,7 +426,7 @@ class FCDRGenerator:
                             S, LUT_BT, LUT_L,
                             flags_scanline, flags_channel,
                             flags_minorframe, flags_pixel,
-                            u_from]
+                            u_from, SRF_weights, SRF_frequencies]
         ds = xarray.merge(
             [da.drop("scanline").rename(
                 {"lat": "lat_earth", "lon": "lon_earth"})
@@ -471,10 +472,34 @@ class FCDRGenerator:
             ds["cross_element_radiance_error_correlation_length_average"] = (
                 ("delta_scanpos", "calibrated_channel"), Δ_e_full.values)
 
+
         if return_more:
             return (ds, sensRe)
         else:
             return ds
+
+    def get_srfs(self):
+        """Return xarray dataset with SRF info
+        """
+
+        SRF_weights = xarray.DataArray(
+            numpy.full((19, 2751), numpy.nan),
+            dims=("channel", "n_frequencies"),
+            coords={"channel": numpy.arange(1, 20)},
+            name="SRF_weights")
+
+        SRF_frequencies = xarray.full_like(SRF_weights, numpy.nan)
+        SRF_frequencies.name = "SRF_frequencies"
+        SRF_frequencies.attrs["units"] = "Hz"
+
+        for ch in range(1, 20):
+            srf = self.fcdr.srfs[ch-1]
+            f = srf.frequency
+            W = srf.W
+            SRF_frequencies.loc[{"channel": ch}][:f.size] = f
+            SRF_weights.loc[{"channel": ch}][:f.size] = W
+
+        return (SRF_weights, SRF_frequencies)
 
     def add_attributes(self, ds):
         """Add attributes to piece.
@@ -698,6 +723,9 @@ class FCDRGenerator:
         easy["quality_channel_bitmask"].values[(piece["quality_pixel_bitmask"] &
             _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |= \
             _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
+
+        for f in ("SRF_weights", "SRF_frequencies"):
+            easy[f][...] = piece[f].sel(channel=range(1, 20), n_frequencies=range(easy.dims["n_frequencies"]))
                 
         easy.attrs.update(piece.attrs)
 
