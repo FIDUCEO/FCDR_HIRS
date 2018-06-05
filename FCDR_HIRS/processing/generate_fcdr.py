@@ -416,6 +416,7 @@ class FCDRGenerator:
         qc = xarray.Dataset(self.fcdr._quantities)
         qc = xarray.Dataset(
             {str(k): v for (k, v) in self.fcdr._quantities.items()})
+        (SRF_weights, SRF_frequencies) = self.get_srfs()
         # uncertainty scanline coordinate conflicts with subset scanline
         # coordinate, drop the former
         stuff_to_merge = [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
@@ -425,7 +426,7 @@ class FCDRGenerator:
                             S, LUT_BT, LUT_L,
                             flags_scanline, flags_channel,
                             flags_minorframe, flags_pixel,
-                            u_from]
+                            u_from, SRF_weights, SRF_frequencies]
         ds = xarray.merge(
             [da.drop("scanline").rename(
                 {"lat": "lat_earth", "lon": "lon_earth"})
@@ -471,10 +472,34 @@ class FCDRGenerator:
             ds["cross_element_radiance_error_correlation_length_average"] = (
                 ("delta_scanpos", "calibrated_channel"), Δ_e_full.values)
 
+
         if return_more:
             return (ds, sensRe)
         else:
             return ds
+
+    def get_srfs(self):
+        """Return xarray dataset with SRF info
+        """
+
+        SRF_weights = xarray.DataArray(
+            numpy.full((19, 2751), numpy.nan),
+            dims=("channel", "n_frequencies"),
+            coords={"channel": numpy.arange(1, 20)},
+            name="SRF_weights")
+
+        SRF_frequencies = xarray.full_like(SRF_weights, numpy.nan)
+        SRF_frequencies.name = "SRF_frequencies"
+        SRF_frequencies.attrs["units"] = "Hz"
+
+        for ch in range(1, 20):
+            srf = self.fcdr.srfs[ch-1]
+            f = srf.frequency
+            W = srf.W
+            SRF_frequencies.loc[{"channel": ch}][:f.size] = f
+            SRF_weights.loc[{"channel": ch}][:f.size] = W
+
+        return (SRF_weights, SRF_frequencies)
 
     def add_attributes(self, ds):
         """Add attributes to piece.
@@ -592,7 +617,7 @@ class FCDRGenerator:
         easy = easy.drop(easy.data_vars.keys() &
             {"scnlintime", "scnlinf", "scantype", "qualind",
              "linqualflags", "chqualflags", "mnfrqualflags",
-             "quality_pixel_bitmask"})
+             "quality_pixel_bitmask", "data_quality_bitmask"})
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
@@ -616,21 +641,24 @@ class FCDRGenerator:
 #            qualind=piece["quality_flags"].sel(time=t_earth),
             u_independent=piece["u_T_b_random"],
             u_structured=piece["u_T_b_nonrandom"],
-            channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
-                channel=slice(19)).rename({"channel": "calibrated_channel"}),
+#            channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
+#                channel=slice(19)).rename({"channel": "calibrated_channel"}),
             LUT_BT=piece["LUT_BT"],
             LUT_radiance=piece["LUT_radiance"])
         try:
             newcont.update(**dict(
                 cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
                 cross_element_radiance_error_correlation_length_scale_structured_effects=piece["cross_element_radiance_error_correlation_length_scale_structured_effects"],
-                cross_channel_error_correlation_matrix_independent_effects=piece["cross_channel_error_correlation_matrix_independent_effects"],
-                cross_channel_error_correlation_matrix_structured_effects=piece["cross_channel_error_correlation_matrix_structured_effects"],
+                channel_correlation_matrix_independent=piece["cross_channel_error_correlation_matrix_independent_effects"],
+                channel_correlation_matrix_structured=piece["cross_channel_error_correlation_matrix_structured_effects"],
+                cross_element_radiance_error_correlation_length_average=piece["cross_element_radiance_error_correlation_length_average"],
+                cross_line_radiance_error_correlation_length_average=piece["cross_line_radiance_error_correlation_length_average"],
                     ))
-        except KeyError:
+        except KeyError as e:
             # assuming they're missing because their calculation failed
-            logging.debug("Correlation length scales missing in debug FCDR." 
-                "See above, I guess their calculation failed.")
+            logging.warning("Correlation length scales missing in debug FCDR." 
+                "See above, I guess their calculation failed. "
+                f"For the record: {e.args[0]}")
 
         if self.fcdr.version >= 3:
             newcont.update(
@@ -665,7 +693,10 @@ class FCDRGenerator:
             channel=numpy.arange(1, 20))
 
         for k in easy.variables.keys():
-            easy[k].encoding = _fcdr_defs.FCDR_easy_encodings[k]
+            # see
+            # https://github.com/FIDUCEO/FCDR_HIRS/issues/215#issuecomment-393879944
+            # for why the following line is deactivated (commented out)
+            #easy[k].encoding = _fcdr_defs.FCDR_easy_encodings[k]
             # when any of those keys is set in
             # both in attrs and encoding, writing to disk fails with:
             # ValueError: Failed hard to prevent overwriting key '_FillValue'
@@ -692,6 +723,9 @@ class FCDRGenerator:
         easy["quality_channel_bitmask"].values[(piece["quality_pixel_bitmask"] &
             _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |= \
             _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
+
+        for f in ("SRF_weights", "SRF_frequencies"):
+            easy[f][...] = piece[f].sel(channel=range(1, 20), n_frequencies=range(easy.dims["n_frequencies"]))
                 
         easy.attrs.update(piece.attrs)
 
