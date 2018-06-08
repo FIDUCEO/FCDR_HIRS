@@ -193,6 +193,38 @@ FCDR_data_vars_props = dict(
         {"long_name": "Number of PRTs for IWCT temperature measurement",
          "units": "1"},
         _u1_coding),
+    prt_reading = (
+        "prt_reading",
+        (),
+        {"long_name": "Number of PRT views per PRT for IWCT temperature measurement",
+         "units": "1"},
+        _u1_coding),
+    prt_iwct_polynomial_order = (
+        "prt_iwct_polynomial_order",
+        (),
+        {"long_name": "Order of polynomial for each IWCT PRT calibration",
+         "units": "1"},
+        _u1_coding),
+    prt_iwct_counts = (
+        "prt_iwct_counts",
+        ("time", "prt_number", "prt_reading"),
+        {"long_name": "IWCT PRT counts",
+         "units": ureg.count},
+        _count_coding),
+    prt_iwct_coefficients = (
+        "prt_iwct_coefficients",
+        ("prt_number", "prt_iwct_polynomial_order"),
+        {"long_name": "IWCT PRT coefficients",
+         "units": [ureg.K, ureg.K/ureg.count, ureg.K/ureg.count**2,
+                   ureg.K/ureg.count**3, ureg.K/ureg.count**4,
+                   ureg.K/ureg.count**4]},
+        _coding),
+    prt_iwct_temperature = (
+        "prt_iwct_temperature",
+        ("time", "prt_number", "prt_reading"),
+        {"long_name": "IWCT PRT temperature",
+         "units": ureg.K},
+        _temp_coding),
     B = (
         "planck_radiance_IWCT",
         ("calibration_cycle", "calibrated_channel"),
@@ -324,7 +356,8 @@ FCDR_data_vars_props = dict(
 p = FCDR_data_vars_props
 for (var, corr) in {("R_Earth", "O_Re"),
                     ("T_IWCT_calib_mean", "O_TIWCT"),
-                    ("R_IWCT", "O_RIWCT")}:
+                    ("R_IWCT", "O_RIWCT"),
+                    ("prt_iwct_temperature", "O_TPRT")}:
     FCDR_data_vars_props[corr] = (
         "corr_" + p[var][0],
         p[var][1],

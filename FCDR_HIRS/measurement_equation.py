@@ -17,7 +17,7 @@ from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 version = "β"
 
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
-         "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φn "
+         "a_3 R_refl d_PRT C_PRT a n m A N M h c k_b T_PRT T_IWCT B φn "
          "R_IWCT O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT f Δf fstar "
          "ν Δν νstar T_bstar T_b a_4 S h_0 h_1 h_2 h_3")
 
@@ -68,9 +68,12 @@ if version == "β":
 expressions[sym["T_IWCT"]] = (
     sympy.Sum(sympy.IndexedBase(sym["T_PRT"])[sym["n"]], (sym["n"], 0, sym["N"]))/sym["N"] + sym["O_TIWCT"])
 expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"]]] = (
-    sympy.Sum(sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]] *
-        sympy.IndexedBase(sym["C_PRT"])[sym["n"]]**sym["k"], (sym["k"], 0, sym["K"]-1))
+    sympy.Sum(sympy.IndexedBase(sym["T_PRT"])[sym["n"],sym["m"]], (sym["m"], 0, sym["M"]))/sym["M"])
+expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"],sym["m"]]] = (
+    sympy.Sum(sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["a"]] *
+        sympy.IndexedBase(sym["C_PRT"])[sym["n"],sym["m"]]**sym["a"], (sym["a"], 0, sym["A"]-1))
     + sym["O_TPRT"])
+
 #expressions[sym["φn"]] = (sympy.Function("φn")(sym["λ"]+sym["Δλ"]))
 #expressions[sym["φn"]] = (sympy.Function("φn")(sym["ν"]+sym["Δν"]))
 expressions[sym["φn"]] = (sympy.Function("φn")(sym["f"]+sym["Δf"]))
@@ -84,16 +87,19 @@ expressions[sym["T_b"]] = (sym["T_bstar"] - sym["α"])/sym["β"]
 expressions[sym["c"]] = sympy.sympify(scipy.constants.speed_of_light)
 expressions[sym["h"]] = sympy.sympify(scipy.constants.Planck)
 expressions[sym["k_b"]] = sympy.sympify(scipy.constants.Boltzmann)
+expressions[sym["M"]] = sympy.Number(5)
+expressions[sym["N"]] = sympy.Number(5) # FIXME: actually depends on HIRS version...
 
 units = {}
 units[sym["c"]] = ureg.c
 units[sym["h"]] = ureg.h
 units[sym["k_b"]] = ureg.k
+units[sym["N"]] = units[sym["M"]] = ureg.dimensionless
 
 aliases = {}
-aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
-aliases[sym["C_PRT"]] = sympy.IndexedBase(sym["C_PRT"])[sym["n"]]
-aliases[sym["d_PRT"]] = sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]]
+#aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
+#aliases[sym["C_PRT"]] = sympy.IndexedBase(sym["C_PRT"])[sym["n"]]
+#aliases[sym["d_PRT"]] = sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]]
 
 def recursive_substitution(e, stop_at=None, return_intermediates=False,
         expressions=expressions):
@@ -180,6 +186,8 @@ names = {
     sym["a_2"]: "a_2",
     sym["T_IWCT"]: "T_IWCT_calib_mean",
     sym["N"]: "prt_number_iwt",
+    sym["M"]: "prt_reading",
+    sym["A"]: "prt_iwct_polynomial_order",
     sym["Tstar"]: "Tstar",
     sym["B"]: "B",
     sym["O_Re"]: "O_Re",
@@ -190,6 +198,10 @@ names = {
     sym["k_b"]: "boltzmann_constant",
     sym["T_b"]: "T_b",
     sym["T_bstar"]: "T_bstar",
+    sym["C_PRT"]: "prt_iwct_counts",
+    sym["d_PRT"]: "prt_iwct_coefficients",
+    sym["T_PRT"]: "prt_iwct_temperature",
+    sym["O_TPRT"]: "O_TPRT",
 }
 
 

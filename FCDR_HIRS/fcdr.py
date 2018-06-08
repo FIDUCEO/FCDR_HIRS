@@ -617,7 +617,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         """
 
         s = me.symbols[symbol_name]
-        name = me.names[s]
+        name = me.names[s] # FIXME: fails for Indexed?
         q = self._quantity_to_xarray(quantity, name,
                 dropdims=["channel", "calibrated_channel"],
                 **coords)
@@ -1752,16 +1752,18 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # myself but also fill in cached_uncertainties dictionary.
 
         s = me.symbols.get(var, var)
+        sbase = s.args[0].args[0] if isinstance(s, sympy.Indexed) else s
 
         if s not in me.expressions.keys():
             # If there is no expression for this value, the uncertainty is
             # simply what should have already been calculated
             #all_effects = effects.effects()
 
-            if s in all_effects.keys():
-                baddies = [eff for eff in all_effects[s]
+
+            if sbase in all_effects.keys():
+                baddies = [eff for eff in all_effects[sbase]
                     if eff.magnitude is None]
-                goodies = [eff for eff in all_effects[s]
+                goodies = [eff for eff in all_effects[sbase]
                     if eff.magnitude is not None]
                 if baddies:
                     warnings.warn("Effects with unquantified "
@@ -1774,27 +1776,27 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         operator.add,
                         (eff.magnitude for eff in goodies))
                 else:
-                    u = UADA(0, name="u_{!s}".format(s),
+                    u = UADA(0, name="u_{!s}".format(sbase),
                         attrs={
                             "quantity": str(s),
                             "note": "No uncertainty quantified for: {:s}".format(
                                 ';'.join(eff.name for eff in baddies)),
                             "units": self._data_vars_props[
-                                        me.names[s]][2]["units"],
+                                        me.names[sbase]][2]["units"],
                             "encoding": self._data_vars_props[
-                                        me.names[s]][3]})
+                                        me.names[sbase]][3]})
                 cached_uncertainties[s] = u
                 return (u, {}, {}) if return_more else u
             else:
-                u = UADA(0, name="u_{!s}".format(s),
+                u = UADA(0, name="u_{!s}".format(sbase),
                     attrs={
                         "quantity": str(s),
                         "note": "No documented effect associated with this "
                                 "quantity",
                         "units": self._data_vars_props[
-                                    me.names[s]][2]["units"],
+                                    me.names[sbase]][2]["units"],
                         "encoding": self._data_vars_props[
-                                    me.names[s]][3]})
+                                    me.names[sbase]][3]})
                 cached_uncertainties[s] = u
                 return (u, {}, {}) if return_more else u
 
@@ -1978,22 +1980,22 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # processing.
         src_dims = set().union(itertools.chain.from_iterable(
             x.dims for x in adict.values() if hasattr(x, 'dims')))
-        dest_dims = set(self._data_vars_props[me.names[s]][1])
+        dest_dims = set(self._data_vars_props[me.names[sbase]][1])
         if not dest_dims <= src_dims: # problem!
             warnings.warn("Cannot correctly estimate uncertainty u({!s}). "
                 "Destination has dimensions {!s}, arguments (between them) "
-                "have {!s}!".format(s, dest_dims, src_dims or "none"),
+                "have {!s}!".format(sbase, dest_dims, src_dims or "none"),
                 FCDRWarning)
         if not src_dims <= dest_dims: # needs reducing
             adict = self._make_adict_dims_consistent(adict)
         # verify/convert dimensions
         u = f(*[typhon.math.common.promote_maximally(
                     adict[x]).to_root_units() for x in ta])
-        u = u.to(self._data_vars_props[me.names[s]][2]["units"])
-        u = u.rename("u_"+me.names[s])
+        u = u.to(self._data_vars_props[me.names[sbase]][2]["units"])
+        u = u.rename("u_"+me.names[sbase])
         cached_uncertainties[s] = u
         if return_more:
-            var_unit = self._data_vars_props[me.names[s]][2]["units"]
+            var_unit = self._data_vars_props[me.names[sbase]][2]["units"]
             # turn expressions into data for the dictionairies
             # sub_sensitivities and sub_components
             for k in sub_sensitivities.keys():
@@ -2026,13 +2028,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 else: # must be xarray.DataArray
                     sub_sensitivities[k] = (
                         sub_sensitivities[k][0].to(
-                            ureg.Unit(self._data_vars_props[me.names[s]][2]["units"])/
+                            ureg.Unit(self._data_vars_props[me.names[sbase]][2]["units"])/
                             ureg.Unit(self._data_vars_props[me.names[k]][2]["units"])),
                         sub_sensitivities[k][1])
             for (k, v) in sub_components.items():
                 sub_components[k] = (
                     sub_components[k][0].to(
-                        self._data_vars_props[me.names[s]][2]["units"]),
+                        self._data_vars_props[me.names[sbase]][2]["units"]),
                    sub_components[k][1])
             # FIXME: perhaps I need to add prefixes such that the
             # magnitude becomes close to 1?

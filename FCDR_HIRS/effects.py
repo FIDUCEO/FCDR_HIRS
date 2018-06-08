@@ -588,7 +588,7 @@ IWCT_PRT_counts_to_temp = Effect(
     parameter=meq.symbols["d_PRT"], # Relates to free_symbol but actual
         # parameter in measurement equation to be replaced relates to as
         # returned by typhon.physics.metrology.recursive_args; need to
-        # translate in some good way
+        # translate in some good way (see also #129)
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.counts/ureg.K, # FIXME WARNING: see https://github.com/FIDUCEO/FCDR_HIRS/issues/43
