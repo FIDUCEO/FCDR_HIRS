@@ -1765,10 +1765,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             #all_effects = effects.effects()
 
 
-            if sbase in all_effects:
-                baddies = [eff for eff in all_effects[sbase]
+            if s in all_effects:
+                baddies = [eff for eff in all_effects[s]
                     if eff.magnitude is None]
-                goodies = [eff for eff in all_effects[sbase]
+                goodies = [eff for eff in all_effects[s]
                     if eff.magnitude is not None]
                 if baddies:
                     warnings.warn("Effects with unquantified "
