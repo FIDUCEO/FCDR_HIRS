@@ -477,6 +477,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._quantities[me.symbols["N"]] = self._quantity_to_xarray(
                     numpy.array(ds.dims["prt_number_iwt"], "u1"),
                     name=me.names[me.symbols["N"]])
+            self._quantities[me.symbols["M"]] = self._quantity_to_xarray(
+                    numpy.array(ds.dims["prt_reading"], "u1"),
+                    name=me.names[me.symbols["M"]])
+            self._quantities[me.symbols["A"]] = self._quantity_to_xarray(
+                    6, name=me.names[me.symbols["A"]])
 
         # emissivity correction
         # order: see e-mail RQ 2018-04-06
@@ -741,7 +746,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         L_space = UADA(xarray.zeros_like(L_iwct),
             coords={k:v 
                 for (k, v) in counts_space.isel(scanpos=0).coords.items()
-                if k in L_iwct.coords.keys()})
+                if k in L_iwct.coords})
 
         ΔL = UADA(L_iwct.variable - L_space.variable,
                   coords=L_space.coords,
@@ -1754,13 +1759,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         s = me.symbols.get(var, var)
         sbase = s.args[0].args[0] if isinstance(s, sympy.Indexed) else s
 
-        if s not in me.expressions.keys():
+        if s not in me.expressions:
             # If there is no expression for this value, the uncertainty is
             # simply what should have already been calculated
             #all_effects = effects.effects()
 
 
-            if sbase in all_effects.keys():
+            if sbase in all_effects:
                 baddies = [eff for eff in all_effects[sbase]
                     if eff.magnitude is None]
                 goodies = [eff for eff in all_effects[sbase]
@@ -1814,6 +1819,18 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #        u_e = typhon.physics.metrology.express_uncertainty(
 #            e.subs({sm: me.functions.get(sm, sm)
 #                    for sm in typhon.physics.metrology.recursive_args(e)}))
+        
+        # any summation argument must be concrete and explicit for uncertainty
+        # propagation to work correctly
+        for sumarg in {foo.args[1][2] for foo in typhon.physics.metrology.recursive_args(e,
+                       stop_at=sympy.concrete.expr_with_limits.ExprWithLimits)}:
+            if isinstance(sumarg, sympy.Symbol):
+                sumelems = {sumarg}
+            else:
+                sumelems = typhon.physics.metrology.recursive_args(sumarg,
+                    stop_at=sympy.Symbol)
+            for sumel in sumelems:
+                e = e.subs(sumel, quantities[sumel].values.item()).doit()
         failures = set()
         (u_e, sensitivities, components) = typhon.physics.metrology.express_uncertainty(
             e, on_failure="warn", collect_failures=failures,
@@ -1846,14 +1863,18 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 # xarray.core.nputils.array_eq which has a catch_warnings
                 # context manager destroying the context registry, see
                 # http://bugs.python.org/issue29672
-                if (v.args[0] in cached_uncertainties.keys() and
-                        numpy.all(cached_uncertainties.get(v.args[0]).values == 0)):
+                if (v.args[0] in cached_uncertainties and
+                        numpy.all(cached_uncertainties[v.args[0]].values == 0)):
                     u_e = u_e.subs(v, 0)
                     del sensitivities[v.args[0]]
                     del components[v.args[0]]
-                elif ((v.args[0] not in me.expressions.keys() or
+                elif ((v.args[0] not in me.expressions or
                        isinstance(me.expressions[v.args[0]], sympy.Number)) and
-                      v.args[0] not in all_effects.keys()):
+                      v.args[0] not in all_effects):
+                    # FIXME/BUG: this elif gets wrongly entered when
+                    # v==u(T_PRT[0]) and I have an expression for
+                    # T_PRT[n].  Gets replaced by 0 when it should not!
+                    #
                     # make sure it gets into cached_uncertainties so that
                     # it is "documented".  That is a side-effect for
                     # calc_u_for_variable so I don't otherwise need the
@@ -1884,8 +1905,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # expressions.  The keys are expressions (such as Symbol or
         # u(Symbol)), the values are numbers or numpy arrays of numbers
         adict = {}
-        sub_sensitivities = {}
-        sub_components = {}
+        sub_sensitivities = me.ExpressionDict()
+        sub_components = me.ExpressionDict()
         for v in sorted(args, key=str):
             # check which one of the four aforementioned applies
             if isinstance(v, fu):
@@ -1894,7 +1915,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 # this covers both cases (2) and (3); if there is no
                 # expression for the uncertainty, it will be read from the
                 # effects tables (see above)
-                if v.args[0] in cached_uncertainties.keys():
+                if v.args[0] in cached_uncertainties:
                     adict[v] = cached_uncertainties[v.args[0]]
                     # I must have already calculated subsens and subcomp,
                     # but I don't have access to the value.  Either it is
@@ -1934,7 +1955,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             else:
                 # it's a quantity
                 if v not in quantities:
-                    if v not in me.expressions.keys():
+                    if v not in me.expressions:
                         raise ValueError(
                             "Calculation of u({!s})={!s} needs defined value or "
                             "expression for "
@@ -1998,7 +2019,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             var_unit = self._data_vars_props[me.names[sbase]][2]["units"]
             # turn expressions into data for the dictionairies
             # sub_sensitivities and sub_components
-            for k in sub_sensitivities.keys():
+            for k in sub_sensitivities:
                 # I already verified that sub_sensitivities and
                 # sub_components have the same keys
                 args = typhon.physics.metrology.recursive_args(u_e,
@@ -2015,10 +2036,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # make units nicer.  This may prevent loss of precision
             # problems when values become impractically large or small
             for (k, v) in sub_sensitivities.items():
+                kbase = k.args[0].args[0] if isinstance(k, sympy.Indexed) else k
                 if isinstance(sub_sensitivities[k][0], numbers.Number):
                     # sensitivity is a scalar / constant
-                    k_unit = self._data_vars_props[me.names[k]][2]["units"]
-                    if not k_unit == var_unit:
+                    k_unit = self._data_vars_props[me.names[kbase]][2]["units"]
+                    if not ureg.Unit(k_unit) == ureg.Unit(var_unit):
                         raise ValueError("∂{s!s}/∂{k!s} = {sens:g} should be "
                             "dimensionless, but {s!s} is in "
                             "{var_unit!s} and {k!s} is in "
@@ -2280,14 +2302,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             raise ValueError("Must have same keys in sensitivity dict "
                 "as in component dict!")
 
-#        for k in comp.keys():
-#            if not comp[k][0].attrs["units"] == u.attrs["units"]:
-#                raise ValueError(f"Estimating components for {u.name:s} "
-#                    f"due to {comp[k][0].name:s}, but {u.name:s} has units "
-#                    f"{u.attrs['units']:s} and {comp[k][0].name:s} has "
-#                    f"units {comp[k][0].attrs['units']:s}, giving up.")
-            
-        for k in comp.keys():
+        for k in comp:
             # 'comp' is already a dictionary with 'what component of
             # uncertainty comes from this?', i.e. we only need to multiply
             # with sens_above to get correctness...

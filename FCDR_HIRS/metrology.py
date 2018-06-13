@@ -933,7 +933,7 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
     if _d is None:
         _d = collections.deque([1])
 
-    if sym in sensdict.keys():
+    if sym in sensdict:
         _d.append(sensdict[sym][0])
         return _d
 

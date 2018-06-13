@@ -297,7 +297,7 @@ class Effect:
     measurement_equation module.
     """
 
-    _all_effects = {}
+    _all_effects = meq.ExpressionDict()
     name = None
     description = None
     parameter = None
@@ -320,7 +320,7 @@ class Effect:
         while len(later_pairs) > 0:
             (k, v) = later_pairs.pop()
             setattr(self, k, v)
-        if not self.parameter in self._all_effects.keys():
+        if not self.parameter in self._all_effects:
             self._all_effects[self.parameter] = set()
         self._all_effects[self.parameter].add(self)
 
@@ -394,7 +394,7 @@ class Effect:
         da.attrs["sensitivity_coefficient"] = str(self.sensitivity())
         da.attrs["WARNING"] = WARNING
 
-        if not self.name.startswith("O_") or self.name in _fcdr_defs.FCDR_data_vars_props.keys():
+        if not self.name.startswith("O_") or self.name in _fcdr_defs.FCDR_data_vars_props:
             da.encoding.update(_fcdr_defs.FCDR_data_vars_props[self.name][3])
         da.encoding.update(_fcdr_defs.FCDR_uncertainty_encodings.get(self.name, {}))
 
@@ -599,7 +599,7 @@ IWCT_PRT_counts_to_temp = Effect(
 IWCT_type_b = Effect(
     name="O_TPRT",
     description="IWCT type B",
-    parameter=meq.symbols["O_TPRT"],
+    parameter=sympy.IndexedBase(meq.symbols["O_TPRT"])[meq.symbols["n"],meq.symbols["m"]],
     correlation_type=_systematic,
     correlation_scale=_inf,
     unit=ureg.K,
