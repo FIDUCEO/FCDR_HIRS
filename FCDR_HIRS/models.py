@@ -282,7 +282,7 @@ class RSelf:
             raise ValueError("Space views fail normality test: "
                 f"test statistic {tr.statistic:.3f}, p-value "
                 f"{tr.pvalue:9.3e}. Is the gain changing?")
-        if ch not in self.models.keys():
+        if ch not in self.models:
             self.models[ch] = copy.copy(self.core_model)
         self.models[ch].fit(Xx, Yy)
         self.X_ref = X

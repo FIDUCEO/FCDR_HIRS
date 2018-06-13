@@ -17,13 +17,69 @@ from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 version = "β"
 
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
-         "a_3 R_refl d_PRT C_PRT k n K N h c k_b T_PRT T_IWCT B φn "
+         "a_3 R_refl d_PRT C_PRT a n m A N M h c k_b T_PRT T_IWCT B φn "
          "R_IWCT O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT f Δf fstar "
          "ν Δν νstar T_bstar T_b a_4 S h_0 h_1 h_2 h_3")
 
 symbols = sym = dict(zip(names.split(), sympy.symbols(names)))
 
-expressions = {}
+class ExpressionDict(dict):
+    """Special version of dictionary where keys and values are sympy expressions
+
+    Special behaviour: When there is an IndexedBase key, this will match
+    even if the index is different.  For example, if the key is T_PRT[n]
+    and we request T_PRT[0], it will return D[T_PRT[n]] substituting n by
+    0.
+    """
+
+    def __getitem__(self, k):
+        if isinstance(k, sympy.tensor.indexed.Indexed):
+            try:
+                return super().__getitem__(k)
+            except KeyError:
+                # search through indexed keys
+                matches = {km for km in self.keys()
+                        if isinstance(km, sympy.tensor.indexed.Indexed)
+                    and k.args[0].args[0] == km.args[0].args[0]
+                    and len(k.args) == len(km.args)}
+                if len(matches) == 1:
+                    km = matches.pop()
+                    v = self[km]
+                    try:
+                        return v.subs(
+                            {str(k):v for (k,v) in zip(km.args[1:],
+                                k.args[1:])})
+                    except AttributeError: # not an expression
+                        return v
+                elif len(matches) == 0:
+                    raise
+                else:
+                    raise KeyError("Multiple keys fulfill "
+                        "fuzzy expression match")
+        else:
+            return super().__getitem__(k)
+
+    def __contains__(self, k):
+        try:
+            self[k]
+        except KeyError:
+            return False
+        else:
+            return True
+
+    def __repr__(self):
+        return "ExpressionDict({" + super().__repr__() + "})"
+
+    def get(self, k, *args):
+        if k in self:
+            return self[k]
+        else:
+            return super().get(k, *args)
+
+    def __setitem__(self, k, v):
+        super().__setitem__(k, v) # here only so I can set breakpoint
+
+expressions = ExpressionDict()
 expressions[sym["R_e"]] = (
     sym["a_0"] + sym["a_1"]*sym["C_E"] + sym["a_2"]*sym["C_E"]**2 -
     sym["R_selfE"] + sym["O_Re"] + sym["a_4"])
@@ -68,9 +124,12 @@ if version == "β":
 expressions[sym["T_IWCT"]] = (
     sympy.Sum(sympy.IndexedBase(sym["T_PRT"])[sym["n"]], (sym["n"], 0, sym["N"]))/sym["N"] + sym["O_TIWCT"])
 expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"]]] = (
-    sympy.Sum(sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]] *
-        sympy.IndexedBase(sym["C_PRT"])[sym["n"]]**sym["k"], (sym["k"], 0, sym["K"]-1))
-    + sym["O_TPRT"])
+    sympy.Sum(sympy.IndexedBase(sym["T_PRT"])[sym["n"],sym["m"]], (sym["m"], 0, sym["M"]))/sym["M"])
+expressions[sympy.IndexedBase(sym["T_PRT"])[sym["n"],sym["m"]]] = (
+    sympy.Sum(sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["a"]] *
+        sympy.IndexedBase(sym["C_PRT"])[sym["n"],sym["m"]]**sym["a"], (sym["a"], 0, sym["A"]-1))
+    + sympy.IndexedBase(sym["O_TPRT"])[sym["n"],sym["m"]])
+
 #expressions[sym["φn"]] = (sympy.Function("φn")(sym["λ"]+sym["Δλ"]))
 #expressions[sym["φn"]] = (sympy.Function("φn")(sym["ν"]+sym["Δν"]))
 expressions[sym["φn"]] = (sympy.Function("φn")(sym["f"]+sym["Δf"]))
@@ -84,16 +143,20 @@ expressions[sym["T_b"]] = (sym["T_bstar"] - sym["α"])/sym["β"]
 expressions[sym["c"]] = sympy.sympify(scipy.constants.speed_of_light)
 expressions[sym["h"]] = sympy.sympify(scipy.constants.Planck)
 expressions[sym["k_b"]] = sympy.sympify(scipy.constants.Boltzmann)
+expressions[sym["M"]] = sympy.Number(5)
+expressions[sym["N"]] = sympy.Number(5) # FIXME: actually depends on HIRS version...
+expressions[sym["A"]] = sympy.Number(6)
 
 units = {}
 units[sym["c"]] = ureg.c
 units[sym["h"]] = ureg.h
 units[sym["k_b"]] = ureg.k
+units[sym["N"]] = units[sym["M"]] = ureg.dimensionless
 
 aliases = {}
-aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
-aliases[sym["C_PRT"]] = sympy.IndexedBase(sym["C_PRT"])[sym["n"]]
-aliases[sym["d_PRT"]] = sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]]
+#aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
+#aliases[sym["C_PRT"]] = sympy.IndexedBase(sym["C_PRT"])[sym["n"]]
+#aliases[sym["d_PRT"]] = sympy.IndexedBase(sym["d_PRT"])[sym["n"],sym["k"]]
 
 def recursive_substitution(e, stop_at=None, return_intermediates=False,
         expressions=expressions):
@@ -104,7 +167,7 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False,
     """
     o = None
     intermediates = set()
-    if isinstance(e, sympy.Symbol) and e in expressions.keys():
+    if isinstance(e, sympy.Symbol) and e in expressions:
         return recursive_substitution(expressions[e],
             stop_at=stop_at, return_intermediates=return_intermediates,
             expressions=expressions)
@@ -153,7 +216,7 @@ for s in symbols.values():
 
 functions = {}
 for (sn, s) in symbols.items():
-    if s in dependencies.keys():
+    if s in dependencies:
         if dependencies[s]:
             functions[s] = sympy.Function(sn)(*(aliases.get(sm, sm) for sm in dependencies[s]))
 
@@ -180,6 +243,8 @@ names = {
     sym["a_2"]: "a_2",
     sym["T_IWCT"]: "T_IWCT_calib_mean",
     sym["N"]: "prt_number_iwt",
+    sym["M"]: "prt_reading",
+    sym["A"]: "prt_iwct_polynomial_order",
     sym["Tstar"]: "Tstar",
     sym["B"]: "B",
     sym["O_Re"]: "O_Re",
@@ -190,6 +255,10 @@ names = {
     sym["k_b"]: "boltzmann_constant",
     sym["T_b"]: "T_b",
     sym["T_bstar"]: "T_bstar",
+    sym["C_PRT"]: "prt_iwct_counts",
+    sym["d_PRT"]: "prt_iwct_coefficients",
+    sym["T_PRT"]: "prt_iwct_temperature",
+    sym["O_TPRT"]: "O_TPRT",
 }
 
 
@@ -225,13 +294,13 @@ def calc_sensitivity_coefficient(s1, s2):
 
     Arguments:
 
-        s1: Symbol
-        s2: Symbol
+        s1: sympy.Expr
+        s2: sympy.Expr
     """
 
-    if not isinstance(s1, Symbol):
+    if not isinstance(s1, sympy.Expr):
         s1 = symbols[s1]
-    if not isinstance(s2, Symbol):
+    if not isinstance(s2, sympy.Expr):
         s2 = symbols[s2]
 
     if s1 == s2:
