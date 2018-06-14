@@ -893,7 +893,7 @@ def interpolate_Δ_x(Δ_x, cutoff):
         f = scipy.interpolate.interp1d(xref, yref, kind="slinear",
             fill_value=(-1, 0), assume_sorted=False, bounds_error=False)
         rv.loc[{"n_c":c}] = f(rv["Δp"])
-        if (rv.loc[{"n_c":c}]==-1).any():
+        if (rv.loc[{"n_c":c}].values==-1).any():
             raise ValueError("Could not interpolate correlation lengths, "
                 "it appears I had no information on correlation length 0, "
                 "which is very weird indeed and almost certainly either a "
@@ -1042,13 +1042,21 @@ def calc_corr_scale_channel(effects, sensRe, ds,
         U_cΛps_diag, U_cΛpi_diag, C_eΛls_diag, C_lΛes_diag,
         C_cΛps_diag, C_cΛpi_diag, all_coords) = allocate_curuc(
             n_c, n_l, n_e, n_s, n_i, sampling_l, sampling_e)
+    
+    # comparing .values to avoid triggering
+    # http://bugs.python.org/issue29672
+    # the following are equivalent, but the first version does and the
+    # second version does not trigger the issue
+#    bad = (((flags["channel"].isel(scanline_earth=all_coords["n_l"]) &
+#            _fcdr_defs.FlagsChannel.DO_NOT_USE)!=0) |
+#           ((flags["scanline"].isel(scanline_earth=all_coords["n_l"]) &
+#            _fcdr_defs.FlagsScanline.DO_NOT_USE)!=0) |
+#           ((flags["pixel"].isel(scanline_earth=all_coords["n_l"]) &
+#            _fcdr_defs.FlagsPixel.DO_NOT_USE)!=0))
 
-    bad = (((flags["channel"].isel(scanline_earth=all_coords["n_l"]) &
-            _fcdr_defs.FlagsChannel.DO_NOT_USE)!=0) |
-           ((flags["scanline"].isel(scanline_earth=all_coords["n_l"]) &
-            _fcdr_defs.FlagsScanline.DO_NOT_USE)!=0) |
-           ((flags["pixel"].isel(scanline_earth=all_coords["n_l"]) &
-            _fcdr_defs.FlagsPixel.DO_NOT_USE)!=0))
+    bad = (xarray.DataArray(((flags["channel"].isel(scanline_earth=all_coords["n_l"]) & _fcdr_defs.FlagsChannel.DO_NOT_USE).values!=0), dims=flags["channel"].dims, coords=flags["channel"].isel(scanline_earth=all_coords["n_l"]).coords) |
+           xarray.DataArray((flags["scanline"].isel(scanline_earth=all_coords["n_l"]) & _fcdr_defs.FlagsScanline.DO_NOT_USE).values!=0, dims=flags["scanline"].dims, coords=flags["scanline"].isel(scanline_earth=all_coords["n_l"]).coords) |
+           xarray.DataArray((flags["pixel"].isel(scanline_earth=all_coords["n_l"]) & _fcdr_defs.FlagsPixel.DO_NOT_USE).values!=0, dims=flags["pixel"].dims, coords=flags["pixel"].isel(scanline_earth=all_coords["n_l"]).coords))
 
     bad = bad.rename(
         {"scanline_earth": "n_l",
