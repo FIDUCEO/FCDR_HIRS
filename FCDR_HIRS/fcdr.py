@@ -2746,3 +2746,14 @@ def _new_array_notnull_equiv(arr1, arr2):
         return bool(flag_array.all())
 
 xarray.core.duck_array_ops.array_notnull_equiv = _new_array_notnull_equiv
+
+def _new_array_eq(self, other):
+    with _do_nothing():
+        return xarray.core.nputils._ensure_bool_is_ndarray(self == other, self, other) 
+
+def _new_array_ne(self, other):
+    with _do_nothing():
+        return xarray.core.nputils._ensure_bool_is_ndarray(self != other, self, other) 
+
+xarray.core.nputils.array_eq = _new_array_eq
+xarray.core.nputils.array_ne = _new_array_ne
