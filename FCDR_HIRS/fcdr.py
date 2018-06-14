@@ -2705,7 +2705,44 @@ import contextlib
 import xarray.core.ops
 
 @contextlib.contextmanager
-def do_nothing(*args, **kwargs):
+def _do_nothing(*args, **kwargs):
     yield
-xarray.core.ops._ignore_warnings_if = do_nothing
-xarray.core.duck_array_ops._ignore_warnings_if = do_nothing
+xarray.core.ops._ignore_warnings_if = _do_nothing
+xarray.core.duck_array_ops._ignore_warnings_if = _do_nothing
+
+# from xarray/core/duck_array_ops.py
+def _new_array_equiv(arr1, arr2):
+    """Like np.array_equal, but also allows values to be NaN in both arrays
+    """
+    arr1, arr2 = xarray.core.duck_array_ops.as_like_arrays(arr1, arr2)
+    if arr1.shape != arr2.shape:
+        return False
+
+    with _do_nothing():
+        flag_array = (arr1 == arr2)
+        flag_array |= (xarray.core.duck_array_ops.isnull(arr1) & xarray.core.duck_array_ops.isnull(arr2))
+
+        return bool(flag_array.all())
+
+
+
+xarray.core.duck_array_ops.array_equiv = _new_array_equiv
+xarray.core.variable.Variable.equals.__defaults__ = (_new_array_equiv,)
+xarray.core.variable.Variable.broadcast_equals.__defaults__ = (_new_array_equiv,)
+
+def _new_array_notnull_equiv(arr1, arr2):
+    """Like np.array_equal, but also allows values to be NaN in either or both
+    arrays
+    """
+    arr1, arr2 = xarray.core.duck_array_ops.as_like_arrays(arr1, arr2)
+    if arr1.shape != arr2.shape:
+        return False
+
+    with _do_nothing():
+        flag_array = (arr1 == arr2)
+        flag_array |= xarray.core.duck_array_ops.isnull(arr1)
+        flag_array |= xarray.core.duck_array_ops.isnull(arr2)
+
+        return bool(flag_array.all())
+
+xarray.core.duck_array_ops.array_notnull_equiv = _new_array_notnull_equiv
