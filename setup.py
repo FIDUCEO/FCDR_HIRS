@@ -95,15 +95,15 @@ setup(
                       "matplotlib>=2.0",
                       "numexpr>=2.6",
                       "typhon>=0.5.0",
-                      "pyatmlab>=0.1.1",
+                      "pyatmlab>=0.1.2",
                       "progressbar2>=3.10",
                       "netCDF4>=1.2",
                       "pandas>=0.21",
                       "xarray>=0.10",
                       "seaborn>=0.7",
-                      "sympy==1.0", # see #151
+                      "sympy>=1.1",
                       "pint>=0.8",
-                      "fcdr-tools>=1.1.1",
+                      "fcdr-tools>=1.1.4",
                       "joblib>=0.11",
                       "cartopy"],
 
