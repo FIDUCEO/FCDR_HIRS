@@ -292,6 +292,7 @@ from typhon.constants import (micro, centi, tera, nano)
 from typhon.physics.units import ureg, radiance_units as rad_u
 
 from .. import fcdr
+from .. import math as fhmath
 
 hirs_iasi_matchup = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS")
 
@@ -2109,7 +2110,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         - Set 2 is used to simulate many pairs of radiances.  The
           functionality for this is in
-          `:func:pyatmlab.math.calc_rmse_for_srf_shift`.  Assuming an SRF
+          `:func:fhmath.calc_rmse_for_srf_shift`.  Assuming an SRF
           shift, it simulates radiances for the nominal and a shifted SRF.
           From this shift, it derives a model predicting shifted-SRF radiances
           from nominal-SRF radiances.
@@ -2190,7 +2191,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         regression_type = regression_type or self._regression_type[ref][0]
         regression_args = regression_args or self._regression_type[ref][1]
         #dλ = numpy.linspace(-100.0, 100.0, 51.0) * ureg.nm
-        C1 = [pyatmlab.math.calc_cost_for_srf_shift(q,
+        C1 = [fhmath.calc_cost_for_srf_shift(q,
                 y_master, y_target, srf0, L_spectral_db,
                 f_spectra, y_ref, ureg.um,
                 regression_type, regression_args,
@@ -2273,7 +2274,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 (numpy.atleast_1d(shift_reference.m),
                  dx[localmin].m)), shift_reference.u)
         for shift_attempt in shift_attempts:
-            y_estimate = pyatmlab.math.calc_y_for_srf_shift(shift_attempt,
+            y_estimate = fhmath.calc_y_for_srf_shift(shift_attempt,
                 y_master, srf0, L_spectral_db, f_spectra,
                 y_ref, unit=ureg.um,
                 regression_type=regression_type,
@@ -2528,7 +2529,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                             start1=start1, start2=start2,
                             end1=end1, end2=end2)
 
-            res = pyatmlab.math.estimate_srf_shift(
+            res = fhmath.estimate_srf_shift(
                 y_master, y_target, srf0, L_spectral_db, f_spectra,
                 y_ref,
                 regression_type=regression_type, regression_args=regression_args,
@@ -2717,7 +2718,7 @@ def main():
     numexpr.set_num_threads(p.threads)
 
 
-    with numpy.errstate(all="raise"):
+    with numpy.errstate(divide="raise", over="raise", under="warn", invalid="raise"):
         vis = IASI_HIRS_analyser(usecache=p.cache)
         if not isinstance(vis.iasi, typhon.datasets.tovs.IASISub):
             vis.iasi = typhon.datasets.tovs.IASISub(name="iasisub")
