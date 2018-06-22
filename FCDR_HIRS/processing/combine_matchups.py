@@ -113,21 +113,22 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             raise RuntimeError("My father has been bad.")
         if kmodel is None:
             if self.mode == "hirs":
-                kmodel = matchups.KModelPlanck(
-                    self.as_xarray_dataset(),
-                    self.ds,
-                    self.prim_name,
-                    self.prim_hirs,
-                    self.sec_name,
-                    self.sec_hirs)
+#                kmodel = matchups.KModelPlanck(
+                kmodel = matchups.KModelSRFIASIDB(
+                    ds=self.as_xarray_dataset(),
+                    ds_orig=self.ds,
+                    prim_name=self.prim_name,
+                    prim_hirs=self.prim_hirs,
+                    sec_name=self.sec_name,
+                    sec_hirs=self.sec_hirs)
             else:
                 kmodel = matchups.KModelIASIRef(
-                    self.as_xarray_dataset(),
-                    self.ds,
-                    "iasi",
-                    None,
-                    self.sec_name,
-                    self.sec_hirs)
+                    ds=self.as_xarray_dataset(),
+                    ds_orig=self.ds,
+                    prim_name="iasi",
+                    prim_hirs=None,
+                    sec_name=self.sec_name,
+                    sec_hirs=self.sec_hirs)
         if krmodel is None:
             if self.mode == "hirs":
                 krmodel = matchups.KrModelLSD(
@@ -249,7 +250,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         to_check = ds[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
         bad = (to_check==0).any("calibrated_channel")
         ok &= sum([v.values for v in bad.data_vars.values()])==0 
-        ok &= numpy.isfinite(ds["n18_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
+        ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
         ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
                (ds[f"{self.sec_name:s}_scantype"] == 0)).values
         if ok.sum() == 0:

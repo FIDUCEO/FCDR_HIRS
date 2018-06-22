@@ -3,12 +3,16 @@
 
 import abc
 import warnings
+import datetime
+import itertools
 
 import numpy
+import xarray
 
 import typhon.datasets.tovs
 import typhon.datasets.filters
-import itertools
+
+import sklearn.linear_model
 
 from . import fcdr
 
@@ -156,7 +160,9 @@ class HIRSMatchupCombiner:
 #         'u_from_fstar',
 #         'u_from_α',
 #         'u_from_β',
-         'u_nonlinearity',
+         'u_a_2',
+         'u_a_3',
+         'u_a_4',
          'u_α',
          'u_β',
          'α',
@@ -266,13 +272,19 @@ class KModel(metaclass=abc.ABCMeta):
 
     """
 
-    def __init__(self, ds, ds_orig, prim_name, prim_hirs, sec_name, sec_hirs):
-        self.ds = ds
-        self.ds_orig = ds_orig
-        self.prim_name = prim_name
-        self.prim_hirs = prim_hirs
-        self.sec_name = sec_name
-        self.sec_hirs = sec_hirs
+    ds = None
+    ds_orig = None
+    prim_name = None
+    prim_hirs = None
+    sec_name = None
+    sec_hirs = None
+
+    def __init__(self, **kwargs):
+        for (k, v) in kwargs.items():
+            if hasattr(self, k):
+                setattr(self, k, v)
+            else:
+                raise AttributeError(f"Unknown keyword argument/attribute: {k:s}")
 
     @abc.abstractmethod
     def calc_K(self, channel):
@@ -429,3 +441,116 @@ class KrModelIASIRef(KrModel):
             ureg.Quantity(
                 self.ds["metopa_T_b"].sel(calibrated_channel=channel).values+0.1, "K"
                     ).to(rad_u["si"], "radiance", srf=srf))
+
+
+
+class KModelSRFIASIDB(KModel):
+    """Estimate K using IASI spectral database.
+
+    Based on the SRF recovery method described in PD4.4
+    """
+
+    iasi_start = datetime.datetime(2011, 1, 1)
+    iasi_end = datetime.datetime(2011, 2, 1)
+    iasi = typhon.datasets.tovs.IASISub(name="iasisub")
+    M_iasi = None
+    Ldb_iasi_full = None
+    Ldb_hirs_simul = None
+    srfs = None
+    fitter = None
+    regression_model = sklearn.linear_model.LinearRegression
+    regression_args = {"fit_intercept": True}
+
+    # FIXME: make this matching more optimal
+    chan_pairs = dict.fromkeys(numpy.arange(1, 20), numpy.arange(1, 20))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def read_iasi(self):
+        """Read spectral database from IASI.
+
+        Details on what is read are stored in self attributes iasi_start,
+        iasi_end, passed on on object creation.
+        """
+
+        # this is a structured array with fields
+        # ('time', 'lat', 'lon', 'satellite_zenith_angle',
+        # 'satellite_azimuth_angle', 'solar_zenith_angle',
+        # 'solar_azimuth_angle', 'spectral_radiance')
+        self.M_iasi = self.iasi.read_period(self.iasi_start, self.iasi_end)
+        # with 'spectral_radiance' in units of [W m^-2 sr^-1 m]
+
+    def init_iasi(self):
+        """Initialise IASI data in right format
+        """
+        if self.M_iasi is None:
+            self.read_iasi()
+        L_wavenum = ureg.Quantity(self.M_iasi["spectral_radiance"][2::5, 2, :8461], rad_u["ir"])
+        L_freq = L_wavenum.to(rad_u["si"], "radiance")
+        self.Ldb_iasi_full = L_freq
+
+    def init_srfs(self):
+        """Initialise SRFs, reading from ArtsXML format
+        """
+        self.srfs = {}
+        for sat in (self.prim_name, self.sec_name):
+            self.srfs[sat] = [
+                typhon.physics.units.em.SRF.fromArtsXML(
+                    typhon.datasets.tovs.norm_tovs_name(self.prim_name).upper(),
+                    "hirs", ch)
+                for ch in range(1, 20)]
+
+    def init_Ldb(self):
+        """Calculate IASI-simulated HIRS
+
+        For all channels for either pair.
+        """
+
+        if self.Ldb_iasi_full is None:
+            self.init_iasi()
+        if self.srfs is None:
+            self.init_srfs()
+        ndb = self.Ldb_iasi_full.shape[0]
+        Ldb = xarray.Dataset(
+            {self.prim_name: (["chan", "pixel"], numpy.zeros((19, ndb))),
+             self.sec_name: (["chan", "pixel"], numpy.zeros((19, ndb)))},
+            coords={"chan": numpy.arange(1, 20)})
+        for sat in (self.prim_name, self.sec_name):
+            for ch in range(1,20):
+                Ldb[sat].loc[{"chan": ch}] = self.srfs[sat][ch-1].integrate_radiances(
+                        self.iasi.frequency,
+                        self.Ldb_iasi_full)
+        self.Ldb_hirs_simul = Ldb
+
+    def init_regression(self):
+        if self.Ldb_hirs_simul is None:
+            self.init_Ldb()
+        # make one fitter for each target channel, in both directions
+        fitter = {}
+        for (from_sat, to_sat) in [(self.prim_name, self.sec_name),
+                                   (self.sec_name, self.prim_name)]:
+            fitter[f"{from_sat:s}-{to_sat:s}"] = {}
+            for chan in range(1, 20):
+                clf = self.regression_model(**self.regression_args)
+                y_ref_ch = self.chan_pairs[chan]
+                y_ref = self.Ldb_hirs_simul[from_sat].sel(chan=y_ref_ch).values
+                y_target = self.Ldb_hirs_simul[from_sat].sel(chan=chan).values
+                # for training with sklearn, dimensions should be n_p × n_c
+                clf.fit(y_ref.T, y_target)
+                fitter[f"{from_sat:s}-{to_sat:s}"][chan] = clf
+        self.fitter = fitter
+
+    def calc_K(self, channel):
+        if self.fitter is None:
+            self.init_regression()
+        # Use regression to predict Δy for channel from set of reference
+        # channels.
+        for (from_sat, to_sat) in [(self.prim_name, self.sec_name),
+                                   (self.sec_name, self.prim_name)]:
+            clf = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
+            raise NotImplementedError("self.ds?!")
+
+    def calc_Ks(self, channel):
+        # spread of db will inform us of uncertainty in predicted radiance
+        raise NotImplementedError("TODO")
