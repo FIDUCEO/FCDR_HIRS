@@ -458,6 +458,8 @@ class KModelSRFIASIDB(KModel):
     Ldb_hirs_simul = None
     srfs = None
     fitter = None
+
+    # FIXME: Use ODR with uncertainties
     regression_model = sklearn.linear_model.LinearRegression
     regression_args = {"fit_intercept": True}
 
@@ -497,7 +499,7 @@ class KModelSRFIASIDB(KModel):
         for sat in (self.prim_name, self.sec_name):
             self.srfs[sat] = [
                 typhon.physics.units.em.SRF.fromArtsXML(
-                    typhon.datasets.tovs.norm_tovs_name(self.prim_name).upper(),
+                    typhon.datasets.tovs.norm_tovs_name(sat).upper(),
                     "hirs", ch)
                 for ch in range(1, 20)]
 
@@ -535,22 +537,41 @@ class KModelSRFIASIDB(KModel):
                 clf = self.regression_model(**self.regression_args)
                 y_ref_ch = self.chan_pairs[chan]
                 y_ref = self.Ldb_hirs_simul[from_sat].sel(chan=y_ref_ch).values
-                y_target = self.Ldb_hirs_simul[from_sat].sel(chan=chan).values
+                y_target = self.Ldb_hirs_simul[to_sat].sel(chan=chan).values
                 # for training with sklearn, dimensions should be n_p × n_c
                 clf.fit(y_ref.T, y_target)
                 fitter[f"{from_sat:s}-{to_sat:s}"][chan] = clf
         self.fitter = fitter
 
+    K = dict.fromkeys(range(1, 20), None)
     def calc_K(self, channel):
         if self.fitter is None:
             self.init_regression()
         # Use regression to predict Δy for channel from set of reference
         # channels.
+        K = []
         for (from_sat, to_sat) in [(self.prim_name, self.sec_name),
                                    (self.sec_name, self.prim_name)]:
             clf = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
-            raise NotImplementedError("self.ds?!")
+            y_source = self.ds[f"{from_sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).values.T
+            y_ref = self.ds[f"{to_sat:s}_R_e"].sel(calibrated_channel=channel).values
+            model = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
+            y_pred = model.predict(y_source)
+            K.append(y_pred - y_source[:, channel-1]) # value for K?
+            # derive Ks from spread of predictions?  Or Δ with y_ref?  Or
+            # from uncertainty provided by regression?  Isn't that part of
+            # Kr instead?
+        self.K[channel] = K
+        return numpy.array(K).mean(0)
 
     def calc_Ks(self, channel):
-        # spread of db will inform us of uncertainty in predicted radiance
-        raise NotImplementedError("TODO")
+        # spread of db will inform us of uncertainty in predicted
+        # radiance?  Or take double direction approach?
+        if self.K[channel] is None:
+            self.calc_K(channel)
+        # FIXME: This is not a good estimate, this Δ tends to be a
+        # Gaussian which is not centred at zero, it can have either sign.
+        # I don't know what this Δ does indicate, but a good estimate for
+        # Ks it is not.
+        # NB: self.K is Dict[List[ndarray, ndarray]]
+        return abs(self.K[channel][0] - self.K[channel][1])
