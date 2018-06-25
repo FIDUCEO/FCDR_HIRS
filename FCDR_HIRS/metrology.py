@@ -472,7 +472,7 @@ def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
         channel.  Note that this DataArray is a view of the same memory as
         C_eΛls_diag and C_cΛps_diag.
 
-    - C_cΛps_diag [n_l, n_e, n_s, n_c]
+    - C_cΛps_diag [n_s, n_l, n_e, n_c]
 
         Diagonals for the sensitivities corresponding to the cross-channel
         correlation matrix for each element, line, and structured effect.
