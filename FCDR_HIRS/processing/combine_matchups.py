@@ -304,6 +304,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm["K"] = (("M",), self.kmodel.calc_K(channel).astype("f4"))
         harm["Ks"] = (("M",), self.kmodel.calc_Ks(channel).astype("f4"))
         harm["Kr"] = (("M",), self.krmodel.calc_Kr(channel).astype("f4"))
+        harm = xarray.merge([harm, self.kmodel.extra(channel)])
 
         # W-matrix for C_S, C_IWCT, T_IWCT.  This should have a 1 where
         # the matchup shares the same correlation information, and a 0
@@ -400,6 +401,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         harm["Ks"].attrs["description"] = ("Propagated systematic "
             "uncertainty due to band correction factors.")
+
+        for k in ("K", "Kr", "Ks"):
+            harm[k].attrs["units"] = "W Hz^-1 sr^-1 m^-2"
 
         harm.attrs["time_coverage"] = "{:%Y-%m-%d} -- {:%Y-%m-%d}".format(
             harm["time1"].values[0].astype("M8[s]").astype(datetime.datetime),
@@ -517,8 +521,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm[f"nominal_measurand{i:d}"] = (("M",),
             ds[f"{sat:s}_R_e"].sel(calibrated_channel=channel))
 
-        harm[f"lon{i:d}"] = ds[f"{sat:s}_longitude"]
-        harm[f"lat{i:d}"] = ds[f"{sat:s}_latitude"]
+        harm[f"lon{i:d}"] = ds[f"{sat:s}_longitude"].rename(
+                {"matchup_count": "M"})
+        harm[f"lat{i:d}"] = ds[f"{sat:s}_latitude"].rename(
+                {"matchup_count": "M"})
         
         harm[f"nominal_measurand_original{i:d}"] = (("M",),
             ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))

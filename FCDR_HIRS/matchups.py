@@ -306,6 +306,12 @@ class KModel(metaclass=abc.ABCMeta):
         self.ds_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
 
+    def extra(self):
+        """Return Dataset with extra information
+        """
+
+        return xarray.Dataset()
+
 class KrModel(metaclass=abc.ABCMeta):
     """Implementations of models to estimate the matchup uncertainty
     """
@@ -575,3 +581,14 @@ class KModelSRFIASIDB(KModel):
         # Ks it is not.
         # NB: self.K is Dict[List[ndarray, ndarray]]
         return abs(self.K[channel][0] - self.K[channel][1])
+
+    def extra(self, channel):
+        ds = super().extra()
+        ds["K_forward"] = (("M",), self.K[channel][0])
+        ds["K_backward"] = (("M",), self.K[channel][1])
+        for k in ("K_forward", "K_backward"):
+            ds[k].attrs["units"] = "W Hz^-1 sr^-1 m^-2"
+            ds[k].attrs["description"] = ("Prediction of "
+                    f"{self.sec_name:s} from {self.prim_name:s} "
+                    "channels " + ", ".join(str(c) for c in self.chan_pairs[channel]))
+        return ds
