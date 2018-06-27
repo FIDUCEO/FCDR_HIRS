@@ -7,6 +7,7 @@ import datetime
 import itertools
 
 import numpy
+import scipy
 import xarray
 
 import typhon.datasets.tovs
@@ -19,6 +20,9 @@ from . import fcdr
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.physics.units.em import SRF
+
+class ODRFitError:
+    pass
 
 class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
     def __init__(self, prim, sec):
@@ -465,9 +469,12 @@ class KModelSRFIASIDB(KModel):
     srfs = None
     fitter = None
 
+    regression = "LR"
+    #regression = "ODR"
     # FIXME: Use ODR with uncertainties
-    regression_model = sklearn.linear_model.LinearRegression
-    regression_args = {"fit_intercept": True}
+#    regression_model = sklearn.linear_model.LinearRegression
+#    regression_args = {"fit_intercept": True}
+
 
     # FIXME: make this matching more optimal
     chan_pairs = dict.fromkeys(numpy.arange(1, 20), numpy.arange(1, 20))
@@ -540,12 +547,35 @@ class KModelSRFIASIDB(KModel):
                                    (self.sec_name, self.prim_name)]:
             fitter[f"{from_sat:s}-{to_sat:s}"] = {}
             for chan in range(1, 20):
-                clf = self.regression_model(**self.regression_args)
                 y_ref_ch = self.chan_pairs[chan]
                 y_ref = self.Ldb_hirs_simul[from_sat].sel(chan=y_ref_ch).values
                 y_target = self.Ldb_hirs_simul[to_sat].sel(chan=chan).values
                 # for training with sklearn, dimensions should be n_p × n_c
-                clf.fit(y_ref.T, y_target)
+                if self.regression == "LR":
+                    clf = sklearn.linear_model.LinearRegression(fit_intercept=True)
+                    clf.fit(y_ref.T, y_target)
+                elif self.regression == "ODR":
+                    raise NotImplementedError("ODR not implemented yet. "
+                            "I'm not sure how useful ODR would be.  "
+                            "Training data is from IASI.  "
+                            "I don't have real IASI uncertainties.  "
+                            "I could add noise and then use those  "
+                            "uncertainties.  "
+                            "Would not be weighted unless I make it so, "
+                            "but according to what rules?")
+                    odr_data = scipy.odr.RealData(y_ref.T, y_target, sx=sx, sy=sy)
+                    clf = scipy.odr.ODR(mydata, scipy.odr.multilinear, beta0=β0) 
+                    clf = myodr.run()
+                    if not any(x in clf.stopreason for x in
+                        {"Sum of squares convergence",
+                         "Iteration limit reached",
+                         "Parameter convergence",
+                         "Both sum of squares and parameter convergence"}):
+                        raise ODRFitError("ODR fitting did not converge.  "
+                            "Stop reason: {:s}".format(clf.stopreason[0]))
+
+                else:
+                    raise ValueError(f"Unknown regression: {self.regression:s}")
                 fitter[f"{from_sat:s}-{to_sat:s}"][chan] = clf
         self.fitter = fitter
 
@@ -586,9 +616,11 @@ class KModelSRFIASIDB(KModel):
         ds = super().extra()
         ds["K_forward"] = (("M",), self.K[channel][0])
         ds["K_backward"] = (("M",), self.K[channel][1])
-        for k in ("K_forward", "K_backward"):
+        for (from_sat, to_sat, k) in [
+                (self.prim_name, self.sec_name, "K_forward"),
+                (self.sec_name, self.prim_name, "K_backward")]:
             ds[k].attrs["units"] = "W Hz^-1 sr^-1 m^-2"
             ds[k].attrs["description"] = ("Prediction of "
-                    f"{self.sec_name:s} from {self.prim_name:s} "
-                    "channels " + ", ".join(str(c) for c in self.chan_pairs[channel]))
+                    f"delta {to_sat:s} from {from_sat:s} ({self.regression:s})")
+            ds[k].attrs["channels_used"] = self.chan_pairs[channel]
         return ds

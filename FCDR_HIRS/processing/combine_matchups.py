@@ -520,6 +520,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # add diagnostics
         harm[f"nominal_measurand{i:d}"] = (("M",),
             ds[f"{sat:s}_R_e"].sel(calibrated_channel=channel))
+        harm[f"nominal_measurand{i:d}"].attrs.update(ds[f"{sat:s}_R_e"].sel(calibrated_channel=channel).attrs)
 
         harm[f"lon{i:d}"] = ds[f"{sat:s}_longitude"].rename(
                 {"matchup_count": "M"})
@@ -528,6 +529,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         
         harm[f"nominal_measurand_original{i:d}"] = (("M",),
             ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))
+        harm[f"nominal_measurand_original{i:d}"].attrs.update(ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel).attrs)
 
         sdsidx = {"matchup_count": ok}
         harm[f"row{i:d}"] = (("M",),
@@ -537,6 +539,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         harm[f"matchup_distance"] = (("M",),
             self.ds["matchup_spherical_distance"][sdsidx])
+        harm[f"matchup_distance"].attrs.update(self.ds["matchup_spherical_distance"][sdsidx].attrs)
+        
 
     def _add_harm_for_iasi(self, harm, channel, ok):
         # fill X1
