@@ -158,6 +158,7 @@ setup(
             "merge_hirs_harmonisation=FCDR_HIRS.processing.combine_matchups:merge_files",
             "convert_hirs_harmonisation_parameters=FCDR_HIRS.processing.convert_harm_params:main",
             "hirs_curuc_checker=FCDR_HIRS.analysis.inspect_orbit_curuc:main",
+            "hirs_convert_l1b_to_l1c=FCDR_HIRS.analysis.convert_hirs_l1b_to_nc:main",
         ],
     },
 )

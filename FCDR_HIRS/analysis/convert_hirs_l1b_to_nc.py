@@ -225,6 +225,3 @@ def main():
     convert_period(h, p.satellite, 
         datetime.datetime(p.begin_year, p.begin_month, p.begin_day),
         datetime.datetime(p.end_year, p.end_month, p.end_day), overwrite=p.overwrite)
-
-if __name__ == "__main__":
-    main()
