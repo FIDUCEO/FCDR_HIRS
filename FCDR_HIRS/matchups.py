@@ -24,6 +24,9 @@ from typhon.physics.units.em import SRF
 class ODRFitError:
     pass
 
+class NoDataError:
+    pass
+
 class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
     def __init__(self, prim, sec):
         self.prim = prim
@@ -222,25 +225,31 @@ class HIRSMatchupCombiner:
                             "fields": self.fields_from_each}).drop(
                     ("lat_earth", "lon_earth"))
         elif self.mode == "hirs":
-            Mcp = hh.combine(ds, self.prim_hirs, trans={"time_{:s}".format(prim_name): "time"},
-                             timetol=numpy.timedelta64(4, 's'),
-                             col_field="hirs-{:s}_x".format(prim_name),
-                             col_dim_name="scanpos",
-                             other_args={"locator_args": self.fcdr_info,
-                                         "fields": self.fields_from_each,
-                                         "orbit_filters": [CalibrationCountDimensionReducer()],
-                                         "NO_CACHE": True},
-                             time_name="time_"+prim_name).drop(
-                    ("lat_earth", "lon_earth"))
-            Mcs = hh.combine(ds, self.sec_hirs, trans={"time_{:s}".format(sec_name): "time"},
-                             timetol=numpy.timedelta64(4, 's'),
-                             col_field="hirs-{:s}_x".format(sec_name),
-                             col_dim_name="scanpos",
-                             other_args={"locator_args": self.fcdr_info,
-                                         "orbit_filters": [CalibrationCountDimensionReducer()],
-                                         "fields": self.fields_from_each},
-                             time_name="time_"+sec_name).drop(
-                    ("lat_earth", "lon_earth"))
+            try:
+                Mcp = hh.combine(ds, self.prim_hirs, trans={"time_{:s}".format(prim_name): "time"},
+                                 timetol=numpy.timedelta64(4, 's'),
+                                 col_field="hirs-{:s}_x".format(prim_name),
+                                 col_dim_name="scanpos",
+                                 other_args={"locator_args": self.fcdr_info,
+                                             "fields": self.fields_from_each,
+                                             "orbit_filters": [CalibrationCountDimensionReducer()],
+                                             "NO_CACHE": True},
+                                 time_name="time_"+prim_name).drop(
+                        ("lat_earth", "lon_earth"))
+                Mcs = hh.combine(ds, self.sec_hirs, trans={"time_{:s}".format(sec_name): "time"},
+                                 timetol=numpy.timedelta64(4, 's'),
+                                 col_field="hirs-{:s}_x".format(sec_name),
+                                 col_dim_name="scanpos",
+                                 other_args={"locator_args": self.fcdr_info,
+                                             "orbit_filters": [CalibrationCountDimensionReducer()],
+                                             "fields": self.fields_from_each},
+                                 time_name="time_"+sec_name).drop(
+                        ("lat_earth", "lon_earth"))
+            except ValueError as e:
+                if e.args[0] == "array of sample points is empty":
+                    raise NoDataError("Not enough matching data found, can't interpolate")
+                else:
+                    raise
         else:
             raise RuntimeError(f"Mode can't possibly be {self.mode:s}!")
 
