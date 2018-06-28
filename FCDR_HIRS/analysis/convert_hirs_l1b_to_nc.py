@@ -31,24 +31,20 @@ import typhon.datasets.dataset
 import pyatmlab.stats
 import pyatmlab.config
 import pyatmlab.graphics
-import pyatmlab.datasets.tovs
 import pyatmlab.tools
+
+from .. import common
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__.strip(),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument("satellite", help="Satellite to use", type=str,
-        choices=sorted(pyatmlab.datasets.tovs.HIRS2.satellites |
-                 pyatmlab.datasets.tovs.HIRS3.satellites |
-                 pyatmlab.datasets.tovs.HIRS4.satellites))
-    parser.add_argument("begin_year", help="Year to start", type=int)
-    parser.add_argument("begin_month", help="Month to start", type=int)
-    parser.add_argument("begin_day", help="Day to start", type=int)
-    parser.add_argument("end_year", help="Year to end", type=int)
-    parser.add_argument("end_month", help="Month to end", type=int)
-    parser.add_argument("end_day", help="Day to end", type=int)
+    parser = common.add_to_argparse(parser,
+        include_period=True,
+        include_sat=True,
+        include_channels=False,
+        include_temperatures=False)
     parser.add_argument("-o", "--overwrite", action="store_true",
                         help="Write destination file/s even when they exist",
                         default=False)
