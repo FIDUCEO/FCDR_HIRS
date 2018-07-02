@@ -659,3 +659,10 @@ class KModelSRFIASIDB(KModel):
                     f"delta {to_sat:s} from {from_sat:s} ({self.regression:s})")
             ds[k].attrs["channels_used"] = self.chan_pairs[channel]
         return ds
+
+    def filter(self, mdim):
+        # go through self.ds_filt R_e values.  All channels must be not nan.
+        ok = super().filter(mdim)
+        for sat in self.prim_name, self.sec_name:
+            ok &= self.ds[f"{sat:s}_R_e"].notnull().all("calibrated_channel").values
+        return ok
