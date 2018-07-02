@@ -27,6 +27,7 @@ import netCDF4
 import progressbar
 
 import typhon.datasets.dataset
+from typhon.datasets import filters
 
 import pyatmlab.stats
 import pyatmlab.config
@@ -34,6 +35,7 @@ import pyatmlab.graphics
 import pyatmlab.tools
 
 from .. import common
+from .. import fcdr
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -54,20 +56,24 @@ def parse_cmdline():
 outdir = pathlib.Path(pyatmlab.config.conf["main"]["fiddatadir"],
     "HIRS_L1C_NC", "{sat:s}", "{year:04d}", "{month:02d}", "{day:02d}")
 
-def convert_granule(h, satname, dt, gran, overwrite=False):
+def convert_granule(h, satname, dt, gran, orbit_filters, overwrite=False):
     """Reads granule and writes NetCDF file with same contents
 
     Arguments:
 
-        h (pyatmlab.datasets.tovs.HIRS): Relevant HIRS-object (HIRS2,
+        h (typhon.datasets.tovs.HIRS): Relevant HIRS-object (HIRS2,
             HIRS3, HIRS4)
         satname (str): Name of satellite
         dt (datetime.datetime): Corresponding datetime for granule
         gran (pathlib.Path): Full path to granule
     """
-    (head, lines) = h.read(gran, return_header=True,
-        filter_firstline=True, apply_scale_factors=True,
-        calibrate=True, apply_flags=True, radiance_units="classic")
+
+    (lines, extra) = h.read(gran, 
+        apply_scale_factors=True,
+        apply_calibration=True, radiance_units="classic")
+    head = extra["header"]
+    for of in orbit_filters:
+        lines = of.filter(lines, **extra) # this is where flags are applied now
     if lines.size == 0:
         logging.error("Apparently empty: {!s}".format(gran))
         return
@@ -193,31 +199,36 @@ def convert_period(h, sat, start_date, end_date, **kwargs):
     logging.info("Converting NOAA to NetCDF, {:s} "
         "{:%Y-%m-%d %H:%M:%S}–{:%Y-%m-%d %H:%M:%S}".format(
             sat, start_date, end_date))
+    orbit_filters = (
+        filters.FirstlineDBFilter(h, h.granules_firstline_file),
+        filters.HIRSTimeSequenceDuplicateFilter(),
+        filters.HIRSFlagger(h, max_flagged=0.5),
+            )
     bar = progressbar.ProgressBar(maxval=1,
         widgets=pyatmlab.tools.my_pb_widget)
     bar.start()
     bar.update(0)
+    for of in orbit_filters:
+        of.reset()
     for (dt, gran) in h.find_granules_sorted(start_date, end_date,
             return_time=True, satname=sat):
         try:
-            convert_granule(h, sat, dt, gran, **kwargs)
+            for of in orbit_filters:
+                of.reset()
+            convert_granule(h, sat, dt, gran, orbit_filters, **kwargs)
         except (typhon.datasets.dataset.InvalidDataError,
                 typhon.datasets.dataset.InvalidFileError) as exc:
             logging.error("Unable to process {!s}: {:s}: {!s}".format(
                 gran, type(exc).__name__, exc))
         bar.update((dt-start_date)/(end_date-start_date))
+    # do not finalise filters, I don't have an overall array to put in!
     bar.update(1)
     bar.finish()
 
 def main():
     p = parse_cmdline()
-    for h in (pyatmlab.datasets.tovs.HIRS2(),
-              pyatmlab.datasets.tovs.HIRS3(),
-              pyatmlab.datasets.tovs.HIRS4()):
-        if p.satellite in h.satellites:
-            break
-    else:
-        raise ValueError("Unknown satellite: {:s}".format(p.satellite))
-    convert_period(h, p.satellite, 
-        datetime.datetime(p.begin_year, p.begin_month, p.begin_day),
-        datetime.datetime(p.end_year, p.end_month, p.end_day), overwrite=p.overwrite)
+    h = fcdr.which_hirs_fcdr(p.satname)
+    convert_period(h, p.satname, 
+            datetime.datetime.strptime(p.from_date, p.datefmt),
+            datetime.datetime.strptime(p.to_date, p.datefmt),
+            overwrite=p.overwrite)
