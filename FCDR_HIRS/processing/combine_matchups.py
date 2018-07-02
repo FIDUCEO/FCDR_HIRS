@@ -253,6 +253,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
         ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
                (ds[f"{self.sec_name:s}_scantype"] == 0)).values
+        ok &= self.kmodel.filter(mdim)
+        ok &= self.krmodel.filter(mdim)
         if ok.sum() == 0:
             raise MatchupError("No matchups pass filters")
         ds = ds[{mdim:ok}]

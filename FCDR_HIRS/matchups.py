@@ -5,6 +5,8 @@ import abc
 import warnings
 import datetime
 import itertools
+import functools
+import operator
 
 import numpy
 import scipy
@@ -286,7 +288,9 @@ class KModel(metaclass=abc.ABCMeta):
     """
 
     ds = None
+    ds_filt = None
     ds_orig = None
+    ds_orig_filt = None
     prim_name = None
     prim_hirs = None
     sec_name = None
@@ -315,9 +319,14 @@ class KModel(metaclass=abc.ABCMeta):
     def limit(self, ok, mdim):
         """Reduce dataset to those values
         """
-        self.ds = self.ds[{mdim:ok}]
-        self.ds_orig = self.ds_orig[{mdim:ok}]
+        self.ds_filt = self.ds[{mdim:ok}]
+        self.ds_filt_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
+
+    def filter(self, mdim):
+        """Extra filtering imposed by this model
+        """
+        return numpy.ones(self.ds.dims[mdim], "?")
 
     def extra(self):
         """Return Dataset with extra information
@@ -331,7 +340,9 @@ class KrModel(metaclass=abc.ABCMeta):
 
     def __init__(self, ds, ds_orig, prim_name, prim_hirs, sec_name, sec_hirs):
         self.ds = ds
+        self.ds_filt = None
         self.ds_orig = ds_orig
+        self.ds_filt_orig = None
         self.prim_name = prim_name
         self.prim_hirs = prim_hirs
         self.sec_name = sec_name
@@ -345,9 +356,14 @@ class KrModel(metaclass=abc.ABCMeta):
     def limit(self, ok, mdim):
         """Reduce dataset to those values
         """
-        self.ds = self.ds[{mdim:ok}]
-        self.ds_orig = self.ds_orig[{mdim:ok}]
+        self.ds_filt = self.ds[{mdim:ok}]
+        self.ds_filt_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
+
+    def filter(self, mdim):
+        """Extra filtering imposed by this model
+        """
+        return numpy.ones(self.ds.dims[mdim], "?")
 
 class KModelPlanck(KModel):
     """Simplified implementation.
@@ -362,7 +378,7 @@ class KModelPlanck(KModel):
             UserWarning)
         L1 = self.prim_hirs.srfs[channel-1].channel_radiance2bt(
             ureg.Quantity(
-                self.ds[f"{self.prim_name:s}_R_e"].sel(
+                self.ds_filt[f"{self.prim_name:s}_R_e"].sel(
                     calibrated_channel=channel).values,
                 rad_u["si"]))
 
@@ -374,7 +390,7 @@ class KModelPlanck(KModel):
         # Need to use forward modelling to do this properly.
         L2 = self.sec_hirs.srfs[channel-1].channel_radiance2bt(
             ureg.Quantity(
-                self.ds[f"{self.prim_name:s}_R_e"].sel(
+                self.ds_filt[f"{self.prim_name:s}_R_e"].sel(
                     calibrated_channel=channel).values,
                 rad_u["si"]))
 
@@ -391,17 +407,17 @@ class KModelPlanck(KModel):
         Δ = ureg.Quantity(Δ.values, Δ.units)
         slave_bt = self.sec_hirs.srfs[channel-1].channel_radiance2bt(
             ureg.Quantity(
-                self.ds[f"{self.prim_name:s}_R_e"].sel(
+                self.ds_filt[f"{self.prim_name:s}_R_e"].sel(
                     calibrated_channel=channel).values,
                 rad_u["si"]))
         slave_bt_perturbed = self.sec_hirs.srfs[channel-1].shift(
             Δ).channel_radiance2bt(ureg.Quantity(
-                self.ds["{:s}_R_e".format(self.prim_name)].sel(
+                self.ds_filt["{:s}_R_e".format(self.prim_name)].sel(
                     calibrated_channel=channel).values,
                 rad_u["si"]))
         slave_bt_perturbed_2 = self.sec_hirs.srfs[channel-1].shift(
             Δ).channel_radiance2bt(ureg.Quantity(
-                self.ds["{:s}_R_e".format(self.prim_name)].sel(
+                self.ds_filt["{:s}_R_e".format(self.prim_name)].sel(
                     calibrated_channel=channel).values,
                 rad_u["si"]))
         Δslave_bt = (abs(slave_bt_perturbed - slave_bt)
@@ -423,15 +439,15 @@ class KModelIASIRef(KModel):
     """Estimate K and Ks in case of IASI reference
     """
     def calc_K(self, channel):
-        return numpy.zeros(shape=self.ds.dims["line"])
+        return numpy.zeros(shape=self.ds_filt.dims["line"])
 
     def calc_Ks(self, channel):
-        return numpy.zeros(shape=self.ds.dims["line"])
+        return numpy.zeros(shape=self.ds_filt.dims["line"])
 
 class KrModelLSD(KrModel):
 
     def calc_Kr(self, channel):
-        btlocal = self.ds_orig["hirs-{:s}_bt_ch{:02d}".format(self.prim_name, channel)]
+        btlocal = self.ds_filt_orig["hirs-{:s}_bt_ch{:02d}".format(self.prim_name, channel)]
         btlocal.values.reshape((-1,))[btlocal.values.ravel()>400] = numpy.nan # not all are flagged correctly
         btlocal = btlocal.loc[{"hirs-{:s}_ny".format(self.prim_name): slice(1, 6),
                            "hirs-{:s}_nx".format(self.prim_name): slice(1, 6)}].stack(
@@ -448,6 +464,16 @@ class KrModelLSD(KrModel):
         #lsd = UADA(lsd).to(rad_u["si"], "radiance", srf=srf)
         return lsd
 
+    def filter(self, mdim):
+        ok = super().filter(mdim)
+        return functools.reduce(
+            operator.and_,
+            ((self.ds_orig[f"hirs-{s:s}_bt_ch{c:02d}"].notnull()
+                    .sum(f"hirs-{s:s}_nx").sum(f"hirs-{s:s}_ny")>25).values
+                for c in range(1, 20)
+                for s in (self.prim_name, self.sec_name)),
+            ok)
+
 class KrModelIASIRef(KrModel):
     def calc_Kr(self, channel):
         srf = SRF.fromArtsXML(
@@ -455,10 +481,10 @@ class KrModelIASIRef(KrModel):
             "hirs", channel)
         return abs(
             ureg.Quantity(
-                self.ds["metopa_T_b"].sel(calibrated_channel=channel).values, "K"
+                self.ds_filt["metopa_T_b"].sel(calibrated_channel=channel).values, "K"
                     ).to(rad_u["si"], "radiance", srf=srf) -
             ureg.Quantity(
-                self.ds["metopa_T_b"].sel(calibrated_channel=channel).values+0.1, "K"
+                self.ds_filt["metopa_T_b"].sel(calibrated_channel=channel).values+0.1, "K"
                     ).to(rad_u["si"], "radiance", srf=srf))
 
 
@@ -598,8 +624,8 @@ class KModelSRFIASIDB(KModel):
         for (from_sat, to_sat) in [(self.prim_name, self.sec_name),
                                    (self.sec_name, self.prim_name)]:
             clf = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
-            y_source = self.ds[f"{from_sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).values.T
-            y_ref = self.ds[f"{to_sat:s}_R_e"].sel(calibrated_channel=channel).values
+            y_source = self.ds_filt[f"{from_sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).values.T
+            y_ref = self.ds_filt[f"{to_sat:s}_R_e"].sel(calibrated_channel=channel).values
             model = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
             y_pred = model.predict(y_source)
             K.append(y_pred - y_source[:, channel-1]) # value for K?
