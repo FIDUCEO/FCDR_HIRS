@@ -512,9 +512,16 @@ class KModelSRFIASIDB(KModel):
 
 
     # FIXME: make this matching more optimal
-    chan_pairs = dict.fromkeys(numpy.arange(1, 20), numpy.arange(1, 20))
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, chan_pairs="all", *args, **kwargs):
+        if chan_pairs == "all":
+            chan_pairs = dict.fromkeys(numpy.arange(1, 20), numpy.arange(1, 20))
+        elif chan_pairs == "single":
+            chan_pairs = dict(zip(range(1, 20), range(1, 20)))
+        elif chan_pairs == "neighbours":
+            chan_pairs = {ch: numpy.arange(max(ch-1, 1), min(ch+2, 20)) for ch in range(1, 20)}
+        else:
+            raise ValueError(f"Unknown value for chan_pairs: {chan_pairs!s}")
         super().__init__(*args, **kwargs)
 
     def read_iasi(self):
@@ -584,7 +591,8 @@ class KModelSRFIASIDB(KModel):
             for chan in range(1, 20):
                 y_ref_ch = self.chan_pairs[chan]
                 y_ref = self.Ldb_hirs_simul[from_sat].sel(chan=y_ref_ch).values
-                y_target = self.Ldb_hirs_simul[to_sat].sel(chan=chan).values
+                y_target = (self.Ldb_hirs_simul[to_sat].sel(chan=chan).values
+                          - self.Ldb_hirs_simul[from_sat].sel(chan=chan))
                 # for training with sklearn, dimensions should be n_p × n_c
                 if self.regression == "LR":
                     clf = sklearn.linear_model.LinearRegression(fit_intercept=True)
