@@ -1,6 +1,28 @@
 """Plotting the health of harmonisation matchups
 """
 
+import argparse
+from .. import common
+def parse_cmdline():
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser = common.add_to_argparse(parser,
+        include_period=False,
+        include_sat=0,
+        include_channels=False,
+        include_temperatures=False)
+
+    parser.add_argument("file",
+        action="store",
+        type=str,
+        nargs=1,
+        help="Path to file containing enhanced matchups")
+
+    return parser.parse_args()
+p = parse_cmdline()
+
 import sys
 import pathlib
 
@@ -142,4 +164,4 @@ def plot_file_summary_stats(path):
             channel=ds["channel"].item(), **ds.attrs))
 
 def main():
-    plot_file_summary_stats(pathlib.Path(sys.argv[1]))
+    plot_file_summary_stats(pathlib.Path(p.file))

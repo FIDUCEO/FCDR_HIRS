@@ -505,6 +505,9 @@ class KModelSRFIASIDB(KModel):
     fitter = None
 
     regression = "LR"
+    chan_pairs = None
+    mode = "delta"
+    units = rad_u["si"]
     #regression = "ODR"
     # FIXME: Use ODR with uncertainties
 #    regression_model = sklearn.linear_model.LinearRegression
@@ -522,6 +525,7 @@ class KModelSRFIASIDB(KModel):
             chan_pairs = {ch: numpy.arange(max(ch-1, 1), min(ch+2, 20)) for ch in range(1, 20)}
         else:
             raise ValueError(f"Unknown value for chan_pairs: {chan_pairs!s}")
+        self.chan_pairs = chan_pairs
         super().__init__(*args, **kwargs)
 
     def read_iasi(self):
@@ -577,7 +581,9 @@ class KModelSRFIASIDB(KModel):
             for ch in range(1,20):
                 Ldb[sat].loc[{"chan": ch}] = self.srfs[sat][ch-1].integrate_radiances(
                         self.iasi.frequency,
-                        self.Ldb_iasi_full)
+                        self.Ldb_iasi_full).to(
+                            self.units, "radiance",
+                            srf=self.srfs[sat][ch-1])
         self.Ldb_hirs_simul = Ldb
 
     def init_regression(self):
@@ -591,8 +597,9 @@ class KModelSRFIASIDB(KModel):
             for chan in range(1, 20):
                 y_ref_ch = self.chan_pairs[chan]
                 y_ref = self.Ldb_hirs_simul[from_sat].sel(chan=y_ref_ch).values
-                y_target = (self.Ldb_hirs_simul[to_sat].sel(chan=chan).values
-                          - self.Ldb_hirs_simul[from_sat].sel(chan=chan))
+                y_target = self.Ldb_hirs_simul[to_sat].sel(chan=chan).values
+                if self.mode == "delta":
+                    y_target -= self.Ldb_hirs_simul[from_sat].sel(chan=chan)
                 # for training with sklearn, dimensions should be n_p × n_c
                 if self.regression == "LR":
                     clf = sklearn.linear_model.LinearRegression(fit_intercept=True)
@@ -635,8 +642,9 @@ class KModelSRFIASIDB(KModel):
             y_source = self.ds_filt[f"{from_sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).values.T
             y_ref = self.ds_filt[f"{to_sat:s}_R_e"].sel(calibrated_channel=channel).values
             model = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
-            y_pred = model.predict(y_source)
-            K.append(y_pred - y_source[:, channel-1]) # value for K?
+            Δy_pred = model.predict(y_source)
+            #K.append(y_pred - y_source[:, channel-1]) # value for K?
+            K.append(Δy_pred)
             # derive Ks from spread of predictions?  Or Δ with y_ref?  Or
             # from uncertainty provided by regression?  Isn't that part of
             # Kr instead?
