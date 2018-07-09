@@ -29,7 +29,8 @@ See issue #22
         include_period=True,
         include_sat=2,
         include_channels=False,
-        include_temperatures=False)
+        include_temperatures=False,
+        include_debug=True)
 
     return parser.parse_args()
 
@@ -101,12 +102,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
     # fallback for simplified only, because I don't store the
     # intermediate value and 
+    # FIXME: I store this now, take from source!
     u_fallback = {"T_IWCT": 0.1}
 
     kmodel = None
     def __init__(self, start_date, end_date, prim, sec,
                  kmodel=None,
-                 krmodel=None):
+                 krmodel=None,
+                 debug=False):
         super().__init__(start_date, end_date, prim, sec)
         # parent has set self.mode to either "hirs" or "reference"
         if self.mode not in ("hirs", "reference"):
@@ -120,7 +123,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     prim_name=self.prim_name,
                     prim_hirs=self.prim_hirs,
                     sec_name=self.sec_name,
-                    sec_hirs=self.sec_hirs)
+                    sec_hirs=self.sec_hirs,
+                    debug=debug)
             else:
                 kmodel = matchups.KModelIASIRef(
                     ds=self.as_xarray_dataset(),
@@ -656,7 +660,8 @@ def combine_hirs():
         hmc = HIRSMatchupCombiner(
             datetime.datetime.strptime(p.from_date, p.datefmt),
             datetime.datetime.strptime(p.to_date, p.datefmt),
-            p.satname1, p.satname2)
+            p.satname1, p.satname2,
+            debug=p.debug)
 
         ds = hmc.as_xarray_dataset()
     except (typhon.datasets.dataset.DataFileError, MatchupError) as e:

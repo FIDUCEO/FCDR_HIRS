@@ -7,6 +7,8 @@ import datetime
 import itertools
 import functools
 import operator
+import unicodedata
+import re
 
 import numpy
 import scipy
@@ -290,7 +292,7 @@ class KModel(metaclass=abc.ABCMeta):
     ds = None
     ds_filt = None
     ds_orig = None
-    ds_orig_filt = None
+    ds_filt_orig = None
     prim_name = None
     prim_hirs = None
     sec_name = None
@@ -508,25 +510,54 @@ class KModelSRFIASIDB(KModel):
     chan_pairs = None
     mode = "delta"
     units = rad_u["si"]
+    debug = False
+    others = None
     #regression = "ODR"
     # FIXME: Use ODR with uncertainties
 #    regression_model = sklearn.linear_model.LinearRegression
 #    regression_args = {"fit_intercept": True}
 
 
-    # FIXME: make this matching more optimal
 
     def __init__(self, chan_pairs="all", *args, **kwargs):
+        # FIXME: add an "optimal", channel-specific mapping
         if chan_pairs == "all":
             chan_pairs = dict.fromkeys(numpy.arange(1, 20), numpy.arange(1, 20))
         elif chan_pairs == "single":
-            chan_pairs = dict(zip(range(1, 20), range(1, 20)))
+            chan_pairs = {c:[c] for c in range(1, 20)}
         elif chan_pairs == "neighbours":
             chan_pairs = {ch: numpy.arange(max(ch-1, 1), min(ch+2, 20)) for ch in range(1, 20)}
         else:
             raise ValueError(f"Unknown value for chan_pairs: {chan_pairs!s}")
         self.chan_pairs = chan_pairs
         super().__init__(*args, **kwargs)
+        if self.debug:
+            self.others = {}
+            for (cp, md, u) in itertools.product(
+                    ["all", "single", "neighbours"],
+                    ["delta", "standard"],
+                    [rad_u["si"], rad_u["ir"], ureg.Unit("K")]):
+                unitlab = re.sub(r'/([A-Za-z]*)', r' \1^-1',
+                "{:~P}".format(u)).replace("-1²", "-2")
+                lab = unicodedata.normalize("NFKC", f"{cp:s}_{md:s}_{unitlab:s}")
+                self.others[lab] = self.__class__(
+                        chan_pairs=cp, 
+                        mode=md,
+                        units=u,
+                        debug=False,
+                        ds=self.ds,
+                        ds_orig=self.ds_orig,
+                        prim_name=self.prim_name,
+                        prim_hirs=self.prim_hirs,
+                        sec_name=self.sec_name,
+                        sec_hirs=self.sec_hirs)
+
+    def limit(self, ok, mdim):
+        super().limit(ok, mdim)
+        if self.debug:
+            for v in self.others.values():
+                v.ds_filt = self.ds_filt
+                v.ds_filt_orig = self.ds_filt_orig
 
     def read_iasi(self):
         """Read spectral database from IASI.
@@ -541,6 +572,9 @@ class KModelSRFIASIDB(KModel):
         # 'solar_azimuth_angle', 'spectral_radiance')
         self.M_iasi = self.iasi.read_period(self.iasi_start, self.iasi_end)
         # with 'spectral_radiance' in units of [W m^-2 sr^-1 m]
+        if self.debug:
+            for v in self.others.values():
+                v.M_iasi = self.M_iasi
 
     def init_iasi(self):
         """Initialise IASI data in right format
@@ -550,6 +584,9 @@ class KModelSRFIASIDB(KModel):
         L_wavenum = ureg.Quantity(self.M_iasi["spectral_radiance"][2::5, 2, :8461], rad_u["ir"])
         L_freq = L_wavenum.to(rad_u["si"], "radiance")
         self.Ldb_iasi_full = L_freq
+        if self.debug:
+            for v in self.others.values():
+                v.init_iasi() # various units
 
     def init_srfs(self):
         """Initialise SRFs, reading from ArtsXML format
@@ -561,6 +598,9 @@ class KModelSRFIASIDB(KModel):
                     typhon.datasets.tovs.norm_tovs_name(sat).upper(),
                     "hirs", ch)
                 for ch in range(1, 20)]
+        if self.debug:
+            for v in self.others.values():
+                v.srfs = self.srfs
 
     def init_Ldb(self):
         """Calculate IASI-simulated HIRS
@@ -585,6 +625,9 @@ class KModelSRFIASIDB(KModel):
                             self.units, "radiance",
                             srf=self.srfs[sat][ch-1])
         self.Ldb_hirs_simul = Ldb
+        if self.debug:
+            for v in self.others.values():
+                v.init_Ldb()
 
     def init_regression(self):
         if self.Ldb_hirs_simul is None:
@@ -628,6 +671,9 @@ class KModelSRFIASIDB(KModel):
                     raise ValueError(f"Unknown regression: {self.regression:s}")
                 fitter[f"{from_sat:s}-{to_sat:s}"][chan] = clf
         self.fitter = fitter
+        if self.debug:
+            for v in self.others.values():
+                v.init_regression()
 
     K = dict.fromkeys(range(1, 20), None)
     def calc_K(self, channel):
@@ -649,6 +695,9 @@ class KModelSRFIASIDB(KModel):
             # from uncertainty provided by regression?  Isn't that part of
             # Kr instead?
         self.K[channel] = K
+        if self.debug:
+            for v in self.others.values():
+                v.calc_K(channel)
         return numpy.array(K).mean(0)
 
     def calc_Ks(self, channel):
@@ -667,13 +716,31 @@ class KModelSRFIASIDB(KModel):
         ds = super().extra()
         ds["K_forward"] = (("M",), self.K[channel][0])
         ds["K_backward"] = (("M",), self.K[channel][1])
+        if self.debug:
+            for (k, v) in self.others.items():
+                ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][0])
+                ds[f"K_other_{k:s}_backward"] = (("M",), v.K[channel][1])
+                for direction in ("forward", "backward"):
+                    ds[f"K_other_{k:s}_{direction:s}"].attrs.update(
+                        units=f"{v.units:~}",
+                        direction=direction,
+                        mode=v.mode,
+                        channels_prediction=v.chan_pairs[channel],
+                        regression=v.regression,
+                        )
+                    
         for (from_sat, to_sat, k) in [
                 (self.prim_name, self.sec_name, "K_forward"),
                 (self.sec_name, self.prim_name, "K_backward")]:
-            ds[k].attrs["units"] = "W Hz^-1 sr^-1 m^-2"
+            ds[k].attrs["units"] = f"{self.units:~}"
             ds[k].attrs["description"] = ("Prediction of "
                     f"delta {to_sat:s} from {from_sat:s} ({self.regression:s})")
             ds[k].attrs["channels_used"] = self.chan_pairs[channel]
+        ds.attrs.update(
+            mode=self.mode,
+            channels_prediction=self.chan_pairs[channel],
+            regression=self.regression,
+            )
         return ds
 
     def filter(self, mdim):

@@ -12,7 +12,8 @@ def add_to_argparse(parser,
         include_period=True,
         include_sat=0,
         include_channels=True,
-        include_temperatures=False):
+        include_temperatures=False,
+        include_debug=False):
     """Add commoners to argparse object
     """
 
@@ -79,6 +80,10 @@ def add_to_argparse(parser,
 
     parser.add_argument("--log", action="store", type=str,
         help="Logfile to write to.  Leave out for stdout.")
+
+    if include_debug:
+        parser.add_argument("--debug", action="store_true",
+            help="Add extra debugging information", default=False)
 
     return parser
 
