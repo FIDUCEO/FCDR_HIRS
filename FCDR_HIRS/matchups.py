@@ -690,9 +690,11 @@ class KModelSRFIASIDB(KModel):
             y_source = self.ds_filt[f"{from_sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).values.T
             y_ref = self.ds_filt[f"{to_sat:s}_R_e"].sel(calibrated_channel=channel).values
             model = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
-            Δy_pred = model.predict(y_source)
-            #K.append(y_pred - y_source[:, channel-1]) # value for K?
-            K.append(Δy_pred)
+            y_pred = model.predict(y_source)
+            if self.mode == "delta":
+                K.append(y_pred - y_source[:, channel-1]) # value for K?
+            else:
+                K.append(y_pred)
             # derive Ks from spread of predictions?  Or Δ with y_ref?  Or
             # from uncertainty provided by regression?  Isn't that part of
             # Kr instead?
