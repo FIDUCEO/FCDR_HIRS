@@ -687,8 +687,15 @@ class KModelSRFIASIDB(KModel):
         for (from_sat, to_sat) in [(self.prim_name, self.sec_name),
                                    (self.sec_name, self.prim_name)]:
             clf = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
-            y_source = self.ds_filt[f"{from_sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).values.T
-            y_ref = self.ds_filt[f"{to_sat:s}_R_e"].sel(calibrated_channel=channel).values
+            y_source = self.ds_filt[f"{from_sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel])
+            y_source = numpy.vstack(
+                [UADA(y_source.sel(calibrated_channel=c)).to(
+                    self.units, "radiance", srf=self.srfs[from_sat][c-1]).values
+                    for c in range(1, 20)]).T
+            y_ref = self.ds_filt[f"{to_sat:s}_R_e"].sel(calibrated_channel=channel)
+            y_ref = UADA(y_ref).to(
+                    self.units, "radiance",
+                    srf=self.srfs[to_sat][channel-1]).values
             model = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
             y_pred = model.predict(y_source)
             if self.mode == "delta":
