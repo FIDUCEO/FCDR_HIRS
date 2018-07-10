@@ -140,6 +140,11 @@ def parse_cmdline():
         default=1,
         help="Make plot a factor x wider (for noise_with_other only).")
 
+    parser.add_argument("--write_figs", action="store_true",
+        help="For plots, write not only .png, but also .pdf and figure "
+             "pickle.  This is useful for later opening and editing plots. "
+             "However, it can be very slow and time consuming.")
+
     parser.set_defaults(include_gain=True, include_rself=True)
     
     p = parser.parse_args()
@@ -304,7 +309,7 @@ class NoiseAnalyser:
 #@profile
 
     def __init__(self, start_date, end_date, satname, temp_fields={"iwt",
-                        "fwh", "fwm"}):
+                        "fwh", "fwm"}, writefig=False):
         self.hirs = fcdr.which_hirs_fcdr(satname)
         self.satname = satname
         hrsargs=dict(
@@ -383,6 +388,8 @@ class NoiseAnalyser:
 
         self.start_date = start_date
         self.end_date = end_date
+
+        self.writefig = writefig
 
     def calc_hiasi(self, rad):
         """Calculate IASI-simulated HIRS
@@ -1368,7 +1375,8 @@ def main():
             datetime.datetime.strptime(p.from_date, p.datefmt),
             datetime.datetime.strptime(p.to_date, p.datefmt),
             p.sat,
-            temp_fields=p.temp_fields)
+            temp_fields=p.temp_fields,
+            writefig=p.write_figs)
 #            ch=p.channel)
 
     if p.plot_noise:
