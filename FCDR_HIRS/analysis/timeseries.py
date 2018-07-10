@@ -474,7 +474,8 @@ class NoiseAnalyser:
         f.subplots_adjust(hspace=0.25)
         pyatmlab.graphics.print_or_show(f, False,
             "hirs_{:s}_space_counts_adev_{:%Y%m%d}-{:%Y%m%d}.".format(
-                self.satname, t[0], t[-1]))
+                self.satname, t[0], t[-1])
+                + "" if self.writefig else "png")
 
     def get_gain(self, M, ch):
         (t_slope, _, slope, _) = self.hirs.calculate_offset_and_slope(M, ch)
@@ -610,11 +611,12 @@ class NoiseAnalyser:
         # cache.  Make sure we create it /again/ ?!
         pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
         pyatmlab.graphics.print_or_show(self.fig, False,
-            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.png".format(
+            "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.".format(
                 self=self, ch=ch, alltyp='_'.join(all_tp),
                 alltemp='_'.join(temperatures), tb=t[0], te=t[-1],
                 corrinfo=(f"_corr_{corr_info.get('count', 2):d}"
-                          f"_{corr_info.get('timeres', '3H'):s}") if include_corr else ""))
+                          f"_{corr_info.get('timeres', '3H'):s}") if include_corr else "")
+                    + "" if self.writefig else "png")
 
     def get_calib_counts_noise(self, M, ch, all_tp):
         D = {}
@@ -1315,8 +1317,9 @@ class NoiseAnalyser:
                         calibpos))
         pyatmlab.graphics.print_or_show(f, False,
             "timeseries_channel_noise_correlation_"
-            "HIRS_{:s}{:%Y%m%d%H%M}-{:%Y%m%d%H%M}_p{:d}.png".format(
-                self.satname, self.start_date, self.end_date, scanpos))
+            "HIRS_{:s}{:%Y%m%d%H%M}-{:%Y%m%d%H%M}_p{:d}.".format(
+                self.satname, self.start_date, self.end_date, scanpos)
+                + "" if self.writefig else "png")
 
 
     ##### EXPERIMENTAL NO GO ZONE FOR NOW #####
