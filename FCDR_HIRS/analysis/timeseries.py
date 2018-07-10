@@ -575,6 +575,9 @@ class NoiseAnalyser:
                     break
 
         if include_rself:
+            if not temperatures:
+                raise RuntimeError("Due to implementation limitation, "
+                    "can only plot Rself if also plotting a temperature")
             allcb = self.plot_rself(
                 M=M, t_slope=t_slope, med_gain=med_gain, ch=ch,
                 temperatures=temperatures, k=k,
