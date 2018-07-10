@@ -25,6 +25,8 @@ from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.physics.units.em import SRF
 
+unit_iasi = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
+
 class ODRFitError:
     pass
 
@@ -581,12 +583,12 @@ class KModelSRFIASIDB(KModel):
         """
         if self.M_iasi is None:
             self.read_iasi()
-        L_wavenum = ureg.Quantity(self.M_iasi["spectral_radiance"][2::5, 2, :8461], rad_u["ir"])
+        L_wavenum = ureg.Quantity(self.M_iasi["spectral_radiance"][2::5, 2, :8461], unit_iasi)
         L_freq = L_wavenum.to(rad_u["si"], "radiance")
         self.Ldb_iasi_full = L_freq
         if self.debug:
             for v in self.others.values():
-                v.init_iasi() # various units
+                v.Ldb_iasi_full = self.Ldb_iasi_full # always in freq
 
     def init_srfs(self):
         """Initialise SRFs, reading from ArtsXML format
@@ -639,8 +641,8 @@ class KModelSRFIASIDB(KModel):
             fitter[f"{from_sat:s}-{to_sat:s}"] = {}
             for chan in range(1, 20):
                 y_ref_ch = self.chan_pairs[chan]
-                y_ref = self.Ldb_hirs_simul[from_sat].sel(chan=y_ref_ch).values
-                y_target = self.Ldb_hirs_simul[to_sat].sel(chan=chan).values
+                y_ref = self.Ldb_hirs_simul[from_sat].sel(chan=y_ref_ch).values.copy()
+                y_target = self.Ldb_hirs_simul[to_sat].sel(chan=chan).values.copy()
                 if self.mode == "delta":
                     y_target -= self.Ldb_hirs_simul[from_sat].sel(chan=chan)
                 # for training with sklearn, dimensions should be n_p × n_c
