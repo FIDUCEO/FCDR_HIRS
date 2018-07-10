@@ -693,7 +693,7 @@ class KModelSRFIASIDB(KModel):
             y_pred = model.predict(y_source)
             if self.mode == "delta":
                 # to estimate K, undo difference
-                K.append(y_pred + y_source[:, self.chan_pairs[channel].index(channel)])
+                K.append(y_pred + y_source[:, list(self.chan_pairs[channel]).index(channel)])
             else:
                 K.append(y_pred)
             # derive Ks from spread of predictions?  Or Δ with y_ref?  Or
