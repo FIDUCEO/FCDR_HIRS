@@ -508,7 +508,7 @@ class KModelSRFIASIDB(KModel):
 
     regression = "LR"
     chan_pairs = None
-    mode = "delta"
+    mode = "standard"
     units = rad_u["si"]
     debug = False
     others = None

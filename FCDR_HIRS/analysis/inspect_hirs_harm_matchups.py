@@ -17,7 +17,6 @@ def parse_cmdline():
     parser.add_argument("file",
         action="store",
         type=str,
-        nargs=1,
         help="Path to file containing enhanced matchups")
 
     return parser.parse_args()
