@@ -514,6 +514,7 @@ class KModelSRFIASIDB(KModel):
     units = rad_u["si"]
     debug = False
     others = None
+    K = None
     #regression = "ODR"
     # FIXME: Use ODR with uncertainties
 #    regression_model = sklearn.linear_model.LinearRegression
@@ -553,7 +554,7 @@ class KModelSRFIASIDB(KModel):
                         prim_hirs=self.prim_hirs,
                         sec_name=self.sec_name,
                         sec_hirs=self.sec_hirs)
-
+        self.K = dict.fromkeys(range(1, 20), None)
     def limit(self, ok, mdim):
         super().limit(ok, mdim)
         if self.debug:
@@ -677,7 +678,6 @@ class KModelSRFIASIDB(KModel):
             for v in self.others.values():
                 v.init_regression()
 
-    K = dict.fromkeys(range(1, 20), None)
     def calc_K(self, channel):
         if self.fitter is None:
             self.init_regression()
