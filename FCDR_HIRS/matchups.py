@@ -691,7 +691,8 @@ class KModelSRFIASIDB(KModel):
             y_source = numpy.vstack(
                 [UADA(y_source.sel(calibrated_channel=c)).to(
                     self.units, "radiance", srf=self.srfs[from_sat][c-1]).values
-                    for c in range(1, 20)]).T
+                    for c in range(1, 20)
+                    if c in y_source.calibrated_channel.values]).T
             y_ref = self.ds_filt[f"{to_sat:s}_R_e"].sel(calibrated_channel=channel)
             y_ref = UADA(y_ref).to(
                     self.units, "radiance",
