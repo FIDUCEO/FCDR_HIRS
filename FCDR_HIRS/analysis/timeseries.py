@@ -185,6 +185,7 @@ import matplotlib.dates
 import matplotlib.ticker
 
 import pandas
+from pandas.core.indexes.base import InvalidIndexError
 import xarray
 
 #from memory_profiler import profile
@@ -316,10 +317,7 @@ class NoiseAnalyser:
                 fields=["hrs_scnlin", self.hirs.scantype_fieldname, "time",
                         "counts", "calcof_sorted", "radiance",
                         "bt"] + 
-                        ["radiance_fid_naive"] + # GH 2017-12-17: fails
-                        # with new filters due to pandas index error
-                        # because duplicate removals are postponed but
-                        # pseudo fields are not
+                        ["radiance_fid_naive"] +
                        ["temp_{:s}".format(f) for f in
                        set(temp_fields) | {"iwt"}],
                 locator_args=dict(satname=self.satname),
@@ -329,7 +327,8 @@ class NoiseAnalyser:
                      typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter(),
                      typhon.datasets.filters.HIRSFlagger(self.hirs, max_flagged=0.9),
                      typhon.datasets.filters.HIRSCalibCountFilter(self.hirs, self.hirs.filter_calibcounts),
-                     ])
+                     ],
+                excs=(typhon.datasets.dataset.DataFileError, typhon.datasets.filters.FilterError, InvalidIndexError))
         # those need to be read before combining with HIASI, because
         # afterward, I lose the calibration rounds.  But doing it after
         # read a full month (or more) of data takes too much RAM as I will
