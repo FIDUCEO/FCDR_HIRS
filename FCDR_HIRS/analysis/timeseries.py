@@ -316,7 +316,7 @@ class NoiseAnalyser:
                 fields=["hrs_scnlin", self.hirs.scantype_fieldname, "time",
                         "counts", "calcof_sorted", "radiance",
                         "bt"] + 
-                        #"radiance_fid_naive"] + # GH 2017-12-17: fails
+                        ["radiance_fid_naive"] + # GH 2017-12-17: fails
                         # with new filters due to pandas index error
                         # because duplicate removals are postponed but
                         # pseudo fields are not
