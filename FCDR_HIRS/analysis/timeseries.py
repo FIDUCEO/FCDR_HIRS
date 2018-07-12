@@ -477,7 +477,8 @@ class NoiseAnalyser:
                 + "" if self.writefig else "png")
 
     def get_gain(self, M, ch):
-        (t_slope, _, slope, _) = self.hirs.calculate_offset_and_slope(M, ch)
+        (t_slope, _, slope, _) = self.hirs.calculate_offset_and_slope(M,
+                ch, accept_nan_for_nan=True)
         # most of this module was written before the migration to xarray;
         # migrate back for now for the sake of legacy code
         t_slope = numpy.ma.MaskedArray(t_slope.values, mask=numpy.zeros_like(t_slope.values))

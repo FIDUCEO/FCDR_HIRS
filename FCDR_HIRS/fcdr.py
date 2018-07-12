@@ -696,7 +696,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._effects_by_name[name].magnitude = da
 
     def calculate_offset_and_slope(self, ds, ch, srf=None, tuck=False,
-            naive=False):
+            naive=False, accept_nan_for_nan=False):
         """Calculate offset and slope.
 
         Arguments:
@@ -720,6 +720,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
                 If true, additionally return uncertainties on offset and
                 slope.
+
+            tuck
+
+            naive
+
+            accept_nan_for_nan
 
         Returns:
 
@@ -769,13 +775,23 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # This will cause slope to be inf, and slope * counts_space to be
         # nan.  There should be no other possible way for getting nans in
         # offset.
-        if not naive and not numpy.array_equal((counts_space.values == 0) &
-                                 (counts_iwct.values == 0),
-                                 numpy.isnan(offset)):
+        # what if we have already filtered counts_iwct or counts_space
+        # to set outliers to nan, and the result is nan simply because
+        # of that?  In this case we want to accept nans where counts are
+        # nan too, hence the flag accept_nan_for_nan
+        offsetnan = numpy.isnan(offset)
+        countsnan = numpy.isnan(counts_space.values) | numpy.isnan(counts_iwct.values)
+        counts0both = (counts_space.values == 0) & (counts_iwct.values == 0)
+        nansok = counts0both
+        if accept_nan_for_nan:
+            nansok |= countsnan
+        if not naive and not numpy.array_equal(offsetnan, nansok):
             raise ValueError("Problematic data propagating unexpectedly. "
                 "I can except offset nans to correspond to cases where "
                 "counts_space == counts_iwct == 0, such as "
-                "NOAA-12 1997-05-31T16:02:42.528000, but there "
+                "NOAA-12 1997-05-31T16:02:42.528000, or when "
+                "you have approved counts_space or counts_iwct to be "
+                "nan (such as due to pre-filtering), but there "
                 "appears to be something else going on here. "
                 "I cannot proceed like this, please investigate what's "
                 "going on and handle it properly.")
