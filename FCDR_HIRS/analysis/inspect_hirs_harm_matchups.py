@@ -32,6 +32,9 @@ import scipy.stats
 
 import pyatmlab.graphics
 
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+import typhon.physics.units.em
+
 def plot_ds_summary_stats(ds, lab=""):
     """Plot single file with summary stats for specific label
 
@@ -51,15 +54,28 @@ def plot_ds_summary_stats(ds, lab=""):
 
     cbs = []
 
+    # for unit conversions
+    srf1 = typhon.physics.units.em.SRF.fromArtsXML(
+            typhon.datasets.tovs.norm_tovs_name(ds.sensor_1_name).upper(),
+            "hirs", ds["channel"].item())
+    srf2 = typhon.physics.units.em.SRF.fromArtsXML(
+            typhon.datasets.tovs.norm_tovs_name(ds.sensor_2_name).upper(),
+            "hirs", ds["channel"].item())
+
+    y1 = UADA(ds["nominal_measurand1"]).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1)
+    y2 = UADA(ds["nominal_measurand2"]).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2)
+
     kxrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"], [1, 99])
     kyrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}backward"], [1, 99])
     kΔrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"]+ds[f"K_{lab:s}backward"], [1, 99])
-    Lxrange = scipy.stats.scoreatpercentile(ds["nominal_measurand1"], [1, 99])
-    Lyrange = scipy.stats.scoreatpercentile(ds["nominal_measurand2"], [1, 99])
+    Lxrange = scipy.stats.scoreatpercentile(y1, [1, 99])
+    Lyrange = scipy.stats.scoreatpercentile(y2, [1, 99])
     Lmax = max(Lxrange[1], Lyrange[1])
     Lmin = min(Lxrange[0], Lyrange[0])
     LΔrange = scipy.stats.scoreatpercentile(
-        ds["nominal_measurand2"] - ds["nominal_measurand1"],
+        y2 - y1,
         [1, 99])
 
     # K forward vs. K backward
@@ -85,7 +101,7 @@ def plot_ds_summary_stats(ds, lab=""):
         bins=100,
         range=kΔrange)
     a.plot([0, 0], [0, cnts.max()], 'k--')
-    a.set_xlabel("Sum of K estimates")
+    a.set_xlabel("Sum of K estimates [{units:s}]".format(**ds[f"K_{lab:s}forward"].attrs))
     a.set_ylabel("Count")
     a.set_title("Distribution of sum of K estimates")
     a.set_xlim(kΔrange)
@@ -93,13 +109,15 @@ def plot_ds_summary_stats(ds, lab=""):
     # radiance comparison
     a = next(g)
     pc = a.hexbin(
-        ds["nominal_measurand1"],
-        ds["nominal_measurand2"],
+        y1,
+        y2,
         extent=(Lmin, Lmax, Lmin, Lmax),
         mincnt=1)
     a.plot([Lmin, Lmax], [Lmin, Lmax], 'k--')
-    a.set_xlabel("Radiance {sensor_1_name:s} [units]".format(**ds.attrs))
-    a.set_ylabel("Radiance {sensor_2_name:s} [units]".format(**ds.attrs))
+    a.set_xlabel("Radiance {sensor_1_name:s}".format(**ds.attrs)
+        + f"[{y1.units:s}]")
+    a.set_ylabel("Radiance {sensor_2_name:s}".format(**ds.attrs)
+        + f"[{y2.units:s}]")
     a.set_title("Radiance comparison")
     a.set_xlim(Lmin, Lmax)
     a.set_ylim(Lmin, Lmax)
@@ -114,7 +132,7 @@ def plot_ds_summary_stats(ds, lab=""):
         mincnt=1)
     a.plot(kxrange, [0, 0], 'k--')
     a.set_xlabel("K forward\n[{units:s}]".format(**ds[f"K_{lab:s}forward"].attrs))  
-    a.set_ylabel("Sum of K estimates")
+    a.set_ylabel("Sum of K estimates [{units:s}]".format(**ds[f"K_{lab:s}forward"].attrs))
     a.set_title("K difference vs. K forward")
     a.set_xlim(kxrange)
     a.set_ylim(kΔrange)
@@ -122,12 +140,12 @@ def plot_ds_summary_stats(ds, lab=""):
 
     # K vs. radiance
     a = next(g)
-    pc = a.hexbin(
-        ds["nominal_measurand1"],
+    pc = a.hexbin(y1,
         ds[f"K_{lab:s}forward"],
         extent=numpy.concatenate([Lxrange, kxrange]),
         mincnt=1)
-    a.set_xlabel("Radiance {sensor_1_name:s} [units]".format(**ds.attrs))
+    a.set_xlabel("Radiance {sensor_1_name:s}".format(**ds.attrs)
+        + f"[{y1.units:s}]")
     a.set_ylabel("K forward\n[{units:s}]".format(**ds[f"K_{lab:s}forward"].attrs))  
     a.set_title("K vs. measurement")
     a.set_xlim(Lxrange)
@@ -137,13 +155,13 @@ def plot_ds_summary_stats(ds, lab=""):
     # K vs. measurement difference
     a = next(g)
     extremes = [min([LΔrange[0], kxrange[0]]), max([LΔrange[1], kxrange[1]])]
-    pc = a.hexbin(
-        ds["nominal_measurand2"] - ds["nominal_measurand1"],
+    pc = a.hexbin(y2-y1,
         ds[f"K_{lab:s}forward"],
         extent=numpy.concatenate([LΔrange, kxrange]),
         mincnt=1)
     a.plot(extremes, extremes, 'k--')
-    a.set_xlabel("Radiance {sensor_2_name:s} - {sensor_1_name:s} [units]".format(**ds.attrs))
+    a.set_xlabel("Radiance {sensor_2_name:s} - {sensor_1_name:s}".format(**ds.attrs)
+        + f"[{y1.units:s}]")
     a.set_ylabel("K forward\n[{units:s}]".format(**ds[f"K_{lab:s}forward"].attrs))  
     a.set_title("K vs. measurement difference")
     a.set_xlim(LΔrange)
@@ -155,7 +173,7 @@ def plot_ds_summary_stats(ds, lab=""):
 
     f.suptitle("K stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}".format(**ds.attrs)
         + ", channel " + str(ds["channel"].item()) + "\nchannels used to predict: " +
-        ", ".join(str(c) for c in ds[f"K_{lab:s}forward"].attrs["channels_prediction"]))
+        ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_prediction"])))
     f.subplots_adjust(hspace=0.35)
 
     pyatmlab.graphics.print_or_show(f, False,
