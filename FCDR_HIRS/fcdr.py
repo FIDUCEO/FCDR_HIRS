@@ -372,7 +372,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         return (counts_space, counts_iwct)
 
     def extract_calibcounts_and_temp(self, ds, ch, srf=None,
-            return_u=False, return_ix=False, tuck=False):
+            return_u=False, return_ix=False, tuck=False,
+            naive=False):
         """Calculate calibration counts and IWCT temperature
 
         In the IR, space view temperature can be safely estimated as 0
@@ -485,8 +486,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         # emissivity correction
         # order: see e-mail RQ 2018-04-06
-        a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
-            name="correction to emissivity")
+        if naive:
+            a_3 = UADA(0,
+                name="correction to emissivity")
+        else:
+            a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
+                name="correction to emissivity")
         if a_3 > 0.02:
             warnings.warn(f"Channel {ch:d}: ε + a₃ > 1!  Perhaps there is a "
                 "problem with the blackbody?", FCDRWarning)
@@ -696,7 +701,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._effects_by_name[name].magnitude = da
 
     def calculate_offset_and_slope(self, ds, ch, srf=None, tuck=False,
-            naive=False):
+            naive=False, accept_nan_for_nan=False):
         """Calculate offset and slope.
 
         Arguments:
@@ -721,6 +726,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 If true, additionally return uncertainties on offset and
                 slope.
 
+            tuck
+
+            naive
+
+            accept_nan_for_nan
+
         Returns:
 
             tuple (time, offset, slope) where:
@@ -741,7 +752,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "is deprecated since 2017-02-22, should pass "
                 "xarray.Dataset ", DeprecationWarning)
             ds = self.as_xarray_dataset(ds)
-        (time, L_iwct, counts_iwct, counts_space) = self.extract_calibcounts_and_temp(ds, ch, srf, tuck=tuck)
+        (time, L_iwct, counts_iwct, counts_space) = self.extract_calibcounts_and_temp(ds, ch, srf, tuck=tuck, naive=naive)
         #L_space = ureg.Quantity(numpy.zeros_like(L_iwct), L_iwct.u)
         L_space = UADA(xarray.zeros_like(L_iwct),
             coords={k:v 
@@ -759,9 +770,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         # nonlinearity
         # order: see e-mail RQ 2018-04-06
-        a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][1],
+        if naive:
+            a2 = UADA(0, 
             name="a2", coords={"calibrated_channel": ch},
             attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
+        else:
+            a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][1],
+                name="a2", coords={"calibrated_channel": ch},
+                attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
         offset = -counts_space**2 * a2 -slope * counts_space
 
@@ -769,13 +785,23 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # This will cause slope to be inf, and slope * counts_space to be
         # nan.  There should be no other possible way for getting nans in
         # offset.
-        if not naive and not numpy.array_equal((counts_space.values == 0) &
-                                 (counts_iwct.values == 0),
-                                 numpy.isnan(offset)):
+        # what if we have already filtered counts_iwct or counts_space
+        # to set outliers to nan, and the result is nan simply because
+        # of that?  In this case we want to accept nans where counts are
+        # nan too, hence the flag accept_nan_for_nan
+        offsetnan = numpy.isnan(offset)
+        countsnan = numpy.isnan(counts_space.values) | numpy.isnan(counts_iwct.values)
+        counts0both = (counts_space.values == 0) & (counts_iwct.values == 0)
+        nansok = counts0both
+        if accept_nan_for_nan:
+            nansok |= countsnan
+        if not naive and not numpy.array_equal(offsetnan, nansok):
             raise ValueError("Problematic data propagating unexpectedly. "
                 "I can except offset nans to correspond to cases where "
                 "counts_space == counts_iwct == 0, such as "
-                "NOAA-12 1997-05-31T16:02:42.528000, but there "
+                "NOAA-12 1997-05-31T16:02:42.528000, or when "
+                "you have approved counts_space or counts_iwct to be "
+                "nan (such as due to pre-filtering), but there "
                 "appears to be something else going on here. "
                 "I cannot proceed like this, please investigate what's "
                 "going on and handle it properly.")
@@ -913,9 +939,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             attrs={"units": "dimensionless"})
         # self-emission bias
         # order: see e-mail RQ 2018-04-06
-        a_4 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][0],
-            name="harmonisation bias",
-            attrs={"units": rad_u["si"]})
+        if naive:
+            a_4 = UADA(0,
+                name="harmonisation bias",
+                attrs={"units": rad_u["si"]})
+        else:
+            a_4 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][0],
+                name="harmonisation bias",
+                attrs={"units": rad_u["si"]})
 
         dsix = self.within_enough_context(ds, context, ch, 1)
         n_within_context = ds.loc[dsix]["time"].size

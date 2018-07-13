@@ -136,6 +136,15 @@ def parse_cmdline():
     parser.add_argument("--store_only", action="store_true",
         help="Only store to NetCDF, do not plot.  Name calculate automatically.", default=False)
 
+    parser.add_argument("--width_factor", action="store", type=float,
+        default=1,
+        help="Make plot a factor x wider (for noise_with_other only).")
+
+    parser.add_argument("--write_figs", action="store_true",
+        help="For plots, write not only .png, but also .pdf and figure "
+             "pickle.  This is useful for later opening and editing plots. "
+             "However, it can be very slow and time consuming.")
+
     parser.set_defaults(include_gain=True, include_rself=True)
     
     p = parser.parse_args()
@@ -176,6 +185,7 @@ import matplotlib.dates
 import matplotlib.ticker
 
 import pandas
+from pandas.core.indexes.base import InvalidIndexError
 import xarray
 
 #from memory_profiler import profile
@@ -300,22 +310,30 @@ class NoiseAnalyser:
 #@profile
 
     def __init__(self, start_date, end_date, satname, temp_fields={"iwt",
-                        "fwh", "fwm"}):
+                        "fwh", "fwm"}, writefig=False):
         self.hirs = fcdr.which_hirs_fcdr(satname)
         self.satname = satname
         hrsargs=dict(
                 fields=["hrs_scnlin", self.hirs.scantype_fieldname, "time",
                         "counts", "calcof_sorted", "radiance",
-                        "bt",
-                        "radiance_fid_naive"] +
+                        "bt"] + 
+                        ["radiance_fid_naive"] +
                        ["temp_{:s}".format(f) for f in
                        set(temp_fields) | {"iwt"}],
                 locator_args=dict(satname=self.satname),
-                orbit_filters=self.hirs.default_orbit_filters)
+                orbit_filters=
+                    [typhon.datasets.filters.HIRSBestLineFilter(self.hirs),
+                     typhon.datasets.filters.TimeMaskFilter(self.hirs),
+                     typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter(),
+                     typhon.datasets.filters.HIRSFlagger(self.hirs, max_flagged=0.9),
+                     typhon.datasets.filters.HIRSCalibCountFilter(self.hirs, self.hirs.filter_calibcounts),
+                     ],
+                excs=(typhon.datasets.dataset.DataFileError, typhon.datasets.filters.FilterError, InvalidIndexError))
         # those need to be read before combining with HIASI, because
         # afterward, I lose the calibration rounds.  But doing it after
         # read a full month (or more) of data takes too much RAM as I will
         # need to copy the entire period; therefore, add it on-the-fly
+        self.hirs.maxsize = 200*2**30 # tolerate 200 GB
         Mhrsall = self.hirs.read_period(start_date, end_date,
             pseudo_fields=
                 {"tsc": self.hirs.calc_time_since_last_calib,
@@ -369,6 +387,8 @@ class NoiseAnalyser:
 
         self.start_date = start_date
         self.end_date = end_date
+
+        self.writefig = writefig
 
     def calc_hiasi(self, rad):
         """Calculate IASI-simulated HIRS
@@ -453,10 +473,12 @@ class NoiseAnalyser:
         f.subplots_adjust(hspace=0.25)
         pyatmlab.graphics.print_or_show(f, False,
             "hirs_{:s}_space_counts_adev_{:%Y%m%d}-{:%Y%m%d}.".format(
-                self.satname, t[0], t[-1]))
+                self.satname, t[0], t[-1])
+                + "" if self.writefig else "png")
 
     def get_gain(self, M, ch):
-        (t_slope, _, slope, _) = self.hirs.calculate_offset_and_slope(M, ch)
+        (t_slope, _, slope, _) = self.hirs.calculate_offset_and_slope(M,
+                ch, accept_nan_for_nan=True)
         # most of this module was written before the migration to xarray;
         # migrate back for now for the sake of legacy code
         t_slope = numpy.ma.MaskedArray(t_slope.values, mask=numpy.zeros_like(t_slope.values))
@@ -488,7 +510,8 @@ class NoiseAnalyser:
             include_rself=True,
             include_corr=(),
             corr_info={},
-            hiasi_mode="perc"):
+            hiasi_mode="perc",
+            width_factor=1):
         logging.info("Channel {:d}".format(ch))
         M = self.Mhrsall
 #        ch = self.ch
@@ -507,12 +530,14 @@ class NoiseAnalyser:
              3*include_rself + (len(include_corr)>0)*len(all_tp))
         #k = int(numpy.ceil(len(temperatures)/2)*2)
         Ntemps = len(temperatures)
-        fact = 16
+        fact = 16*width_factor
         k = int((max(Ntemps,1)+(2/fact))*fact)
-        self.ifte = int(self.fte*k)
-        self.ifhs = int(self.fhs*k)
+        rshift = (1-(1-self.fhs)/width_factor)-self.fhs # compensate for wider
+        lshift = rshift + (self.fhs-self.fte)-(self.fhs-self.fte)/width_factor
+        self.ifte = int((self.fte+lshift)*k)
+        self.ifhs = int((self.fhs+rshift)*k)
         self.gridspec = matplotlib.gridspec.GridSpec(N, k)
-        self.fig = matplotlib.pyplot.figure(figsize=(18, 3*N))
+        self.fig = matplotlib.pyplot.figure(figsize=(18*width_factor, 3*N))
         #(f, ax) = matplotlib.pyplot.subplots(N, 1, figsize=(16, 3*N))
         #itax = iter(ax)
         logging.info("Plotting calibration counts + noise")
@@ -550,6 +575,9 @@ class NoiseAnalyser:
                     break
 
         if include_rself:
+            if not temperatures:
+                raise RuntimeError("Due to implementation limitation, "
+                    "can only plot Rself if also plotting a temperature")
             allcb = self.plot_rself(
                 M=M, t_slope=t_slope, med_gain=med_gain, ch=ch,
                 temperatures=temperatures, k=k,
@@ -590,7 +618,8 @@ class NoiseAnalyser:
                 self=self, ch=ch, alltyp='_'.join(all_tp),
                 alltemp='_'.join(temperatures), tb=t[0], te=t[-1],
                 corrinfo=(f"_corr_{corr_info.get('count', 2):d}"
-                          f"_{corr_info.get('timeres', '3H'):s}") if include_corr else ""))
+                          f"_{corr_info.get('timeres', '3H'):s}") if include_corr else "")
+                    + "" if self.writefig else "png")
 
     def get_calib_counts_noise(self, M, ch, all_tp):
         D = {}
@@ -646,7 +675,8 @@ class NoiseAnalyser:
         a0.set_ylabel("Counts")
         a0h.set_xlabel(a0.get_ylabel().replace("\n", " "))
         a0h.set_ylabel("Number")
-        a0.set_title("Calibration counts over time")
+        a0.set_title("Calibration counts over time for "
+            + "and".join(all_tp) + " views")
         a0h.set_title("Calib. counts hist.")
         a0h.xaxis.set_major_locator(
             matplotlib.ticker.MaxNLocator(nbins=6))
@@ -758,8 +788,8 @@ class NoiseAnalyser:
                 label="ch. {:d}".format(chb))
         if success:
             a.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
-        a.set_title("{:s} noise correlations".format(typ))
-        a.set_ylabel("noise correlation")
+        a.set_title("{:s} error correlations".format(typ))
+        a.set_ylabel("error correlation")
         a.set_xlabel("Date / time")
         return a
         #correlations.sel(cha=ch_a, chb=ch_b)
@@ -874,8 +904,10 @@ class NoiseAnalyser:
             C = next(self.counter)
 
             Lhrs = ureg.Quantity(self.Mhrscmb["radiance_fid_naive"][..., ch-1],
-                typhon.physics.units.common.radiance_units["ir"])
+                typhon.physics.units.common.radiance_units["si"])
+            Lhrs = Lhrs.to(self.Lhiasi.u, "radiance")
             dL = Lhrs - self.Lhiasi[:, ch-1]
+            dL.mask[self.Mhrscmb["lsc"]==0] = True
             ΔRselfint, = self.hirs.interpolate_between_calibs(
                 self.Mhrscmb["time"], t_slope[1:], ΔRself,
                 kind="nearest")
@@ -1290,8 +1322,9 @@ class NoiseAnalyser:
                         calibpos))
         pyatmlab.graphics.print_or_show(f, False,
             "timeseries_channel_noise_correlation_"
-            "HIRS_{:s}{:%Y%m%d%H%M}-{:%Y%m%d%H%M}_p{:d}.png".format(
-                self.satname, self.start_date, self.end_date, scanpos))
+            "HIRS_{:s}{:%Y%m%d%H%M}-{:%Y%m%d%H%M}_p{:d}.".format(
+                self.satname, self.start_date, self.end_date, scanpos)
+                + "" if self.writefig else "png")
 
 
     ##### EXPERIMENTAL NO GO ZONE FOR NOW #####
@@ -1350,7 +1383,8 @@ def main():
             datetime.datetime.strptime(p.from_date, p.datefmt),
             datetime.datetime.strptime(p.to_date, p.datefmt),
             p.sat,
-            temp_fields=p.temp_fields)
+            temp_fields=p.temp_fields,
+            writefig=p.write_figs)
 #            ch=p.channel)
 
     if p.plot_noise:
@@ -1379,7 +1413,8 @@ def main():
                                "perc": p.corr_perc,
                                "count": p.corr_count,
                                "timeres": p.corr_timeres,
-                               "calibpos": p.corr_calibpos})
+                               "calibpos": p.corr_calibpos},
+                    width_factor=p.width_factor)
 
     if p.plot_noise_correlation_timeseries:
         logging.info("Plotting noise correlation timeseries")
