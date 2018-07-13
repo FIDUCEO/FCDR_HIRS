@@ -66,6 +66,7 @@ def plot_ds_summary_stats(ds, lab=""):
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1)
     y2 = UADA(ds["nominal_measurand2"]).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2)
+    yb = [y1, y2]
 
     kxrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"], [1, 99])
     kyrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}backward"], [1, 99])
@@ -166,18 +167,18 @@ def plot_ds_summary_stats(ds, lab=""):
     a.set_title("K vs. measurement difference")
     a.set_xlim(LΔrange)
     a.set_ylim(kxrange)
-    f.colorbar(pc, ax=a)
+    cbs.append(f.colorbar(pc, ax=a))
 
     # histograms for real and simulated measurements
     a = next(g)
     sensor_names = [ds.sensor_1_name, ds.sensor_2_name]
-    for i in (1, 2):
+    for i in range(2):
         (cnts, bins, patches) = a.hist(
-            ds[f"nominal_measurand{i:d}"],
-            label=sensor_names[i-1] + "[{units:s}]".format(**ds[f"K_{lab:s}forward"].attrs),
+            yb[i],
+            label=sensor_names[i],
             histtype="step",
-            bins=100,
-            range=kΔrange)
+            range=(Lmin, Lmax),
+            bins=100)
     # FIXME: also plot HIASI from db, need to read IASI first
     a.legend()
     a.set_xlabel("Radiance " + f"[{y1.units:s}]")
@@ -187,15 +188,22 @@ def plot_ds_summary_stats(ds, lab=""):
     a = next(g)
     pc = a.hexbin(y1,
         ds[f"K_{lab:s}forward"] - (y2-y1),
-        extent=numpy.concatenate([Lxrange, kxrange-LΔrange]),
+        extent=numpy.concatenate([[Lmin, Lmax], kxrange-LΔrange]),
         mincnt=1)
     a.plot(kxrange-LΔrange, [0, 0], 'k--')
     a.set_xlabel("Radiance {sensor_1_name:s}".format(**ds.attrs)
         + f"[{y1.units:s}]")
     a.set_ylabel(f"K - ΔL [{y1.units:s}]".format(**ds.attrs))
+    a.set_xlim(Lmin, Lmax)
+    a.set_ylim(kxrange-LΔrange)
+    cbs.append(f.colorbar(pc, ax=a))
+
+    for cb in cbs:
+        cb.set_label("No. matchups in bin")
 
     # TBD
     a = next(g)
+    a.set_visible(False)
 
     for a in ax_all.flat:
         a.grid(axis="both")
