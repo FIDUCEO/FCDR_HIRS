@@ -904,7 +904,8 @@ class NoiseAnalyser:
             C = next(self.counter)
 
             Lhrs = ureg.Quantity(self.Mhrscmb["radiance_fid_naive"][..., ch-1],
-                typhon.physics.units.common.radiance_units["ir"])
+                typhon.physics.units.common.radiance_units["si"])
+            Lhrs = Lhrs.to(self.Lhiasi.u, "radiance")
             dL = Lhrs - self.Lhiasi[:, ch-1]
             ΔRselfint, = self.hirs.interpolate_between_calibs(
                 self.Mhrscmb["time"], t_slope[1:], ΔRself,
