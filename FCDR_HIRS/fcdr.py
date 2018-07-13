@@ -372,7 +372,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         return (counts_space, counts_iwct)
 
     def extract_calibcounts_and_temp(self, ds, ch, srf=None,
-            return_u=False, return_ix=False, tuck=False):
+            return_u=False, return_ix=False, tuck=False,
+            naive=False):
         """Calculate calibration counts and IWCT temperature
 
         In the IR, space view temperature can be safely estimated as 0
@@ -485,8 +486,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         # emissivity correction
         # order: see e-mail RQ 2018-04-06
-        a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
-            name="correction to emissivity")
+        if naive:
+            a_3 = UADA(0,
+                name="correction to emissivity")
+        else:
+            a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
+                name="correction to emissivity")
         if a_3 > 0.02:
             warnings.warn(f"Channel {ch:d}: ε + a₃ > 1!  Perhaps there is a "
                 "problem with the blackbody?", FCDRWarning)
@@ -747,7 +752,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "is deprecated since 2017-02-22, should pass "
                 "xarray.Dataset ", DeprecationWarning)
             ds = self.as_xarray_dataset(ds)
-        (time, L_iwct, counts_iwct, counts_space) = self.extract_calibcounts_and_temp(ds, ch, srf, tuck=tuck)
+        (time, L_iwct, counts_iwct, counts_space) = self.extract_calibcounts_and_temp(ds, ch, srf, tuck=tuck, naive=naive)
         #L_space = ureg.Quantity(numpy.zeros_like(L_iwct), L_iwct.u)
         L_space = UADA(xarray.zeros_like(L_iwct),
             coords={k:v 
@@ -765,9 +770,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         # nonlinearity
         # order: see e-mail RQ 2018-04-06
-        a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][1],
+        if naive:
+            a2 = UADA(0, 
             name="a2", coords={"calibrated_channel": ch},
             attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
+        else:
+            a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][1],
+                name="a2", coords={"calibrated_channel": ch},
+                attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
         offset = -counts_space**2 * a2 -slope * counts_space
 
@@ -929,9 +939,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             attrs={"units": "dimensionless"})
         # self-emission bias
         # order: see e-mail RQ 2018-04-06
-        a_4 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][0],
-            name="harmonisation bias",
-            attrs={"units": rad_u["si"]})
+        if naive:
+            a_4 = UADA(0,
+                name="harmonisation bias",
+                attrs={"units": rad_u["si"]})
+        else:
+            a_4 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][0],
+                name="harmonisation bias",
+                attrs={"units": rad_u["si"]})
 
         dsix = self.within_enough_context(ds, context, ch, 1)
         n_within_context = ds.loc[dsix]["time"].size
