@@ -907,6 +907,7 @@ class NoiseAnalyser:
                 typhon.physics.units.common.radiance_units["si"])
             Lhrs = Lhrs.to(self.Lhiasi.u, "radiance")
             dL = Lhrs - self.Lhiasi[:, ch-1]
+            dL.mask[self.Mhrscmb["lsc"]==0] = True
             ΔRselfint, = self.hirs.interpolate_between_calibs(
                 self.Mhrscmb["time"], t_slope[1:], ΔRself,
                 kind="nearest")
