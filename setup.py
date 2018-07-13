@@ -159,6 +159,8 @@ setup(
             "convert_hirs_harmonisation_parameters=FCDR_HIRS.processing.convert_harm_params:main",
             "hirs_curuc_checker=FCDR_HIRS.analysis.inspect_orbit_curuc:main",
             "hirs_convert_l1b_to_l1c=FCDR_HIRS.analysis.convert_hirs_l1b_to_nc:main",
+            "hirs_iasi_srf_recovery=FCDR_HIRS.analysis.hirs_iasi_srf_estimation:main",
+            "hirs_inspect_harm_matchups=FCDR_HIRS.analysis.inspect_hirs_harm_matchups:main",
         ],
     },
 )

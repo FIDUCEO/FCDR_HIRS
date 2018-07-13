@@ -29,7 +29,8 @@ See issue #22
         include_period=True,
         include_sat=2,
         include_channels=False,
-        include_temperatures=False)
+        include_temperatures=False,
+        include_debug=True)
 
     return parser.parse_args()
 
@@ -101,33 +102,37 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
     # fallback for simplified only, because I don't store the
     # intermediate value and 
+    # FIXME: I store this now, take from source!
     u_fallback = {"T_IWCT": 0.1}
 
     kmodel = None
     def __init__(self, start_date, end_date, prim, sec,
                  kmodel=None,
-                 krmodel=None):
+                 krmodel=None,
+                 debug=False):
         super().__init__(start_date, end_date, prim, sec)
         # parent has set self.mode to either "hirs" or "reference"
         if self.mode not in ("hirs", "reference"):
             raise RuntimeError("My father has been bad.")
         if kmodel is None:
             if self.mode == "hirs":
-                kmodel = matchups.KModelPlanck(
-                    self.as_xarray_dataset(),
-                    self.ds,
-                    self.prim_name,
-                    self.prim_hirs,
-                    self.sec_name,
-                    self.sec_hirs)
+#                kmodel = matchups.KModelPlanck(
+                kmodel = matchups.KModelSRFIASIDB(
+                    ds=self.as_xarray_dataset(),
+                    ds_orig=self.ds,
+                    prim_name=self.prim_name,
+                    prim_hirs=self.prim_hirs,
+                    sec_name=self.sec_name,
+                    sec_hirs=self.sec_hirs,
+                    debug=debug)
             else:
                 kmodel = matchups.KModelIASIRef(
-                    self.as_xarray_dataset(),
-                    self.ds,
-                    "iasi",
-                    None,
-                    self.sec_name,
-                    self.sec_hirs)
+                    ds=self.as_xarray_dataset(),
+                    ds_orig=self.ds,
+                    prim_name="iasi",
+                    prim_hirs=None,
+                    sec_name=self.sec_name,
+                    sec_hirs=self.sec_hirs)
         if krmodel is None:
             if self.mode == "hirs":
                 krmodel = matchups.KrModelLSD(
@@ -249,9 +254,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         to_check = ds[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
         bad = (to_check==0).any("calibrated_channel")
         ok &= sum([v.values for v in bad.data_vars.values()])==0 
-        ok &= numpy.isfinite(ds["n18_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
+        ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
         ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
                (ds[f"{self.sec_name:s}_scantype"] == 0)).values
+        ok &= self.kmodel.filter(mdim)
+        ok &= self.krmodel.filter(mdim)
         if ok.sum() == 0:
             raise MatchupError("No matchups pass filters")
         ds = ds[{mdim:ok}]
@@ -303,6 +310,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm["K"] = (("M",), self.kmodel.calc_K(channel).astype("f4"))
         harm["Ks"] = (("M",), self.kmodel.calc_Ks(channel).astype("f4"))
         harm["Kr"] = (("M",), self.krmodel.calc_Kr(channel).astype("f4"))
+        harm = xarray.merge([harm, self.kmodel.extra(channel)])
 
         # W-matrix for C_S, C_IWCT, T_IWCT.  This should have a 1 where
         # the matchup shares the same correlation information, and a 0
@@ -399,6 +407,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         harm["Ks"].attrs["description"] = ("Propagated systematic "
             "uncertainty due to band correction factors.")
+
+        for k in ("K", "Kr", "Ks"):
+            harm[k].attrs["units"] = "W Hz^-1 sr^-1 m^-2"
 
         harm.attrs["time_coverage"] = "{:%Y-%m-%d} -- {:%Y-%m-%d}".format(
             harm["time1"].values[0].astype("M8[s]").astype(datetime.datetime),
@@ -515,12 +526,16 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # add diagnostics
         harm[f"nominal_measurand{i:d}"] = (("M",),
             ds[f"{sat:s}_R_e"].sel(calibrated_channel=channel))
+        harm[f"nominal_measurand{i:d}"].attrs.update(ds[f"{sat:s}_R_e"].sel(calibrated_channel=channel).attrs)
 
-        harm[f"lon{i:d}"] = ds[f"{sat:s}_longitude"]
-        harm[f"lat{i:d}"] = ds[f"{sat:s}_latitude"]
+        harm[f"lon{i:d}"] = ds[f"{sat:s}_longitude"].rename(
+                {"matchup_count": "M"})
+        harm[f"lat{i:d}"] = ds[f"{sat:s}_latitude"].rename(
+                {"matchup_count": "M"})
         
         harm[f"nominal_measurand_original{i:d}"] = (("M",),
             ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))
+        harm[f"nominal_measurand_original{i:d}"].attrs.update(ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel).attrs)
 
         sdsidx = {"matchup_count": ok}
         harm[f"row{i:d}"] = (("M",),
@@ -530,6 +545,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         harm[f"matchup_distance"] = (("M",),
             self.ds["matchup_spherical_distance"][sdsidx])
+        harm[f"matchup_distance"].attrs.update(self.ds["matchup_spherical_distance"][sdsidx].attrs)
+        
 
     def _add_harm_for_iasi(self, harm, channel, ok):
         # fill X1
@@ -643,7 +660,8 @@ def combine_hirs():
         hmc = HIRSMatchupCombiner(
             datetime.datetime.strptime(p.from_date, p.datefmt),
             datetime.datetime.strptime(p.to_date, p.datefmt),
-            p.satname1, p.satname2)
+            p.satname1, p.satname2,
+            debug=p.debug)
 
         ds = hmc.as_xarray_dataset()
     except (typhon.datasets.dataset.DataFileError, MatchupError) as e:
