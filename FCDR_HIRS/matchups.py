@@ -510,6 +510,7 @@ class KModelSRFIASIDB(KModel):
 
     regression = "LR"
     chan_pairs = None
+    chan_pairs_label = None
     mode = "standard"
     units = rad_u["si"]
     debug = False
@@ -523,6 +524,7 @@ class KModelSRFIASIDB(KModel):
 
 
     def __init__(self, chan_pairs="all", *args, **kwargs):
+        self.chan_pairs_label = chan_pairs
         # FIXME: add an "optimal", channel-specific mapping
         if chan_pairs == "all":
             chan_pairs = dict.fromkeys(numpy.arange(1, 20), numpy.arange(1, 20))
@@ -555,6 +557,7 @@ class KModelSRFIASIDB(KModel):
                         sec_name=self.sec_name,
                         sec_hirs=self.sec_hirs)
         self.K = dict.fromkeys(range(1, 20), None)
+
     def limit(self, ok, mdim):
         super().limit(ok, mdim)
         if self.debug:

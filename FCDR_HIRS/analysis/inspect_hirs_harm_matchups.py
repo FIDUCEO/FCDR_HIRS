@@ -48,7 +48,7 @@ def plot_ds_summary_stats(ds, lab=""):
         # extra cruft added to string by combine_hirs_hirs_matchups
         lab = f"other_{lab:s}_"
 
-    (f, ax_all) = matplotlib.pyplot.subplots(2, 3, figsize=(20, 10))
+    (f, ax_all) = matplotlib.pyplot.subplots(3, 3, figsize=(20, 14))
 
     g = ax_all.flat
 
@@ -152,7 +152,7 @@ def plot_ds_summary_stats(ds, lab=""):
     a.set_ylim(kxrange)
     cbs.append(f.colorbar(pc, ax=a))
 
-    # K vs. measurement difference
+    # K vs. ΔL
     a = next(g)
     extremes = [min([LΔrange[0], kxrange[0]]), max([LΔrange[1], kxrange[1]])]
     pc = a.hexbin(y2-y1,
@@ -167,6 +167,35 @@ def plot_ds_summary_stats(ds, lab=""):
     a.set_xlim(LΔrange)
     a.set_ylim(kxrange)
     f.colorbar(pc, ax=a)
+
+    # histograms for real and simulated measurements
+    a = next(g)
+    sensor_names = [ds.sensor_1_name, ds.sensor_2_name]
+    for i in (1, 2):
+        (cnts, bins, patches) = a.hist(
+            ds[f"nominal_measurand{i:d}"],
+            label=sensor_names[i-1] + "[{units:s}]".format(**ds[f"K_{lab:s}forward"].attrs),
+            histtype="step",
+            bins=100,
+            range=kΔrange)
+    # FIXME: also plot HIASI from db, need to read IASI first
+    a.legend()
+    a.set_xlabel("Radiance " + f"[{y1.units:s}]")
+    a.set_ylabel("Count")
+
+    # K - ΔL vs. radiance
+    a = next(g)
+    pc = a.hexbin(y1,
+        ds[f"K_{lab:s}forward"] - (y2-y1),
+        extent=numpy.concatenate([Lxrange, kxrange-LΔrange]),
+        mincnt=1)
+    a.plot(kxrange-LΔrange, [0, 0], 'k--')
+    a.set_xlabel("Radiance {sensor_1_name:s}".format(**ds.attrs)
+        + f"[{y1.units:s}]")
+    a.set_ylabel(f"K - ΔL [{y1.units:s}]".format(**ds.attrs))
+
+    # TBD
+    a = next(g)
 
     for a in ax_all.flat:
         a.grid(axis="both")
