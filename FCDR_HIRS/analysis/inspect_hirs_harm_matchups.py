@@ -22,6 +22,13 @@ def parse_cmdline():
     return parser.parse_args()
 p = parse_cmdline()
 
+import logging
+logging.basicConfig(
+    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
+            "%(lineno)s: %(message)s"),
+    filename=p.log,
+    level=logging.DEBUG if p.verbose else logging.INFO)
+
 import sys
 import pathlib
 
@@ -33,9 +40,13 @@ import scipy.stats
 import pyatmlab.graphics
 
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.physics.units.common import radiance_units as rad_u
 import typhon.physics.units.em
 
-def plot_ds_summary_stats(ds, lab=""):
+from .. import matchups
+from .. import fcdr
+
+def plot_ds_summary_stats(ds, lab="", Ldb=None):
     """Plot single file with summary stats for specific label
 
     Label can me empty, then it plots the standard, or it can contain a
@@ -47,13 +58,14 @@ def plot_ds_summary_stats(ds, lab=""):
     if lab:
         # extra cruft added to string by combine_hirs_hirs_matchups
         lab = f"other_{lab:s}_"
-
-    (f, ax_all) = matplotlib.pyplot.subplots(3, 3, figsize=(20, 14))
+    
+    (f, ax_all) = matplotlib.pyplot.subplots(2, 4, figsize=(25, 10))
 
     g = ax_all.flat
 
     cbs = []
-
+    
+    chan = ds["channel"].item()
     # for unit conversions
     srf1 = typhon.physics.units.em.SRF.fromArtsXML(
             typhon.datasets.tovs.norm_tovs_name(ds.sensor_1_name).upper(),
@@ -79,6 +91,49 @@ def plot_ds_summary_stats(ds, lab=""):
         y2 - y1,
         [1, 99])
 
+    # radiance comparison
+    a = next(g)
+    pc = a.hexbin(
+        y1,
+        y2,
+        extent=(Lmin, Lmax, Lmin, Lmax),
+        mincnt=1)
+    a.plot([Lmin, Lmax], [Lmin, Lmax], 'k--')
+    a.set_xlabel("Radiance {sensor_1_name:s}".format(**ds.attrs)
+        + f"[{y1.units:s}]")
+    a.set_ylabel("Radiance {sensor_2_name:s}".format(**ds.attrs)
+        + f"[{y2.units:s}]")
+    a.set_title("Radiance comparison")
+    a.set_xlim(Lmin, Lmax)
+    a.set_ylim(Lmin, Lmax)
+    cbs.append(f.colorbar(pc, ax=a))
+
+    # histograms for real and simulated measurements
+    a = next(g)
+    sensor_names = [ds.sensor_1_name, ds.sensor_2_name]
+    for i in range(2):
+        (cnts, bins, patches) = a.hist(
+            yb[i],
+            label=f"{sensor_names[i]:s} (measured)",
+            histtype="step",
+            range=(Lmin, Lmax),
+            density=True,
+            stacked=False,
+            bins=100)
+    for nm in Ldb.data_vars.keys():
+        (cnts, bins, patches) = a.hist(
+            Ldb[nm].sel(chan=chan),
+            label=f"{nm:s} (IASI-simulated)",
+            histtype="step",
+            range=(Lmin, Lmax),
+            density=True,
+            stacked=False,
+            bins=100)
+    a.legend()
+    a.set_xlabel("Radiance " + f"[{y1.units:s}]")
+    a.set_ylabel("Density per bin")
+    a.set_title("Histograms of radiances")
+
     # K forward vs. K backward
     a = next(g)
     pc = a.hexbin(
@@ -103,26 +158,9 @@ def plot_ds_summary_stats(ds, lab=""):
         range=kΔrange)
     a.plot([0, 0], [0, cnts.max()], 'k--')
     a.set_xlabel("Sum of K estimates [{units:s}]".format(**ds[f"K_{lab:s}forward"].attrs))
-    a.set_ylabel("Count")
+    a.set_ylabel("No. matchups in bin")
     a.set_title("Distribution of sum of K estimates")
     a.set_xlim(kΔrange)
-
-    # radiance comparison
-    a = next(g)
-    pc = a.hexbin(
-        y1,
-        y2,
-        extent=(Lmin, Lmax, Lmin, Lmax),
-        mincnt=1)
-    a.plot([Lmin, Lmax], [Lmin, Lmax], 'k--')
-    a.set_xlabel("Radiance {sensor_1_name:s}".format(**ds.attrs)
-        + f"[{y1.units:s}]")
-    a.set_ylabel("Radiance {sensor_2_name:s}".format(**ds.attrs)
-        + f"[{y2.units:s}]")
-    a.set_title("Radiance comparison")
-    a.set_xlim(Lmin, Lmax)
-    a.set_ylim(Lmin, Lmax)
-    cbs.append(f.colorbar(pc, ax=a))
 
     # Ks vs. Kforward
     a = next(g)
@@ -169,41 +207,23 @@ def plot_ds_summary_stats(ds, lab=""):
     a.set_ylim(kxrange)
     cbs.append(f.colorbar(pc, ax=a))
 
-    # histograms for real and simulated measurements
-    a = next(g)
-    sensor_names = [ds.sensor_1_name, ds.sensor_2_name]
-    for i in range(2):
-        (cnts, bins, patches) = a.hist(
-            yb[i],
-            label=sensor_names[i],
-            histtype="step",
-            range=(Lmin, Lmax),
-            bins=100)
-    # FIXME: also plot HIASI from db, need to read IASI first
-    a.legend()
-    a.set_xlabel("Radiance " + f"[{y1.units:s}]")
-    a.set_ylabel("Count")
-
     # K - ΔL vs. radiance
     a = next(g)
     pc = a.hexbin(y1,
         ds[f"K_{lab:s}forward"] - (y2-y1),
         extent=numpy.concatenate([[Lmin, Lmax], kxrange-LΔrange]),
         mincnt=1)
-    a.plot(kxrange-LΔrange, [0, 0], 'k--')
+    a.plot([0, Lmax], [0, 0], 'k--')
     a.set_xlabel("Radiance {sensor_1_name:s}".format(**ds.attrs)
         + f"[{y1.units:s}]")
     a.set_ylabel(f"K - ΔL [{y1.units:s}]".format(**ds.attrs))
     a.set_xlim(Lmin, Lmax)
     a.set_ylim(kxrange-LΔrange)
+    a.set_title('K "wrongness" per radiance')
     cbs.append(f.colorbar(pc, ax=a))
 
     for cb in cbs:
         cb.set_label("No. matchups in bin")
-
-    # TBD
-    a = next(g)
-    a.set_visible(False)
 
     for a in ax_all.flat:
         a.grid(axis="both")
@@ -211,10 +231,10 @@ def plot_ds_summary_stats(ds, lab=""):
     f.suptitle("K stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}".format(**ds.attrs)
         + ", channel " + str(ds["channel"].item()) + "\nchannels used to predict: " +
         ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_prediction"])))
-    f.subplots_adjust(hspace=0.35)
+    f.subplots_adjust(hspace=0.35, wspace=0.3)
 
     pyatmlab.graphics.print_or_show(f, False,
-        "harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}.".format(
+        "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}.".format(
             channel=ds["channel"].item(), lab=lab, **ds.attrs))
     
 def plot_file_summary_stats(path):
@@ -230,14 +250,26 @@ def plot_file_summary_stats(path):
 
     ds = xarray.open_dataset(path)
 
+    # one subplot needs IASI simulations, which I will obtain from kmodel
+    kmodel = matchups.KModelSRFIASIDB(
+        chan_pairs="single", # not relevant, only using iasi db
+        mode="standard", # idem
+        units=rad_u["si"],
+        debug=True, # will have one of each, makes difference for units
+        prim_name=ds.attrs["sensor_1_name"],
+        prim_hirs=fcdr.which_hirs_fcdr(ds.attrs["sensor_1_name"], read="L1C"),
+        sec_name=ds.attrs["sensor_2_name"],
+        sec_hirs=fcdr.which_hirs_fcdr(ds.attrs["sensor_2_name"], read="L1C"))
+    kmodel.init_Ldb()
+
     others = [k.replace("K_other_", "").replace("_forward", "")
             for k in ds.data_vars.keys()
             if k.startswith("K_other_") and k.endswith("_forward")]
     if others:
         for lab in others:
-            plot_ds_summary_stats(ds, lab)
+            plot_ds_summary_stats(ds, lab, kmodel.others[lab].Ldb_hirs_simul)
     else:
-        plot_ds_summary_stats(ds)
+        plot_ds_summary_stats(ds, kmodel.Ldb_hirs_simul)
 
 
 def main():
