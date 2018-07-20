@@ -532,23 +532,32 @@ class KModelSRFIASIDB(KModel):
             chan_pairs = {c:[c] for c in range(1, 20)}
         elif chan_pairs == "neighbours":
             chan_pairs = {ch: numpy.arange(max(ch-1, 1), min(ch+2, 20)) for ch in range(1, 20)}
+        elif chan_pairs == "optimal":
+            chain_pairs = {
+                1: [1],
+                3: [3],
+                4: [3, 4, 5],
+                }
+            raise NotImplementedError("To be implemented")
         else:
             raise ValueError(f"Unknown value for chan_pairs: {chan_pairs!s}")
         self.chan_pairs = chan_pairs
         super().__init__(*args, **kwargs)
         if self.debug:
             self.others = {}
-            for (cp, md, u) in itertools.product(
+            for (cp, regr, md, u) in itertools.product(
                     ["all", "single", "neighbours"],
-                    ["delta", "standard"],
+                    ["LR", "ODR"],
+                    ["standard"], # "delta
                     [rad_u["si"], rad_u["ir"], ureg.Unit("K")]):
                 unitlab = re.sub(r'/([A-Za-z]*)', r' \1^-1',
                 "{:~P}".format(u)).replace("-1²", "-2")
-                lab = unicodedata.normalize("NFKC", f"{cp:s}_{md:s}_{unitlab:s}")
+                lab = unicodedata.normalize("NFKC", f"{cp:s}_{md:s}_{regr:s}_{unitlab:s}")
                 self.others[lab] = self.__class__(
                         chan_pairs=cp, 
                         mode=md,
                         units=u,
+                        regression=regr,
                         debug=False,
                         ds=self.ds,
                         ds_orig=self.ds_orig,
@@ -654,16 +663,10 @@ class KModelSRFIASIDB(KModel):
                     clf = sklearn.linear_model.LinearRegression(fit_intercept=True)
                     clf.fit(y_ref.T, y_target)
                 elif self.regression == "ODR":
-                    raise NotImplementedError("ODR not implemented yet. "
-                            "I'm not sure how useful ODR would be.  "
-                            "Training data is from IASI.  "
-                            "I don't have real IASI uncertainties.  "
-                            "I could add noise and then use those  "
-                            "uncertainties.  "
-                            "Would not be weighted unless I make it so, "
-                            "but according to what rules?")
-                    odr_data = scipy.odr.RealData(y_ref.T, y_target, sx=sx, sy=sy)
-                    clf = scipy.odr.ODR(mydata, scipy.odr.multilinear, beta0=β0) 
+                    odr_data = scipy.odr.RealData(y_ref.T, y_target)
+                    β0 = numpy.zeros(y_ref_ch)
+                    β0[self.chan_pairs[chan].index(chan)] = 1
+                    clf = scipy.odr.ODR(odr_data, scipy.odr.multilinear, beta0=β0) 
                     clf = myodr.run()
                     if not any(x in clf.stopreason for x in
                         {"Sum of squares convergence",
@@ -672,7 +675,6 @@ class KModelSRFIASIDB(KModel):
                          "Both sum of squares and parameter convergence"}):
                         raise ODRFitError("ODR fitting did not converge.  "
                             "Stop reason: {:s}".format(clf.stopreason[0]))
-
                 else:
                     raise ValueError(f"Unknown regression: {self.regression:s}")
                 fitter[f"{from_sat:s}-{to_sat:s}"][chan] = clf
