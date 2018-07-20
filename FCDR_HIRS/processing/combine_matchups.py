@@ -827,5 +827,11 @@ def merge_files():
     logging.info(f"Writing to {p.out:s}")
     for (k, v) in new.data_vars.items():
         v.encoding["zlib"] = True
+    # workaround/prevent https://github.com/pydata/xarray/issues/1849
+    for v in new.variables.values():
+        try:
+            del v.encoding["contiguous"]
+        except KeyError: # no problem
+            pass
     new.to_netcdf(p.out,
         unlimited_dims=["M"])
