@@ -12,6 +12,7 @@ import re
 
 import numpy
 import scipy
+import scipy.odr
 import xarray
 
 import typhon.datasets.tovs
@@ -663,10 +664,13 @@ class KModelSRFIASIDB(KModel):
                     clf = sklearn.linear_model.LinearRegression(fit_intercept=True)
                     clf.fit(y_ref.T, y_target)
                 elif self.regression == "ODR":
-                    odr_data = scipy.odr.RealData(y_ref.T, y_target)
-                    β0 = numpy.zeros(y_ref_ch)
-                    β0[self.chan_pairs[chan].index(chan)] = 1
-                    clf = scipy.odr.ODR(odr_data, scipy.odr.multilinear, beta0=β0) 
+                    odr_data = scipy.odr.RealData(y_ref, y_target)
+                    # set β0 to 0 offset and 0 for all channels, but 1 for
+                    # same channel.  But not really zero as ODRpack guide
+                    # section 1.E says it should not be exactly zero.
+                    β0 = numpy.zeros(len(y_ref_ch)+1)+0.001
+                    β0[numpy.atleast_1d(self.chan_pairs[chan]).tolist().index(chan)+1] = 1
+                    myodr = scipy.odr.ODR(odr_data, scipy.odr.multilinear, beta0=β0) 
                     clf = myodr.run()
                     if not any(x in clf.stopreason for x in
                         {"Sum of squares convergence",
@@ -703,7 +707,10 @@ class KModelSRFIASIDB(KModel):
                     self.units, "radiance",
                     srf=self.srfs[to_sat][channel-1]).values
             model = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
-            y_pred = model.predict(y_source)
+            if isinstance(model, scipy.odr.odrpack.Output):
+                y_pred = (model.beta[0] + model.beta[numpy.newaxis, 1:] * y_source).sum(1)
+            else:
+                y_pred = model.predict(y_source)
             if self.mode == "delta":
                 K.append(y_pred)
             else:
