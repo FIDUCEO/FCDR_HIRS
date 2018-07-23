@@ -373,6 +373,13 @@ class FCDRGenerator:
         uRe_syst = numpy.sqrt(functools.reduce(operator.add,
             (v[0]**2 for (k, v) in compRe.items() if k is not me.symbols["C_E"])))
         uRe_rand = compRe[me.symbols["C_E"]][0]
+        # uncertainty from harmonisation parameters only...
+        uRe_harm = numpy.sqrt(functools.reduce(operator.add,
+            (v**2
+             for (k, v) in unc_components.items()
+             if str(k) in ("a_2", "a_3", "a_4"))))
+        # ...which needs to be subtracted from systematic!
+        uRe_syst = numpy.sqrt(uRe_syst**2 - uRe_harm**2)
 
         # Proper propagation goes wrong.  I believe this is due to
         # https://github.com/FIDUCEO/FCDR_HIRS/issues/78
@@ -395,6 +402,7 @@ class FCDRGenerator:
                     if v.size>1})
             uTb_syst = uTb.copy()
             uTb_rand = uTb.copy()
+            uRe_harm = uTb.copy()
         else:
             uTb = self.fcdr.numerically_propagate_ΔL(R_E, uRe)
             u_from = xarray.Dataset(
@@ -403,15 +411,17 @@ class FCDRGenerator:
                     if v.size>1})
             uTb_syst = self.fcdr.numerically_propagate_ΔL(R_E, uRe_syst)
             uTb_rand = self.fcdr.numerically_propagate_ΔL(R_E, uRe_rand)
+            uTb_harm = self.fcdr.numerically_propagate_ΔL(R_E, uRe_harm)
         uTb.name = "u_T_b"
-        
 
-        uRe_rand.encoding = uRe_syst.encoding = uRe.encoding = R_E.encoding
-        uTb_rand.encoding = uTb_syst.encoding = uTb.encoding = self.fcdr._quantities[me.symbols["T_b"]].encoding
+        uRe_rand.encoding = uRe_syst.encoding = uRe_harm.encoding = uRe.encoding = R_E.encoding
+        uTb_rand.encoding = uTb_syst.encoding = uTb_harm.encoding = uTb.encoding = self.fcdr._quantities[me.symbols["T_b"]].encoding
         uRe_rand.name = uRe.name + "_random"
         uTb_rand.name = uTb.name + "_random"
         uRe_syst.name = uRe.name + "_nonrandom"
         uTb_syst.name = uTb.name + "_nonrandom"
+        uRe_harm.name = uRe.name + "_harm"
+        uTb_harm.name = uTb.name + "_harm"
         uc = xarray.Dataset({k: v.magnitude for (k, v) in self.fcdr._effects_by_name.items()})
         qc = xarray.Dataset(self.fcdr._quantities)
         qc = xarray.Dataset(
@@ -421,8 +431,8 @@ class FCDRGenerator:
         # coordinate, drop the former
         stuff_to_merge = [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
                             qc, subset, uRe,
-                            uRe_syst, uRe_rand,
-                            uTb_syst, uTb_rand,
+                            uRe_syst, uRe_rand, uRe_harm,
+                            uTb_syst, uTb_rand, uTb_harm,
                             S, LUT_BT, LUT_L,
                             flags_scanline, flags_channel,
                             flags_minorframe, flags_pixel,
