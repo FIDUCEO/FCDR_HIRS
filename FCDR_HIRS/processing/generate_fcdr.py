@@ -360,7 +360,7 @@ class FCDRGenerator:
 #        u_from = xarray.Dataset(dict([(f"u_from_{k!s}", v) for (k, v) in
 #                    unc_components.items()]))
         S = self.fcdr.estimate_channel_correlation_matrix(context)
-        (LUT_BT, LUT_L) = self.fcdr.get_BT_to_L_LUT()
+        (lookup_table_BT, LUT_radiance) = self.fcdr.get_BT_to_L_LUT()
 
         (flags_scanline, flags_channel, flags_minorframe, flags_pixel) = self.fcdr.get_flags(
             subset, context, R_E)
@@ -433,7 +433,7 @@ class FCDRGenerator:
                             qc, subset, uRe,
                             uRe_syst, uRe_rand, uRe_harm,
                             uTb_syst, uTb_rand, uTb_harm,
-                            S, LUT_BT, LUT_L,
+                            S, lookup_table_BT, LUT_radiance,
                             flags_scanline, flags_channel,
                             flags_minorframe, flags_pixel,
                             u_from, SRF_weights, SRF_frequencies]
@@ -621,13 +621,11 @@ class FCDRGenerator:
 
         N = piece["scanline_earth"].size
         easy = fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.createTemplateEasy(
-            f"HIRS{self.fcdr.version:d}", N)
-        # Remove following line as soon as Toms writer no longer includes
-        # them in the template
-        easy = easy.drop(easy.data_vars.keys() &
-            {"scnlintime", "scnlinf", "scantype", "qualind",
-             "linqualflags", "chqualflags", "mnfrqualflags",
-             "quality_pixel_bitmask", "data_quality_bitmask"})
+            f"HIRS{self.fcdr.version:d}", N,
+            srf_size=piece.dims["n_frequencies"],
+            lut_size=piece.dims["lut_size"],
+            corr_dx=self.fcdr.n_perline,
+            corr_dy=500)
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
@@ -636,33 +634,23 @@ class FCDRGenerator:
             time=t_earth,
             latitude=piece["lat"].sel(time=t_earth),
             longitude=piece["lon"].sel(time=t_earth),
-            #c_earth=piece["counts"].sel(time=t_earth),
             bt=UADA(piece["T_b"]),
             satellite_zenith_angle=piece["platform_zenith_angle"].sel(time=t_earth),
             scanline=piece["scanline"].sel(time=t_earth),
-##            scnlintime=UADA((
-#                t_earth_i.hour*24*60 +
-#                t_earth_i.minute+60+t_earth_i.second +
-#                t_earth_i.microsecond/1e6)*1e3,
-#                dims=("time",),
-#                coords={"time": t_earth.values}),
             quality_scanline_bitmask = piece["quality_scanline_bitmask"],
             quality_channel_bitmask = piece["quality_channel_bitmask"],
-#            qualind=piece["quality_flags"].sel(time=t_earth),
             u_independent=piece["u_T_b_random"],
             u_structured=piece["u_T_b_nonrandom"],
-#            channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
-#                channel=slice(19)).rename({"channel": "calibrated_channel"}),
-            LUT_BT=piece["LUT_BT"],
-            LUT_radiance=piece["LUT_radiance"])
+            lookup_table_BT=piece["lookup_table_BT"],
+            lookup_table_radiance=piece["lookup_table_radiance"])
         try:
             newcont.update(**dict(
-                cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
-                cross_element_radiance_error_correlation_length_scale_structured_effects=piece["cross_element_radiance_error_correlation_length_scale_structured_effects"],
+#                cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
+#                cross_element_radiance_error_correlation_length_scale_structured_effects=piece["cross_element_radiance_error_correlation_length_scale_structured_effects"],
                 channel_correlation_matrix_independent=piece["cross_channel_error_correlation_matrix_independent_effects"],
                 channel_correlation_matrix_structured=piece["cross_channel_error_correlation_matrix_structured_effects"],
-                cross_element_radiance_error_correlation_length_average=piece["cross_element_radiance_error_correlation_length_average"],
-                cross_line_radiance_error_correlation_length_average=piece["cross_line_radiance_error_correlation_length_average"],
+                cross_element_correlation_coefficients=piece["cross_element_radiance_error_correlation_length_average"],
+                cross_line_correlation_coefficients=piece["cross_line_radiance_error_correlation_length_average"],
                     ))
         except KeyError as e:
             # assuming they're missing because their calculation failed
