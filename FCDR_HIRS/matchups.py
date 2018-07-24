@@ -31,7 +31,7 @@ unit_iasi = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
 class ODRFitError:
     pass
 
-class NoDataError:
+class NoDataError(Exception):
     pass
 
 class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
@@ -333,7 +333,7 @@ class KModel(metaclass=abc.ABCMeta):
         """
         return numpy.ones(self.ds.dims[mdim], "?")
 
-    def extra(self):
+    def extra(self, channel):
         """Return Dataset with extra information
         """
 
@@ -737,7 +737,7 @@ class KModelSRFIASIDB(KModel):
         return abs(self.K[channel][0] - self.K[channel][1])
 
     def extra(self, channel):
-        ds = super().extra()
+        ds = super().extra(channel)
         ds["K_forward"] = (("M",), self.K[channel][0])
         ds["K_backward"] = (("M",), self.K[channel][1])
         if self.debug:
