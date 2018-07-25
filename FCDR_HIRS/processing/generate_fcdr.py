@@ -585,14 +585,10 @@ class FCDRGenerator:
         piece_easy.attrs["comment"] = "Early version.  Please note warning."
         piece_easy.attrs["typical_structured_correlation_scale"] = "40 scanlines"
         try:
-            # Don't use this one for now, because it doesn't apply scaling
-            # and ofsets and such
             fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.write(
                 piece_easy,
-                fn.with_suffix(".tb.nc"), # DEBUG! REMOVE!
+                fn,
                 overwrite=True)
-#            writer.fcdr_writer.FCDRWriter.write(piece_easy, str(fn))
-            piece_easy.to_netcdf(str(fn))
         except FileExistsError as e:
             logging.info("Already exists: {!s}".format(e.args[0]))
 
