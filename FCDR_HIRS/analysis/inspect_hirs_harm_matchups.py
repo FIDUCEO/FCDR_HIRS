@@ -228,12 +228,13 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
     for a in ax_all.flat:
         a.grid(axis="both")
 
+    lab = lab.replace("·", "") # in LSF some nodes have ascii filesystem encoding?!
+
     f.suptitle("K stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}".format(**ds.attrs)
-        + ", channel " + str(ds["channel"].item()) + "\nchannels used to predict: " +
+        + ", channel " + str(ds["channel"].item()) + ", " + lab + "\nchannels used to predict: " +
         ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_prediction"])))
     f.subplots_adjust(hspace=0.35, wspace=0.3)
 
-    lab = lab.replace("·", "") # in LSF some nodes have ascii filesystem encoding?!
     pyatmlab.graphics.print_or_show(f, False,
         "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}.".format(
             channel=ds["channel"].item(), lab=lab, **ds.attrs))
