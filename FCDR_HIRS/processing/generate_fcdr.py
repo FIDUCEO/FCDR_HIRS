@@ -641,6 +641,7 @@ class FCDRGenerator:
             quality_channel_bitmask = piece["quality_channel_bitmask"],
             u_independent=piece["u_T_b_random"],
             u_structured=piece["u_T_b_nonrandom"],
+            u_common=piece["u_T_b_harm"], # NB: not in TBs writer yet!
             lookup_table_BT=piece["lookup_table_BT"],
             lookup_table_radiance=piece["lookup_table_radiance"])
         try:
