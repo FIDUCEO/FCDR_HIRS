@@ -587,7 +587,11 @@ class FCDRGenerator:
         try:
             # Don't use this one for now, because it doesn't apply scaling
             # and ofsets and such
-            #writer.fcdr_writer.FCDRWriter.write(piece_easy, str(fn))
+            fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.write(
+                piece_easy,
+                fn.with_suffix(".tb.nc"), # DEBUG! REMOVE!
+                overwrite=True)
+#            writer.fcdr_writer.FCDRWriter.write(piece_easy, str(fn))
             piece_easy.to_netcdf(str(fn))
         except FileExistsError as e:
             logging.info("Already exists: {!s}".format(e.args[0]))
