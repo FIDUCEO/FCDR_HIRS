@@ -360,7 +360,7 @@ class FCDRGenerator:
 #        u_from = xarray.Dataset(dict([(f"u_from_{k!s}", v) for (k, v) in
 #                    unc_components.items()]))
         S = self.fcdr.estimate_channel_correlation_matrix(context)
-        (LUT_BT, LUT_L) = self.fcdr.get_BT_to_L_LUT()
+        (lookup_table_BT, LUT_radiance) = self.fcdr.get_BT_to_L_LUT()
 
         (flags_scanline, flags_channel, flags_minorframe, flags_pixel) = self.fcdr.get_flags(
             subset, context, R_E)
@@ -373,6 +373,13 @@ class FCDRGenerator:
         uRe_syst = numpy.sqrt(functools.reduce(operator.add,
             (v[0]**2 for (k, v) in compRe.items() if k is not me.symbols["C_E"])))
         uRe_rand = compRe[me.symbols["C_E"]][0]
+        # uncertainty from harmonisation parameters only...
+        uRe_harm = numpy.sqrt(functools.reduce(operator.add,
+            (v**2
+             for (k, v) in unc_components.items()
+             if str(k) in ("a_2", "a_3", "a_4"))))
+        # ...which needs to be subtracted from systematic!
+        uRe_syst = numpy.sqrt(uRe_syst**2 - uRe_harm**2)
 
         # Proper propagation goes wrong.  I believe this is due to
         # https://github.com/FIDUCEO/FCDR_HIRS/issues/78
@@ -395,6 +402,7 @@ class FCDRGenerator:
                     if v.size>1})
             uTb_syst = uTb.copy()
             uTb_rand = uTb.copy()
+            uRe_harm = uTb.copy()
         else:
             uTb = self.fcdr.numerically_propagate_ΔL(R_E, uRe)
             u_from = xarray.Dataset(
@@ -403,15 +411,17 @@ class FCDRGenerator:
                     if v.size>1})
             uTb_syst = self.fcdr.numerically_propagate_ΔL(R_E, uRe_syst)
             uTb_rand = self.fcdr.numerically_propagate_ΔL(R_E, uRe_rand)
+            uTb_harm = self.fcdr.numerically_propagate_ΔL(R_E, uRe_harm)
         uTb.name = "u_T_b"
-        
 
-        uRe_rand.encoding = uRe_syst.encoding = uRe.encoding = R_E.encoding
-        uTb_rand.encoding = uTb_syst.encoding = uTb.encoding = self.fcdr._quantities[me.symbols["T_b"]].encoding
+        uRe_rand.encoding = uRe_syst.encoding = uRe_harm.encoding = uRe.encoding = R_E.encoding
+        uTb_rand.encoding = uTb_syst.encoding = uTb_harm.encoding = uTb.encoding = self.fcdr._quantities[me.symbols["T_b"]].encoding
         uRe_rand.name = uRe.name + "_random"
         uTb_rand.name = uTb.name + "_random"
         uRe_syst.name = uRe.name + "_nonrandom"
         uTb_syst.name = uTb.name + "_nonrandom"
+        uRe_harm.name = uRe.name + "_harm"
+        uTb_harm.name = uTb.name + "_harm"
         uc = xarray.Dataset({k: v.magnitude for (k, v) in self.fcdr._effects_by_name.items()})
         qc = xarray.Dataset(self.fcdr._quantities)
         qc = xarray.Dataset(
@@ -421,9 +431,9 @@ class FCDRGenerator:
         # coordinate, drop the former
         stuff_to_merge = [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
                             qc, subset, uRe,
-                            uRe_syst, uRe_rand,
-                            uTb_syst, uTb_rand,
-                            S, LUT_BT, LUT_L,
+                            uRe_syst, uRe_rand, uRe_harm,
+                            uTb_syst, uTb_rand, uTb_harm,
+                            S, lookup_table_BT, LUT_radiance,
                             flags_scanline, flags_channel,
                             flags_minorframe, flags_pixel,
                             u_from, SRF_weights, SRF_frequencies]
@@ -575,10 +585,10 @@ class FCDRGenerator:
         piece_easy.attrs["comment"] = "Early version.  Please note warning."
         piece_easy.attrs["typical_structured_correlation_scale"] = "40 scanlines"
         try:
-            # Don't use this one for now, because it doesn't apply scaling
-            # and ofsets and such
-            #writer.fcdr_writer.FCDRWriter.write(piece_easy, str(fn))
-            piece_easy.to_netcdf(str(fn))
+            fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.write(
+                piece_easy,
+                fn,
+                overwrite=True)
         except FileExistsError as e:
             logging.info("Already exists: {!s}".format(e.args[0]))
 
@@ -611,13 +621,11 @@ class FCDRGenerator:
 
         N = piece["scanline_earth"].size
         easy = fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.createTemplateEasy(
-            f"HIRS{self.fcdr.version:d}", N)
-        # Remove following line as soon as Toms writer no longer includes
-        # them in the template
-        easy = easy.drop(easy.data_vars.keys() &
-            {"scnlintime", "scnlinf", "scantype", "qualind",
-             "linqualflags", "chqualflags", "mnfrqualflags",
-             "quality_pixel_bitmask", "data_quality_bitmask"})
+            f"HIRS{self.fcdr.version:d}", N,
+            srf_size=piece.dims["n_frequencies"],
+            lut_size=piece.dims["lut_size"],
+            corr_dx=self.fcdr.n_perline,
+            corr_dy=500)
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
@@ -626,33 +634,24 @@ class FCDRGenerator:
             time=t_earth,
             latitude=piece["lat"].sel(time=t_earth),
             longitude=piece["lon"].sel(time=t_earth),
-            #c_earth=piece["counts"].sel(time=t_earth),
             bt=UADA(piece["T_b"]),
             satellite_zenith_angle=piece["platform_zenith_angle"].sel(time=t_earth),
             scanline=piece["scanline"].sel(time=t_earth),
-##            scnlintime=UADA((
-#                t_earth_i.hour*24*60 +
-#                t_earth_i.minute+60+t_earth_i.second +
-#                t_earth_i.microsecond/1e6)*1e3,
-#                dims=("time",),
-#                coords={"time": t_earth.values}),
             quality_scanline_bitmask = piece["quality_scanline_bitmask"],
             quality_channel_bitmask = piece["quality_channel_bitmask"],
-#            qualind=piece["quality_flags"].sel(time=t_earth),
             u_independent=piece["u_T_b_random"],
             u_structured=piece["u_T_b_nonrandom"],
-#            channel_correlation_matrix=piece["channel_correlation_matrix"].sel(
-#                channel=slice(19)).rename({"channel": "calibrated_channel"}),
-            LUT_BT=piece["LUT_BT"],
-            LUT_radiance=piece["LUT_radiance"])
+            u_common=piece["u_T_b_harm"], # NB: not in TBs writer yet!
+            lookup_table_BT=piece["lookup_table_BT"],
+            lookup_table_radiance=piece["lookup_table_radiance"])
         try:
             newcont.update(**dict(
-                cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
-                cross_element_radiance_error_correlation_length_scale_structured_effects=piece["cross_element_radiance_error_correlation_length_scale_structured_effects"],
+#                cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
+#                cross_element_radiance_error_correlation_length_scale_structured_effects=piece["cross_element_radiance_error_correlation_length_scale_structured_effects"],
                 channel_correlation_matrix_independent=piece["cross_channel_error_correlation_matrix_independent_effects"],
                 channel_correlation_matrix_structured=piece["cross_channel_error_correlation_matrix_structured_effects"],
-                cross_element_radiance_error_correlation_length_average=piece["cross_element_radiance_error_correlation_length_average"],
-                cross_line_radiance_error_correlation_length_average=piece["cross_line_radiance_error_correlation_length_average"],
+                cross_element_correlation_coefficients=piece["cross_element_radiance_error_correlation_length_average"],
+                cross_line_correlation_coefficients=piece["cross_line_radiance_error_correlation_length_average"],
                     ))
         except KeyError as e:
             # assuming they're missing because their calculation failed

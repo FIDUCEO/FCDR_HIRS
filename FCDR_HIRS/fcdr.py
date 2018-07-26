@@ -2167,24 +2167,24 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         """
 
         n = 100
-        LUT_BT = xarray.DataArray(
+        lookup_table_BT = xarray.DataArray(
             numpy.tile(numpy.linspace(200, 300, 101)[:, numpy.newaxis],
                        19),
             coords={"calibrated_channel": range(1, 20)},
-            dims=("LUT_index", "calibrated_channel"),
-            name="LUT_BT")
-        LUT_radiance = xarray.DataArray(
+            dims=("lut_size", "calibrated_channel"),
+            name="lookup_table_BT")
+        lookup_table_radiance = xarray.DataArray(
             numpy.zeros(shape=(101, 19), dtype="f4"),
-            coords=LUT_BT.coords,
-            dims=LUT_BT.dims,
-            name="LUT_radiance")
-        for ch in LUT_BT.calibrated_channel.values:
+            coords=lookup_table_BT.coords,
+            dims=lookup_table_BT.dims,
+            name="lookup_table_radiance")
+        for ch in lookup_table_BT.calibrated_channel.values:
             srf = typhon.physics.units.em.SRF.fromArtsXML(
                 self.satname.upper().replace("A0","A"), "hirs", ch)
-            LUT_radiance.loc[{"calibrated_channel": ch}] = (
-                srf.blackbody_radiance(LUT_BT.sel(calibrated_channel=ch)).to(
+            lookup_table_radiance.loc[{"calibrated_channel": ch}] = (
+                srf.blackbody_radiance(lookup_table_BT.sel(calibrated_channel=ch)).to(
                     rad_u["ir"], "radiance"))
-        return (LUT_BT, LUT_radiance)
+        return (lookup_table_BT, lookup_table_radiance)
 
     def _reset_flags(self, ds):
         """Reset flags for scanline, channel, and minor frame.
