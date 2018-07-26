@@ -124,7 +124,11 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     prim_hirs=self.prim_hirs,
                     sec_name=self.sec_name,
                     sec_hirs=self.sec_hirs,
-                    debug=debug)
+                    debug=debug,
+                    chan_pairs="neighbours",
+                    mode="standard",
+                    regression="LR",
+                    units=ureg.Unit("K"))
             else:
                 kmodel = matchups.KModelIASIRef(
                     ds=self.as_xarray_dataset(),
