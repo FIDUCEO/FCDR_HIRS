@@ -176,6 +176,9 @@ class FCDRGenerator:
     # I don't know why it should.
     rself_regr = ("LR", {"fit_intercept": True})
     orbit_filters = None # set in __init__
+    pseudo_fields = {
+        "filename":
+            lambda M, D, H, fn: numpy.full(M.shape[0], pathlib.Path(fn).stem)}
 
     # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes):
@@ -203,7 +206,8 @@ class FCDRGenerator:
         self.orbit_filters = orbit_filters
         self.dd = typhon.datasets.dataset.DatasetDeque(
             self.fcdr, self.window_size, start_date,
-            orbit_filters=orbit_filters)
+            orbit_filters=orbit_filters,
+            pseudo_fields=self.pseudo_fields)
 
         self.rself = models.RSelf(self.fcdr,
             temperatures=self.rself_temperatures,
@@ -220,13 +224,16 @@ class FCDRGenerator:
             self=self, start=start, end_time=end_time))
         anyok = False
         try:
-            self.dd.reset(start, orbit_filters=self.orbit_filters)
+            self.dd.reset(start,
+                orbit_filters=self.orbit_filters,
+                pseudo_fields=self.pseudo_fields)
         except typhon.datasets.dataset.DataFileError as e:
             warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
         while self.dd.center_time < end_time:
             try:
                 self.dd.move(self.step_size,
-                    orbit_filters=self.orbit_filters)
+                    orbit_filters=self.orbit_filters,
+                    pseudo_fields=self.pseudo_fields)
                 self.make_and_store_piece(self.dd.center_time - self.segment_size,
                     self.dd.center_time)
             except (fcdr.FCDRError, typhon.datasets.dataset.DataFileError) as e:

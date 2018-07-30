@@ -170,7 +170,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             cond = {"calibrate": (None, True)}
             self.my_pseudo_fields["radiance_fid_naive"] = (
                 ["radiance", self.scantype_fieldname, "temp_iwt", "time"],
-                lambda M, D:
+                lambda M, D, H, fn:
                 self.calculate_radiance_all(
                     M[1] if isinstance(M, tuple) else M, 
                     return_ndarray=True,
@@ -1547,7 +1547,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #        return ureg.Quantity(numpy.ma.concatenate([rad.m[...,
 #            numpy.newaxis] for rad in all_rad], 2), all_rad[0].u)
 
-    def calculate_bt_all(self, M, D): 
+    def calculate_bt_all(self, M, D, H=None, fn=None): 
         if isinstance(D["radiance_fid_naive"], xarray.DataArray):
             bt_all = xarray.concat(
                 [D["radiance_fid_naive"].sel(channel=i).to(

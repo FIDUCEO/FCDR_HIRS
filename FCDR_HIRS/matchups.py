@@ -212,9 +212,9 @@ class HIRSMatchupCombiner:
                     for s in (prim_name, sec_name)}|{"matchup_spherical_distance"},
                 pseudo_fields={
                     "time_{:s}".format(prim_name):
-                        lambda ds: ds["hirs-{:s}_time".format(prim_name)][:, 3, 3].astype("M8[s]"),
+                        lambda ds, D=None, H=None, fn=None: ds["hirs-{:s}_time".format(prim_name)][:, 3, 3].astype("M8[s]"),
                     "time_{:s}".format(sec_name):
-                        lambda ds: ds["hirs-{:s}_time".format(sec_name)][:, 3, 3].astype("M8[s]")},
+                        lambda ds, D=None, H=None, fn=None: ds["hirs-{:s}_time".format(sec_name)][:, 3, 3].astype("M8[s]")},
                 orbit_filters=hh.default_orbit_filters+[HHMatchupCountFilter(prim_name,sec_name)])
             self.prim_hirs = fcdr.which_hirs_fcdr(prim_name, read="L1C")
 
