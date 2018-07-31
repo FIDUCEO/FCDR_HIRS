@@ -28,6 +28,10 @@ _corr_coding["dtype"] = "u2"
 _corr_coding["scale_factor"] = 0.001
 _corr_coding["_FillValue"] = _u2_coding["_FillValue"]
 
+_str_coding = _coding.copy()
+del _str_coding["dtype"]
+del _str_coding["_FillValue"]
+
 # FIXME: uncertainty does NOT always have the same dimensions as quantity
 # it belongs to...
 
@@ -351,6 +355,11 @@ FCDR_data_vars_props = dict(
         {"long_name": "Channel error correlation matrix for structured effects",
          "units": "scanlines"},
         _corr_coding),
+    filename = (
+        "filename",
+        ("time",),
+        {"long_name": "Original filename in L1B"},
+        _str_coding),
 )
 
 p = FCDR_data_vars_props
