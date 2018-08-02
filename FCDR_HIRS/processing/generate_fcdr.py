@@ -648,10 +648,10 @@ class FCDRGenerator:
             quality_channel_bitmask = piece["quality_channel_bitmask"],
             u_independent=piece["u_T_b_random"],
             u_structured=piece["u_T_b_nonrandom"],
-            u_common=piece["u_T_b_harm"], # NB: not in TBs writer yet!
+            u_common=piece["u_T_b_harm"], # NB 2018-08-02: not in TBs writer yet!
             lookup_table_BT=piece["lookup_table_BT"],
             lookup_table_radiance=piece["lookup_table_radiance"],
-            scanline_origl1b=piece["scanline_number"])
+            scanline_origl1b=piece["scanline_number"].sel(time=t_earth))
         try:
             newcont.update(**dict(
 #                cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
@@ -695,7 +695,7 @@ class FCDRGenerator:
         easy = easy.assign(**transfer)
         
         # add orig_l1b
-        src_filenames = pandas.unique(piece["filename"])
+        src_filenames = pandas.unique(piece["filename"].sel(time=t_earth))
         easy["scanline_map_to_origl1bfile"] = [src_filenames.tolist().index(fn) for fn in piece["filename"]]
         easy.attrs["source"] = src_filenames
 
