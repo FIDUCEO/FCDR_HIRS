@@ -180,6 +180,10 @@ class FCDRGenerator:
         "filename":
             lambda M, D, H, fn: numpy.full(M.shape[0], pathlib.Path(fn).stem)}
 
+    # maximum number of correlation length to store in single FCDR debug
+    # file.  For the easy, it's N//2 where N is length of orbit.
+    max_debug_corr_length = 1000
+
     # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes):
         logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
@@ -477,7 +481,7 @@ class FCDRGenerator:
             logging.error("Failed to calculate correlation length scales: "
                           f"{e.args[0]}")
         else:
-            # add those to the ds, not in TBs format yet
+            # add those to the ds
             ds["cross_line_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_l.sel(val="popt").values)
             ds["cross_element_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_e.sel(val="popt").values)
             ds["cross_channel_error_correlation_matrix_independent_effects"] = (
@@ -485,7 +489,8 @@ class FCDRGenerator:
             ds["cross_channel_error_correlation_matrix_structured_effects"] = (
                 ("calibrated_channel", "calibrated_channel"), R_cs)
             ds["cross_line_radiance_error_correlation_length_average"] = (
-                ("delta_scanline_earth", "calibrated_channel"), Δ_l_full.values)
+                ("delta_scanline_earth", "calibrated_channel"),
+                Δ_l_full.values[:self.max_debug_corr_length])
             ds["cross_element_radiance_error_correlation_length_average"] = (
                 ("delta_scanpos", "calibrated_channel"), Δ_e_full.values)
 
@@ -632,7 +637,7 @@ class FCDRGenerator:
             srf_size=piece.dims["n_frequencies"],
             lut_size=piece.dims["lut_size"],
             corr_dx=self.fcdr.n_perline,
-            corr_dy=500)
+            corr_dy=N//2)
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
@@ -659,7 +664,7 @@ class FCDRGenerator:
                 channel_correlation_matrix_independent=piece["cross_channel_error_correlation_matrix_independent_effects"],
                 channel_correlation_matrix_structured=piece["cross_channel_error_correlation_matrix_structured_effects"],
                 cross_element_correlation_coefficients=piece["cross_element_radiance_error_correlation_length_average"],
-                cross_line_correlation_coefficients=piece["cross_line_radiance_error_correlation_length_average"],
+                cross_line_correlation_coefficients=piece["cross_line_radiance_error_correlation_length_average"].isel(delta_scanline_earth=slice(easy.dims["delta_scanline_earth"])),
                     ))
         except KeyError as e:
             # assuming they're missing because their calculation failed
