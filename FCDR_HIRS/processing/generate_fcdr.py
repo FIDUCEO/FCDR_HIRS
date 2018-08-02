@@ -664,7 +664,7 @@ class FCDRGenerator:
                 channel_correlation_matrix_independent=piece["cross_channel_error_correlation_matrix_independent_effects"],
                 channel_correlation_matrix_structured=piece["cross_channel_error_correlation_matrix_structured_effects"],
                 cross_element_correlation_coefficients=piece["cross_element_radiance_error_correlation_length_average"],
-                cross_line_correlation_coefficients=piece["cross_line_radiance_error_correlation_length_average"].isel(delta_scanline_earth=slice(easy.dims["delta_scanline_earth"])),
+                cross_line_correlation_coefficients=piece["cross_line_radiance_error_correlation_length_average"].isel(delta_scanline_earth=slice(easy.dims["delta_y"])),
                     ))
         except KeyError as e:
             # assuming they're missing because their calculation failed
