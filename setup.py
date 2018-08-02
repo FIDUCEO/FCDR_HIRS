@@ -105,6 +105,7 @@ setup(
                       "pint>=0.8",
                       "fcdr-tools>=1.1.4",
                       "joblib>=0.11",
+                      "pyorbital",
                       "cartopy"],
 
     # List additional groups of dependencies here (e.g. development

@@ -674,8 +674,15 @@ class FCDRGenerator:
                 "See above, I guess their calculation failed. "
                 f"For the record: {e.args[0]}")
 
-        if self.fcdr.version >= 3:
-            newcont.update(
+        (sat_za, sat_aa, sun_za, sun_aa) = self.fcdr.calc_angles(piece)
+        # FIXME: should go into debug as well?
+        newcont.update(
+            satellite_zenith_angle=sat_za,
+            satellite_azimuth_angle=sat_aa,
+            solar_zenith_angle=sun_za,
+            solar_azimuth_angle=sun_aa)
+#        if self.fcdr.version >= 3:
+#            newcont.update(
 #                linqualflags=piece["line_quality_flags"].sel(time=t_earth),
 #                chqualflags=piece["channel_quality_flags"].sel(
 #                    time=t_earth,
@@ -685,13 +692,13 @@ class FCDRGenerator:
 #                    time=t_earth,
 #                    minor_frame=slice(56)).rename(
 #                    {"minor_frame": "scanpos"}), # see #73 (TODO: #74, #97)
-                satellite_azimuth_angle=piece["local_azimuth_angle"].sel(time=t_earth),
-                solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
-                )
-        else:
-            easy = easy.drop(easy.data_vars.keys() &
-                {"solar_zenith_angle", "solar_azimuth_angle",
-                 "satellite_azimuth_angle"})
+#                satellite_azimuth_angle=piece["local_azimuth_angle"].sel(time=t_earth),
+#                solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
+#                )
+#        else:
+#            easy = easy.drop(easy.data_vars.keys() &
+#                {"solar_zenith_angle", "solar_azimuth_angle",
+#                 "satellite_azimuth_angle"})
             #newcont["local_azimuth_angle"] = None
             #newcont["solar_zenith_angle"] = None
         # if we are going to respect Toms template this should contain

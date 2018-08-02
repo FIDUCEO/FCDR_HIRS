@@ -8,6 +8,7 @@ import functools
 import operator
 import datetime
 import numbers
+import math
 
 import numpy
 import scipy.interpolate
@@ -15,6 +16,8 @@ import progressbar
 import pandas
 import xarray
 import sympy
+import pyorbital
+
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.utils import get_time_dimensions
     
@@ -2353,6 +2356,37 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             yield (k, numpy.sqrt(compk0**2 * sens_above**2))
             yield from self.propagate_uncertainty_components(u,
                 sens[k][1], comp[k][1], sens_to_here)
+
+    def calc_angles(self, ds):
+        """Calculate satellite and solar angles
+
+        Calculate satellite zenith angle, satellite azimuth angle, solar
+        zenith angle, solar azimuth angle.
+        """
+
+        # satellite angles
+        satlatlon = ds[["lat","lon"]].sel(
+            scanpos=[math.floor(self.n_perline/2),
+                     math.ceil(self.n_perline/2)])
+        satelev = ds["platform_altitude"]
+        (sat_aa, sat_za) = pyorbital.orbital.get_observer_look(
+            satlatlon["lon"],
+            satlatlon["lat"],
+            satelev,
+            ds["time"], # FIXME: Who cares?
+            ds["lon"],
+            ds["lat"],
+            numpy.zeros(ds.dims["scanline_earth"]))
+            
+        (sun_el_rad, sun_az_rad) = pyorbital.astronomy.get_alt_az(
+            ds["time"],
+            ds["lon"],
+            ds["lat"])
+
+        sun_za = 90 - numpy.rad2deg(sun_el_rad)
+        sun_aa = numpy.rad2deg(sun_az_rad)
+
+        return (sat_za, sat_aa, sun_za, sun_aa)
 
 
     # deprecated:
