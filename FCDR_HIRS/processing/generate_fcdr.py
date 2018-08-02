@@ -616,6 +616,8 @@ class FCDRGenerator:
         "scanpos": "x",
         "channel": "rad_channel",
         "calibrated_channel": "channel",
+        "delta_scanline_earth": "delta_y",
+        "delta_scanpos": "delta_x",
         }
 
     map_names_debug_to_easy = {
