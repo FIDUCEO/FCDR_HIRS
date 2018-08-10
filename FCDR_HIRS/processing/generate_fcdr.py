@@ -438,10 +438,20 @@ class FCDRGenerator:
         qc = xarray.Dataset(
             {str(k): v for (k, v) in self.fcdr._quantities.items()})
         (SRF_weights, SRF_frequencies) = self.get_srfs()
+
+        (sat_za, sat_aa, sun_za, sun_aa) = self.fcdr.calc_angles(
+            subset.sel(time=qc["scanline_earth"]))
+        # rename original ones
+
         # uncertainty scanline coordinate conflicts with subset scanline
         # coordinate, drop the former
         stuff_to_merge = [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
-                            qc, subset, uRe,
+                            qc,
+                          subset.rename({k.name: "original_"+k.name
+                                for k in (sat_za, sat_aa, sun_za, sun_aa)
+                                if k.name in subset.data_vars.keys()}),
+                            uRe,
+                            sat_za, sat_aa, sun_za, sun_aa,
                             uRe_syst, uRe_rand, uRe_harm,
                             uTb_syst, uTb_rand, uTb_harm,
                             S, lookup_table_BT, LUT_radiance,
@@ -649,7 +659,10 @@ class FCDRGenerator:
             latitude=piece["lat"].sel(time=t_earth),
             longitude=piece["lon"].sel(time=t_earth),
             bt=UADA(piece["T_b"]),
-            satellite_zenith_angle=piece["platform_zenith_angle"].sel(time=t_earth),
+            satellite_zenith_angle=piece["platform_zenith_angle"],
+            satellite_azimuth_angle=piece["platform_azimuth_angle"],
+            solar_zenith_angle=piece["solar_zenith_angle"],
+            solar_azimuth_angle=piece["solar_azimuth_angle"],
             scanline=piece["scanline"].sel(time=t_earth),
             quality_scanline_bitmask = piece["quality_scanline_bitmask"],
             quality_channel_bitmask = piece["quality_channel_bitmask"],
@@ -674,13 +687,6 @@ class FCDRGenerator:
                 "See above, I guess their calculation failed. "
                 f"For the record: {e.args[0]}")
 
-        (sat_za, sat_aa, sun_za, sun_aa) = self.fcdr.calc_angles(piece)
-        # FIXME: should go into debug as well?
-        newcont.update(
-            satellite_zenith_angle=sat_za,
-            satellite_azimuth_angle=sat_aa,
-            solar_zenith_angle=sun_za,
-            solar_azimuth_angle=sun_aa)
 #        if self.fcdr.version >= 3:
 #            newcont.update(
 #                linqualflags=piece["line_quality_flags"].sel(time=t_earth),

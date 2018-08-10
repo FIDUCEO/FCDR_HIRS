@@ -360,6 +360,29 @@ FCDR_data_vars_props = dict(
         ("time",),
         {"long_name": "Original filename in L1B"},
         _str_coding),
+    platform_zenith_angle = (
+        "platform_zenith_angle",
+        ("scanline_earth", "scanpos"),
+        {"long_name": "Zenith angle of satellite as seen from the ground",
+         "units": "degrees"},
+        _ang_coding),
+    platform_azimuth_angle = (
+        "platform_azimuth_angle",
+        ("scanline_earth", "scanpos"),
+        {"long_name": "Azimuth angle (from the north) of satellite as seen from the ground",
+         "units": "degrees"},
+        _ang_coding),
+    solar_zenith_angle = (
+        "solar_zenith_angle",
+        ("scanline_earth", "scanpos"),
+        {"long_name": "Zenith angle of the Sun as seen from the ground",
+         "units": "degrees"},
+        _ang_coding),
+    solar_azimuth_angle = (
+        "solar_azimuth_angle",
+        ("scanline_earth", "scanpos"),
+        {"long_name": "Azimuth angle (from the north) of the Sun as seen from the ground"},
+        _ang_coding),
 )
 
 p = FCDR_data_vars_props
