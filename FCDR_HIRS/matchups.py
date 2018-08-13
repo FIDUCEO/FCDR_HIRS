@@ -688,6 +688,10 @@ class KModelSRFIASIDB(KModel):
                 v.init_regression()
 
     def calc_K(self, channel):
+        """Calculate K for channel.
+        
+        Returns K always in SI units, but sets self.K in self.units units.
+        """
         if self.fitter is None:
             self.init_regression()
         # Use regression to predict Δy for channel from set of reference
@@ -702,10 +706,10 @@ class KModelSRFIASIDB(KModel):
                     self.units, "radiance", srf=self.srfs[from_sat][c-1]).values
                     for c in range(1, 20)
                     if c in y_source.calibrated_channel.values]).T
-            y_ref = self.ds_filt[f"{to_sat:s}_R_e"].sel(calibrated_channel=channel)
-            y_ref = UADA(y_ref).to(
-                    self.units, "radiance",
-                    srf=self.srfs[to_sat][channel-1]).values
+#            y_ref = self.ds_filt[f"{to_sat:s}_R_e"].sel(calibrated_channel=channel)
+#            y_ref = UADA(y_ref).to(
+#                    self.units, "radiance",
+#                    srf=self.srfs[to_sat][channel-1]).values
             model = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
             if isinstance(model, scipy.odr.odrpack.Output):
                 y_pred = (model.beta[0] + model.beta[numpy.newaxis, 1:] * y_source).sum(1)
@@ -722,7 +726,15 @@ class KModelSRFIASIDB(KModel):
         if self.debug:
             for v in self.others.values():
                 v.calc_K(channel)
-        return numpy.array(K).mean(0)
+        # convert back to si units for conversion, but cannot convert K
+        # (if ΔBT) directly via SRF, as this conversion is
+        # only valid for actual BTs, not ΔBTs
+        K = numpy.array([-K[0], K[1]]).mean(0)
+        K = (ureg.Quantity(y_pred+K, self.units).to(
+             rad_u["si"], "radiance", srf=self.srfs[from_sat][channel-1]) -
+             ureg.Quantity(y_pred, self.units).to(
+             rad_u["si"], "radiance", srf=self.srfs[from_sat][channel-1]))
+        return K.m
 
     def calc_Ks(self, channel):
         # spread of db will inform us of uncertainty in predicted
