@@ -911,7 +911,7 @@ class NoiseAnalyser:
                         ptiles=self.ptiles,
                         linestyles=self.linestyles) 
                     #a.plot(xt, dL[:, ch-1], '.', label=tmpfld)
-                a.set_ylabel(r"$\Delta$ R HIRS-HIASI" +
+                a.set_ylabel(r"$\Delta$ L HIRS-HIASI" +
                     "\n[{:Lx}]".format(dL.u).replace(" ", ""))
                 a.set_xlabel("Temperature [K]")
                 a.set_title("HIASI-anomaly per temperature")
@@ -930,7 +930,7 @@ class NoiseAnalyser:
 
                 #a.set_xlabel("Time since calibration [s]")
                 a.set_xlabel("Scanlines since calibration")
-                a.set_ylabel(r"$\Delta$ R HIRS-HIASI"+
+                a.set_ylabel(r"$\Delta$ L HIRS-HIASI"+
                     "\n[{:Lx}]".format(dL.u).replace(" ", ""))
                 a.set_title("HIASI-anomaly per calibration position")
                 a.legend(loc="upper left", bbox_to_anchor=(1, 1))
@@ -970,7 +970,7 @@ class NoiseAnalyser:
                         linewidth=1.5)
                     a.set_title("Self-emis. evol. {:s}".format(lab))
                     if i==0:
-                        a.set_ylabel(r"$\Delta$ R HIRS-HIASI" +
+                        a.set_ylabel(r"$\Delta$ L HIRS-HIASI" +
                             "\n[{:Lx}]".format(dL.u))
                     else:
                         a.get_yaxis().set_ticklabels([])
@@ -1109,7 +1109,7 @@ class NoiseAnalyser:
                     ptiles=self.ptiles,
                     linestyles=self.linestyles)
                 if i == 0:
-                    ha.set_ylabel(r"$\Delta$ R HIRS-HIASI" +
+                    ha.set_ylabel(r"$\Delta$ L HIRS-HIASI" +
                         "\n[{:Lx}]".format(dL.u))
 
         # colorbar in remaining half-sized subplot
