@@ -35,15 +35,17 @@ class NoDataError(Exception):
     pass
 
 class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
-    def __init__(self, prim, sec):
+    msd_field = None
+    def __init__(self, prim, sec, msd_field="matchup_spherical_distance"):
         self.prim = prim
         self.sec = sec
+        self.msd_field = msd_field
 
     def filter(self, ds, **extra):
         return ds[{"matchup_count":
             (ds[f"hirs-{self.prim:s}_lza"][:, 3, 3] < 10) &
             (ds[f"hirs-{self.sec:s}_lza"][:, 3, 3] < 10) &
-            (ds["matchup_spherical_distance"]<20)}]
+            (ds[self.msd_field]<20)}]
     
     def finalise(self, ds):
         idx = numpy.argsort(ds[f"time_{self.prim:s}"])
@@ -183,6 +185,11 @@ class HIRSMatchupCombiner:
          'β',
          'ε']
 
+
+    # TBs files contain either matchup_spherical_distance or
+    # hirs-n15_hirs-n14_matchup_spherical_distance
+    msd_field = None
+
     mode = None
     def __init__(self, start_date, end_date, prim_name, sec_name):
         #self.ds = netCDF4.Dataset(str(sf), "r")
@@ -202,6 +209,11 @@ class HIRSMatchupCombiner:
             self.prim_hirs = "iasi"
             self.hiasi = hi
         else:
+            if ("n15" in (prim_name.lower(), sec_name.lower()) or
+                prim_name.lower() == "n14" and sec_name.lower() == "n12"):
+                self.msd_field = f"hirs-{prim_name}_hirs-{sec_name}_matchup_spherical_distance"
+            else:
+                self.msd_field = "matchup_spherical_distance"
             self.mode = "hirs"
             ds = hh.read_period(start_date, end_date,
                 locator_args={"prim": prim_name, "sec": sec_name},
@@ -210,13 +222,13 @@ class HIRSMatchupCombiner:
                                   "acquisition_time", "scanpos") + tuple(
                                     "bt_ch{:02d}".format(ch) for ch in
                                     range(1, 20))
-                    for s in (prim_name, sec_name)}|{"matchup_spherical_distance"},
+                    for s in (prim_name, sec_name)}|{self.msd_field},
                 pseudo_fields={
                     "time_{:s}".format(prim_name):
                         lambda ds, D=None, H=None, fn=None: ds["hirs-{:s}_time".format(prim_name)][:, 3, 3].astype("M8[s]"),
                     "time_{:s}".format(sec_name):
                         lambda ds, D=None, H=None, fn=None: ds["hirs-{:s}_time".format(sec_name)][:, 3, 3].astype("M8[s]")},
-                orbit_filters=hh.default_orbit_filters+[HHMatchupCountFilter(prim_name,sec_name)])
+                orbit_filters=hh.default_orbit_filters+[HHMatchupCountFilter(prim_name,sec_name,msd_field=self.msd_field)])
             self.prim_hirs = fcdr.which_hirs_fcdr(prim_name, read="L1C")
 
         self.sec_hirs = fcdr.which_hirs_fcdr(sec_name, read="L1C")

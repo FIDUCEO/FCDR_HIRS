@@ -204,10 +204,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 inplace=True)
         to_merge = ([p_ds] if self.mode == "hirs" else []) + [s_ds,
             xarray.DataArray(
-                self.ds["matchup_spherical_distance"] if self.mode=="hirs"
+                self.ds[self.msd_field] if self.mode=="hirs"
                     else numpy.zeros(self.ds.dims["line"]), 
                 dims=["matchup_count" if self.mode=="hirs" else "line"],
-                name="matchup_spherical_distance")
+                name=self.msd_field)
             ]
         ds = xarray.merge(to_merge)
         return ds
@@ -558,8 +558,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             harm[f"column{i:d}"] = (("M",),
                 self.ds[f"hirs-{sat:s}_x"][sdsidx])
             harm[f"matchup_distance"] = (("M",),
-                self.ds["matchup_spherical_distance"][sdsidx])
-            harm[f"matchup_distance"].attrs.update(self.ds["matchup_spherical_distance"][sdsidx].attrs)
+                self.ds[self.msd_field][sdsidx])
+            harm[f"matchup_distance"].attrs.update(self.ds[self.msd_field][sdsidx].attrs)
 
     def _add_harm_for_iasi(self, harm, channel, ok):
         # fill X1
