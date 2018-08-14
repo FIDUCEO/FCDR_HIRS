@@ -2370,7 +2370,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # satellite angles
         satlatlon = ds[["lat","lon"]].sel(
             scanpos=[math.floor(self.n_perline/2),
-                     math.ceil(self.n_perline/2)])
+                     math.ceil(self.n_perline/2)]).reset_coords(["lat", "lon"])
         if numpy.sign(satlatlon["lon"]).prod()<0:
             # we're crossing the antimeridian
             satlatlon["lon"] += 360
