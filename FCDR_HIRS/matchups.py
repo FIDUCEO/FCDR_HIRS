@@ -465,7 +465,9 @@ class KrModelLSD(KrModel):
 
     def calc_Kr(self, channel):
         btlocal = self.ds_filt_orig["hirs-{:s}_bt_ch{:02d}".format(self.prim_name, channel)]
-        btlocal.values.reshape((-1,))[btlocal.values.ravel()>400] = numpy.nan # not all are flagged correctly
+        # 2018-08-14: disabling this, it's the wrong place and leads to
+        # trouble with nans propagating into K.
+        #btlocal.values.reshape((-1,))[btlocal.values.ravel()>400] = numpy.nan # not all are flagged correctly
         btlocal = btlocal.loc[{"hirs-{:s}_ny".format(self.prim_name): slice(1, 6),
                            "hirs-{:s}_nx".format(self.prim_name): slice(1, 6)}].stack(
                     z=("hirs-{:s}_ny".format(self.prim_name),
