@@ -256,16 +256,16 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after donotuse-filtering")
         # skip values with zero uncertainties.  Those should not exist,
         # but https://github.com/FIDUCEO/FCDR_HIRS/issues/161 .
-        to_check = ds[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
-        bad = (to_check==0).any("calibrated_channel")
+        to_check = ds.sel(calibrated_channel=channel)[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
+        bad = (to_check==0)
         ok &= sum([v.values for v in bad.data_vars.values()])==0 
         logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after 0-uncertainty-filtering")
         # here check only sec; prim only checkid if prim not iasi
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
         logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after secondary isfinite-filtering")
-        ok &= self.kmodel.filter(mdim)
+        ok &= self.kmodel.filter(mdim, channel)
         logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after kmodel-filtering")
-        ok &= self.krmodel.filter(mdim)
+        ok &= self.krmodel.filter(mdim, channel)
         logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after krmodel-filtering")
         if self.prim_name != "iasi":
             ok &= numpy.isfinite(ds[f"{self.prim_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values

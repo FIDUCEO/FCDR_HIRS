@@ -340,7 +340,7 @@ class KModel(metaclass=abc.ABCMeta):
         self.ds_filt_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
 
-    def filter(self, mdim):
+    def filter(self, mdim, channel):
         """Extra filtering imposed by this model
         """
         return numpy.ones(self.ds.dims[mdim], "?")
@@ -377,7 +377,7 @@ class KrModel(metaclass=abc.ABCMeta):
         self.ds_filt_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
 
-    def filter(self, mdim):
+    def filter(self, mdim, channel):
         """Extra filtering imposed by this model
         """
         return numpy.ones(self.ds.dims[mdim], "?")
@@ -483,13 +483,12 @@ class KrModelLSD(KrModel):
         #lsd = UADA(lsd).to(rad_u["si"], "radiance", srf=srf)
         return lsd
 
-    def filter(self, mdim):
-        ok = super().filter(mdim)
+    def filter(self, mdim, channel):
+        ok = super().filter(mdim, channel)
         return functools.reduce(
             operator.and_,
-            ((self.ds_orig[f"hirs-{s:s}_bt_ch{c:02d}"].notnull()
+            ((self.ds_orig[f"hirs-{s:s}_bt_ch{channel:02d}"].notnull()
                     .sum(f"hirs-{s:s}_nx").sum(f"hirs-{s:s}_ny")>25).values
-                for c in range(1, 20)
                 for s in (self.prim_name, self.sec_name)),
             ok)
 
@@ -793,9 +792,9 @@ class KModelSRFIASIDB(KModel):
             )
         return ds
 
-    def filter(self, mdim):
-        # go through self.ds_filt R_e values.  All channels must be not nan.
-        ok = super().filter(mdim)
+    def filter(self, mdim, channel):
+        # go through self.ds_filt R_e values.
+        ok = super().filter(mdim, channel)
         for sat in self.prim_name, self.sec_name:
-            ok &= self.ds[f"{sat:s}_R_e"].notnull().all("calibrated_channel").values
+            ok &= self.ds[f"{sat:s}_R_e"].sel(calibrated_channel=channel).notnull().values
         return ok
