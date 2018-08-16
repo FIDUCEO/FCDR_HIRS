@@ -720,7 +720,7 @@ def combine_hirs():
                     file=sys.stderr)
                 time.sleep(wait)
             else:
-                os.chmod(hmc.basedir, 0755)
+                os.chmod(hmc.basedir, 0o755)
                 break
         else:
             raise IOError("Failed 50 copying attempts, see above.")

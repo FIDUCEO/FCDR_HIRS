@@ -560,7 +560,7 @@ class KModelSRFIASIDB(KModel):
         if self.debug:
             self.others = {}
             for (cp, regr, md, u) in itertools.product(
-                    ["all", "single", "neighbours"],
+                    ["single", "neighbours"],
                     ["LR", "ODR"],
                     ["standard"], # "delta
                     [rad_u["si"], rad_u["ir"], ureg.Unit("K")]):
@@ -796,5 +796,5 @@ class KModelSRFIASIDB(KModel):
         # go through self.ds_filt R_e values.
         ok = super().filter(mdim, channel)
         for sat in self.prim_name, self.sec_name:
-            ok &= self.ds[f"{sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).notnull().all("calibrated_channel")
+            ok &= self.ds[f"{sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).notnull().all("calibrated_channel").values
         return ok
