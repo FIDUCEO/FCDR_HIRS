@@ -278,10 +278,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         if ok.sum() == 0:
             raise MatchupError("No matchups pass filters")
         ds = ds[{mdim:ok}]
-        if not self.kmodel.filtered:
-            self.kmodel.limit(ok, mdim=mdim)
-        if not self.krmodel.filtered:
-            self.krmodel.limit(ok, mdim=mdim)
+        # redo for each channel as different channels may have different
+        # filterings
+        self.kmodel.limit(ok, mdim=mdim)
+        self.krmodel.limit(ok, mdim=mdim)
 
         da_all = [ds.sel(calibrated_channel=channel)[v]
                     for v in take_total]
