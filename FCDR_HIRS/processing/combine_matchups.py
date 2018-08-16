@@ -73,7 +73,7 @@ import logging
 logging.basicConfig(
     format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
             "%(lineno)s: %(message)s"),
-    level=logging.INFO)
+    level=logging.DEBUG)
 
 import itertools
 import datetime
@@ -248,7 +248,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                               and not x[0] == "iasi")
 
         # skip flagged values
-        donotuse = (ds.sel(calibrated_channel=1)[
+        donotuse = (ds.sel(calibrated_channel=channel)[
             [f"{nm:s}_quality_{fld:s}_bitmask"
                 for nm in ([self.prim_name, self.sec_name] if self.mode == "hirs" else [self.sec_name])
                 for fld in ["channel", "pixel", "scanline"]]] & 0x01)!=0
