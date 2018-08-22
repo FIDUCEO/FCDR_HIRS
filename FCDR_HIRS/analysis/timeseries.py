@@ -465,7 +465,7 @@ class NoiseAnalyser:
         graphics.print_or_show(f, False,
             "hirs_{:s}_space_counts_adev_{:%Y%m%d}-{:%Y%m%d}.".format(
                 self.satname, t[0], t[-1])
-                + "" if self.writefig else "png")
+                + ("" if self.writefig else "png"))
 
     def get_gain(self, M, ch):
         (t_slope, _, slope, _) = self.hirs.calculate_offset_and_slope(M,
