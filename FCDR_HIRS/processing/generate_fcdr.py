@@ -664,8 +664,8 @@ class FCDRGenerator:
             solar_zenith_angle=piece["solar_zenith_angle"],
             solar_azimuth_angle=piece["solar_azimuth_angle"],
             scanline=piece["scanline"].sel(time=t_earth),
-            quality_scanline_bitmask = piece["quality_scanline_bitmask"],
-            quality_channel_bitmask = piece["quality_channel_bitmask"],
+#            quality_scanline_bitmask = piece["quality_scanline_bitmask"],
+#            quality_channel_bitmask = piece["quality_channel_bitmask"],
             u_independent=piece["u_T_b_random"],
             u_structured=piece["u_T_b_nonrandom"],
             u_common=piece["u_T_b_harm"], # NB 2018-08-02: not in TBs writer yet!
@@ -713,6 +713,7 @@ class FCDRGenerator:
                     v)
                 for (k, v) in newcont.items()}
         easy = easy.assign(**transfer)
+        self.debug2easy_flags(easy, piece)
         
         # add orig_l1b
         src_filenames = pandas.unique(piece["filename"].sel(time=t_earth))
@@ -753,10 +754,6 @@ class FCDRGenerator:
                 if kk not in easy[k].encoding:
                     easy[k].encoding[kk] = vv
 
-        easy["quality_channel_bitmask"].values[(piece["quality_pixel_bitmask"] &
-            _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |= \
-            _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
-
         for f in ("SRF_weights", "SRF_frequencies"):
             easy[f][...] = piece[f].sel(channel=range(1, 20), n_frequencies=range(easy.dims["n_frequencies"]))
                 
@@ -767,6 +764,24 @@ class FCDRGenerator:
             
         easy = easy.drop(("scanline",)) # see #94
         return easy
+
+    def debug2easy_flags(self, easy, piece):
+        """Copy over flags from piece to easy
+
+        Arguments:
+            easy
+                as returned by TBs code
+            piece
+                as processed in this code too (debug)
+
+        No return value.
+        """
+
+        easy["quality_channel_bitmask"].values[(piece["quality_pixel_bitmask"] &
+            _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |= \
+            _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
+        
+        raise NotImplementedError("Not implemented yet!")
 
     _i = 0
     def get_filename_for_piece(self, piece, fcdr_type):

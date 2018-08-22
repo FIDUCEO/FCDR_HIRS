@@ -469,6 +469,30 @@ FCDR_extra_attrs = dict(
                   "treatment, please use full FCDR.")}
     )
 
+
+# TB writer 2018-08-21 (1.1.5):
+#
+# In : easy["quality_pixel_bitmask"].flag_meanings
+# 'invalid use_with_caution invalid_input invalid_geoloc invalid_time
+# sensor_error padded_data incomplete_channel_data'
+#
+# In : easy["data_quality_bitmask"].flag_meanings
+# 'suspect_mirror suspect_geo suspect_time outlier_nos
+# uncertainty_too_large'
+#
+# In : easy["quality_scanline_bitmask"].flag_meanings
+# 'do_not_use_scan time_sequence_error data_gap_preceding_scan
+# no_calibration no_earth_location clock_update status_changed
+# line_incomplete, time_field_bad time_field_bad_not_inf
+# inconsistent_sequence scan_time_repeat uncalib_bad_time calib_few_scans
+# uncalib_bad_prt calib_marginal_prt uncalib_channels uncalib_inst_mode
+# quest_ant_black_body zero_loc bad_loc_time bad_loc_marginal bad_loc_reason
+# bad_loc_ant reduced_context bad_temp_no_rself'
+#
+# In : easy["quality_channel_bitmask"].flag_meanings
+# 'do_not_use uncertainty_suspicious self_emission_fails
+# calibration_impossible calibration_suspect'
+
 @enum.unique
 class FlagsScanline(enum.IntFlag):
     DO_NOT_USE = enum.auto()
