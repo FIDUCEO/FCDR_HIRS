@@ -1454,8 +1454,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         C_Earth = UADA(ds["counts"].isel(time=views_Earth).sel(
             channel=ch)).rename({"channel": "calibrated_channel"})
 
-        if n_within_context == 0:
-            logger.error("Less than two calibration lines in period "
+        if n_within_context < 2:
+            logging.error("Less than two calibration lines in period "
                 "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M} for channel {:d}!  Data unusable.".format(
                 *context["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime),
                 ch))
