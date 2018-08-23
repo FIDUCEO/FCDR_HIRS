@@ -304,6 +304,13 @@ class NoiseAnalyser:
                         "fwh", "fwm"}, writefig=False):
         self.hirs = fcdr.which_hirs_fcdr(satname)
         self.satname = satname
+        # include InvalidIndexError and KeyError with acceptable
+        # exceptions.  Those can result from invalid indexing in the
+        # pseudo_fields processing, which in turn results from duplicates,
+        # that are not removed until after the pseudo-fields are
+        # processed.  The alternative would be to do the pseudo-fields
+        # after the filtering, which would require substantial rewriting
+        # of fragile code.
         hrsargs=dict(
                 fields=["hrs_scnlin", self.hirs.scantype_fieldname, "time",
                         "counts", "calcof_sorted", "radiance",
@@ -319,7 +326,9 @@ class NoiseAnalyser:
                      typhon.datasets.filters.HIRSFlagger(self.hirs, max_flagged=0.9),
                      typhon.datasets.filters.HIRSCalibCountFilter(self.hirs, self.hirs.filter_calibcounts),
                      ],
-                excs=(typhon.datasets.dataset.DataFileError, typhon.datasets.filters.FilterError, InvalidIndexError))
+                excs=(typhon.datasets.dataset.DataFileError,
+                    typhon.datasets.filters.FilterError, InvalidIndexError,
+                    KeyError))
         # those need to be read before combining with HIASI, because
         # afterward, I lose the calibration rounds.  But doing it after
         # read a full month (or more) of data takes too much RAM as I will
