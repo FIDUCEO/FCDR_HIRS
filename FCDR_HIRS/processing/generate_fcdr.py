@@ -108,6 +108,8 @@ import subprocess
 import warnings
 import functools
 import operator
+import enum
+import types
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -777,9 +779,100 @@ class FCDRGenerator:
         No return value.
         """
 
-        easy["quality_channel_bitmask"].values[(piece["quality_pixel_bitmask"] &
-            _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |= \
-            _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
+        # prepare enum.IntFlag for easier access
+        ef = {}
+        for f in ("quality_pixel_bitmask", "data_quality_bitmask",
+                  "quality_scanline_bitmask", "quality_channel_bitmask"):
+            ef[f] = enum.IntFlag(
+                    f,
+                    dict(zip(easy[f].flag_meanings.split(),
+                             easy[f].flag_masks.split(', '))))
+
+        dfs = _fcdr_defs.FlagsScanline
+        dfc = _fcdr_defs.FlagsChannel
+        dfmf = _fcdr_defs.FlagsMinorFrame
+        dfp = _fcdr_defs.FlagsPixel
+        
+        efqpb = ef["quality_pixel_bitmask"]
+        efdqb = ef["data_quality_bitmask"]
+        efqsb = ef["quality_scanline_bitmask"]
+        efqcb = ef["quality_channel_bitmask"]
+
+        dpb = piece["quality_pixel_bitmask"]
+        dsb = piece["quality_scanline_bitmask"]
+        dcb = piece["quality_channel_bitmask"]
+        dmfb = piece["quality_minorframe_bitmask"]
+        
+        eqpb = easy["quality_pixel_bitmask"]
+        edqb = easy["data_quality_bitmask"]
+        eqsb = easy["quality_scanline_bitmask"]
+        eqcb = easy["quality_channel_bitmask"]
+
+
+        # placeholders, to be filled in
+
+        noidx = numpy.zeros(0, dtype="u2")
+
+        # efqpb
+        eqpb[dpb&dfp.DO_NOT_USE] |= efqpb.invalid
+        eqpb[noidx] |= efqpb.incomplete_channel_data
+        eqpb[noidx] |= efqpb.invalid_geoloc
+        eqpb[noidx] |= efqpb.invalid_input
+        eqpb[noidx] |= efqpb.invalid_time
+        eqpb[noidx] |= efqpb.padded_data
+        eqpb[noidx] |= efqpb.sensor_error
+        eqpb[noidx] |= efqpb.use_with_caution
+
+        # efdqb
+        edqb[noidx] |= efdqb.outlier_nos
+        edqb[noidx] |= efdqb.suspect_geo
+        edqb[noidx] |= efdqb.suspect_mirror
+        edqb[noidx] |= efdqb.suspect_time
+        edqb[noidx] |= efdqb.uncertainty_too_large
+
+        # efqsb
+        eqsb[noidx] |= efqsb.do_not_use_scan
+        eqsb[noidx] |= efqsb.bad_loc_ant
+        eqsb[noidx] |= efqsb.bad_loc_marginal
+        eqsb[noidx] |= efqsb.bad_loc_reason
+        eqsb[noidx] |= efqsb.bad_loc_time
+        eqsb[noidx] |= efqsb.bad_temp_no_rself
+        eqsb[noidx] |= efqsb.calib_few_scans
+        eqsb[noidx] |= efqsb.calib_marginal_prt
+        eqsb[noidx] |= efqsb.clock_update
+        eqsb[noidx] |= efqsb.data_gap_preceding_scan
+        eqsb[noidx] |= efqsb.inconsistent_sequence
+        eqsb[noidx] |= efqsb.line_incomplete
+        eqsb[noidx] |= efqsb.no_calibration
+        eqsb[noidx] |= efqsb.no_earth_location
+        eqsb[noidx] |= efqsb.quest_ant_black_body
+        eqsb[noidx] |= efqsb.reduced_context
+        eqsb[noidx] |= efqsb.scan_time_repeat
+        eqsb[noidx] |= efqsb.status_changed
+        eqsb[noidx] |= efqsb.time_field_bad
+        eqsb[noidx] |= efqsb.time_field_bad_not_inf
+        eqsb[noidx] |= efqsb.time_sequence_error
+        eqsb[noidx] |= efqsb.uncalib_bad_prt
+        eqsb[noidx] |= efqsb.uncalib_bad_time
+        eqsb[noidx] |= efqsb.uncalib_channels
+        eqsb[noidx] |= efqsb.uncalib_inst_mode
+        eqsb[noidx] |= efqsb.zero_loc
+
+        # efqcb
+        eqcb[noidx] |= efqcb.do_not_use
+        eqcb[noidx] |= efqcb.calibration_impossible
+        eqcb[noidx] |= efqcb.calibration_suspect
+        eqcb[noidx] |= efqcb.self_emission_fails
+        eqcb[noidx] |= efqcb.uncertainty_suspicious
+
+
+        # summarise per line
+        eqcb.values[(dpb&dfp.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |=  \
+            efqcb.uncertainty_suspicious
+
+#        easy["quality_channel_bitmask"].values[(piece["quality_pixel_bitmask"] &
+#            _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |= \
+#            _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
         
         raise NotImplementedError("Not implemented yet!")
 
