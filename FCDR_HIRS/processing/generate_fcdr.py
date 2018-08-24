@@ -809,61 +809,69 @@ class FCDRGenerator:
         eqcb = easy["quality_channel_bitmask"]
 
 
-        # placeholders, to be filled in
-
+        # placeholders with noidx to be filled in
         noidx = numpy.zeros(0, dtype="u2")
 
-        # efqpb
+        # efqpb (this is shared between sensors)
         eqpb[dpb&dfp.DO_NOT_USE] |= efqpb.invalid
-        eqpb[noidx] |= efqpb.incomplete_channel_data
-        eqpb[noidx] |= efqpb.invalid_geoloc
-        eqpb[noidx] |= efqpb.invalid_input
-        eqpb[noidx] |= efqpb.invalid_time
-        eqpb[noidx] |= efqpb.padded_data
-        eqpb[noidx] |= efqpb.sensor_error
-        eqpb[noidx] |= efqpb.use_with_caution
+        eqpb[noidx] |= efqpb.incomplete_channel_data # FIXME
+        eqpb[noidx] |= efqpb.invalid_geoloc # FIXME: expand from dsb&dfs.SUSPECT_GEO 
+        eqpb[noidx] |= efqpb.invalid_input # FIXME: ?
+        eqpb[noidx] |= efqpb.invalid_time # FIXME: expand from dsb&dfs.SUSPECT_TIME
+        eqpb[noidx] |= efqpb.padded_data # FIXME: ?
+        eqpb[noidx] |= efqpb.sensor_error # FIXME: ?
+        eqpb[noidx] |= efqpb.use_with_caution # FIXME: ?
 
         # efdqb
-        edqb[noidx] |= efdqb.outlier_nos
-        edqb[noidx] |= efdqb.suspect_geo
-        edqb[noidx] |= efdqb.suspect_mirror
-        edqb[noidx] |= efdqb.suspect_time
-        edqb[noidx] |= efdqb.uncertainty_too_large
+        edqb[dpb&dfp.OUTLIER_NOS] |= efdqb.outlier_nos
+        edqb[noidx] |= efdqb.suspect_geo # FIXME: from dfs or should be in eqsb; same as invalid_geoloc?
+        edqb[noidx] |= efdqb.suspect_mirror # FIXME: from dfmf&dmfb.SUSPECT_MIRROR
+        edqb[noidx] |= efdqb.suspect_time # FIXME: should be in eqsb; same as invalid_time?
+        edqb[dpb&dfp.UNCERTAINTY_TOO_LARGE] |= efdqb.uncertainty_too_large
 
         # efqsb
-        eqsb[noidx] |= efqsb.do_not_use_scan
-        eqsb[noidx] |= efqsb.bad_loc_ant
-        eqsb[noidx] |= efqsb.bad_loc_marginal
-        eqsb[noidx] |= efqsb.bad_loc_reason
-        eqsb[noidx] |= efqsb.bad_loc_time
-        eqsb[noidx] |= efqsb.bad_temp_no_rself
-        eqsb[noidx] |= efqsb.calib_few_scans
-        eqsb[noidx] |= efqsb.calib_marginal_prt
-        eqsb[noidx] |= efqsb.clock_update
-        eqsb[noidx] |= efqsb.data_gap_preceding_scan
-        eqsb[noidx] |= efqsb.inconsistent_sequence
-        eqsb[noidx] |= efqsb.line_incomplete
-        eqsb[noidx] |= efqsb.no_calibration
-        eqsb[noidx] |= efqsb.no_earth_location
-        eqsb[noidx] |= efqsb.quest_ant_black_body
-        eqsb[noidx] |= efqsb.reduced_context
-        eqsb[noidx] |= efqsb.scan_time_repeat
-        eqsb[noidx] |= efqsb.status_changed
-        eqsb[noidx] |= efqsb.time_field_bad
-        eqsb[noidx] |= efqsb.time_field_bad_not_inf
-        eqsb[noidx] |= efqsb.time_sequence_error
-        eqsb[noidx] |= efqsb.uncalib_bad_prt
-        eqsb[noidx] |= efqsb.uncalib_bad_time
-        eqsb[noidx] |= efqsb.uncalib_channels
-        eqsb[noidx] |= efqsb.uncalib_inst_mode
-        eqsb[noidx] |= efqsb.zero_loc
+        # FIXME: this contains too much information for easy
+        eqsb[dsb&dfs.DO_NOT_USE] |= efqsb.do_not_use_scan
+        eqsb[noidx] |= efqsb.bad_loc_ant # FIXME: ?
+        eqsb[noidx] |= efqsb.bad_loc_marginal # FIXME: ?
+        eqsb[noidx] |= efqsb.bad_loc_reason # FIXME: ?
+        eqsb[noidx] |= efqsb.bad_loc_time # FIXME: ?
+        eqsb[dsb&dfs.BAD_TEMP_NO_RSELF] |= efqsb.bad_temp_no_rself
+        eqsb[noidx] |= efqsb.calib_few_scans # FIXME: ?
+        eqsb[noidx] |= efqsb.calib_marginal_prt # FIXME: ?
+        eqsb[noidx] |= efqsb.clock_update # FIXME: ?
+        eqsb[noidx] |= efqsb.data_gap_preceding_scan # FIXME: ?
+        eqsb[noidx] |= efqsb.inconsistent_sequence # FIXME: ?
+        eqsb[noidx] |= efqsb.line_incomplete # FIXME: ?
+        eqsb[noidx] |= efqsb.no_calibration # FIXME dfs.SUSPECT_CALIB?
+        eqsb[noidx] |= efqsb.no_earth_location # FIXME: ?
+        eqsb[noidx] |= efqsb.quest_ant_black_body # FIXME: ?
+        eqsb[dsb&dfs.REDUCED_CONTEXT] |= efqsb.reduced_context
+        eqsb[noidx] |= efqsb.scan_time_repeat # FIXME: ?
+        eqsb[noidx] |= efqsb.status_changed # FIXME: ?
+        eqsb[noidx] |= efqsb.time_field_bad # FIXME: ?
+        eqsb[noidx] |= efqsb.time_field_bad_not_inf # FIXME: ?
+        eqsb[noidx] |= efqsb.time_sequence_error # FIXME: ?
+        eqsb[noidx] |= efqsb.uncalib_bad_prt # FIXME: ?
+        eqsb[noidx] |= efqsb.uncalib_bad_time # FIXME: ?
+        eqsb[noidx] |= efqsb.uncalib_channels # FIXME: ?
+        eqsb[noidx] |= efqsb.uncalib_inst_mode # FIXME: ?
+        eqsb[noidx] |= efqsb.zero_loc # FIXME: ?
+        
+        # MISSING:
+        #
+        # SUSPECT_CALIB
+        # SUSPECT_GEO
+        # SUSPECT_MIRROR_ANY
+        # SUSPECT_TIME
+        # UNCERTAINTY_SUSPICIOUS
 
         # efqcb
-        eqcb[noidx] |= efqcb.do_not_use
-        eqcb[noidx] |= efqcb.calibration_impossible
-        eqcb[noidx] |= efqcb.calibration_suspect
-        eqcb[noidx] |= efqcb.self_emission_fails
-        eqcb[noidx] |= efqcb.uncertainty_suspicious
+        eqcb[dcb&dfc.DO_NOT_USE] |= efqcb.do_not_use
+        eqcb[dcb&dfc.CALIBRATION_IMPOSSIBLE] |= efqcb.calibration_impossible
+        eqcb[noidx] |= efqcb.calibration_suspect # FIXME: ?
+        eqcb[dcb&dfc.SELF_EMISSION_FAILS] |= efqcb.self_emission_fails
+        eqcb[dcb&dfc.UNCERTAINTY_SUSPICIOUS] |= efqcb.uncertainty_suspicious
 
 
         # summarise per line
