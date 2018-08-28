@@ -188,7 +188,7 @@ class HIRSMatchupCombiner:
 
     # TBs files contain either matchup_spherical_distance or
     # hirs-n15_hirs-n14_matchup_spherical_distance
-    msd_field = None
+    msd_field = "matchup_spherical_distance" # default
 
     mode = None
     def __init__(self, start_date, end_date, prim_name, sec_name):
