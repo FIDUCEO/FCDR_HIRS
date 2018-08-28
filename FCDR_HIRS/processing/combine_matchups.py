@@ -97,7 +97,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     # the GWS.  Experiment if this is any better writing to scratch2 (and
     # can then rsync those over later).  UPDATE: Well, it's not.  First
     # write to /dev/shm, then rsync to fiduceo GWS in same script.
-    basedir = "/group_workspaces/cems2/fiduceo/Data/Harmonisation_matchups/HIRS_in_progress/"
+    basedir = "/group_workspaces/cems2/fiduceo/Data/Harmonisation_matchups/HIRS/"
     #basedir = "/work/scratch2/gholl/Harmonisation_matchups/HIRS/"
 
     # fallback for simplified only, because I don't store the

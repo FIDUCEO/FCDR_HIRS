@@ -700,6 +700,7 @@ class KModelSRFIASIDB(KModel):
             for v in self.others.values():
                 v.init_regression()
 
+    _y_pred = None
     def calc_K(self, channel):
         """Calculate K for channel.
         
@@ -735,6 +736,7 @@ class KModelSRFIASIDB(KModel):
             # derive Ks from spread of predictions?  Or Δ with y_ref?  Or
             # from uncertainty provided by regression?  Isn't that part of
             # Kr instead?
+        self._y_pred = y_pred
         self.K[channel] = K
         if self.debug:
             for v in self.others.values():
@@ -759,7 +761,14 @@ class KModelSRFIASIDB(KModel):
         # I don't know what this Δ does indicate, but a good estimate for
         # Ks it is not.
         # NB: self.K is Dict[List[ndarray, ndarray]]
-        return abs(self.K[channel][0] - self.K[channel][1])
+        Ks = abs(self.K[channel][0] - self.K[channel][1])
+        if self._y_pred is None:
+            raise RuntimeError("Must call calc_K first")
+        Ks = (ureg.Quantity(self._y_pred+Ks, self.units).to(
+              rad_u["si"], "radiance", srf=self.srfs[self.prim_name][channel-1]) -
+              ureg.Quantity(self._y_pred, self.units).to(
+              rad_u["si"], "radiance", srf=self.srfs[self.prim_name][channel-1]))
+        return Ks.m
 
     def extra(self, channel):
         ds = super().extra(channel)
