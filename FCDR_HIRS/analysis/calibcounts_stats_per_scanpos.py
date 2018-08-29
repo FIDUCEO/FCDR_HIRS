@@ -252,7 +252,7 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
         a.set_ylabel(("Anomaly to scanline\nmean" if anomaly else
                       "Calibration value") + " [counts]")
         a.grid()
-    ax.ravel()[-1].set_xlabel("Scanline position")
+    ax.ravel()[-1].set_xlabel("Calibration index")
     ax.ravel()[0].legend() # FIXME: position
 
     f.suptitle("{:s} {:s} view calibration {:s}".format(
