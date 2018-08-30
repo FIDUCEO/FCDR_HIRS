@@ -241,7 +241,7 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
     #show = accnt[idx, :, :][:, numpy.asarray(channels)-1]
 
     (f, ax) = matplotlib.pyplot.subplots(N, 1, sharex=True,
-        figsize=(10, 4+2*N), squeeze=False)
+        figsize=(6, 3+1*N), squeeze=False)
     for (a, i) in zip(ax.ravel(), idx):
         for ch in channels:
             a.plot(numpy.arange(h.start_space_calib+1, h.n_perline+1),
@@ -257,6 +257,8 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
 
     f.suptitle("{:s} {:s} view calibration {:s}".format(
         h.satname, typ, "anomalies" if anomaly else "values"))
+
+    f.subplots_adjust(top=0.8) # good with one plot...
 
     graphics.print_or_show(f, False,
         "{:s}_{:s}_calib_{:s}_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}_{:s}.".format(
