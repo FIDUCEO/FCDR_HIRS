@@ -813,65 +813,38 @@ class FCDRGenerator:
         noidx = numpy.zeros(0, dtype="u2")
 
         # efqpb (this is shared between sensors)
-        eqpb[dpb&dfp.DO_NOT_USE] |= efqpb.invalid
+        eqpb[(dpb&dfp.DO_NOT_USE)!=0] |= efqpb.invalid
         eqpb[noidx] |= efqpb.incomplete_channel_data # FIXME
         eqpb[noidx] |= efqpb.invalid_geoloc # FIXME: expand from dsb&dfs.SUSPECT_GEO 
         eqpb[noidx] |= efqpb.invalid_input # FIXME: ?
         eqpb[noidx] |= efqpb.invalid_time # FIXME: expand from dsb&dfs.SUSPECT_TIME
         eqpb[noidx] |= efqpb.padded_data # FIXME: ?
         eqpb[noidx] |= efqpb.sensor_error # FIXME: ?
-        eqpb[noidx] |= efqpb.use_with_caution # FIXME: ?
+        eqpb[noidx] |= efqpb.use_with_caution # set by writer
 
         # efdqb
-        edqb[dpb&dfp.OUTLIER_NOS] |= efdqb.outlier_nos
-        edqb[noidx] |= efdqb.suspect_geo # FIXME: from dfs or should be in eqsb; same as invalid_geoloc?
-        edqb[noidx] |= efdqb.suspect_mirror # FIXME: from dfmf&dmfb.SUSPECT_MIRROR
-        edqb[noidx] |= efdqb.suspect_time # FIXME: should be in eqsb; same as invalid_time?
-        edqb[dpb&dfp.UNCERTAINTY_TOO_LARGE] |= efdqb.uncertainty_too_large
+        edqb[(dpb&dfp.OUTLIER_NOS)!=0] |= efdqb.outlier_nos
+        edqb[(dmfb.sel(minor_frame=slice(56)).rename(minor_frame='x')&dfmf.SUSPECT_MIRROR)!=0 ] |= efdqb.suspect_mirror
+        edqb[(dpb&dfp.UNCERTAINTY_TOO_LARGE)!=0] |= efdqb.uncertainty_too_large
 
         # efqsb
-        # FIXME: this contains too much information for easy
-        eqsb[dsb&dfs.DO_NOT_USE] |= efqsb.do_not_use_scan
-        eqsb[noidx] |= efqsb.bad_loc_ant # FIXME: ?
-        eqsb[noidx] |= efqsb.bad_loc_marginal # FIXME: ?
-        eqsb[noidx] |= efqsb.bad_loc_reason # FIXME: ?
-        eqsb[noidx] |= efqsb.bad_loc_time # FIXME: ?
-        eqsb[dsb&dfs.BAD_TEMP_NO_RSELF] |= efqsb.bad_temp_no_rself
-        eqsb[noidx] |= efqsb.calib_few_scans # FIXME: ?
-        eqsb[noidx] |= efqsb.calib_marginal_prt # FIXME: ?
-        eqsb[noidx] |= efqsb.clock_update # FIXME: ?
-        eqsb[noidx] |= efqsb.data_gap_preceding_scan # FIXME: ?
-        eqsb[noidx] |= efqsb.inconsistent_sequence # FIXME: ?
-        eqsb[noidx] |= efqsb.line_incomplete # FIXME: ?
-        eqsb[noidx] |= efqsb.no_calibration # FIXME dfs.SUSPECT_CALIB?
-        eqsb[noidx] |= efqsb.no_earth_location # FIXME: ?
-        eqsb[noidx] |= efqsb.quest_ant_black_body # FIXME: ?
-        eqsb[dsb&dfs.REDUCED_CONTEXT] |= efqsb.reduced_context
-        eqsb[noidx] |= efqsb.scan_time_repeat # FIXME: ?
-        eqsb[noidx] |= efqsb.status_changed # FIXME: ?
-        eqsb[noidx] |= efqsb.time_field_bad # FIXME: ?
-        eqsb[noidx] |= efqsb.time_field_bad_not_inf # FIXME: ?
-        eqsb[noidx] |= efqsb.time_sequence_error # FIXME: ?
-        eqsb[noidx] |= efqsb.uncalib_bad_prt # FIXME: ?
-        eqsb[noidx] |= efqsb.uncalib_bad_time # FIXME: ?
-        eqsb[noidx] |= efqsb.uncalib_channels # FIXME: ?
-        eqsb[noidx] |= efqsb.uncalib_inst_mode # FIXME: ?
-        eqsb[noidx] |= efqsb.zero_loc # FIXME: ?
+        eqsb[(dsb&dfs.DO_NOT_USE)!=0] |= efqsb.do_not_use_scan
+        eqsb[(dsb&dfs.BAD_TEMP_NO_RSELF)!=0] |= efqsb.bad_temp_no_rself
+        eqsb[(dsb&dfs.REDUCED_CONTEXT)!=0] |= efqsb.reduced_context
+        eqsb[(dsb&dfs.SUSPECT_GEO)!=0] |= efqsb.suspect_geo
+        eqsb[(dsb&dfs.SUSPECT_TIME)!=0] |= efqsb.suspect_time
         
         # MISSING:
         #
-        # SUSPECT_CALIB
-        # SUSPECT_GEO
-        # SUSPECT_MIRROR_ANY
-        # SUSPECT_TIME
+        # SUSPECT_MIRROR_ANY (but I have suspect_mirror)
         # UNCERTAINTY_SUSPICIOUS
 
         # efqcb
-        eqcb[dcb&dfc.DO_NOT_USE] |= efqcb.do_not_use
-        eqcb[dcb&dfc.CALIBRATION_IMPOSSIBLE] |= efqcb.calibration_impossible
-        eqcb[noidx] |= efqcb.calibration_suspect # FIXME: ?
-        eqcb[dcb&dfc.SELF_EMISSION_FAILS] |= efqcb.self_emission_fails
-        eqcb[dcb&dfc.UNCERTAINTY_SUSPICIOUS] |= efqcb.uncertainty_suspicious
+        eqcb[(dcb&dfc.DO_NOT_USE)!=0] |= efqcb.do_not_use
+        eqcb[(dcb&dfc.CALIBRATION_IMPOSSIBLE)!=0] |= efqcb.calibration_impossible
+        eqcb.loc[{"y":(dsb.rename(scanline_earth="y")&dfs.SUSPECT_CALIB)!=0}] |= efqcb.calibration_suspect
+        eqcb[(dcb&dfc.SELF_EMISSION_FAILS)!=0] |= efqcb.self_emission_fails
+        eqcb[(dcb&dfc.UNCERTAINTY_SUSPICIOUS)!=0] |= efqcb.uncertainty_suspicious
 
 
         # summarise per line
