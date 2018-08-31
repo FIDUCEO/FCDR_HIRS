@@ -813,8 +813,10 @@ class FCDRGenerator:
         noidx = numpy.zeros(0, dtype="u2")
 
         # efqpb (this is shared between sensors)
-        eqpb[(dpb&dfp.DO_NOT_USE)!=0] |= efqpb.invalid
-        eqpb[noidx] |= efqpb.incomplete_channel_data # FIXME
+        eqpb.values[(dpb&dfp.DO_NOT_USE).all("calibrated_channel").values] \
+            |= efqpb.invalid
+        eqpb.values[(dpb&dfp.DO_NOT_USE).any("calibrated_channel").values] \
+            |= efqpb.incomplete_channel_data
         eqpb[noidx] |= efqpb.invalid_geoloc # FIXME: expand from dsb&dfs.SUSPECT_GEO 
         eqpb[noidx] |= efqpb.invalid_input # FIXME: ?
         eqpb[noidx] |= efqpb.invalid_time # FIXME: expand from dsb&dfs.SUSPECT_TIME
@@ -823,16 +825,17 @@ class FCDRGenerator:
         eqpb[noidx] |= efqpb.use_with_caution # set by writer
 
         # efdqb
-        edqb[(dpb&dfp.OUTLIER_NOS)!=0] |= efdqb.outlier_nos
-        edqb[(dmfb.sel(minor_frame=slice(56)).rename(minor_frame='x')&dfmf.SUSPECT_MIRROR)!=0 ] |= efdqb.suspect_mirror
-        edqb[(dpb&dfp.UNCERTAINTY_TOO_LARGE)!=0] |= efdqb.uncertainty_too_large
+        edqb.values[(dpb&dfp.OUTLIER_NOS).any("calibrated_channel").values] \
+            |= efdqb.outlier_nos
+        edqb.values[((dmfb.sel(minor_frame=slice(56)).rename(minor_frame='x')&dfmf.SUSPECT_MIRROR)!=0).values] |= efdqb.suspect_mirror
+        edqb.values[(dpb&dfp.UNCERTAINTY_TOO_LARGE).any("calibrated_channel").values] |= efdqb.uncertainty_too_large
 
         # efqsb
-        eqsb[(dsb&dfs.DO_NOT_USE)!=0] |= efqsb.do_not_use_scan
-        eqsb[(dsb&dfs.BAD_TEMP_NO_RSELF)!=0] |= efqsb.bad_temp_no_rself
-        eqsb[(dsb&dfs.REDUCED_CONTEXT)!=0] |= efqsb.reduced_context
-        eqsb[(dsb&dfs.SUSPECT_GEO)!=0] |= efqsb.suspect_geo
-        eqsb[(dsb&dfs.SUSPECT_TIME)!=0] |= efqsb.suspect_time
+        eqsb.values[((dsb&dfs.DO_NOT_USE)!=0).values] |= efqsb.do_not_use_scan
+        eqsb.values[((dsb&dfs.BAD_TEMP_NO_RSELF)!=0).values] |= efqsb.bad_temp_no_rself
+        eqsb.values[((dsb&dfs.REDUCED_CONTEXT)!=0).values] |= efqsb.reduced_context
+        eqsb.values[((dsb&dfs.SUSPECT_GEO)!=0).values] |= efqsb.suspect_geo
+        eqsb.values[((dsb&dfs.SUSPECT_TIME)!=0).values] |= efqsb.suspect_time
         
         # MISSING:
         #
@@ -840,12 +843,12 @@ class FCDRGenerator:
         # UNCERTAINTY_SUSPICIOUS
 
         # efqcb
-        eqcb[(dcb&dfc.DO_NOT_USE)!=0] |= efqcb.do_not_use
-        eqcb[(dcb&dfc.CALIBRATION_IMPOSSIBLE)!=0] |= efqcb.calibration_impossible
+        eqcb.values[((dcb&dfc.DO_NOT_USE)!=0).values] |= efqcb.do_not_use
+        eqcb.values[((dcb&dfc.CALIBRATION_IMPOSSIBLE)!=0).values] |= efqcb.calibration_impossible
+        # from quality_scanline_bitmask into quality_channel_bitmask
         eqcb.loc[{"y":(dsb.rename(scanline_earth="y")&dfs.SUSPECT_CALIB)!=0}] |= efqcb.calibration_suspect
-        eqcb[(dcb&dfc.SELF_EMISSION_FAILS)!=0] |= efqcb.self_emission_fails
-        eqcb[(dcb&dfc.UNCERTAINTY_SUSPICIOUS)!=0] |= efqcb.uncertainty_suspicious
-
+        eqcb.values[((dcb&dfc.SELF_EMISSION_FAILS)!=0).values] |= efqcb.self_emission_fails
+        eqcb.values[((dcb&dfc.UNCERTAINTY_SUSPICIOUS)!=0).values] |= efqcb.uncertainty_suspicious
 
         # summarise per line
         eqcb.values[(dpb&dfp.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |=  \
@@ -855,7 +858,7 @@ class FCDRGenerator:
 #            _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |= \
 #            _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
         
-        raise NotImplementedError("Not implemented yet!")
+#        raise NotImplementedError("Not implemented yet!")
 
     _i = 0
     def get_filename_for_piece(self, piece, fcdr_type):
