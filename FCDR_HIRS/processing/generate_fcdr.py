@@ -108,6 +108,8 @@ import subprocess
 import warnings
 import functools
 import operator
+import enum
+import types
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -176,6 +178,13 @@ class FCDRGenerator:
     # I don't know why it should.
     rself_regr = ("LR", {"fit_intercept": True})
     orbit_filters = None # set in __init__
+    pseudo_fields = {
+        "filename":
+            lambda M, D, H, fn: numpy.full(M.shape[0], pathlib.Path(fn).stem)}
+
+    # maximum number of correlation length to store in single FCDR debug
+    # file.  For the easy, it's N//2 where N is length of orbit.
+    max_debug_corr_length = 1000
 
     # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes):
@@ -203,7 +212,8 @@ class FCDRGenerator:
         self.orbit_filters = orbit_filters
         self.dd = typhon.datasets.dataset.DatasetDeque(
             self.fcdr, self.window_size, start_date,
-            orbit_filters=orbit_filters)
+            orbit_filters=orbit_filters,
+            pseudo_fields=self.pseudo_fields)
 
         self.rself = models.RSelf(self.fcdr,
             temperatures=self.rself_temperatures,
@@ -220,13 +230,16 @@ class FCDRGenerator:
             self=self, start=start, end_time=end_time))
         anyok = False
         try:
-            self.dd.reset(start, orbit_filters=self.orbit_filters)
+            self.dd.reset(start,
+                orbit_filters=self.orbit_filters,
+                pseudo_fields=self.pseudo_fields)
         except typhon.datasets.dataset.DataFileError as e:
             warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
         while self.dd.center_time < end_time:
             try:
                 self.dd.move(self.step_size,
-                    orbit_filters=self.orbit_filters)
+                    orbit_filters=self.orbit_filters,
+                    pseudo_fields=self.pseudo_fields)
                 self.make_and_store_piece(self.dd.center_time - self.segment_size,
                     self.dd.center_time)
             except (fcdr.FCDRError, typhon.datasets.dataset.DataFileError) as e:
@@ -427,10 +440,20 @@ class FCDRGenerator:
         qc = xarray.Dataset(
             {str(k): v for (k, v) in self.fcdr._quantities.items()})
         (SRF_weights, SRF_frequencies) = self.get_srfs()
+
+        (sat_za, sat_aa, sun_za, sun_aa) = self.fcdr.calc_angles(
+            subset.sel(time=qc["scanline_earth"]))
+        # rename original ones
+
         # uncertainty scanline coordinate conflicts with subset scanline
         # coordinate, drop the former
         stuff_to_merge = [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
-                            qc, subset, uRe,
+                            qc,
+                          subset.rename({k.name: "original_"+k.name
+                                for k in (sat_za, sat_aa, sun_za, sun_aa)
+                                if k.name in subset.data_vars.keys()}),
+                            uRe,
+                            sat_za, sat_aa, sun_za, sun_aa,
                             uRe_syst, uRe_rand, uRe_harm,
                             uTb_syst, uTb_rand, uTb_harm,
                             S, lookup_table_BT, LUT_radiance,
@@ -470,7 +493,7 @@ class FCDRGenerator:
             logging.error("Failed to calculate correlation length scales: "
                           f"{e.args[0]}")
         else:
-            # add those to the ds, not in TBs format yet
+            # add those to the ds
             ds["cross_line_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_l.sel(val="popt").values)
             ds["cross_element_radiance_error_correlation_length_scale_structured_effects"] = (("calibrated_channel",), Δ_e.sel(val="popt").values)
             ds["cross_channel_error_correlation_matrix_independent_effects"] = (
@@ -478,7 +501,8 @@ class FCDRGenerator:
             ds["cross_channel_error_correlation_matrix_structured_effects"] = (
                 ("calibrated_channel", "calibrated_channel"), R_cs)
             ds["cross_line_radiance_error_correlation_length_average"] = (
-                ("delta_scanline_earth", "calibrated_channel"), Δ_l_full.values)
+                ("delta_scanline_earth", "calibrated_channel"),
+                Δ_l_full.values[:self.max_debug_corr_length])
             ds["cross_element_radiance_error_correlation_length_average"] = (
                 ("delta_scanpos", "calibrated_channel"), Δ_e_full.values)
 
@@ -604,6 +628,8 @@ class FCDRGenerator:
         "scanpos": "x",
         "channel": "rad_channel",
         "calibrated_channel": "channel",
+        "delta_scanline_earth": "delta_y",
+        "delta_scanpos": "delta_x",
         }
 
     map_names_debug_to_easy = {
@@ -625,7 +651,7 @@ class FCDRGenerator:
             srf_size=piece.dims["n_frequencies"],
             lut_size=piece.dims["lut_size"],
             corr_dx=self.fcdr.n_perline,
-            corr_dy=500)
+            corr_dy=N//2)
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
@@ -635,15 +661,19 @@ class FCDRGenerator:
             latitude=piece["lat"].sel(time=t_earth),
             longitude=piece["lon"].sel(time=t_earth),
             bt=UADA(piece["T_b"]),
-            satellite_zenith_angle=piece["platform_zenith_angle"].sel(time=t_earth),
+            satellite_zenith_angle=piece["platform_zenith_angle"],
+            satellite_azimuth_angle=piece["platform_azimuth_angle"],
+            solar_zenith_angle=piece["solar_zenith_angle"],
+            solar_azimuth_angle=piece["solar_azimuth_angle"],
             scanline=piece["scanline"].sel(time=t_earth),
-            quality_scanline_bitmask = piece["quality_scanline_bitmask"],
-            quality_channel_bitmask = piece["quality_channel_bitmask"],
+#            quality_scanline_bitmask = piece["quality_scanline_bitmask"],
+#            quality_channel_bitmask = piece["quality_channel_bitmask"],
             u_independent=piece["u_T_b_random"],
             u_structured=piece["u_T_b_nonrandom"],
-            u_common=piece["u_T_b_harm"], # NB: not in TBs writer yet!
+            u_common=piece["u_T_b_harm"], # NB 2018-08-02: not in TBs writer yet!
             lookup_table_BT=piece["lookup_table_BT"],
-            lookup_table_radiance=piece["lookup_table_radiance"])
+            lookup_table_radiance=piece["lookup_table_radiance"],
+            scanline_origl1b=piece["scanline_number"].sel(time=t_earth))
         try:
             newcont.update(**dict(
 #                cross_line_radiance_error_correlation_length_scale_structured_effects=piece["cross_line_radiance_error_correlation_length_scale_structured_effects"],
@@ -651,7 +681,7 @@ class FCDRGenerator:
                 channel_correlation_matrix_independent=piece["cross_channel_error_correlation_matrix_independent_effects"],
                 channel_correlation_matrix_structured=piece["cross_channel_error_correlation_matrix_structured_effects"],
                 cross_element_correlation_coefficients=piece["cross_element_radiance_error_correlation_length_average"],
-                cross_line_correlation_coefficients=piece["cross_line_radiance_error_correlation_length_average"],
+                cross_line_correlation_coefficients=piece["cross_line_radiance_error_correlation_length_average"].isel(delta_scanline_earth=slice(easy.dims["delta_y"])),
                     ))
         except KeyError as e:
             # assuming they're missing because their calculation failed
@@ -659,8 +689,8 @@ class FCDRGenerator:
                 "See above, I guess their calculation failed. "
                 f"For the record: {e.args[0]}")
 
-        if self.fcdr.version >= 3:
-            newcont.update(
+#        if self.fcdr.version >= 3:
+#            newcont.update(
 #                linqualflags=piece["line_quality_flags"].sel(time=t_earth),
 #                chqualflags=piece["channel_quality_flags"].sel(
 #                    time=t_earth,
@@ -670,13 +700,13 @@ class FCDRGenerator:
 #                    time=t_earth,
 #                    minor_frame=slice(56)).rename(
 #                    {"minor_frame": "scanpos"}), # see #73 (TODO: #74, #97)
-                satellite_azimuth_angle=piece["local_azimuth_angle"].sel(time=t_earth),
-                solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
-                )
-        else:
-            easy = easy.drop(easy.data_vars.keys() &
-                {"solar_zenith_angle", "solar_azimuth_angle",
-                 "satellite_azimuth_angle"})
+#                satellite_azimuth_angle=piece["local_azimuth_angle"].sel(time=t_earth),
+#                solar_zenith_angle=piece["solar_zenith_angle"].sel(time=t_earth),
+#                )
+#        else:
+#            easy = easy.drop(easy.data_vars.keys() &
+#                {"solar_zenith_angle", "solar_azimuth_angle",
+#                 "satellite_azimuth_angle"})
             #newcont["local_azimuth_angle"] = None
             #newcont["solar_zenith_angle"] = None
         # if we are going to respect Toms template this should contain
@@ -685,6 +715,13 @@ class FCDRGenerator:
                     v)
                 for (k, v) in newcont.items()}
         easy = easy.assign(**transfer)
+        self.debug2easy_flags(easy, piece)
+        
+        # add orig_l1b
+        src_filenames = pandas.unique(piece["filename"].sel(time=t_earth))
+        easy["scanline_map_to_origl1bfile"][:] = [src_filenames.tolist().index(fn) for fn in piece["filename"].sel(time=t_earth)]
+        easy.attrs["source"] = src_filenames
+
         easy = easy.assign_coords(
             x=numpy.arange(1, 57),
             #y=easy["scanline"],
@@ -719,10 +756,6 @@ class FCDRGenerator:
                 if kk not in easy[k].encoding:
                     easy[k].encoding[kk] = vv
 
-        easy["quality_channel_bitmask"].values[(piece["quality_pixel_bitmask"] &
-            _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |= \
-            _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
-
         for f in ("SRF_weights", "SRF_frequencies"):
             easy[f][...] = piece[f].sel(channel=range(1, 20), n_frequencies=range(easy.dims["n_frequencies"]))
                 
@@ -733,6 +766,99 @@ class FCDRGenerator:
             
         easy = easy.drop(("scanline",)) # see #94
         return easy
+
+    def debug2easy_flags(self, easy, piece):
+        """Copy over flags from piece to easy
+
+        Arguments:
+            easy
+                as returned by TBs code
+            piece
+                as processed in this code too (debug)
+
+        No return value.
+        """
+
+        # prepare enum.IntFlag for easier access
+        ef = {}
+        for f in ("quality_pixel_bitmask", "data_quality_bitmask",
+                  "quality_scanline_bitmask", "quality_channel_bitmask"):
+            ef[f] = enum.IntFlag(
+                    f,
+                    dict(zip(easy[f].flag_meanings.split(),
+                             easy[f].flag_masks.split(', '))))
+
+        dfs = _fcdr_defs.FlagsScanline
+        dfc = _fcdr_defs.FlagsChannel
+        dfmf = _fcdr_defs.FlagsMinorFrame
+        dfp = _fcdr_defs.FlagsPixel
+        
+        efqpb = ef["quality_pixel_bitmask"]
+        efdqb = ef["data_quality_bitmask"]
+        efqsb = ef["quality_scanline_bitmask"]
+        efqcb = ef["quality_channel_bitmask"]
+
+        dpb = piece["quality_pixel_bitmask"]
+        dsb = piece["quality_scanline_bitmask"]
+        dcb = piece["quality_channel_bitmask"]
+        dmfb = piece["quality_minorframe_bitmask"]
+        
+        eqpb = easy["quality_pixel_bitmask"]
+        edqb = easy["data_quality_bitmask"]
+        eqsb = easy["quality_scanline_bitmask"]
+        eqcb = easy["quality_channel_bitmask"]
+
+
+        # placeholders with noidx to be filled in
+        noidx = numpy.zeros(0, dtype="u2")
+
+        # efqpb (this is shared between sensors)
+        eqpb.values[(dpb&dfp.DO_NOT_USE).all("calibrated_channel").values] \
+            |= efqpb.invalid
+        eqpb.values[(dpb&dfp.DO_NOT_USE).any("calibrated_channel").values] \
+            |= efqpb.incomplete_channel_data
+        eqpb[noidx] |= efqpb.invalid_geoloc # FIXME: expand from dsb&dfs.SUSPECT_GEO 
+        eqpb[noidx] |= efqpb.invalid_input # FIXME: ?
+        eqpb[noidx] |= efqpb.invalid_time # FIXME: expand from dsb&dfs.SUSPECT_TIME
+        eqpb[noidx] |= efqpb.padded_data # FIXME: ?
+        eqpb[noidx] |= efqpb.sensor_error # FIXME: ?
+        eqpb[noidx] |= efqpb.use_with_caution # set by writer
+
+        # efdqb
+        edqb.values[(dpb&dfp.OUTLIER_NOS).any("calibrated_channel").values] \
+            |= efdqb.outlier_nos
+        edqb.values[((dmfb.sel(minor_frame=slice(56)).rename(minor_frame='x')&dfmf.SUSPECT_MIRROR)!=0).values] |= efdqb.suspect_mirror
+        edqb.values[(dpb&dfp.UNCERTAINTY_TOO_LARGE).any("calibrated_channel").values] |= efdqb.uncertainty_too_large
+
+        # efqsb
+        eqsb.values[((dsb&dfs.DO_NOT_USE)!=0).values] |= efqsb.do_not_use_scan
+        eqsb.values[((dsb&dfs.BAD_TEMP_NO_RSELF)!=0).values] |= efqsb.bad_temp_no_rself
+        eqsb.values[((dsb&dfs.REDUCED_CONTEXT)!=0).values] |= efqsb.reduced_context
+        eqsb.values[((dsb&dfs.SUSPECT_GEO)!=0).values] |= efqsb.suspect_geo
+        eqsb.values[((dsb&dfs.SUSPECT_TIME)!=0).values] |= efqsb.suspect_time
+        
+        # MISSING:
+        #
+        # SUSPECT_MIRROR_ANY (but I have suspect_mirror)
+        # UNCERTAINTY_SUSPICIOUS
+
+        # efqcb
+        eqcb.values[((dcb&dfc.DO_NOT_USE)!=0).values] |= efqcb.do_not_use
+        eqcb.values[((dcb&dfc.CALIBRATION_IMPOSSIBLE)!=0).values] |= efqcb.calibration_impossible
+        # from quality_scanline_bitmask into quality_channel_bitmask
+        eqcb.loc[{"y":(dsb.rename(scanline_earth="y")&dfs.SUSPECT_CALIB)!=0}] |= efqcb.calibration_suspect
+        eqcb.values[((dcb&dfc.SELF_EMISSION_FAILS)!=0).values] |= efqcb.self_emission_fails
+        eqcb.values[((dcb&dfc.UNCERTAINTY_SUSPICIOUS)!=0).values] |= efqcb.uncertainty_suspicious
+
+        # summarise per line
+        eqcb.values[(dpb&dfp.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |=  \
+            efqcb.uncertainty_suspicious
+
+#        easy["quality_channel_bitmask"].values[(piece["quality_pixel_bitmask"] &
+#            _fcdr_defs.FlagsPixel.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |= \
+#            _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
+        
+#        raise NotImplementedError("Not implemented yet!")
 
     _i = 0
     def get_filename_for_piece(self, piece, fcdr_type):

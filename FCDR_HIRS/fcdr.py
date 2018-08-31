@@ -8,6 +8,7 @@ import functools
 import operator
 import datetime
 import numbers
+import math
 
 import numpy
 import scipy.interpolate
@@ -15,6 +16,9 @@ import progressbar
 import pandas
 import xarray
 import sympy
+import pyorbital.orbital
+import pyorbital.astronomy
+
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.utils import get_time_dimensions
     
@@ -170,7 +174,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             cond = {"calibrate": (None, True)}
             self.my_pseudo_fields["radiance_fid_naive"] = (
                 ["radiance", self.scantype_fieldname, "temp_iwt", "time"],
-                lambda M, D:
+                lambda M, D, H, fn:
                 self.calculate_radiance_all(
                     M[1] if isinstance(M, tuple) else M, 
                     return_ndarray=True,
@@ -593,6 +597,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 dims=dims if dims is not None else [d for d in self._data_vars_props[name][1] if d not in dropdims],
                 attrs=self._data_vars_props[name][2],
                 encoding=self._data_vars_props[name][3])
+        if not da.name:
+            da.name = self._data_vars_props[name][0]
         # also drop dimensions when they are now dimensionless coordinates
         for d in dropdims:
             if d in da.coords:
@@ -1547,7 +1553,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #        return ureg.Quantity(numpy.ma.concatenate([rad.m[...,
 #            numpy.newaxis] for rad in all_rad], 2), all_rad[0].u)
 
-    def calculate_bt_all(self, M, D): 
+    def calculate_bt_all(self, M, D, H=None, fn=None): 
         if isinstance(D["radiance_fid_naive"], xarray.DataArray):
             bt_all = xarray.concat(
                 [D["radiance_fid_naive"].sel(channel=i).to(
@@ -2354,10 +2360,67 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             yield from self.propagate_uncertainty_components(u,
                 sens[k][1], comp[k][1], sens_to_here)
 
+    def calc_angles(self, ds):
+        """Calculate satellite and solar angles
 
-    # deprecated:
+        Calculate satellite zenith angle, satellite azimuth angle, solar
+        zenith angle, solar azimuth angle.
+        """
+
+        # satellite angles
+        satlatlon = ds[["lat","lon"]].sel(
+            scanpos=[math.floor(self.n_perline/2),
+                     math.ceil(self.n_perline/2)]).reset_coords(["lat", "lon"])
+        if numpy.sign(satlatlon["lon"]).prod()<0:
+            # we're crossing the antimeridian
+            satlatlon["lon"] += 360
+            satlatlon = satlatlon.mean("scanpos")
+            if satlatlon["lon"].item() > 360:
+                satlatlon["lon"] -= 360
+        else:
+            # not very accurate, but this is a temporary solution anyway,
+            # as ultimately the satellite lat/lon needs to be recalculated
+            # from TLEs when we redo the geolocation (#235)
+            satlatlon = satlatlon.mean("scanpos")
+        satelev = ds["platform_altitude"]
+        (sat_aa, sat_ea) = pyorbital.orbital.get_observer_look(
+            satlatlon["lon"],
+            satlatlon["lat"],
+            satelev,
+            ds["time"], # FIXME: Who cares?
+            ds["lon"],
+            ds["lat"],
+            numpy.zeros(ds["lat"].shape)) # elevations
+            
+        (sun_el_rad, sun_az_rad) = pyorbital.astronomy.get_alt_az(
+            ds["time"],
+            ds["lon"],
+            ds["lat"])
+
+        sun_za = self._quantity_to_xarray(
+            90 - numpy.rad2deg(sun_el_rad),
+            "solar_zenith_angle")
+        sun_aa = self._quantity_to_xarray(
+            numpy.rad2deg(sun_az_rad),
+            "solar_azimuth_angle")
+        sat_za = self._quantity_to_xarray(
+            90 - sat_ea,
+            "platform_zenith_angle")
+        sat_aa = self._quantity_to_xarray(
+            sat_aa,
+            "platform_azimuth_angle")
+
+        return (sat_za, sat_aa, sun_za, sun_aa)
+
+
+    #####################################################################
+    #
+    #   DEPRECATED!
+    #
     # The remaining methods should no longer be used but legacy code such
     # as in timeseries.py still depends on them
+    #
+    #####################################################################
 
     def calc_sens_coef(self, typ, M, ch, srf): 
         """Calculate sensitivity coefficient.

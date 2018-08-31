@@ -28,6 +28,10 @@ _corr_coding["dtype"] = "u2"
 _corr_coding["scale_factor"] = 0.001
 _corr_coding["_FillValue"] = _u2_coding["_FillValue"]
 
+_str_coding = _coding.copy()
+del _str_coding["dtype"]
+del _str_coding["_FillValue"]
+
 # FIXME: uncertainty does NOT always have the same dimensions as quantity
 # it belongs to...
 
@@ -351,6 +355,34 @@ FCDR_data_vars_props = dict(
         {"long_name": "Channel error correlation matrix for structured effects",
          "units": "scanlines"},
         _corr_coding),
+    filename = (
+        "filename",
+        ("time",),
+        {"long_name": "Original filename in L1B"},
+        _str_coding),
+    platform_zenith_angle = (
+        "platform_zenith_angle",
+        ("scanline_earth", "scanpos"),
+        {"long_name": "Zenith angle of satellite as seen from the ground",
+         "units": "degrees"},
+        _ang_coding),
+    platform_azimuth_angle = (
+        "platform_azimuth_angle",
+        ("scanline_earth", "scanpos"),
+        {"long_name": "Azimuth angle (from the north) of satellite as seen from the ground",
+         "units": "degrees"},
+        _ang_coding),
+    solar_zenith_angle = (
+        "solar_zenith_angle",
+        ("scanline_earth", "scanpos"),
+        {"long_name": "Zenith angle of the Sun as seen from the ground",
+         "units": "degrees"},
+        _ang_coding),
+    solar_azimuth_angle = (
+        "solar_azimuth_angle",
+        ("scanline_earth", "scanpos"),
+        {"long_name": "Azimuth angle (from the north) of the Sun as seen from the ground"},
+        _ang_coding),
 )
 
 p = FCDR_data_vars_props
@@ -436,6 +468,30 @@ FCDR_extra_attrs = dict(
                   "and structured random effects.  For a more complete "
                   "treatment, please use full FCDR.")}
     )
+
+
+# TB writer 2018-08-21 (1.1.5):
+#
+# In : easy["quality_pixel_bitmask"].flag_meanings
+# 'invalid use_with_caution invalid_input invalid_geoloc invalid_time
+# sensor_error padded_data incomplete_channel_data'
+#
+# In : easy["data_quality_bitmask"].flag_meanings
+# 'suspect_mirror suspect_geo suspect_time outlier_nos
+# uncertainty_too_large'
+#
+# In : easy["quality_scanline_bitmask"].flag_meanings
+# 'do_not_use_scan time_sequence_error data_gap_preceding_scan
+# no_calibration no_earth_location clock_update status_changed
+# line_incomplete, time_field_bad time_field_bad_not_inf
+# inconsistent_sequence scan_time_repeat uncalib_bad_time calib_few_scans
+# uncalib_bad_prt calib_marginal_prt uncalib_channels uncalib_inst_mode
+# quest_ant_black_body zero_loc bad_loc_time bad_loc_marginal bad_loc_reason
+# bad_loc_ant reduced_context bad_temp_no_rself'
+#
+# In : easy["quality_channel_bitmask"].flag_meanings
+# 'do_not_use uncertainty_suspicious self_emission_fails
+# calibration_impossible calibration_suspect'
 
 @enum.unique
 class FlagsScanline(enum.IntFlag):
