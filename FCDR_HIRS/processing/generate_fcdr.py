@@ -756,9 +756,10 @@ class FCDRGenerator:
                 if kk not in easy[k].encoding:
                     easy[k].encoding[kk] = vv
 
-        for f in ("SRF_weights", "SRF_frequencies"):
-            easy[f][...] = piece[f].sel(channel=range(1, 20), n_frequencies=range(easy.dims["n_frequencies"]))
-                
+        easy["SRF_weights"][...] = piece["SRF_weights"].sel(channel=range(1, 20), n_frequencies=range(easy.dims["n_wavelengths"]))
+        easy["SRF_wavelengths"][...] = UADA(
+            piece["SRF_frequencies"].sel(channel=range(1, 20), n_frequencies=range(easy.dims["n_wavelengths"]))).to(
+                "um", "sp")
         easy.attrs.update(piece.attrs)
 
         for (k, v) in _fcdr_defs.FCDR_extra_attrs.items():
