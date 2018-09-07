@@ -194,10 +194,12 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False,
 #        for e in symbols.values()}
 
 # make sure no symbol occurs in multiple sub-measurement equations
+# and all the harmonisation parameters occur directly
 expressions[sym["R_e"]] = recursive_substitution(sym["R_e"],
-    stop_at=sym["R_IWCT"])
+    stop_at=sym["B"])
 del expressions[sym["a_0"]]
 del expressions[sym["a_1"]]
+del expressions[sym["R_IWCT"]]
 all_args = set()
 for (s, e) in expressions.items():
     if s in (sym["T_b"], sym["T_bstar"]): # exempted

@@ -1872,7 +1872,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         (u_e, sensitivities, components) = typhon.physics.metrology.express_uncertainty(
             e, on_failure="warn", collect_failures=failures,
             return_sensitivities=True,
-            return_components=True)
+            return_components=True,
+            correlated_terms=(
+                {me.symbols[f"a_{i:d}"] for i in {2,3,4}}
+                if me.symbols["a_2"] in e.free_symbols
+                else set())
+            )
 
         if u_e == 0: # constant
             # FIXME: bookkeep where I have zero uncertainty
