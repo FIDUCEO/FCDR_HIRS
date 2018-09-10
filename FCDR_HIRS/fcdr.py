@@ -656,7 +656,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._quantities[s] = q
             return q
 
-    def _tuck_effect_channel(self, name, quantity, channel):
+    def _tuck_effect_channel(self, name, quantity, channel,
+            covariances=None):
         """Convert quantity to xarray and put into self._effects
         """
 
@@ -673,21 +674,25 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # want xarray tries to realign the coordinates...  earlier I
         # accidentally removed the coordinates and that is why it worked
         # at all!
+
+        if covariances is None:
+            covariances = {}
+        eff = self._effects_by_name[name]
         if isinstance(quantity, xarray.DataArray):
             q = quantity.rename(
                 dict(zip(quantity.dims,
-                self._effects_by_name[name].dimensions)))
+                eff.dimensions)))
         else:
             q = self._quantity_to_xarray(quantity, name,
                 dropdims=["channel", "calibrated_channel"],
-                dims=self._effects_by_name[name].dimensions)
+                dims=eff.dimensions)
         if q.name is None:
             q.name = f"u_{name:s}"
         q = q.assign_coords(calibrated_channel=channel)
-        if self._effects_by_name[name].magnitude is None:
-            self._effects_by_name[name].magnitude = q
+        if eff.magnitude is None:
+            eff.magnitude = q
         else:
-            da = self._effects_by_name[name].magnitude
+            da = eff.magnitude
             # check if we're tucking it for the same channel twice...
             if channel in da.calibrated_channel.values:
                 if da.calibrated_channel.size == 1:
@@ -704,7 +709,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 compat="identical")
             # NB: https://github.com/pydata/xarray/issues/1297
             da.encoding = q.encoding
-            self._effects_by_name[name].magnitude = da
+            eff.magnitude = da
+        for (other, val) in covariances.items():
+            eff.set_covariance(self._effects_by_name[other], val)
 
     def calculate_offset_and_slope(self, ds, ch, srf=None, tuck=False,
             naive=False, accept_nan_for_nan=False):
@@ -851,7 +858,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 calibrated_channel=ch)
             self._tuck_effect_channel("a_2",
                 _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][1],
-                ch)
+                ch,
+                covariances={"a_3": 0, "a_4": 0}) # FIXME: realistic values
             self._tuck_quantity_channel("B", L_iwct.assign_coords(time=slope.coords["time"]),
                 calibrated_channel=ch)
         return (time,
@@ -1454,12 +1462,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 a_3, name=me.names[me.symbols["a_3"]])
             self._tuck_effect_channel("a_3",
                 _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][2],
-                ch)
+                ch,
+                covariances={"a_2": 0, "a_4": 0}) # FIXME: do not lie
             self._quantities[me.symbols["a_4"]] = self._quantity_to_xarray(
                 a_4, name=me.names[me.symbols["a_4"]])
             self._tuck_effect_channel("a_4",
                 _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][0],
-                ch)
+                ch,
+                covariances={"a_2": 0, "a_3": 0}) # FIXME: do not lie
 
             # the zero-terms
             for s in (s for s in me.symbols.keys() if s.startswith("O_")):
@@ -1904,7 +1914,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # might mean that I need to evaluate less.  Hence two runs through
         # args: first to check the zeroes, then to see what's left.
         for v in sorted(args, key=str):
-            if isinstance(v, fu):
+            if isinstance(v, fu) and len(v.args)==1:
                 # comparing .values to avoid entering
                 # xarray.core.nputils.array_eq which has a catch_warnings
                 # context manager destroying the context registry, see
@@ -1955,9 +1965,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         sub_components = me.ExpressionDict()
         for v in sorted(args, key=str):
             # check which one of the four aforementioned applies
-            if isinstance(v, fu):
-                # it's an uncertainty function
-                assert len(v.args) == 1
+            if isinstance(v, fu) and len(v.args)==1:
                 # this covers both cases (2) and (3); if there is no
                 # expression for the uncertainty, it will be read from the
                 # effects tables (see above)
@@ -1998,6 +2006,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     sensitivities[v.args[0]], subsens)
                 sub_components[v.args[0]] = (
                     components[v.args[0]], subcomp)
+            elif isinstance(v, fu) and len(v.args) == 2:
+                effs = all_effects[v.args[0]]
+                if len(effs) != 1:
+                    raise NotImplementedError("Covariances with "
+                        "variables with more or less than 1 effect "
+                        "not implemented.")
+                eff = effs.copy().pop()
+                adict[v] = eff.covariances[v.args[1]]
+            elif isinstance(v, fu):
+                raise ValueError(
+                    f"uncertainty function with {len(v.args):d} arguments?!")
             else:
                 # it's a quantity
                 if v not in quantities:

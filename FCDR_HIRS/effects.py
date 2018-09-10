@@ -292,6 +292,7 @@ class Effect:
 
     - magnitude
     - correlation_scale
+    - covariances
 
     Sensitivity coefficients are calculated on-the-fly using the
     measurement_equation module.
@@ -409,6 +410,35 @@ class Effect:
                                 "truncated_gaussian_relative",
                                 "repeated_rectangles",
                                 "repeated_truncated_gaussians")
+
+    _covariances = {}
+    def set_covariance(self, other, da, _set_other=True):
+        """Set covariance between this and other effect
+
+        Arguments:
+
+            other [Effect]
+
+            da [xarray.DataArray]
+        """
+
+        da = xarray.DataArray(da)
+        da.attrs["units"] = str(
+            (_fcdr_defs.FCDR_data_vars_props[self.name][2]["units"] *
+             _fcdr_defs.FCDR_data_vars_props[other.name][2]["units"]))
+
+        da.name = f"u_{self.name:s}_{other.name:s}"
+#        da.attrs["long_name"] = f"error covariance {self.magnitude.attrs['long_name']:s} with {other.magnitude.attrs['long_name']:s}"
+        da.attrs["short_name"] = da.name
+        da.attrs["parameters"] = (str(self.parameter), str(other.parameter))
+        
+        self._covariances[other.parameter] = da
+        if _set_other:
+            other.set_covariance(self, da, _set_other=False)
+
+    @property
+    def covariances(self):
+        return self._covariances
 
     @property
     def correlation_type(self):
