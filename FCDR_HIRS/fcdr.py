@@ -1460,6 +1460,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._tuck_effect_channel("a_4",
                 _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][0],
                 ch)
+
+            # the zero-terms
+            for s in (s for s in me.symbols.keys() if s.startswith("O_")):
+                self._tuck_quantity_channel(s, 0, calibrated_channel=ch)
         rad_wn = rad_wn.rename({"time": "scanline_earth"})
 
 

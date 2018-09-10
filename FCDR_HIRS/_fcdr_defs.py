@@ -392,7 +392,7 @@ for (var, corr) in {("R_Earth", "O_Re"),
                     ("prt_iwct_temperature", "O_TPRT")}:
     FCDR_data_vars_props[corr] = (
         "corr_" + p[var][0],
-        p[var][1],
+        (),
         {"long_name": "correction to " + p[var][2]["long_name"],
          "units": p[var][2]["units"]},
         _coding) # actually, always zero…
