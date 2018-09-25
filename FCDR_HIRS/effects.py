@@ -422,7 +422,8 @@ class Effect:
             da [xarray.DataArray]
         """
 
-        da = xarray.DataArray(da)
+
+        da = UADA(da)
         da.attrs["units"] = str(
             (_fcdr_defs.FCDR_data_vars_props[self.name][2]["units"] *
              _fcdr_defs.FCDR_data_vars_props[other.name][2]["units"]))
