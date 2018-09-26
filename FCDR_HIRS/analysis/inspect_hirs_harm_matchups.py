@@ -239,6 +239,27 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
         "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}.".format(
             channel=ds["channel"].item(), lab=lab, **ds.attrs))
     
+def plot_harm_input_stats(ds):
+    """Plot histograms and such of harmonisation inputs
+    """
+    N = ds.dims["m1"]
+    (f, ax_all) = matplotlib.pyplot.subplots(2, N, figsize=(5*N, 10))
+    for i in range(N):
+        for j in range(1, 3):
+            vn = f"X{j:d}"
+            dn = f"m{j:d}"
+            a = ax_all[j-1, i]
+            da = ds[vn][{dn:i}]
+            a.hist(da, bins=100)
+            a.set_title(ds.attrs[f"sensor_{j:d}_name"] + ", " + ds[dn][i].item())
+            a.set_xlabel(ds[dn][i])
+            a.set_ylabel("Count")
+    f.suptitle("harm input stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}".format(**ds.attrs)
+        + ", channel " + str(ds["channel"].item()))
+    pyatmlab.graphics.print_or_show(f, False,
+        "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_input_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_.".format(
+            channel=ds["channel"].item(), **ds.attrs))
+
 def plot_file_summary_stats(path):
     """Plot various summary statistics for harmonisation file
 
@@ -264,14 +285,17 @@ def plot_file_summary_stats(path):
         sec_hirs=fcdr.which_hirs_fcdr(ds.attrs["sensor_2_name"], read="L1C"))
     kmodel.init_Ldb()
 
+    plot_harm_input_stats(ds)
     others = [k.replace("K_other_", "").replace("_forward", "")
             for k in ds.data_vars.keys()
             if k.startswith("K_other_") and k.endswith("_forward")]
     if others:
         for lab in others:
-            plot_ds_summary_stats(ds, lab, kmodel.others[lab].Ldb_hirs_simul)
+            # used to have LR/ODR this in so may be in old files
+            plot_ds_summary_stats(ds, lab, kmodel.others[lab.replace("_LR", "").replace("_ODR", "")].Ldb_hirs_simul)
     else:
         plot_ds_summary_stats(ds, kmodel.Ldb_hirs_simul)
+
 
 
 def main():
