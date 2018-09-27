@@ -59,7 +59,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
         # extra cruft added to string by combine_hirs_hirs_matchups
         lab = f"other_{lab:s}_"
     
-    (f, ax_all) = matplotlib.pyplot.subplots(2, 4, figsize=(25, 10))
+    (f, ax_all) = matplotlib.pyplot.subplots(2, 8, figsize=(25, 10))
 
     g = ax_all.flat
 
@@ -250,11 +250,17 @@ def plot_harm_input_stats(ds):
             dn = f"m{j:d}"
             a = ax_all[j-1, i]
             da = ds[vn][{dn:i}]
-            a.hist(da, bins=100)
+            (n, bins, patches) = a.hist(da, bins=100)
+            # plot median and N*MAD from median
+            med = da.median()
+            mad = numpy.abs(da-med).median()
+            for ext in [-10, -7, -3, 0, 3, 7, 10]:
+                a.plot([med+ext*mad, med+ext*mad], [0, n.max()], color="red")
+                a.text(med+ext*mad, .8*n.max(), str(ext))
             a.set_title(ds.attrs[f"sensor_{j:d}_name"] + ", " + ds[dn][i].item())
-            a.set_xlabel(ds[dn][i])
+            a.set_xlabel(ds[dn][i].item())
             a.set_ylabel("Count")
-    f.suptitle("harm input stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}".format(**ds.attrs)
+    f.suptitle("harm input stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}, with med+N*mad away".format(**ds.attrs)
         + ", channel " + str(ds["channel"].item()))
     pyatmlab.graphics.print_or_show(f, False,
         "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_input_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_.".format(
