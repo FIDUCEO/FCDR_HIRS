@@ -271,6 +271,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
     ratcorr = numpy.where(rat<=1, rat, 1)
     a2.plot(midbins, ratcorr, 'k--')
     a2.set_ylabel("filter: P(keep)")
+    a2.set_ylim([0, 1])
     a.set_xlabel(f"K - ΔL [{y1.units:s}]")
     a.set_ylabel("Density")
     a.set_title("Histogram of K-ΔL with MADs from MED\n"
