@@ -59,7 +59,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
         # extra cruft added to string by combine_hirs_hirs_matchups
         lab = f"other_{lab:s}_"
     
-    (f, ax_all) = matplotlib.pyplot.subplots(2, 8, figsize=(25, 10))
+    (f, ax_all) = matplotlib.pyplot.subplots(2, 5, figsize=(30, 10))
 
     g = ax_all.flat
 
@@ -209,8 +209,9 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
 
     # K - ΔL vs. radiance
     a = next(g)
+    K_min_ΔL = ds[f"K_{lab:s}forward"] - (y2-y1)
     pc = a.hexbin(y1,
-        ds[f"K_{lab:s}forward"] - (y2-y1),
+        K_min_ΔL,
         extent=numpy.concatenate([[Lmin, Lmax], kxrange-LΔrange]),
         mincnt=1)
     a.plot([0, Lmax], [0, 0], 'k--')
@@ -221,6 +222,38 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
     a.set_ylim(kxrange-LΔrange)
     a.set_title('K "wrongness" per radiance')
     cbs.append(f.colorbar(pc, ax=a))
+
+    # Kr / u_independent for both
+    a = next(g)
+    # awaiting having Kr in it
+    Kr_K = (
+        ((UADA(ds["nominal_measurand1"])+UADA(ds["Kr"])).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1) -
+         UADA(ds["nominal_measurand1"]).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1)))
+    (cnts, bins, patches) = a.hist(
+        Kr_K,
+        histtype="step",
+        bins=100)
+    a.set_xlabel("Kr")
+    a.set_ylabel("Count")
+    a.set_title("Histogram of Kr")
+
+    # K-ΔL simply histogram
+    a = next(g)
+    (cnts, bins, patches) = a.hist(
+        K_min_ΔL,
+        histtype="step",
+        bins=100)
+    med = K_min_ΔL.median()
+    mad = abs(K_min_ΔL-med).median()
+    for i in range(-9, 10, 3):
+        a.plot([med+i*mad]*2, [0, cnts.max()], color="red")
+        a.text(med+i*mad, .8*cnts.max(), str(i))
+    a.set_xlabel(f"K - ΔL [{y1.units:s}]")
+    a.set_ylabel("Count")
+    a.set_title("Histogram of K-ΔL with MADs from MED")
+    a.set_xlim(kxrange-LΔrange)
 
     for cb in cbs:
         cb.set_label("No. matchups in bin")
