@@ -556,9 +556,13 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
         harm[f"nominal_measurand_uncertainty_independent{i:d}"] = (("M",),
             ds[f"{sat:s}_u_R_Earth_random"].sel(calibrated_channel=channel))
+        harm[f"nominal_measurand_uncertainty_independent{i:d}"].attrs.update(
+            ds[f"{sat:s}_u_R_Earth_random"].attrs)
 
         harm[f"nominal_measurand_uncertainty_structured{i:d}"] = (("M",),
             ds[f"{sat:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel))
+        harm[f"nominal_measurand_uncertainty_structured{i:d}"].attrs.update(
+            ds[f"{sat:s}_u_R_Earth_nonrandom"].attrs)
 
         harm[f"lon{i:d}"] = (("M",), ds[f"{sat:s}_longitude"])
         harm[f"lat{i:d}"] = (("M",), ds[f"{sat:s}_latitude"])
