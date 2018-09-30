@@ -296,11 +296,11 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
     # workaround, I forgot to add units
     u1.attrs["units"] = ds["nominal_measurand1"].attrs["units"]
     u2.attrs["units"] = ds["nominal_measurand2"].attrs["units"]
-    u1_K = UADA(ds["nominal_measurand1"]+UADA(u1).to(
+    u1_K = ((UADA(ds["nominal_measurand1"])+UADA(u1)).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1) -
              UADA(ds["nominal_measurand1"]).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1))
-    u2_K = UADA(ds["nominal_measurand2"]+UADA(u2).to(
+    u2_K = ((UADA(ds["nominal_measurand2"])+UADA(u2)).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2) -
              UADA(ds["nominal_measurand2"]).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2))
