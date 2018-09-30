@@ -260,16 +260,24 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         bad = (to_check==0)
         ok &= sum([v.values for v in bad.data_vars.values()])==0 
         logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after 0-uncertainty-filtering")
-        # here check only sec; prim only checkid if prim not iasi
+        # here check only sec; prim only checked if prim not iasi
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
         logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after secondary isfinite-filtering")
         ok &= self.kmodel.filter(mdim, channel)
         logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after kmodel-filtering")
         ok &= self.krmodel.filter(mdim, channel)
         logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after krmodel-filtering")
+        # WORKAROUND, REMOVE AFTER FIXING #281#
+        ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
+        logging.debug(f"{ok.sum().item():d}/{ok.size:d} matchups left after removing non-finite structured uncertainties from secondary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
+        #
         if self.prim_name != "iasi":
             ok &= numpy.isfinite(ds[f"{self.prim_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
             logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after primary isfinite-filtering")
+            # WORKAROUND, REMOVE AFTER FIXING #281#
+            ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
+            logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after removing non-finite structured uncertainties from primary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
+            #
             ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
                    (ds[f"{self.sec_name:s}_scantype"] == 0)).values
         else:
