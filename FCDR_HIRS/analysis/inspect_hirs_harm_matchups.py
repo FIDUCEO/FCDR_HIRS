@@ -293,6 +293,9 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
     a = next(g)
     u1 = ds["nominal_measurand_uncertainty_independent1"]
     u2 = ds["nominal_measurand_uncertainty_independent2"]
+    # workaround, I forgot to add units
+    u1.attrs["units"] = ds["nominal_measurand1"].attrs["units"]
+    u2.attrs["units"] = ds["nominal_measurand2"].attrs["units"]
     u1_K = UADA(ds["nominal_measurand1"]+UADA(u1).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1) -
              UADA(ds["nominal_measurand1"]).to(
