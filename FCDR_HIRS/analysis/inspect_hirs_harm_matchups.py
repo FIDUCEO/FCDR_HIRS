@@ -287,6 +287,29 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
     a.set_xlabel("Kr")
     a.set_ylabel(f"K - ΔL [{y1.units:s}]")
     a.set_title("Joint distribution Kr and K - ΔL")
+    cbs.append(f.colorbar(pc, ax=a))
+
+    # Kr vs. uncertainty
+    a = next(g)
+    u1 = ds["nominal_measurand_uncertainty_independent1"]
+    u2 = ds["nominal_measurand_uncertainty_independent2"]
+    u1_K = UADA(ds["nominal_measurand1"]+UADA(u1).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1) -
+             UADA(ds["nominal_measurand1"]).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1))
+    u2_K = UADA(ds["nominal_measurand2"]+UADA(u2).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2) -
+             UADA(ds["nominal_measurand2"]).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2))
+    uj = numpy.sqrt(u1_K**2+u2_K**2)
+    pc = a.hexbin(Kr_K, uj,
+        extent=numpy.concatenate([[0, scipy.stats.scoreatpercentile(Kr_K, 99)],
+                                  [0, scipy.stats.scoreatpercentile(uj, 99)]]),
+        mincnt=1)
+    a.set_xlabel("Kr")
+    a.set_ylabel("joint noise level")
+    a.set_title("Joint distribution Kr and noise")
+    cbs.append(f.colorbar(pc, ax=a))
 
     for cb in cbs:
         cb.set_label("No. matchups in bin")
