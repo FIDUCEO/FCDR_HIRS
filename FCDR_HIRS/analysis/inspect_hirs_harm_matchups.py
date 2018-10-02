@@ -47,6 +47,41 @@ import typhon.physics.units.em
 from .. import matchups
 from .. import fcdr
 
+def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit):
+    (dens, bins, patches) = a.hist(
+        y,
+        histtype="step",
+        bins=100,
+        range=rge,
+        density=True)
+    med = y
+    mad = abs(y-med).median()
+    for i in range(-9, 10, 3):
+        a.plot([med+i*mad]*2, [0, dens.max()], color="red")
+        a.text(med+i*mad, .8*dens.max(), str(i))
+    # also plot fitted normal distribution
+    # NB: how about outliers or non-normal dists?
+    # "robust standard deviation"
+    p67ad = scipy.stats.scoreatpercentile(abs(y-med), 68.3)
+    peak = dens.max()
+    σ_fitting_peak = 1/(peak*math.sqrt(2*math.pi))
+    x = numpy.linspace(*rge, 500)
+    norm_fitting_peak = scipy.stats.norm.pdf(x, med, σ_fitting_peak)
+    #a.plot(x, scipy.stats.norm.pdf(x, med, p67ad), color="black", label="fitted 1")
+    a.plot(x, norm_fitting_peak, color="black", label="fitted 1")
+    a2 = a.twinx()
+    midbins = (bins[1:]+bins[:-1])/2
+    rat = scipy.stats.norm.pdf(midbins, med, σ_fitting_peak) / dens
+    ratcorr = numpy.where(rat<=1, rat, 1)
+    a2.plot(midbins, ratcorr, 'k--')
+    a2.set_ylabel("filter: P(keep)")
+    a2.set_ylim([0, 1])
+    a.set_xlabel(xlab)
+    a.set_ylabel(ylab)
+    a.set_title(f"Histogram of {tit:s} with MADs from MED\n"
+                f"MAD={mad.item():.3f}, MED={med.item():.3f}, P67AD={p67ad:.3f}")
+    a.set_xlim(rge)
+
 def plot_ds_summary_stats(ds, lab="", Ldb=None):
     """Plot single file with summary stats for specific label
 
@@ -60,7 +95,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
         # extra cruft added to string by combine_hirs_hirs_matchups
         lab = f"other_{lab:s}_"
     
-    (f, ax_all) = matplotlib.pyplot.subplots(3, 4, figsize=(25, 15))
+    (f, ax_all) = matplotlib.pyplot.subplots(3, 5, figsize=(30, 15))
 
     g = ax_all.flat
 
@@ -195,7 +230,8 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
     # K vs. ΔL
     a = next(g)
     extremes = [min([LΔrange[0], kxrange[0]]), max([LΔrange[1], kxrange[1]])]
-    pc = a.hexbin(y2-y1,
+    ΔL = y2-y1
+    pc = a.hexbin(ΔL,
         ds[f"K_{lab:s}forward"],
         extent=numpy.concatenate([LΔrange, kxrange]),
         mincnt=1)
@@ -210,7 +246,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
 
     # K - ΔL vs. radiance
     a = next(g)
-    K_min_ΔL = ds[f"K_{lab:s}forward"] - (y2-y1)
+    K_min_ΔL = ds[f"K_{lab:s}forward"] - ΔL
     pc = a.hexbin(y1,
         K_min_ΔL,
         extent=numpy.concatenate([[Lmin, Lmax], kxrange-LΔrange]),
@@ -279,39 +315,11 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
 
     # K-ΔL simply histogram
     a = next(g)
-    (dens, bins, patches) = a.hist(
-        K_min_ΔL,
-        histtype="step",
-        bins=100,
-        range=sorted(kxrange-LΔrange),
-        density=True)
-    med = K_min_ΔL.median()
-    mad = abs(K_min_ΔL-med).median()
-    for i in range(-9, 10, 3):
-        a.plot([med+i*mad]*2, [0, dens.max()], color="red")
-        a.text(med+i*mad, .8*dens.max(), str(i))
-    # also plot fitted normal distribution
-    # NB: how about outliers or non-normal dists?
-    # "robust standard deviation"
-    p67ad = scipy.stats.scoreatpercentile(abs(K_min_ΔL-med), 68.3)
-    peak = dens.max()
-    σ_fitting_peak = 1/(peak*math.sqrt(2*math.pi))
-    x = numpy.linspace(*sorted(kxrange-LΔrange), 500)
-    norm_fitting_peak = scipy.stats.norm.pdf(x, med, σ_fitting_peak)
-    #a.plot(x, scipy.stats.norm.pdf(x, med, p67ad), color="black", label="fitted 1")
-    a.plot(x, norm_fitting_peak, color="black", label="fitted 1")
-    a2 = a.twinx()
-    midbins = (bins[1:]+bins[:-1])/2
-    rat = scipy.stats.norm.pdf(midbins, med, σ_fitting_peak) / dens
-    ratcorr = numpy.where(rat<=1, rat, 1)
-    a2.plot(midbins, ratcorr, 'k--')
-    a2.set_ylabel("filter: P(keep)")
-    a2.set_ylim([0, 1])
-    a.set_xlabel(f"K - ΔL [{y1.units:s}]")
-    a.set_ylabel("Density")
-    a.set_title("Histogram of K-ΔL with MADs from MED\n"
-                f"MAD={mad.item():.3f}, MED={med.item():.3f}, P67AD={p67ad:.3f}")
-    a.set_xlim(sorted(kxrange-LΔrange))
+    plot_hist_with_medmad_and_fitted_normal(a, K_min_ΔL,
+        sorted(kxrange-LΔrange), 
+        f"K - ΔL [{y1.units:s}]",
+        "Density",
+        "K-ΔL")
 
     # Kr vs. K-ΔL hexbin
     a = next(g)
@@ -341,8 +349,15 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
         label="x/5 (removes {:.1%})".format(((Kr_K_uj>5).sum()/Kr_K.size).item()))
     a.legend()
     a.set_xlim([0, scipy.stats.scoreatpercentile(Kr_K, 99)])
-
     cbs.append(f.colorbar(pc, ax=a))
+
+    # ΔL/Kr, as suggested by Viju, see e-mail 2018-09-27
+    a = next(g)
+    plot_hist_with_medmad_and_fitted_normal(a, ΔL/Kr_K,
+        scipy.stats.scoreatpercentile(ΔL/Kr_K, [1, 99]),
+        f"ΔL/Kr [1]",
+        "Density",
+        "Distribution ΔL/Kr")
 
     for cb in cbs:
         cb.set_label("No. matchups in bin")
