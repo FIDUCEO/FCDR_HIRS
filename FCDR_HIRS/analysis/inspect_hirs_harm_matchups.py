@@ -43,18 +43,20 @@ import pyatmlab.graphics
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.physics.units.common import radiance_units as rad_u
 import typhon.physics.units.em
+import typhon.config
 
 from .. import matchups
 from .. import fcdr
 
-def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit):
+def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
+        write=False):
     (dens, bins, patches) = a.hist(
         y,
         histtype="step",
         bins=100,
         range=rge,
         density=True)
-    med = y
+    med = y.median()
     mad = abs(y-med).median()
     for i in range(-9, 10, 3):
         a.plot([med+i*mad]*2, [0, dens.max()], color="red")
@@ -81,6 +83,15 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit):
     a.set_title(f"Histogram of {tit:s} with MADs from MED\n"
                 f"MAD={mad.item():.3f}, MED={med.item():.3f}, P67AD={p67ad:.3f}")
     a.set_xlim(rge)
+    if write:
+        hfpdir = pathlib.Path(typhon.config.conf["main"]["harmfilterparams"])
+        hfpfile = (hfpdir / write).with_suffix(".nc")
+        hfpfile.parent.mkdir(parents=True, exist_ok=True)
+        da = xarray.DataArray(ratcorr,
+            dims=("x",),
+            coords={"x": midbins},
+            name="y")
+        da.to_netcdf(hfpfile)
 
 def plot_ds_summary_stats(ds, lab="", Ldb=None):
     """Plot single file with summary stats for specific label
@@ -319,7 +330,9 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
         sorted(kxrange-LΔrange), 
         f"K - ΔL [{y1.units:s}]",
         "Density",
-        "K-ΔL")
+        "K-ΔL",
+        write="{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/{lab:s}/K_min_dL".format(
+            channel=ds["channel"].item(), lab=lab, **ds.attrs))
 
     # Kr vs. K-ΔL hexbin
     a = next(g)
@@ -357,7 +370,9 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
         scipy.stats.scoreatpercentile(ΔL/Kr_K, [1, 99]),
         f"ΔL/Kr [1]",
         "Density",
-        "Distribution ΔL/Kr")
+        "ΔL/Kr",
+        write="{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/{lab:s}/dL_over_Kr".format(
+            channel=ds["channel"].item(), lab=lab, **ds.attrs))
 
     for cb in cbs:
         cb.set_label("No. matchups in bin")
