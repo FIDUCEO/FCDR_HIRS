@@ -139,7 +139,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     sec_hirs=self.sec_hirs)
         if krmodel is None:
             if self.mode == "hirs":
-                krmodel = matchups.KrModelLSD(
+                krmodel = matchups.KrModelJointLSD(
                     self.as_xarray_dataset(),
                     self.ds,
                     self.prim_name,

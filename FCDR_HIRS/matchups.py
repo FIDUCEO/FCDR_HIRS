@@ -462,19 +462,18 @@ class KModelIASIRef(KModel):
         return numpy.zeros(shape=self.ds_filt.dims["line"])
 
 class KrModelLSD(KrModel):
-
-    def calc_Kr(self, channel):
-        btlocal = self.ds_filt_orig["hirs-{:s}_bt_ch{:02d}".format(self.prim_name, channel)]
+    def calc_Kr_for(self, channel, which):
+        btlocal = self.ds_filt_orig["hirs-{:s}_bt_ch{:02d}".format(which, channel)]
         # 2018-08-14: disabling this, it's the wrong place and leads to
         # trouble with nans propagating into K.
         #btlocal.values.reshape((-1,))[btlocal.values.ravel()>400] = numpy.nan # not all are flagged correctly
-        btlocal = btlocal.loc[{"hirs-{:s}_ny".format(self.prim_name): slice(1, 6),
-                           "hirs-{:s}_nx".format(self.prim_name): slice(1, 6)}].stack(
-                    z=("hirs-{:s}_ny".format(self.prim_name),
-                       "hirs-{:s}_nx".format(self.prim_name)))
+        btlocal = btlocal.loc[{"hirs-{:s}_ny".format(which): slice(1, 6),
+                           "hirs-{:s}_nx".format(which): slice(1, 6)}].stack(
+                    z=("hirs-{:s}_ny".format(which),
+                       "hirs-{:s}_nx".format(which)))
         btlocal = UADA(btlocal)
         srf = SRF.fromArtsXML(
-            typhon.datasets.tovs.norm_tovs_name(self.prim_name).upper(),
+            typhon.datasets.tovs.norm_tovs_name(which).upper(),
             "hirs", channel)
         radlocal = btlocal.to(rad_u["si"], "radiance", srf=srf)
         lsd = radlocal.std("z")
@@ -482,6 +481,9 @@ class KrModelLSD(KrModel):
         # Convert from K to radiance
         #lsd = UADA(lsd).to(rad_u["si"], "radiance", srf=srf)
         return lsd
+
+    def calc_Kr(self, channel):
+        return self.calc_Kr_for(self.prim_name)
 
     def filter(self, mdim, channel):
         ok = super().filter(mdim, channel)
@@ -491,6 +493,12 @@ class KrModelLSD(KrModel):
                     .sum(f"hirs-{s:s}_nx").sum(f"hirs-{s:s}_ny")>25).values
                 for s in (self.prim_name, self.sec_name)),
             ok)
+
+class KrModelJointLSD(KrModelLSD):
+    def calc_Kr(self, channel):
+        lsd_prim = self.calc_Kr_for(channel, self.prim_name)
+        lsd_sec = self.calc_Kr_for(channel, self.sec_name)
+        return numpy.sqrt(lsd_prim**2+lsd_sec**2)
 
 class KrModelIASIRef(KrModel):
     def calc_Kr(self, channel):
