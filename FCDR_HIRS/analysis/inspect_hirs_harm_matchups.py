@@ -339,8 +339,9 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
         label="x/10 (removes {:.1%})".format(((Kr_K_uj>10).sum()/Kr_K.size).item()))
     a.plot(x, x/5, color="red", linewidth=2, linestyle=':',
         label="x/5 (removes {:.1%})".format(((Kr_K_uj>5).sum()/Kr_K.size).item()))
-
+    a.legend()
     a.set_xlim([0, scipy.stats.scoreatpercentile(Kr_K, 99)])
+
     cbs.append(f.colorbar(pc, ax=a))
 
     for cb in cbs:
