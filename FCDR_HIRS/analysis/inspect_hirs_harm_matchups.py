@@ -232,15 +232,50 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1) -
          UADA(ds["nominal_measurand1"]).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1)))
-    (cnts, bins, patches) = a.hist(
+    Kr_K99 = scipy.stats.scoreatpercentile(Kr_K, 99)
+    (cnts, bins, p1) = a.hist(
         Kr_K,
         histtype="step",
         bins=100,
-        range=[0, scipy.stats.scoreatpercentile(Kr_K, 99)])
-    a.set_xlabel("Kr")
+        #density=True,
+        range=[0, Kr_K99])
+    a.set_xlabel(f"Kr [{y1.units:s}]")
     a.set_ylabel("Count")
-    a.set_title("Histogram of Kr")
-    a.set_xlim([0, scipy.stats.scoreatpercentile(Kr_K, 99)])
+    a.set_xlim([0, Kr_K99])
+    # now with u
+    u1 = ds["nominal_measurand_uncertainty_independent1"]
+    u2 = ds["nominal_measurand_uncertainty_independent2"]
+    # workaround, I forgot to add units
+    u1.attrs["units"] = ds["nominal_measurand1"].attrs["units"]
+    u2.attrs["units"] = ds["nominal_measurand2"].attrs["units"]
+    u1_K = ((UADA(ds["nominal_measurand1"])+UADA(u1)).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1) -
+             UADA(ds["nominal_measurand1"]).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1))
+    u2_K = ((UADA(ds["nominal_measurand2"])+UADA(u2)).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2) -
+             UADA(ds["nominal_measurand2"]).to(
+            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2))
+    uj = numpy.sqrt(u1_K**2+u2_K**2)
+    uj99 = scipy.stats.scoreatpercentile(uj, 99)
+    Kr_K_uj = Kr_K/uj
+    a2 = a.twiny()
+    (cnts, bins, p2) = a2.hist(
+        Kr_K_uj,
+        histtype="step",
+        bins=100,
+        color="orange",
+        #density=True,
+        range=[0, scipy.stats.scoreatpercentile(Kr_K/uj, 99)])
+    a2.set_xlabel("Kr / u [1]")
+    a2.set_xlim([0, scipy.stats.scoreatpercentile(Kr_K/uj, 99)])
+    a.set_title("Histogram of Kr (normalised by joint noise level)",
+                y=1.11)
+
+    a.xaxis.label.set_color(p1[0].get_edgecolor())
+    a2.xaxis.label.set_color(p2[0].get_edgecolor())
+    a.tick_params(axis='x', colors=p1[0].get_edgecolor())
+    a2.tick_params(axis='x', colors=p2[0].get_edgecolor())
 
     # K-ΔL simply histogram
     a = next(g)
@@ -282,36 +317,30 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
     a = next(g)
     pc = a.hexbin(Kr_K,
         K_min_ΔL,
-        extent=numpy.concatenate([[0, scipy.stats.scoreatpercentile(Kr_K, 99)], sorted(kxrange-LΔrange)]),
+        extent=numpy.concatenate([[0, Kr_K99], sorted(kxrange-LΔrange)]),
         mincnt=1)
-    a.set_xlabel("Kr")
+    a.set_xlabel(f"Kr [{y1.units:s}]")
     a.set_ylabel(f"K - ΔL [{y1.units:s}]")
     a.set_title("Joint distribution Kr and K - ΔL")
     cbs.append(f.colorbar(pc, ax=a))
 
     # Kr vs. uncertainty
     a = next(g)
-    u1 = ds["nominal_measurand_uncertainty_independent1"]
-    u2 = ds["nominal_measurand_uncertainty_independent2"]
-    # workaround, I forgot to add units
-    u1.attrs["units"] = ds["nominal_measurand1"].attrs["units"]
-    u2.attrs["units"] = ds["nominal_measurand2"].attrs["units"]
-    u1_K = ((UADA(ds["nominal_measurand1"])+UADA(u1)).to(
-            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1) -
-             UADA(ds["nominal_measurand1"]).to(
-            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1))
-    u2_K = ((UADA(ds["nominal_measurand2"])+UADA(u2)).to(
-            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2) -
-             UADA(ds["nominal_measurand2"]).to(
-            ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2))
-    uj = numpy.sqrt(u1_K**2+u2_K**2)
     pc = a.hexbin(Kr_K, uj,
-        extent=numpy.concatenate([[0, scipy.stats.scoreatpercentile(Kr_K, 99)],
-                                  [0, scipy.stats.scoreatpercentile(uj, 99)]]),
+        extent=numpy.concatenate([[0, Kr_K99],
+                                  [0, uj99]]),
         mincnt=1)
-    a.set_xlabel("Kr")
-    a.set_ylabel("joint noise level")
+    a.set_xlabel(f"Kr [{y1.units:s}]")
+    a.set_ylabel(f"joint noise level [{y1.units:s}]")
     a.set_title("Joint distribution Kr and noise")
+    # with some potential filters as lines
+    x = numpy.array([0, Kr_K99])
+    a.plot(x, x/10, color="red", linewidth=2, linestyle='--',
+        label="x/10 (removes {:.1%})".format(((Kr_K_uj>10).sum()/Kr_K.size).item()))
+    a.plot(x, x/5, color="red", linewidth=2, linestyle=':',
+        label="x/5 (removes {:.1%})".format(((Kr_K_uj>5).sum()/Kr_K.size).item()))
+
+    a.set_xlim([0, scipy.stats.scoreatpercentile(Kr_K, 99)])
     cbs.append(f.colorbar(pc, ax=a))
 
     for cb in cbs:
