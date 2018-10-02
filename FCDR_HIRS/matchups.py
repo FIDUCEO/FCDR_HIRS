@@ -487,12 +487,15 @@ class KrModelLSD(KrModel):
 
     def filter(self, mdim, channel):
         ok = super().filter(mdim, channel)
-        return functools.reduce(
+        ok &= functools.reduce(
             operator.and_,
             ((self.ds_orig[f"hirs-{s:s}_bt_ch{channel:02d}"].notnull()
                     .sum(f"hirs-{s:s}_nx").sum(f"hirs-{s:s}_ny")>25).values
                 for s in (self.prim_name, self.sec_name)),
             ok)
+        # FIXME: add filter for Kr/joint_noise < 5
+        # FIXME: add filter for ΔL/Kr ratio from file
+        return ok
 
 class KrModelJointLSD(KrModelLSD):
     def calc_Kr(self, channel):
@@ -814,4 +817,5 @@ class KModelSRFIASIDB(KModel):
         ok = super().filter(mdim, channel)
         for sat in self.prim_name, self.sec_name:
             ok &= self.ds[f"{sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).notnull().all("calibrated_channel").values
+        # FIXME: add filter for K-ΔL from file
         return ok
