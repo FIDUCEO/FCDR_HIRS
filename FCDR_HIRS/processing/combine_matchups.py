@@ -129,6 +129,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     mode="standard",
                     regression="LR",
                     units=ureg.Unit("K"))
+                kmodel.extra_filters.append(
+                    matchups.KFilterKΔL(kmodel))
             else:
                 kmodel = matchups.KModelIASIRef(
                     ds=self.as_xarray_dataset(),
@@ -146,6 +148,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     self.prim_hirs,
                     self.sec_name,
                     self.sec_hirs)
+                krmodel.extra_filters.extend([
+                    matchups.KrFilterHomogeneousScenes(krmodel),
+                    matchups.KrFilterΔLKr(krmodel),
+                    ])
             else:
                 krmodel = matchups.KrModelIASIRef(
                     self.as_xarray_dataset(),

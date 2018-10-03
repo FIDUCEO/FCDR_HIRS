@@ -1,6 +1,8 @@
 """Any code related to processing or analysing matchups
 """
 
+from __future__ import annotations
+
 import abc
 import warnings
 import datetime
@@ -9,6 +11,7 @@ import functools
 import operator
 import unicodedata
 import re
+import pathlib
 from dataclasses import dataclass
 
 import numpy
@@ -87,20 +90,35 @@ class KFilter:
 
     model: (KModel, KRModel)
 
-    def __init__(self, model, **kwargs):
-        self.model = model
-
     def filter(self, mdim, channel):
         return numpy.ones(self.model.ds.dims[mdim], "?")
 
 @dataclass
-class KRFilterHomogeneousScene(KFilter):
+class KrFilterHomogeneousScenes(KFilter):
     """Filter on homogeneous scenes
     """
 
+    max_ratio = 7
+
     def filter(self, mdim, channel):
-        rv = super().filter(mdim, channel)
-        raise NotImplementedError("To be implemented!")
+        ok = super().filter(mdim, channel)
+        srf1 = self.model.prim_hirs.srfs[channel-1]
+        srf2 = self.model.sec_hirs.srfs[channel-1]
+        ds = self.model.ds.sel(calibrated_channel=channel)
+        y1 = UADA(ds[f"{self.model.prim_name}_R_e"])
+        y2 = UADA(ds[f"{self.model.sec_name}_R_e"])
+        u1 = UADA(ds[f"u_{self.model.prim_name}_R_e"])
+        u2 = UADA(ds[f"u_{self.model.sec_name}_R_e"])
+
+        u1_K = ((y1+u1).to(self.model.units, "radiance", srf=srf1)
+                -y1.to(self.model.units, "radiance", srf=srf1))
+        u2_K = ((y2+u2).to(self.model.units, "radiance", srf=srf2)
+                -y2.to(self.model.units, "radiance", srf=srf2))
+
+        uc = numpy.sqrt(u1_K**2+u2_K**2)
+        Kr = self.model.calc_Kr(channel) # this may fail before filters done?
+        ok &= (uc/Kr)<max_ratio
+        return ok
         # FIXME: add filter for Kr/joint_noise < 5
         # - this wants to be in its own class
         # - Kr not set yet and calc_Kr relies on filters being already
@@ -109,18 +127,57 @@ class KRFilterHomogeneousScene(KFilter):
         # (Kr / self.ds["n17_u_R_Earth_random"].sel(calibrated_channel=channel))
 
 @dataclass
-class KRFilterΔLKr(KFilter):
+class KFilterFromFile(KFilter):
+    def get_harm_filter_path(self, channel, which="K_min_dL"):
+        p = pathlib.Path(typhon.config.conf["main"]["harmfilterparams"])
+        p /= f"{self.model.prim_name:s}_{self.model.sec_name:s}"
+        p /= f"ch{channel:d}" 
+        #p /= "other_neighbours_standard_LR_K_"
+        p /= f"other_{self.model.get_lab():s}_"
+        p /= f"{which:s}.nc" 
+        return p
+
+    def get_ΔL(self, channel):
+        y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).to(
+            self.model.units, "radiance", srf=self.model.prim_hirs.srfs[channel-1])
+        y2 = UADA(self.model.ds[f"{self.model.sec_name}_R_e"]).to(
+            self.model.units, "radiance", srf=self.model.sec_hirs.srfs[channel-1])
+        return y2 - y1
+
+@dataclass
+class KrFilterΔLKr(KFilterFromFile):
     """Filter on ΔL/Kr ratio
 
     See Vijus email 2018-09-27
-
-    This needs additional inputs, or can I derive those from self.model?
     """
 
     def filter(self, mdim, channel):
-        rv = super().filter(mdim, channel)
-        raise NotImplementedError("To be implemented!")
-        # FIXME: add filter for ΔL/Kr ratio from file
+        ok = super().filter(mdim, channel)
+        ds = xarray.open_dataset(self.get_harm_filter_path(channel, "dL_over_Kr"))
+        Kr = self.model.calc_Kr(channel) # this may fail before filters done?
+        ΔL = self.get_ΔL(channel)
+        rat = ΔL/Kr
+        fnc = scipy.interpolate.interp1d(ds["x"], ds["y"], kind="linear", fill_value=0)
+        P_keep = fnc(rat)
+        ok &= numpy.random.random(ok.size) < P_keep
+        return ok
+
+@dataclass
+class KFilterKΔL(KFilterFromFile):
+    """Filter on K-ΔL from file
+    """
+    
+
+    def filter(self, mdim, channel):
+        ok = super().filter(mdim, channel)
+        ds = xarray.open_dataset(self.get_harm_filter_path(channel, "K_min_dL"))
+        K = self.model.calc_K(channel) # this may fail before filters done?
+        ΔL = self.get_ΔL(channel)
+        Δ = K-ΔL
+        fnc = scipy.interpolate.interp1d(ds["x"], ds["y"], kind="linear", fill_value=0)
+        P_keep = fnc(Δ)
+        ok &= numpy.random.random(ok.size) < P_keep
+        return ok
 
 # inspect_hirs_matchups, work again
 hh = typhon.datasets.tovs.HIRSHIRS(read_returns="xarray")
@@ -362,6 +419,7 @@ class KModel(metaclass=abc.ABCMeta):
     extra_filters = None
 
     def __init__(self, **kwargs):
+        self.extra_filters = []
         for (k, v) in kwargs.items():
             if hasattr(self, k):
                 setattr(self, k, v)
@@ -632,8 +690,7 @@ class KModelSRFIASIDB(KModel):
                     ["LR", "ODR"],
                     ["standard"], # "delta
                     [rad_u["si"], rad_u["ir"], ureg.Unit("K")]):
-                unitlab = re.sub(r'/([A-Za-z]*)', r' \1^-1',
-                "{:~P}".format(u)).replace("-1²", "-2")
+                unitlab = re.sub(r'/([A-Za-z]*)', r' \1^-1', "{:~P}".format(u)).replace("-1²", "-2")
                 lab = unicodedata.normalize("NFKC", f"{cp:s}_{md:s}_{regr:s}_{unitlab:s}")
                 self.others[lab] = self.__class__(
                         chan_pairs=cp, 
@@ -648,6 +705,14 @@ class KModelSRFIASIDB(KModel):
                         sec_name=self.sec_name,
                         sec_hirs=self.sec_hirs)
         self.K = dict.fromkeys(range(1, 20), None)
+
+    def get_lab(self):
+        """Return label for self settings
+        """
+        unitlab = re.sub(r'/([A-Za-z]*)', r' \1^-1', "{:~P}".format(self.units)).replace("-1²", "-2")
+        lab = unicodedata.normalize("NFKC", f"{self.chan_pairs_label:s}_{self.mode:s}_{self.regression:s}_{unitlab:s}")
+        return lab
+
 
     def limit(self, ok, mdim):
         super().limit(ok, mdim)
@@ -874,5 +939,4 @@ class KModelSRFIASIDB(KModel):
         ok = super().filter(mdim, channel)
         for sat in self.prim_name, self.sec_name:
             ok &= self.ds[f"{sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).notnull().all("calibrated_channel").values
-        # FIXME: add filter for K-ΔL from file
         return ok
