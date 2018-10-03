@@ -9,6 +9,7 @@ import functools
 import operator
 import unicodedata
 import re
+from dataclasses import dataclass
 
 import numpy
 import scipy
@@ -28,7 +29,7 @@ from typhon.physics.units.em import SRF
 
 unit_iasi = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
 
-class ODRFitError:
+class ODRFitError(Exception):
     pass
 
 class NoDataError(Exception):
@@ -74,6 +75,52 @@ class CalibrationCountDimensionReducer(typhon.datasets.filters.OrbitFilter):
         for k in hcd:
             arr[k] = arr[k].median("calibration_position")
         return arr
+
+# extra filters plugged into K or Kr filtering
+@dataclass
+class KFilter:
+    """Superclass for K filters
+
+    Takes one argument, which is the KModel or KRmodel in question.
+    Through this we can access ds, ds_orig, etc.
+    """
+
+    model: (KModel, KRModel)
+
+    def __init__(self, model, **kwargs):
+        self.model = model
+
+    def filter(self, mdim, channel):
+        return numpy.ones(self.model.ds.dims[mdim], "?")
+
+@dataclass
+class KRFilterHomogeneousScene(KFilter):
+    """Filter on homogeneous scenes
+    """
+
+    def filter(self, mdim, channel):
+        rv = super().filter(mdim, channel)
+        raise NotImplementedError("To be implemented!")
+        # FIXME: add filter for Kr/joint_noise < 5
+        # - this wants to be in its own class
+        # - Kr not set yet and calc_Kr relies on filters being already
+        # applied, so I need to add some flexibility here
+        # then something like:
+        # (Kr / self.ds["n17_u_R_Earth_random"].sel(calibrated_channel=channel))
+
+@dataclass
+class KRFilterΔLKr(KFilter):
+    """Filter on ΔL/Kr ratio
+
+    See Vijus email 2018-09-27
+
+    This needs additional inputs, or can I derive those from self.model?
+    """
+
+    def filter(self, mdim, channel):
+        rv = super().filter(mdim, channel)
+        raise NotImplementedError("To be implemented!")
+        # FIXME: add filter for ΔL/Kr ratio from file
 
 # inspect_hirs_matchups, work again
 hh = typhon.datasets.tovs.HIRSHIRS(read_returns="xarray")
@@ -312,6 +359,7 @@ class KModel(metaclass=abc.ABCMeta):
     prim_hirs = None
     sec_name = None
     sec_hirs = None
+    extra_filters = None
 
     def __init__(self, **kwargs):
         for (k, v) in kwargs.items():
@@ -343,7 +391,10 @@ class KModel(metaclass=abc.ABCMeta):
     def filter(self, mdim, channel):
         """Extra filtering imposed by this model
         """
-        return numpy.ones(self.ds.dims[mdim], "?")
+        rv = numpy.ones(self.ds.dims[mdim], "?")
+        for ef in self.extra_filters:
+            rv &= ef.filter(mdim, channel)
+        return rv
 
     def extra(self, channel):
         """Return Dataset with extra information
@@ -355,7 +406,8 @@ class KrModel(metaclass=abc.ABCMeta):
     """Implementations of models to estimate the matchup uncertainty
     """
 
-    def __init__(self, ds, ds_orig, prim_name, prim_hirs, sec_name, sec_hirs):
+    def __init__(self, ds, ds_orig, prim_name, prim_hirs, sec_name,
+                 sec_hirs, extra_filters=None):
         self.ds = ds
         self.ds_filt = None
         self.ds_orig = ds_orig
@@ -364,6 +416,10 @@ class KrModel(metaclass=abc.ABCMeta):
         self.prim_hirs = prim_hirs
         self.sec_name = sec_name
         self.sec_hirs = sec_hirs
+        if extra_filters is None:
+            self.extra_filters = []
+        else:
+            self.extra_filters = extra_filters
 
     @abc.abstractmethod
     def calc_Kr(self, channel):
@@ -380,7 +436,10 @@ class KrModel(metaclass=abc.ABCMeta):
     def filter(self, mdim, channel):
         """Extra filtering imposed by this model
         """
-        return numpy.ones(self.ds.dims[mdim], "?")
+        rv = numpy.ones(self.ds.dims[mdim], "?")
+        for ef in self.extra_filters:
+            rv &= ef.filter(mdim, channel)
+        return rv
 
 class KModelPlanck(KModel):
     """Simplified implementation.
@@ -493,8 +552,6 @@ class KrModelLSD(KrModel):
                     .sum(f"hirs-{s:s}_nx").sum(f"hirs-{s:s}_ny")>25).values
                 for s in (self.prim_name, self.sec_name)),
             ok)
-        # FIXME: add filter for Kr/joint_noise < 5
-        # FIXME: add filter for ΔL/Kr ratio from file
         return ok
 
 class KrModelJointLSD(KrModelLSD):
