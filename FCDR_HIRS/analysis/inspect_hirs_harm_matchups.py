@@ -32,6 +32,7 @@ logging.basicConfig(
 import sys
 import math
 import pathlib
+import unicodedata
 
 import numpy
 import matplotlib.pyplot
@@ -85,6 +86,9 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
     a.set_xlim(rge)
     if write:
         hfpdir = pathlib.Path(typhon.config.conf["main"]["harmfilterparams"])
+        # turn into ASCII because some LOTUS nodes dislike unicode?
+        write = write.replace("-1²", "-2")
+        write = unicodedata.normalize("NFKC", write)
         hfpfile = (hfpdir / write).with_suffix(".nc")
         hfpfile.parent.mkdir(parents=True, exist_ok=True)
         da = xarray.DataArray(ratcorr,
