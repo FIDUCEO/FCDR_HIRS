@@ -735,6 +735,10 @@ def combine_hirs():
                     f"channel {channel:d}: {e.args[0]:s}",
                     file=sys.stderr)
                 continue
+            except FileNotFoundError as e:
+                print(f"Unable to filter for channel {channel:d}: {e.args!s}",
+                        file=sys.stderr)
+                continue
             anygood = True
             hmc.write_harm(harm, ds_new, basedir=tmpdir)
         if not anygood:
