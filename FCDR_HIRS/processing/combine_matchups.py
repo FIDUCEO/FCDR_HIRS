@@ -31,6 +31,10 @@ See issue #22
         include_channels=False,
         include_temperatures=False,
         include_debug=True)
+    
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--with_filters', action='store_true')
+    group.add_argument('--without_filters', action='store_false')
 
     return parser.parse_args()
 
@@ -109,7 +113,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     def __init__(self, start_date, end_date, prim, sec,
                  kmodel=None,
                  krmodel=None,
-                 debug=False):
+                 debug=False,
+                 apply_filters=True):
         super().__init__(start_date, end_date, prim, sec)
         # parent has set self.mode to either "hirs" or "reference"
         if self.mode not in ("hirs", "reference"):
@@ -129,9 +134,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     mode="standard",
                     regression="LR",
                     units=ureg.Unit("K"))
-                kmodel.extra_filters.append(
-                    matchups.KFilterKΔL(model=kmodel,
-                        lab=kmodel.get_lab()))
+                if apply_filters:
+                    kmodel.extra_filters.append(
+                        matchups.KFilterKΔL(model=kmodel,
+                            lab=kmodel.get_lab()))
             else:
                 kmodel = matchups.KModelIASIRef(
                     ds=self.as_xarray_dataset(),
@@ -149,12 +155,13 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     self.prim_hirs,
                     self.sec_name,
                     self.sec_hirs)
-                krmodel.extra_filters.extend([
-                    matchups.KrFilterHomogeneousScenes(model=krmodel,
-                        lab=kmodel.get_lab()),
-                    matchups.KrFilterΔLKr(model=krmodel,
-                        lab=kmodel.get_lab()),
-                    ])
+                if apply_filters:
+                    krmodel.extra_filters.extend([
+                        matchups.KrFilterHomogeneousScenes(model=krmodel,
+                            lab=kmodel.get_lab()),
+                        matchups.KrFilterΔLKr(model=krmodel,
+                            lab=kmodel.get_lab()),
+                        ])
             else:
                 krmodel = matchups.KrModelIASIRef(
                     self.as_xarray_dataset(),
@@ -165,6 +172,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     self.sec_hirs)
         self.kmodel = kmodel
         self.krmodel = krmodel
+        self.apply_filters = apply_filters
 
     def as_xarray_dataset(self):
         """Returns SINGLE xarray dataset for matchups
@@ -668,7 +676,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     def write_harm(self, harm, ds_new, basedir=None):
         if basedir is None:
             basedir = self.basedir
-        out = (basedir + f"/{self.prim_name:s}_{self.sec_name:s}/" +
+        out = (basedir + ("/filtered" if self.apply_filters else "/unfiltered")
+                       +  f"/{self.prim_name:s}_{self.sec_name:s}/" +
                "{st:%Y-%m-%d}/{pn:s}_{sn:s}_ch{ch:d}_{st:%Y%m%d}-{en:%Y%m%d}.nc".format(
                     pn=self.prim_name,
                     sn=self.sec_name,
