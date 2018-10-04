@@ -99,7 +99,7 @@ class KrFilterHomogeneousScenes(KFilter):
     """Filter on homogeneous scenes
     """
 
-    max_ratio = 7
+    max_ratio = 5
 
     def filter(self, mdim, channel):
         ok = super().filter(mdim, channel)
