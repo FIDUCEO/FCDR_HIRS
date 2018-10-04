@@ -19,6 +19,10 @@ def parse_cmdline():
         type=str,
         help="Path to file containing enhanced matchups")
 
+    parser.add_argument("--write-filters",
+        action="store_true",
+        help="Write filters to files") 
+
     return parser.parse_args()
 p = parse_cmdline()
 
@@ -97,7 +101,7 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
             name="y")
         da.to_netcdf(hfpfile)
 
-def plot_ds_summary_stats(ds, lab="", Ldb=None):
+def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
     """Plot single file with summary stats for specific label
 
     Label can me empty, then it plots the standard, or it can contain a
@@ -336,7 +340,8 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
         "Density",
         "K-ΔL",
         write="{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/{lab:s}/K_min_dL".format(
-            channel=ds["channel"].item(), lab=lab, **ds.attrs))
+            channel=ds["channel"].item(), lab=lab, **ds.attrs)
+            if write else False)
 
     # Kr vs. K-ΔL hexbin
     a = next(g)
@@ -376,7 +381,8 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None):
         "Density",
         "ΔL/Kr",
         write="{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/{lab:s}/dL_over_Kr".format(
-            channel=ds["channel"].item(), lab=lab, **ds.attrs))
+            channel=ds["channel"].item(), lab=lab, **ds.attrs)
+            if write else False)
 
     for cb in cbs:
         cb.set_label("No. matchups in bin")
@@ -422,7 +428,7 @@ def plot_harm_input_stats(ds):
         "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_input_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_.".format(
             channel=ds["channel"].item(), **ds.attrs))
 
-def plot_file_summary_stats(path):
+def plot_file_summary_stats(path, write=False):
     """Plot various summary statistics for harmonisation file
 
     Assumes it contains the extra fields that I generate for HIRS using
@@ -454,11 +460,14 @@ def plot_file_summary_stats(path):
     if others:
         for lab in others:
             # used to have LR/ODR this in so may be in old files
-            plot_ds_summary_stats(ds, lab, kmodel.others[lab.replace("_LR", "").replace("_ODR", "")].Ldb_hirs_simul)
+            plot_ds_summary_stats(ds, lab,
+                kmodel.others[lab.replace("_LR", "").replace("_ODR",
+                    "")].Ldb_hirs_simul,
+                write=False) # only write for main
     else:
-        plot_ds_summary_stats(ds, kmodel.Ldb_hirs_simul)
+        plot_ds_summary_stats(ds, kmodel.Ldb_hirs_simul, write=write)
 
 
 
 def main():
-    plot_file_summary_stats(pathlib.Path(p.file))
+    plot_file_summary_stats(pathlib.Path(p.file), write=p.write_filters)
