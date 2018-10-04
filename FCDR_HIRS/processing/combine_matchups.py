@@ -130,7 +130,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     regression="LR",
                     units=ureg.Unit("K"))
                 kmodel.extra_filters.append(
-                    matchups.KFilterKΔL(kmodel))
+                    matchups.KFilterKΔL(model=kmodel,
+                        lab=kmodel.get_lab()))
             else:
                 kmodel = matchups.KModelIASIRef(
                     ds=self.as_xarray_dataset(),
@@ -149,8 +150,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     self.sec_name,
                     self.sec_hirs)
                 krmodel.extra_filters.extend([
-                    matchups.KrFilterHomogeneousScenes(krmodel),
-                    matchups.KrFilterΔLKr(krmodel),
+                    matchups.KrFilterHomogeneousScenes(model=krmodel,
+                        lab=kmodel.get_lab()),
+                    matchups.KrFilterΔLKr(model=krmodel,
+                        lab=kmodel.get_lab()),
                     ])
             else:
                 krmodel = matchups.KrModelIASIRef(
@@ -342,7 +345,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm["K"] = (("M",), self.kmodel.calc_K(channel).astype("f4"))
         harm["Ks"] = (("M",), self.kmodel.calc_Ks(channel).astype("f4"))
         harm["Kr"] = (("M",), self.krmodel.calc_Kr(channel).astype("f4"))
-        harm = xarray.merge([harm, self.kmodel.extra(channel)])
+        harm = xarray.merge([harm, self.kmodel.extra(channel, ok)])
 
         # W-matrix for C_S, C_IWCT, T_IWCT.  This should have a 1 where
         # the matchup shares the same correlation information, and a 0

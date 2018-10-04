@@ -82,13 +82,14 @@ class CalibrationCountDimensionReducer(typhon.datasets.filters.OrbitFilter):
 # extra filters plugged into K or Kr filtering
 @dataclass
 class KFilter:
-    """Superclass for K filters
+    """Superclass for K or Kr filters
 
     Takes one argument, which is the KModel or KRmodel in question.
     Through this we can access ds, ds_orig, etc.
     """
 
     model: (KModel, KRModel)
+    lab: str
 
     def filter(self, mdim, channel):
         return numpy.ones(self.model.ds.dims[mdim], "?")
@@ -107,24 +108,15 @@ class KrFilterHomogeneousScenes(KFilter):
         ds = self.model.ds.sel(calibrated_channel=channel)
         y1 = UADA(ds[f"{self.model.prim_name}_R_e"])
         y2 = UADA(ds[f"{self.model.sec_name}_R_e"])
-        u1 = UADA(ds[f"u_{self.model.prim_name}_R_e"])
-        u2 = UADA(ds[f"u_{self.model.sec_name}_R_e"])
+        u1 = UADA(ds[f"{self.model.prim_name}_u_R_Earth"])
+        u2 = UADA(ds[f"{self.model.sec_name}_u_R_Earth"])
 
-        u1_K = ((y1+u1).to(self.model.units, "radiance", srf=srf1)
-                -y1.to(self.model.units, "radiance", srf=srf1))
-        u2_K = ((y2+u2).to(self.model.units, "radiance", srf=srf2)
-                -y2.to(self.model.units, "radiance", srf=srf2))
+        # Kr is always in SI units
 
-        uc = numpy.sqrt(u1_K**2+u2_K**2)
-        Kr = self.model.calc_Kr(channel) # this may fail before filters done?
-        ok &= (uc/Kr)<max_ratio
+        uc = numpy.sqrt(u1**2+u2**2)
+        Kr = self.model.calc_Kr(channel, ds_to_use=self.model.ds_orig)
+        ok &= ((uc/Kr)<self.max_ratio).values
         return ok
-        # FIXME: add filter for Kr/joint_noise < 5
-        # - this wants to be in its own class
-        # - Kr not set yet and calc_Kr relies on filters being already
-        # applied, so I need to add some flexibility here
-        # then something like:
-        # (Kr / self.ds["n17_u_R_Earth_random"].sel(calibrated_channel=channel))
 
 @dataclass
 class KFilterFromFile(KFilter):
@@ -133,16 +125,9 @@ class KFilterFromFile(KFilter):
         p /= f"{self.model.prim_name:s}_{self.model.sec_name:s}"
         p /= f"ch{channel:d}" 
         #p /= "other_neighbours_standard_LR_K_"
-        p /= f"other_{self.model.get_lab():s}_"
+        p /= f"other_{self.lab:s}_"
         p /= f"{which:s}.nc" 
         return p
-
-    def get_ΔL(self, channel):
-        y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).to(
-            self.model.units, "radiance", srf=self.model.prim_hirs.srfs[channel-1])
-        y2 = UADA(self.model.ds[f"{self.model.sec_name}_R_e"]).to(
-            self.model.units, "radiance", srf=self.model.sec_hirs.srfs[channel-1])
-        return y2 - y1
 
 @dataclass
 class KrFilterΔLKr(KFilterFromFile):
@@ -151,13 +136,25 @@ class KrFilterΔLKr(KFilterFromFile):
     See Vijus email 2018-09-27
     """
 
+    def get_ΔL(self, channel):
+        # always in SI units
+        y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(
+            calibrated_channel=channel)
+        y2 = UADA(self.model.ds[f"{self.model.sec_name}_R_e"]).sel(
+            calibrated_channel=channel)
+        return y2 - y1
+
     def filter(self, mdim, channel):
         ok = super().filter(mdim, channel)
         ds = xarray.open_dataset(self.get_harm_filter_path(channel, "dL_over_Kr"))
-        Kr = self.model.calc_Kr(channel) # this may fail before filters done?
+        Kr = self.model.calc_Kr(channel, ds_to_use=self.model.ds_orig)
+        srf1 = self.model.prim_hirs.srfs[channel-1]
+        y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(calibrated_channel=channel)
+        # Kr is always in SI units
         ΔL = self.get_ΔL(channel)
         rat = ΔL/Kr
-        fnc = scipy.interpolate.interp1d(ds["x"], ds["y"], kind="linear", fill_value=0)
+        fnc = scipy.interpolate.interp1d(ds["x"], ds["y"], kind="linear",
+            fill_value=0, bounds_error=False)
         P_keep = fnc(rat)
         ok &= numpy.random.random(ok.size) < P_keep
         return ok
@@ -168,13 +165,33 @@ class KFilterKΔL(KFilterFromFile):
     """
     
 
+    def get_ΔL(self, channel):
+        y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(
+            calibrated_channel=channel).to(
+            self.model.units, "radiance", srf=self.model.prim_hirs.srfs[channel-1])
+        y2 = UADA(self.model.ds[f"{self.model.sec_name}_R_e"]).sel(
+            calibrated_channel=channel).to(
+            self.model.units, "radiance", srf=self.model.sec_hirs.srfs[channel-1])
+        return y2 - y1
+
     def filter(self, mdim, channel):
         ok = super().filter(mdim, channel)
         ds = xarray.open_dataset(self.get_harm_filter_path(channel, "K_min_dL"))
-        K = self.model.calc_K(channel) # this may fail before filters done?
+        K = self.model.calc_K(channel, ds_to_use=self.model.ds, debug=False)
         ΔL = self.get_ΔL(channel)
-        Δ = K-ΔL
-        fnc = scipy.interpolate.interp1d(ds["x"], ds["y"], kind="linear", fill_value=0)
+        K = UADA(K, dims=(mdim,), attrs={"units": rad_u["si"]}, coords={mdim: ΔL[mdim]})
+        srf1 = self.model.prim_hirs.srfs[channel-1]
+        y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(calibrated_channel=channel)
+        K_K = ((y1+K).to(self.model.units, "radiance", srf=srf1)
+              -y1.to(self.model.units, "radiance", srf=srf1))
+        if str(ΔL.units) != str(self.model.units):
+            ΔL_K = ((y1+ΔL).to(self.model.units, "radiance", srf=srf1)
+                  -y1.to(self.model.units, "radiance", srfsrf1))
+        else:
+            ΔL_K = ΔL
+        Δ = K_K-ΔL_K
+        fnc = scipy.interpolate.interp1d(ds["x"], ds["y"], kind="linear",
+            fill_value=0, bounds_error=False)
         P_keep = fnc(Δ)
         ok &= numpy.random.random(ok.size) < P_keep
         return ok
@@ -454,7 +471,7 @@ class KModel(metaclass=abc.ABCMeta):
             rv &= ef.filter(mdim, channel)
         return rv
 
-    def extra(self, channel):
+    def extra(self, channel, ok):
         """Return Dataset with extra information
         """
 
@@ -579,8 +596,16 @@ class KModelIASIRef(KModel):
         return numpy.zeros(shape=self.ds_filt.dims["line"])
 
 class KrModelLSD(KrModel):
-    def calc_Kr_for(self, channel, which):
-        btlocal = self.ds_filt_orig["hirs-{:s}_bt_ch{:02d}".format(which, channel)]
+    def calc_Kr_for(self, channel, which, ds_to_use=None):
+        """Calculate Kr for prim or sec
+
+        channel, which, ds_to_use
+
+        ds_to_use should refer to self.ds_orig or self.ds_filt_orig
+        """
+        if ds_to_use is None:
+            ds_to_use = self.ds_filt_orig
+        btlocal = ds_to_use["hirs-{:s}_bt_ch{:02d}".format(which, channel)]
         # 2018-08-14: disabling this, it's the wrong place and leads to
         # trouble with nans propagating into K.
         #btlocal.values.reshape((-1,))[btlocal.values.ravel()>400] = numpy.nan # not all are flagged correctly
@@ -599,7 +624,7 @@ class KrModelLSD(KrModel):
         #lsd = UADA(lsd).to(rad_u["si"], "radiance", srf=srf)
         return lsd
 
-    def calc_Kr(self, channel):
+    def calc_Kr(self, channel, ds_to_use=None):
         return self.calc_Kr_for(self.prim_name)
 
     def filter(self, mdim, channel):
@@ -613,22 +638,30 @@ class KrModelLSD(KrModel):
         return ok
 
 class KrModelJointLSD(KrModelLSD):
-    def calc_Kr(self, channel):
-        lsd_prim = self.calc_Kr_for(channel, self.prim_name)
-        lsd_sec = self.calc_Kr_for(channel, self.sec_name)
+    def calc_Kr(self, channel, ds_to_use=None):
+        lsd_prim = self.calc_Kr_for(channel, self.prim_name, ds_to_use=ds_to_use)
+        lsd_sec = self.calc_Kr_for(channel, self.sec_name, ds_to_use=ds_to_use)
         return numpy.sqrt(lsd_prim**2+lsd_sec**2)
 
 class KrModelIASIRef(KrModel):
-    def calc_Kr(self, channel):
+    def calc_Kr(self, channel, ds_to_use=None):
+        """Calculate Kr for channel
+
+        ds_to_use is by default self.ds_filt.  But sometimes we need to
+        call calc_Kr before we've done filtering, for example, when we use
+        it to do filtering, then you will want to pass self.ds.
+        """
+        if ds_to_use is None:
+            ds_to_use = self.ds_filt
         srf = SRF.fromArtsXML(
             typhon.datasets.tovs.norm_tovs_name(self.sec_name).upper(),
             "hirs", channel)
         return abs(
             ureg.Quantity(
-                self.ds_filt["metopa_T_b"].sel(calibrated_channel=channel).values, "K"
+                ds_to_use["metopa_T_b"].sel(calibrated_channel=channel).values, "K"
                     ).to(rad_u["si"], "radiance", srf=srf) -
             ureg.Quantity(
-                self.ds_filt["metopa_T_b"].sel(calibrated_channel=channel).values+0.1, "K"
+                ds_to_use["metopa_T_b"].sel(calibrated_channel=channel).values+0.1, "K"
                     ).to(rad_u["si"], "radiance", srf=srf))
 
 
@@ -834,20 +867,24 @@ class KModelSRFIASIDB(KModel):
                 v.init_regression()
 
     _y_pred = None
-    def calc_K(self, channel):
+    def calc_K(self, channel, ds_to_use=None, debug=None):
         """Calculate K for channel.
         
         Returns K always in SI units, but sets self.K in self.units units.
         """
         if self.fitter is None:
             self.init_regression()
+        if ds_to_use is None:
+            ds_to_use = self.ds_filt
+        if debug is None:
+            debug = self.debug
         # Use regression to predict Δy for channel from set of reference
         # channels.
         K = []
         for (from_sat, to_sat) in [(self.prim_name, self.sec_name),
                                    (self.sec_name, self.prim_name)]:
             clf = self.fitter[f"{from_sat:s}-{to_sat:s}"][channel]
-            y_source = self.ds_filt[f"{from_sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel])
+            y_source = ds_to_use[f"{from_sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel])
             y_source = numpy.vstack(
                 [UADA(y_source.sel(calibrated_channel=c)).to(
                     self.units, "radiance", srf=self.srfs[from_sat][c-1]).values
@@ -871,9 +908,9 @@ class KModelSRFIASIDB(KModel):
             # Kr instead?
         self._y_pred = y_pred
         self.K[channel] = K
-        if self.debug:
+        if self.debug and not debug:
             for v in self.others.values():
-                v.calc_K(channel)
+                v.calc_K(channel, ds_to_use=ds_to_use)
         # convert back to si units for conversion, but cannot convert K
         # (if ΔBT) directly via SRF, as this conversion is
         # only valid for actual BTs, not ΔBTs
@@ -903,14 +940,14 @@ class KModelSRFIASIDB(KModel):
               rad_u["si"], "radiance", srf=self.srfs[self.prim_name][channel-1]))
         return Ks.m
 
-    def extra(self, channel):
-        ds = super().extra(channel)
+    def extra(self, channel, ok):
+        ds = super().extra(channel, ok)
         ds["K_forward"] = (("M",), self.K[channel][0])
         ds["K_backward"] = (("M",), self.K[channel][1])
         if self.debug:
             for (k, v) in self.others.items():
-                ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][0])
-                ds[f"K_other_{k:s}_backward"] = (("M",), v.K[channel][1])
+                ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][-1][ok])
+                ds[f"K_other_{k:s}_backward"] = (("M",), v.K[channel][1][ok])
                 for direction in ("forward", "backward"):
                     ds[f"K_other_{k:s}_{direction:s}"].attrs.update(
                         units=f"{v.units:~}",
