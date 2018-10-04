@@ -115,7 +115,7 @@ class KrFilterHomogeneousScenes(KFilter):
 
         uc = numpy.sqrt(u1**2+u2**2)
         Kr = self.model.calc_Kr(channel, ds_to_use=self.model.ds_orig)
-        ok &= ((uc/Kr)<self.max_ratio).values
+        ok &= ((Kr/uc)<self.max_ratio).values
         return ok
 
 @dataclass
