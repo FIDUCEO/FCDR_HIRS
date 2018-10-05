@@ -108,8 +108,8 @@ class KrFilterHomogeneousScenes(KFilter):
         ds = self.model.ds.sel(calibrated_channel=channel)
         y1 = UADA(ds[f"{self.model.prim_name}_R_e"])
         y2 = UADA(ds[f"{self.model.sec_name}_R_e"])
-        u1 = UADA(ds[f"{self.model.prim_name}_u_R_Earth"])
-        u2 = UADA(ds[f"{self.model.sec_name}_u_R_Earth"])
+        u1 = UADA(ds[f"{self.model.prim_name}_u_R_Earth_random"])
+        u2 = UADA(ds[f"{self.model.sec_name}_u_R_Earth_random"])
 
         # Kr is always in SI units
 
