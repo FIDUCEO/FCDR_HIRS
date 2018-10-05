@@ -946,7 +946,7 @@ class KModelSRFIASIDB(KModel):
         ds["K_backward"] = (("M",), self.K[channel][1])
         if self.debug:
             for (k, v) in self.others.items():
-                ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][-1][ok])
+                ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][0][ok])
                 ds[f"K_other_{k:s}_backward"] = (("M",), v.K[channel][1][ok])
                 for direction in ("forward", "backward"):
                     ds[f"K_other_{k:s}_{direction:s}"].attrs.update(
