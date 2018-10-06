@@ -308,6 +308,7 @@ class Effect:
     channel_correlations = None
     dimensions = None
     rmodel = None
+    _covariances = None
 
     def __init__(self, **kwargs):
         later_pairs = []
@@ -324,6 +325,7 @@ class Effect:
         if not self.parameter in self._all_effects:
             self._all_effects[self.parameter] = set()
         self._all_effects[self.parameter].add(self)
+        self._covariances = {}
 
     def __setattr__(self, k, v):
         if not hasattr(self, k):
@@ -411,7 +413,6 @@ class Effect:
                                 "repeated_rectangles",
                                 "repeated_truncated_gaussians")
 
-    _covariances = {}
     def set_covariance(self, other, da, _set_other=True):
         """Set covariance between this and other effect
 
