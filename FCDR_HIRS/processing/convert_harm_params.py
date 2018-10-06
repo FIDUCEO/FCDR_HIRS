@@ -42,6 +42,18 @@ Harmonisation parameters are derived using software developed by Ralf Quast.
 ### AUTOMATICALLY GENERATED — DO NOT EDIT!! ###
 ###                                         ###
 ###############################################
+###                                         ###
+### This file is generated using the script ###
+###                                         ###
+### convert_hirs_harmonisation_parameters   ###
+###                                         ###
+### see convert_harm_params.py              ###
+###                                         ###
+###############################################
+###                                         ###
+### AUTOMATICALLY GENERATED — DO NOT EDIT!! ###
+###                                         ###
+###############################################
 
 '''
 
