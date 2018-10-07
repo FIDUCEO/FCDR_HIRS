@@ -63,7 +63,7 @@ def parse_cmdline():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument("files", action="store", type=str,
-        nargs=19,
+        nargs="+",
         help="List of files (one per channel) containing output from "
              "RQs harmonisation process")
 
@@ -72,7 +72,7 @@ p = parse_cmdline()
 
 # from attachment from email RQ 2018-03-26, sent to SH, JM, EW, GH
 
-scaling = [1e-15, 1e-21, 1e-3]
+scaling = numpy.array([1e-15, 1e-21, 1e-3])
 
 def get_harm_dict(files):
     """Convert all.
@@ -80,35 +80,46 @@ def get_harm_dict(files):
     Returns (harms, u_harms)
     """
 
-    if len(files) != 19:
-        raise ValueError("Must pass 19 paths")
+    if len(files) == 11:
+        # channels 2–12
+        chrange = range(2, 13)
+    elif len(files) == 19:
+        chrange = range(1, 20)
+    else:
+        raise ValueError(f"Must pass 11 or 19 paths, got {len(files):d}")
 
     all_sats = {typhon.datasets.tovs.norm_tovs_name(sat) for sat in
                 fcdr.list_all_satellites()}
     D = {}
     harms = {sat: {ch: {} for ch in range(1, 20)} for sat in all_sats}
     u_harms = copy.deepcopy(harms)
+    s_harms = copy.deepcopy(harms)
     sats_found = set()
-    for (ch, fn) in enumerate(files, 1):
+    for (ch, fn) in zip(chrange, files):
         with xarray.open_dataset(fn) as ds:
             for i in range(ds.dims["n"]):
                 sat = ds["parameter_sensors"][i].item().decode("ascii").strip()
                 sat = typhon.datasets.tovs.norm_tovs_name(sat)
                 sats_found.add(sat)
                 if not sat in D.keys():
-                    D[sat] = {ch: itertools.count() for ch in range(1, 20)}
+                    D[sat] = {ch: itertools.count() for ch in chrange}
                 c = next(D[sat][ch])
                 harms[sat][ch][c] = ds["parameter"][i].item() * scaling[c]
                 u_harms[sat][ch][c] = ds["parameter_uncertainty"][i].item() * scaling[c]
+                if c==0:
+                    s_harms[sat][ch] = (ds["parameter_covariance_matrix"][i:(i+3), i:(i+3)]
+                        * scaling[:, numpy.newaxis] * scaling[numpy.newaxis, :]).values
     
+    # set to zero for satellites not found
     for sat in all_sats - sats_found:
-        for ch in range(1, 20):
+        for ch in chrange:
             for i in range(3):
                 harms[sat][ch][i] = 0
                 u_harms[sat][ch][i] = numpy.array(
                     [u_harms[sat][ch][i] for sat in sats_found]
                         ).mean()
-    return (harms, u_harms)
+                s_harms[sat][ch] = numpy.zeros((3, 3))
+    return (harms, u_harms, s_harms)
 
 def write_harm_dict(fp, harms, write_preamble=True):
     if write_preamble:
@@ -120,5 +131,9 @@ def write_harm_dict(fp, harms, write_preamble=True):
     print("harmonisation_parameter_uncertainties = ", pprint.pformat(harms[1]),
             file=fp)
 
+    print("harmonisation_parameter_covariances = ", pprint.pformat(harms[2]),
+            file=fp)
+
 def main():
-    write_harm_dict(sys.stdout, get_harm_dict(p.files), True)
+    with numpy.errstate(all="raise"):
+        write_harm_dict(sys.stdout, get_harm_dict(p.files), True)
