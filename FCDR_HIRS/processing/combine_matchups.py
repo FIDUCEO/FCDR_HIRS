@@ -157,8 +157,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     self.sec_hirs)
                 if apply_filters:
                     krmodel.extra_filters.extend([
-                        matchups.KrFilterHomogeneousScenes(model=krmodel,
-                            lab=kmodel.get_lab()),
+#                        matchups.KrFilterHomogeneousScenes(model=krmodel,
+#                            lab=kmodel.get_lab()),
                         matchups.KrFilterΔLKr(model=krmodel,
                             lab=kmodel.get_lab()),
                         ])
