@@ -292,6 +292,7 @@ class Effect:
 
     - magnitude
     - correlation_scale
+    - covariances
 
     Sensitivity coefficients are calculated on-the-fly using the
     measurement_equation module.
@@ -307,6 +308,7 @@ class Effect:
     channel_correlations = None
     dimensions = None
     rmodel = None
+    _covariances = None
 
     def __init__(self, **kwargs):
         later_pairs = []
@@ -323,6 +325,7 @@ class Effect:
         if not self.parameter in self._all_effects:
             self._all_effects[self.parameter] = set()
         self._all_effects[self.parameter].add(self)
+        self._covariances = {}
 
     def __setattr__(self, k, v):
         if not hasattr(self, k):
@@ -409,6 +412,35 @@ class Effect:
                                 "truncated_gaussian_relative",
                                 "repeated_rectangles",
                                 "repeated_truncated_gaussians")
+
+    def set_covariance(self, other, da, _set_other=True):
+        """Set covariance between this and other effect
+
+        Arguments:
+
+            other [Effect]
+
+            da [xarray.DataArray]
+        """
+
+
+        da = UADA(da)
+        da.attrs["units"] = str(
+            (_fcdr_defs.FCDR_data_vars_props[self.name][2]["units"] *
+             _fcdr_defs.FCDR_data_vars_props[other.name][2]["units"]))
+
+        da.name = f"u_{self.name:s}_{other.name:s}"
+#        da.attrs["long_name"] = f"error covariance {self.magnitude.attrs['long_name']:s} with {other.magnitude.attrs['long_name']:s}"
+        da.attrs["short_name"] = da.name
+        da.attrs["parameters"] = (str(self.parameter), str(other.parameter))
+        
+        self._covariances[other.parameter] = da
+        if _set_other:
+            other.set_covariance(self, da, _set_other=False)
+
+    @property
+    def covariances(self):
+        return self._covariances
 
     @property
     def correlation_type(self):

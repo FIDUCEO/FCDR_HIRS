@@ -194,10 +194,16 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False,
 #        for e in symbols.values()}
 
 # make sure no symbol occurs in multiple sub-measurement equations
+# and all the harmonisation parameters occur directly
+# NB: replacing until 'B' causes 'O_RIWCT' to end up in the denominator of
+# an uncertainty expression, therefore ending up as an explicit term (as opposed to
+# u(O_RIWCT)) for determining u(R_e), which means I have to provide a
+# value for O_RIWCT (0) not only an uncertainty (so far also 0).
 expressions[sym["R_e"]] = recursive_substitution(sym["R_e"],
-    stop_at=sym["R_IWCT"])
+    stop_at=sym["B"])
 del expressions[sym["a_0"]]
 del expressions[sym["a_1"]]
+del expressions[sym["R_IWCT"]]
 all_args = set()
 for (s, e) in expressions.items():
     if s in (sym["T_b"], sym["T_bstar"]): # exempted

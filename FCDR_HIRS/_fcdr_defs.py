@@ -134,13 +134,13 @@ FCDR_data_vars_props = dict(
         "ε",
         (),
         {"long_name": "IWCT emissivity assumed in calibration",
-         "units": "1"},
+         "units": ureg.Unit("1")},
         _coding),
     a_3 = (
         "a_3",
         (),
         {"long_name": "IWCT emissivity correction assumed in calibration",
-         "units": "1"},
+         "units": ureg.Unit("1")},
         _coding),
     a_4 = (
         "a_4",
@@ -171,7 +171,7 @@ FCDR_data_vars_props = dict(
         "β",
         ("calibrated_channel",),
         {"long_name": "Slope for effective temperature correction",
-         "units": "1"},
+         "units": ureg.Unit("1")},
         _coding),
 #    λ_eff = (
 #        "λ_eff",
@@ -195,19 +195,19 @@ FCDR_data_vars_props = dict(
         "prt_number_iwt",
         (),
         {"long_name": "Number of PRTs for IWCT temperature measurement",
-         "units": "1"},
+         "units": ureg.Unit("1")},
         _u1_coding),
     prt_reading = (
         "prt_reading",
         (),
         {"long_name": "Number of PRT views per PRT for IWCT temperature measurement",
-         "units": "1"},
+         "units": ureg.Unit("1")},
         _u1_coding),
     prt_iwct_polynomial_order = (
         "prt_iwct_polynomial_order",
         (),
         {"long_name": "Order of polynomial for each IWCT PRT calibration",
-         "units": "1"},
+         "units": ureg.Unit("1")},
         _u1_coding),
     prt_iwct_counts = (
         "prt_iwct_counts",
@@ -392,7 +392,7 @@ for (var, corr) in {("R_Earth", "O_Re"),
                     ("prt_iwct_temperature", "O_TPRT")}:
     FCDR_data_vars_props[corr] = (
         "corr_" + p[var][0],
-        p[var][1],
+        (),
         {"long_name": "correction to " + p[var][2]["long_name"],
          "units": p[var][2]["units"]},
         _coding) # actually, always zero…
