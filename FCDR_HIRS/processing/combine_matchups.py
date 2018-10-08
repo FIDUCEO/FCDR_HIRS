@@ -1,5 +1,5 @@
 
-
+import os
 
 from .. import common
 import argparse
@@ -31,6 +31,10 @@ See issue #22
         include_channels=False,
         include_temperatures=False,
         include_debug=True)
+    
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--with_filters', action='store_true')
+    group.add_argument('--without_filters', action='store_false')
 
     return parser.parse_args()
 
@@ -73,7 +77,7 @@ import logging
 logging.basicConfig(
     format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
             "%(lineno)s: %(message)s"),
-    level=logging.INFO)
+    level=logging.DEBUG)
 
 import itertools
 import datetime
@@ -109,7 +113,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     def __init__(self, start_date, end_date, prim, sec,
                  kmodel=None,
                  krmodel=None,
-                 debug=False):
+                 debug=False,
+                 apply_filters=True):
         super().__init__(start_date, end_date, prim, sec)
         # parent has set self.mode to either "hirs" or "reference"
         if self.mode not in ("hirs", "reference"):
@@ -124,7 +129,15 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     prim_hirs=self.prim_hirs,
                     sec_name=self.sec_name,
                     sec_hirs=self.sec_hirs,
-                    debug=debug)
+                    debug=debug,
+                    chan_pairs="neighbours",
+                    mode="standard",
+                    regression="LR",
+                    units=ureg.Unit("K"))
+                if apply_filters:
+                    kmodel.extra_filters.append(
+                        matchups.KFilterKΔL(model=kmodel,
+                            lab=kmodel.get_lab()))
             else:
                 kmodel = matchups.KModelIASIRef(
                     ds=self.as_xarray_dataset(),
@@ -135,13 +148,20 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     sec_hirs=self.sec_hirs)
         if krmodel is None:
             if self.mode == "hirs":
-                krmodel = matchups.KrModelLSD(
+                krmodel = matchups.KrModelJointLSD(
                     self.as_xarray_dataset(),
                     self.ds,
                     self.prim_name,
                     self.prim_hirs,
                     self.sec_name,
                     self.sec_hirs)
+                if apply_filters:
+                    krmodel.extra_filters.extend([
+#                        matchups.KrFilterHomogeneousScenes(model=krmodel,
+#                            lab=kmodel.get_lab()),
+                        matchups.KrFilterΔLKr(model=krmodel,
+                            lab=kmodel.get_lab()),
+                        ])
             else:
                 krmodel = matchups.KrModelIASIRef(
                     self.as_xarray_dataset(),
@@ -152,6 +172,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     self.sec_hirs)
         self.kmodel = kmodel
         self.krmodel = krmodel
+        self.apply_filters = apply_filters
 
     def as_xarray_dataset(self):
         """Returns SINGLE xarray dataset for matchups
@@ -200,10 +221,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 inplace=True)
         to_merge = ([p_ds] if self.mode == "hirs" else []) + [s_ds,
             xarray.DataArray(
-                self.ds["matchup_spherical_distance"] if self.mode=="hirs"
+                self.ds[self.msd_field] if self.mode=="hirs"
                     else numpy.zeros(self.ds.dims["line"]), 
                 dims=["matchup_count" if self.mode=="hirs" else "line"],
-                name="matchup_spherical_distance")
+                name=self.msd_field)
             ]
         ds = xarray.merge(to_merge)
         return ds
@@ -244,28 +265,50 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                               and not x[0] == "iasi")
 
         # skip flagged values
-        donotuse = (ds.sel(calibrated_channel=1)[
+        donotuse = (ds.sel(calibrated_channel=channel)[
             [f"{nm:s}_quality_{fld:s}_bitmask"
                 for nm in ([self.prim_name, self.sec_name] if self.mode == "hirs" else [self.sec_name])
                 for fld in ["channel", "pixel", "scanline"]]] & 0x01)!=0
         ok = ~functools.reduce(operator.or_, [v.values for v in donotuse.data_vars.values()])
+        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after donotuse-filtering")
         # skip values with zero uncertainties.  Those should not exist,
         # but https://github.com/FIDUCEO/FCDR_HIRS/issues/161 .
-        to_check = ds[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
-        bad = (to_check==0).any("calibrated_channel")
+        to_check = ds.sel(calibrated_channel=channel)[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
+        bad = (to_check==0)
         ok &= sum([v.values for v in bad.data_vars.values()])==0 
+        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after 0-uncertainty-filtering")
+        # here check only sec; prim only checked if prim not iasi
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
-        ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
-               (ds[f"{self.sec_name:s}_scantype"] == 0)).values
-        ok &= self.kmodel.filter(mdim)
-        ok &= self.krmodel.filter(mdim)
+        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after secondary isfinite-filtering")
+        ok &= self.kmodel.filter(mdim, channel)
+        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after kmodel-filtering")
+        ok &= self.krmodel.filter(mdim, channel)
+        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after krmodel-filtering")
+        # WORKAROUND, REMOVE AFTER FIXING #281#
+        ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
+        ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_R_Earth_random"].sel(calibrated_channel=channel)).values
+        logging.debug(f"{ok.sum().item():d}/{ok.size:d} matchups left after removing non-finite uncertainties from secondary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
+        #
+        if self.prim_name != "iasi":
+            ok &= numpy.isfinite(ds[f"{self.prim_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
+            logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after primary isfinite-filtering")
+            # WORKAROUND, REMOVE AFTER FIXING #281#
+            ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
+            ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_R_Earth_random"].sel(calibrated_channel=channel)).values
+            logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after removing non-finite uncertainties from primary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
+            #
+            ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
+                   (ds[f"{self.sec_name:s}_scantype"] == 0)).values
+        else:
+            ok &= (ds[f"{self.sec_name:s}_scantype"] == 0).values
+        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after scantype-filtering")
         if ok.sum() == 0:
             raise MatchupError("No matchups pass filters")
         ds = ds[{mdim:ok}]
-        if not self.kmodel.filtered:
-            self.kmodel.limit(ok, mdim=mdim)
-        if not self.krmodel.filtered:
-            self.krmodel.limit(ok, mdim=mdim)
+        # redo for each channel as different channels may have different
+        # filterings
+        self.kmodel.limit(ok, mdim=mdim)
+        self.krmodel.limit(ok, mdim=mdim)
 
         da_all = [ds.sel(calibrated_channel=channel)[v]
                     for v in take_total]
@@ -310,7 +353,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm["K"] = (("M",), self.kmodel.calc_K(channel).astype("f4"))
         harm["Ks"] = (("M",), self.kmodel.calc_Ks(channel).astype("f4"))
         harm["Kr"] = (("M",), self.krmodel.calc_Kr(channel).astype("f4"))
-        harm = xarray.merge([harm, self.kmodel.extra(channel)])
+        harm = xarray.merge([harm, self.kmodel.extra(channel, ok)])
 
         # W-matrix for C_S, C_IWCT, T_IWCT.  This should have a 1 where
         # the matchup shares the same correlation information, and a 0
@@ -528,25 +571,39 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             ds[f"{sat:s}_R_e"].sel(calibrated_channel=channel))
         harm[f"nominal_measurand{i:d}"].attrs.update(ds[f"{sat:s}_R_e"].sel(calibrated_channel=channel).attrs)
 
-        harm[f"lon{i:d}"] = ds[f"{sat:s}_longitude"].rename(
-                {"matchup_count": "M"})
-        harm[f"lat{i:d}"] = ds[f"{sat:s}_latitude"].rename(
-                {"matchup_count": "M"})
+        harm[f"nominal_measurand_uncertainty_independent{i:d}"] = (("M",),
+            ds[f"{sat:s}_u_R_Earth_random"].sel(calibrated_channel=channel))
+        harm[f"nominal_measurand_uncertainty_independent{i:d}"].attrs.update(
+            ds[f"{sat:s}_u_R_Earth_random"].attrs)
+
+        harm[f"nominal_measurand_uncertainty_structured{i:d}"] = (("M",),
+            ds[f"{sat:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel))
+        harm[f"nominal_measurand_uncertainty_structured{i:d}"].attrs.update(
+            ds[f"{sat:s}_u_R_Earth_nonrandom"].attrs)
+
+        harm[f"lon{i:d}"] = (("M",), ds[f"{sat:s}_longitude"])
+        harm[f"lat{i:d}"] = (("M",), ds[f"{sat:s}_latitude"])
         
         harm[f"nominal_measurand_original{i:d}"] = (("M",),
             ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))
         harm[f"nominal_measurand_original{i:d}"].attrs.update(ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel).attrs)
 
-        sdsidx = {"matchup_count": ok}
-        harm[f"row{i:d}"] = (("M",),
-            self.ds[f"hirs-{sat:s}_y"][sdsidx])
-        harm[f"column{i:d}"] = (("M",),
-            self.ds[f"hirs-{sat:s}_x"][sdsidx])
-
-        harm[f"matchup_distance"] = (("M",),
-            self.ds["matchup_spherical_distance"][sdsidx])
-        harm[f"matchup_distance"].attrs.update(self.ds["matchup_spherical_distance"][sdsidx].attrs)
-        
+        if self.mode == "reference":
+            sdsidx = {"line": ok}
+            harm[f"row{i:d}"] = (("M",),
+                self.ds["mon_row"][sdsidx])
+            harm[f"column{i:d}"] = (("M",),
+                self.ds["mon_column"][sdsidx])
+            # matchup distance should be set by self._add_harm_for_iasi
+        else:
+            sdsidx = {"matchup_count": ok}
+            harm[f"row{i:d}"] = (("M",),
+                self.ds[f"hirs-{sat:s}_y"][sdsidx])
+            harm[f"column{i:d}"] = (("M",),
+                self.ds[f"hirs-{sat:s}_x"][sdsidx])
+            harm[f"matchup_distance"] = (("M",),
+                self.ds[self.msd_field][sdsidx])
+            harm[f"matchup_distance"].attrs.update(self.ds[self.msd_field][sdsidx].attrs)
 
     def _add_harm_for_iasi(self, harm, channel, ok):
         # fill X1
@@ -593,16 +650,16 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm["u_matrix_use1"] = (("m1",), numpy.array([0], dtype="i4"))
 
         # add diagnostics
-        harm[f"nominal_measurand1"] = (("M",),
-            ds["ref_radiance"].sel(calibrated_channel=channel))
+#        harm[f"nominal_measurand2"] = (("M",),
+#            self.ds["mon_radiance"].sel(ch_mon=channel))
 
-        harm[f"lon1"] = (("M",), ds[f"ref_longitude"])
-        harm[f"lat1"] = (("M",), ds[f"ref_latitude"])
+        harm[f"lon1"] = (("M",), self.ds[f"ref_longitude"][ok])
+        harm[f"lat1"] = (("M",), self.ds[f"ref_latitude"][ok])
         
-        harm[f"nominal_measurand_original1"] = harm[f"nominal_measurand1"]
+#        harm[f"nominal_measurand_original1"] = harm[f"nominal_measurand1"]
 
-        harm[f"column1"] = (("M",), ds[f"ref_column"])
-        harm[f"row1"] = (("M",), ds[f"ref_row"])
+        harm[f"column1"] = (("M",), self.ds[f"ref_column"][ok])
+        harm[f"row1"] = (("M",), self.ds[f"ref_row"][ok])
 
         harm[f"matchup_distance"] = ((), 0)
 
@@ -619,7 +676,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     def write_harm(self, harm, ds_new, basedir=None):
         if basedir is None:
             basedir = self.basedir
-        out = (basedir + f"/{self.prim_name:s}_{self.sec_name:s}/" +
+        out = (basedir + ("/filtered" if self.apply_filters else "/unfiltered")
+                       +  f"/{self.prim_name:s}_{self.sec_name:s}/" +
                "{st:%Y-%m-%d}/{pn:s}_{sn:s}_ch{ch:d}_{st:%Y%m%d}-{en:%Y%m%d}.nc".format(
                     pn=self.prim_name,
                     sn=self.sec_name,
@@ -677,6 +735,10 @@ def combine_hirs():
                     f"channel {channel:d}: {e.args[0]:s}",
                     file=sys.stderr)
                 continue
+            except FileNotFoundError as e:
+                print(f"Unable to filter for channel {channel:d}: {e.args!s}",
+                        file=sys.stderr)
+                continue
             anygood = True
             hmc.write_harm(harm, ds_new, basedir=tmpdir)
         if not anygood:
@@ -700,6 +762,7 @@ def combine_hirs():
                     file=sys.stderr)
                 time.sleep(wait)
             else:
+                os.chmod(hmc.basedir, 0o755)
                 break
         else:
             raise IOError("Failed 50 copying attempts, see above.")
@@ -794,12 +857,21 @@ def merge_all(*files):
     ds_new["u_matrix_row_count"] = xarray.concat([da["u_matrix_row_count"] for da in ds_all], dim="dummy").sum("dummy", dtype="i4").astype("i4")
 
     identicals = ["w_matrix_use1", "w_matrix_use2", "u_matrix_use1", "u_matrix_use2"]
+    if ds_all[0].sensor_1_name == "iasi":
+        identicals.append("matchup_distance")
     for k in ds_all[0].data_vars.keys()-ds_new.keys():
         if "M" in ds_all[0][k].dims:
-            ds_new[k] = xarray.concat([da[k] for da in ds_all], dim="M")
+            try:
+                ds_new[k] = xarray.concat([da[k] for da in ds_all], dim="M")
+            except KeyError as e:
+                if "K_other" in e.args[0]:
+                    logging.error(f"Skipping {e.args[0]:s}, not found in all")
+                else:
+                    raise
         else:
             if not ("m1" in ds_all[0][k].dims or 
-                    "m2" in ds_all[0][k].dims):
+                    "m2" in ds_all[0][k].dims or
+                    k in identicals):
                 raise RuntimeError(f"I forgot about {k:s}?") 
             identicals.append(k)
 
