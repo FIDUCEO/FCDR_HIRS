@@ -55,6 +55,8 @@ Harmonisation parameters are derived using software developed by Ralf Quast.
 ###                                         ###
 ###############################################
 
+from numpy import (nan, array)
+
 '''
 
 def parse_cmdline():
@@ -91,7 +93,7 @@ def get_harm_dict(files):
     all_sats = {typhon.datasets.tovs.norm_tovs_name(sat) for sat in
                 fcdr.list_all_satellites()}
     D = {}
-    harms = {sat: {ch: {} for ch in range(1, 20)} for sat in all_sats}
+    harms = {sat: {ch: {} for ch in chrange} for sat in all_sats}
     u_harms = copy.deepcopy(harms)
     s_harms = copy.deepcopy(harms)
     sats_found = set()

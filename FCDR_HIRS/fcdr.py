@@ -494,7 +494,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             a_3 = UADA(0,
                 name="correction to emissivity")
         else:
-            a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
+            a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname].get(ch, [0,0,0])[2],
                 name="correction to emissivity")
         if a_3 > 0.02:
             warnings.warn(f"Channel {ch:d}: ε + a₃ > 1!  Perhaps there is a "
@@ -788,7 +788,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             name="a2", coords={"calibrated_channel": ch},
             attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
         else:
-            a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][1],
+            a2 = UADA(_harm_defs.harmonisation_parameters[self.satname].get(ch, [0,0,0])[1],
                 name="a2", coords={"calibrated_channel": ch},
                 attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
@@ -857,9 +857,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._tuck_quantity_channel("a_2", a2,
                 calibrated_channel=ch)
             self._tuck_effect_channel("a_2",
-                _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][1],
+                _harm_defs.harmonisation_parameter_uncertainties[self.satname].get(ch, [0,0,0])[1],
                 ch,
-                covariances={"a_3": 0, "a_4": 0}) # FIXME: realistic values
+                covariances={
+                    "a_3": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[1, :],
+                    "a_4": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[2, :]})
             self._tuck_quantity_channel("B", L_iwct.assign_coords(time=slope.coords["time"]),
                 calibrated_channel=ch)
         return (time,
@@ -948,7 +950,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         # emissivity correction
         # order: see e-mail RQ 2018-04-06
-        a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][2],
+        a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname].get(ch, [0,0,0])[2],
             name="correction to emissivity",
             attrs={"units": "dimensionless"})
         # self-emission bias
@@ -958,7 +960,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 name="harmonisation bias",
                 attrs={"units": rad_u["si"]})
         else:
-            a_4 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][0],
+            a_4 = UADA(_harm_defs.harmonisation_parameters[self.satname].get(ch, [0,0,0])[0],
                 name="harmonisation bias",
                 attrs={"units": rad_u["si"]})
 
@@ -1046,7 +1048,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             u_counts_earth = counts_space = counts_iwct = u_counts_space = u_counts_iwct = par(
                 attrs={"units": "counts"})
 
-            a2 = UADA(_harm_defs.harmonisation_parameters[self.satname][ch][1],
+            a2 = UADA(_harm_defs.harmonisation_parameters[self.satname].get(ch, [0,0,0])[1],
                 name="a2", coords={"calibrated_channel": ch},
                 attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
@@ -1461,15 +1463,19 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
                 a_3, name=me.names[me.symbols["a_3"]])
             self._tuck_effect_channel("a_3",
-                _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][2],
+                _harm_defs.harmonisation_parameter_uncertainties[self.satname].get(ch, [0,0,0])[2],
                 ch,
-                covariances={"a_2": 0, "a_4": 0}) # FIXME: do not lie
+                covariances={
+                    "a_2": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[0, :],
+                    "a_4": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[2, :]})
             self._quantities[me.symbols["a_4"]] = self._quantity_to_xarray(
                 a_4, name=me.names[me.symbols["a_4"]])
             self._tuck_effect_channel("a_4",
-                _harm_defs.harmonisation_parameter_uncertainties[self.satname][ch][0],
+                _harm_defs.harmonisation_parameter_uncertainties[self.satname].get(ch, [0,0,0])[0],
                 ch,
-                covariances={"a_2": 0, "a_3": 0}) # FIXME: do not lie
+                covariances={
+                    "a_2": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[0, :],
+                    "a_3": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[1, :]})
 
             # the zero-terms
             for s in (s for s in me.symbols.keys() if s.startswith("O_")):
