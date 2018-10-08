@@ -860,8 +860,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 _harm_defs.harmonisation_parameter_uncertainties[self.satname].get(ch, [0,0,0])[1],
                 ch,
                 covariances={
-                    "a_3": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[1, :],
-                    "a_4": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[2, :]})
+                    "a_3": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[0, 1],
+                    "a_4": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[0, 2]})
             self._tuck_quantity_channel("B", L_iwct.assign_coords(time=slope.coords["time"]),
                 calibrated_channel=ch)
         return (time,
@@ -1466,16 +1466,16 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 _harm_defs.harmonisation_parameter_uncertainties[self.satname].get(ch, [0,0,0])[2],
                 ch,
                 covariances={
-                    "a_2": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[0, :],
-                    "a_4": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[2, :]})
+                    "a_2": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[1, 0],
+                    "a_4": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[1, 2]})
             self._quantities[me.symbols["a_4"]] = self._quantity_to_xarray(
                 a_4, name=me.names[me.symbols["a_4"]])
             self._tuck_effect_channel("a_4",
                 _harm_defs.harmonisation_parameter_uncertainties[self.satname].get(ch, [0,0,0])[0],
                 ch,
                 covariances={
-                    "a_2": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[0, :],
-                    "a_3": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[1, :]})
+                    "a_2": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[2, 0],
+                    "a_3": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[2, 1]})
 
             # the zero-terms
             for s in (s for s in me.symbols.keys() if s.startswith("O_")):
