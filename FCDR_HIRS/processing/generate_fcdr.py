@@ -364,9 +364,11 @@ class FCDRGenerator:
         R_E = self.fcdr.calculate_radiance_all(subset,
             context=context, Rself_model=self.rself)
         cu = {} # should NOT be an expressiondict, I don't want T[1]==T[2] here!
+        # FIXME: also receive covariant components
         (uRe, sensRe, compRe) = self.fcdr.calc_u_for_variable(
             "R_e", self.fcdr._quantities, self.fcdr._effects, cu,
             return_more=True)
+        # FIXME: also pass on covariant components
         unc_components = dict(self.fcdr.propagate_uncertainty_components(uRe,
             sensRe, compRe))
 
@@ -387,6 +389,7 @@ class FCDRGenerator:
             (v[0]**2 for (k, v) in compRe.items() if k is not me.symbols["C_E"])))
         uRe_rand = compRe[me.symbols["C_E"]][0]
         # uncertainty from harmonisation parameters only...
+        # FIXME: consider covariant components here!
         uRe_harm = numpy.sqrt(functools.reduce(operator.add,
             (v**2
              for (k, v) in unc_components.items()

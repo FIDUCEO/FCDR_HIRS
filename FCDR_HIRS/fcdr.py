@@ -2020,6 +2020,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         "not implemented.")
                 eff = effs.copy().pop()
                 adict[v] = eff.covariances[v.args[1]]
+
+                # FIXME: also register covariances separately from
+                # sub_components
             elif isinstance(v, fu):
                 raise ValueError(
                     f"uncertainty function with {len(v.args):d} arguments?!")
@@ -2131,6 +2134,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                    sub_components[k][1])
             # FIXME: perhaps I need to add prefixes such that the
             # magnitude becomes close to 1?
+
+            # FIXME: also return covariances as separate component
             return (u, sub_sensitivities, sub_components)
         else:
             return u
@@ -2368,6 +2373,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
             sens_above
         """
+        # FIXME: also consider covariances as inputs
+        # FIXME: how to return covariances?  They fall outside the logic
+        # as they are naturally squared.  Should be returned separately.
 
         if not sens.keys() == comp.keys():
             raise ValueError("Must have same keys in sensitivity dict "
@@ -2390,6 +2398,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #            else:
 #                ipsens = sens_above
 #            yield (k, numpy.sqrt(compk0**2 * sens_to_here**2))
+            # FIXME: seperately yield covariant components?
             yield (k, numpy.sqrt(compk0**2 * sens_above**2))
             yield from self.propagate_uncertainty_components(u,
                 sens[k][1], comp[k][1], sens_to_here)
