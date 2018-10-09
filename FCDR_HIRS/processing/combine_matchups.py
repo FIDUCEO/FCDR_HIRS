@@ -862,7 +862,12 @@ def merge_all(*files):
     for k in ds_all[0].data_vars.keys()-ds_new.keys():
         if "M" in ds_all[0][k].dims:
             # Workaround for #285
-            spurious_coords = set(ds_all[-1].coords) - set(ds_all[0].coords)
+            spurious_coords = (functools.reduce(
+                    operator.or_,
+                    [set(da.coords) for da in ds_all]) 
+                        - functools.reduce(
+                    operator.and_,
+                    [set(da.coords) for da in ds_all]))
             try:
                 ds_new[k] = xarray.concat(
                     [da[k].drop({s for s in spurious_coords if s in da[k].coords})
