@@ -861,8 +861,12 @@ def merge_all(*files):
         identicals.append("matchup_distance")
     for k in ds_all[0].data_vars.keys()-ds_new.keys():
         if "M" in ds_all[0][k].dims:
+            # Workaround for #285
+            spurious_coords = set(ds_all[-1].coords) - set(ds_all[0].coords)
             try:
-                ds_new[k] = xarray.concat([da[k] for da in ds_all], dim="M")
+                ds_new[k] = xarray.concat(
+                    [da[k].drop({s for s in spurious_coords if s in da[k].coords})
+                        for da in ds_all], dim="M")
             except KeyError as e:
                 if "K_other" in e.args[0]:
                     logging.error(f"Skipping {e.args[0]:s}, not found in all")
