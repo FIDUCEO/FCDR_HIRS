@@ -581,10 +581,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm[f"nominal_measurand_uncertainty_structured{i:d}"].attrs.update(
             ds[f"{sat:s}_u_R_Earth_nonrandom"].attrs)
 
-        harm[f"lon{i:d}"] = ds[f"{sat:s}_longitude"].rename(
-                {"matchup_count": "M"})
-        harm[f"lat{i:d}"] = ds[f"{sat:s}_latitude"].rename(
-                {"matchup_count": "M"})
+        harm[f"lon{i:d}"] = ("M", ds[f"{sat:s}_longitude"])
+        harm[f"lat{i:d}"] = ("M", ds[f"{sat:s}_latitude"])
         
         harm[f"nominal_measurand_original{i:d}"] = (("M",),
             ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))
