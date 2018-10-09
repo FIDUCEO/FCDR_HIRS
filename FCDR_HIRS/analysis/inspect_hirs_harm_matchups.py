@@ -371,7 +371,8 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1) -
          UADA(ds["nominal_measurand1"]).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1)))
-    Kr_K99 = scipy.stats.scoreatpercentile(Kr_K, 99)
+    Kr_K99 = min(scipy.stats.scoreatpercentile(Kr_K, 99),
+                 10*Kr_K.median().item())
     (cnts, bins, p1) = a.hist(
         Kr_K,
         histtype="step",
@@ -396,8 +397,11 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
              UADA(ds["nominal_measurand2"]).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2))
     uj = numpy.sqrt(u1_K**2+u2_K**2)
-    uj99 = scipy.stats.scoreatpercentile(uj, 99)
+    uj99 = min(scipy.stats.scoreatpercentile(uj, 99),
+               uj.median().item()*10)
     Kr_K_uj = Kr_K/uj
+    KrKuj99 = min(scipy.stats.scoreatpercentile(Kr_K/uj, 99),
+                  Kr_K_uj.median().item()*10)
     a2 = a.twiny()
     (cnts, bins, p2) = a2.hist(
         Kr_K_uj,
@@ -405,9 +409,9 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
         bins=100,
         color="orange",
         #density=True,
-        range=[0, scipy.stats.scoreatpercentile(Kr_K/uj, 99)])
+        range=[0, KrKuj99])
     a2.set_xlabel("Kr / u [1]")
-    a2.set_xlim([0, scipy.stats.scoreatpercentile(Kr_K/uj, 99)])
+    a2.set_xlim([0, KrKuj99])
     a.set_title("Histogram of Kr (normalised by joint noise level)",
                 y=1.11)
 
@@ -454,7 +458,8 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
     a.plot(x, x/5, color="red", linewidth=2, linestyle=':',
         label="x/5 (removes {:.1%})".format(((Kr_K_uj>5).sum()/Kr_K.size).item()))
     a.legend()
-    a.set_xlim([0, scipy.stats.scoreatpercentile(Kr_K, 99)])
+    a.set_xlim([0, Kr_K99])
+    a.set_ylim([0, uj99])
     cbs.append(f.colorbar(pc, ax=a))
 
     # ΔL/Kr, as suggested by Viju, see e-mail 2018-09-27
