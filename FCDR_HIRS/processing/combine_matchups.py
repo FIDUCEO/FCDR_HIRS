@@ -581,10 +581,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm[f"nominal_measurand_uncertainty_structured{i:d}"].attrs.update(
             ds[f"{sat:s}_u_R_Earth_nonrandom"].attrs)
 
-        harm[f"lon{i:d}"] = ds[f"{sat:s}_longitude"].rename(
-                {"matchup_count": "M"})
-        harm[f"lat{i:d}"] = ds[f"{sat:s}_latitude"].rename(
-                {"matchup_count": "M"})
+        harm[f"lon{i:d}"] = ("M", ds[f"{sat:s}_longitude"])
+        harm[f"lat{i:d}"] = ("M", ds[f"{sat:s}_latitude"])
         
         harm[f"nominal_measurand_original{i:d}"] = (("M",),
             ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))
@@ -863,8 +861,17 @@ def merge_all(*files):
         identicals.append("matchup_distance")
     for k in ds_all[0].data_vars.keys()-ds_new.keys():
         if "M" in ds_all[0][k].dims:
+            # Workaround for #285
+            spurious_coords = (functools.reduce(
+                    operator.or_,
+                    [set(da.coords) for da in ds_all]) 
+                        - functools.reduce(
+                    operator.and_,
+                    [set(da.coords) for da in ds_all]))
             try:
-                ds_new[k] = xarray.concat([da[k] for da in ds_all], dim="M")
+                ds_new[k] = xarray.concat(
+                    [da[k].drop({s for s in spurious_coords if s in da[k].coords})
+                        for da in ds_all], dim="M")
             except KeyError as e:
                 if "K_other" in e.args[0]:
                     logging.error(f"Skipping {e.args[0]:s}, not found in all")
