@@ -1970,7 +1970,16 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         sub_sensitivities = me.ExpressionDict()
         sub_components = me.ExpressionDict()
         cov_comps = me.ExpressionDict()
-        for v in sorted(args, key=str):
+        sortedargs = sorted(args, key=str)
+        # move covariances to end, so that I have the sensitivities by the
+        # time I reach them
+        sortedargscopy = sortedargs.copy()
+        for v in sortedargs.copy():
+            if isinstance(v, fu) and len(v.args)==2:
+                idx = sortedargs.index(v)
+                sortedargs.append(sortedargs.pop(idx))
+
+        for v in sortedargs:
             # check which one of the four aforementioned applies
             if isinstance(v, fu) and len(v.args)==1:
                 # this covers both cases (2) and (3); if there is no
@@ -2024,7 +2033,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         "not implemented.")
                 eff = effs.copy().pop()
                 adict[v] = eff.covariances[v.args[1]]
-                cov_comps[v.args] = adict[v]
+                cov_comps[v.args] = (sub_sensitivities[v.args[0]][0] *
+                                     sub_sensitivities[v.args[1]][0],
+                                     eff.covariances[v.args[1]])
             elif isinstance(v, fu):
                 raise ValueError(
                     f"uncertainty function with {len(v.args):d} arguments?!")
@@ -2098,6 +2109,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             for k in sub_sensitivities:
                 # I already verified that sub_sensitivities and
                 # sub_components have the same keys
+                # NB 2018-10-10: should u_e here be dd[k][0]?
                 args = typhon.physics.metrology.recursive_args(u_e,
                     stop_at=(sympy.Symbol, sympy.Indexed, fu))
                 ta = tuple(args)
@@ -2109,6 +2121,16 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         *[typhon.math.common.promote_maximally(adict[x]).to_root_units()
                             for x in ta]),
                             dd[k][1])
+            for (pair, (sens_pair, cov_pair)) in cov_comps.items():
+                args = typhon.physics.metrology.recursive_args(sens_pair,
+                    stop_at=(sympy.Symbol, sympy.Indexed, fu))
+                ta = tuple(args)
+                f = sympy.lambdify(ta, sens_pair, numpy, dummify=True)
+                cov_comps[pair] = (f(
+                        *[typhon.math.common.promote_maximally(adict[x]).to_root_units()
+                            for x in ta]),
+                        cov_pair)
+                
             # make units nicer.  This may prevent loss of precision
             # problems when values become impractically large or small
             for (k, v) in sub_sensitivities.items():
