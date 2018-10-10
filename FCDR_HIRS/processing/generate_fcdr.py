@@ -368,9 +368,11 @@ class FCDRGenerator:
         (uRe, sensRe, compRe, covcomps) = self.fcdr.calc_u_for_variable(
             "R_e", self.fcdr._quantities, self.fcdr._effects, cu,
             return_more=True)
-        # FIXME: also pass on covariant components
         unc_components = dict(self.fcdr.propagate_uncertainty_components(uRe,
             sensRe, compRe))
+        harm_covcomp_component2 = functools.reduce(
+            operator.add,
+            ((v[0]*v[1]).to(rad_u["si"]**2) for v in covcomps.values()))
 
 #        u_from = xarray.Dataset(dict([(f"u_from_{k!s}", v) for (k, v) in
 #                    unc_components.items()]))
@@ -389,11 +391,20 @@ class FCDRGenerator:
             (v[0]**2 for (k, v) in compRe.items() if k is not me.symbols["C_E"])))
         uRe_rand = compRe[me.symbols["C_E"]][0]
         # uncertainty from harmonisation parameters only...
-        # FIXME: consider covariant components here!
-        uRe_harm = numpy.sqrt(functools.reduce(operator.add,
+        uRe_harm2 = (functools.reduce(operator.add,
             (v**2
              for (k, v) in unc_components.items()
              if str(k) in ("a_2", "a_3", "a_4"))))
+        with numpy.errstate(invalid="raise"):
+            try:
+                uRe_harm = numpy.sqrt(uRe_harm2 + harm_covcomp_component2)
+            except FloatingPointError as e:
+                raise fcdr.FCDRError(f"When processing the harmonisation "
+                    "parameters, I found that the total contribution of "
+                    "harmonisation variance + covariance is negative. "
+                    f"Getting FloatingPointError({e.args:s}). Can "
+                    "the covariant part really be more negative than the "
+                    "variance is positive, or is this a bug?") from e
         # ...which needs to be subtracted from systematic!
         uRe_syst = numpy.sqrt(uRe_syst**2 - uRe_harm**2)
 
