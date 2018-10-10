@@ -413,30 +413,39 @@ class Effect:
                                 "repeated_rectangles",
                                 "repeated_truncated_gaussians")
 
-    def set_covariance(self, other, da, _set_other=True):
+    def set_covariance(self, other, channel, da_ch, _set_other=True):
         """Set covariance between this and other effect
 
         Arguments:
 
             other [Effect]
 
-            da [xarray.DataArray]
+            da_ch [xarray.DataArray]
         """
 
 
-        da = UADA(da)
-        da.attrs["units"] = str(
+        da_ch = UADA(da_ch)
+        da_ch = da_ch.assign_coords(calibrated_channel=channel)
+        da_ch.attrs["units"] = str(
             (_fcdr_defs.FCDR_data_vars_props[self.name][2]["units"] *
              _fcdr_defs.FCDR_data_vars_props[other.name][2]["units"]))
 
-        da.name = f"u_{self.name:s}_{other.name:s}"
+        da_ch.name = f"u_{self.name:s}_{other.name:s}"
 #        da.attrs["long_name"] = f"error covariance {self.magnitude.attrs['long_name']:s} with {other.magnitude.attrs['long_name']:s}"
-        da.attrs["short_name"] = da.name
-        da.attrs["parameters"] = (str(self.parameter), str(other.parameter))
+        da_ch.attrs["short_name"] = da_ch.name
+        da_ch.attrs["parameters"] = (str(self.parameter), str(other.parameter))
+
+        da_old = self._covariances.get(other.parameter)
+        if da_old is None:
+            da = da_ch
+        elif channel in da_old.coords["calibrated_channel"].values:
+            da = da_old
+        else:
+            da = xarray.concat([da_old, da_ch], dim="calibrated_channel", compat="identical")
         
         self._covariances[other.parameter] = da
         if _set_other:
-            other.set_covariance(self, da, _set_other=False)
+            other.set_covariance(self, channel, da_ch, _set_other=False)
 
     @property
     def covariances(self):

@@ -365,7 +365,7 @@ class FCDRGenerator:
             context=context, Rself_model=self.rself)
         cu = {} # should NOT be an expressiondict, I don't want T[1]==T[2] here!
         # FIXME: also receive covariant components
-        (uRe, sensRe, compRe) = self.fcdr.calc_u_for_variable(
+        (uRe, sensRe, compRe, covcomps) = self.fcdr.calc_u_for_variable(
             "R_e", self.fcdr._quantities, self.fcdr._effects, cu,
             return_more=True)
         # FIXME: also pass on covariant components

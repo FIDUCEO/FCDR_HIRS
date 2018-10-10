@@ -711,7 +711,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             da.encoding = q.encoding
             eff.magnitude = da
         for (other, val) in covariances.items():
-            eff.set_covariance(self._effects_by_name[other], val)
+            eff.set_covariance(self._effects_by_name[other], channel, val)
 
     def calculate_offset_and_slope(self, ds, ch, srf=None, tuck=False,
             naive=False, accept_nan_for_nan=False):
@@ -1848,7 +1848,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                             "encoding": self._data_vars_props[
                                         me.names[sbase]][3]})
                 cached_uncertainties[s] = u
-                return (u, {}, {}) if return_more else u
+                return (u, {}, {}, {}) if return_more else u
             else:
                 u = UADA(0, name="u_{!s}".format(sbase),
                     attrs={
@@ -1860,7 +1860,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         "encoding": self._data_vars_props[
                                     me.names[sbase]][3]})
                 cached_uncertainties[s] = u
-                return (u, {}, {}) if return_more else u
+                return (u, {}, {}, {}) if return_more else u
 
         # evaluate expression for this quantity
         e = me.expressions[s]
@@ -1910,7 +1910,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     "units": str(me.units[s])
                 })
             cached_uncertainties[s] = u
-            return (u, {}, {}) if return_more else u
+            return (u, {}, {}, {}) if return_more else u
 
         fu = sympy.Function("u")
         args = typhon.physics.metrology.recursive_args(u_e,
@@ -1969,6 +1969,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         adict = {}
         sub_sensitivities = me.ExpressionDict()
         sub_components = me.ExpressionDict()
+        cov_comps = me.ExpressionDict()
         for v in sorted(args, key=str):
             # check which one of the four aforementioned applies
             if isinstance(v, fu) and len(v.args)==1:
@@ -1990,9 +1991,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         sub_components,
                         v.args[0])
                 else:
-                    (adict[v], subsens, subcomp) = self.calc_u_for_variable(
+                    (adict[v], subsens, subcomp, subcov) = self.calc_u_for_variable(
                         v.args[0], quantities, all_effects,
                         cached_uncertainties, return_more=True)
+                    if len(subcov) > 0:
+                        raise ValueError("I expected covariances to only "
+                            "occur at the top-level.  Something's wrong.")
                     # Callee may have taken some uncertainties from cache;
                     # the associated subsens/subcomp are probably the ones
                     # /I/ calculated… see just above!
@@ -2020,9 +2024,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         "not implemented.")
                 eff = effs.copy().pop()
                 adict[v] = eff.covariances[v.args[1]]
-
-                # FIXME: also register covariances separately from
-                # sub_components
+                cov_comps[v.args] = adict[v]
             elif isinstance(v, fu):
                 raise ValueError(
                     f"uncertainty function with {len(v.args):d} arguments?!")
@@ -2135,8 +2137,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # FIXME: perhaps I need to add prefixes such that the
             # magnitude becomes close to 1?
 
-            # FIXME: also return covariances as separate component
-            return (u, sub_sensitivities, sub_components)
+            return (u, sub_sensitivities, sub_components, cov_comps)
         else:
             return u
 
