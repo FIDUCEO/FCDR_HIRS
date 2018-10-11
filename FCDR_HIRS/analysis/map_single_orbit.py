@@ -60,7 +60,7 @@ class OrbitPlotter:
 #            f, False, filename)
 
     def prepare_figure_and_axes(self, channels):
-        ncol = 5
+        ncol = 6
         #ncol = int(math.ceil(math.sqrt(len(channels))))
         nrow = len(channels)
         #nrow = int(math.floor(math.sqrt(len(channels))))
@@ -89,8 +89,9 @@ class OrbitPlotter:
         ax_all[channels[0]][0].set_title("BT")
         ax_all[channels[0]][1].set_title("Independent uncertainty")
         ax_all[channels[0]][2].set_title("Structured uncertainty")
-        ax_all[channels[0]][3].set_title("Quality channel bitmask")
-        ax_all[channels[0]][4].set_title("Quality scanline bitmask")
+        ax_all[channels[0]][3].set_title("Common uncertainty")
+        ax_all[channels[0]][4].set_title("Quality channel bitmask")
+        ax_all[channels[0]][5].set_title("Quality scanline bitmask")
         f.suptitle(self.path.stem)
 
         return (f, ax_all, cax_all)
@@ -119,6 +120,9 @@ class OrbitPlotter:
             self._plot_to(ax_all[2], cax_all[2], t0, t1, dsx["u_structured"].values,
                 "Structured uncertainty [K]",
                 is_uncertainty=True)
+            self._plot_to(ax_all[3], cax_all[3], t0, t1, dsx["u_common"].values,
+                "Common uncertainty [K]",
+                is_uncertainty=True)
         # flags are plotted for all cases, flagged or not
         dsx = ds.sel(channel=ch)
         lons = dsx["longitude"].values
@@ -126,10 +130,10 @@ class OrbitPlotter:
         trans = ax_all[0].projection.transform_points(cartopy.crs.Geodetic(), lons, lats)
         t0 = trans[:, :, 0]
         t1 = trans[:, :, 1]
-        self.plot_bitfield(ax_all[3], cax_all[3], t0, t1,
+        self.plot_bitfield(ax_all[4], cax_all[4], t0, t1,
             ds["quality_channel_bitmask"].sel(channel=ch),
             "Quality channel bitmask")
-        self.plot_bitfield(ax_all[4], cax_all[4], t0, t1,
+        self.plot_bitfield(ax_all[5], cax_all[5], t0, t1,
             ds["quality_scanline_bitmask"],
             "Quality scanline bitmask")
 
