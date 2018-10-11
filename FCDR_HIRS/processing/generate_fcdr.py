@@ -631,7 +631,7 @@ class FCDRGenerator:
             logging.info("Already exists: {!s}".format(e.args[0]))
         except ValueError as e:
             if "chunksize" in e.args[0]:
-                logging.error(f"ERROR! Cannot store due to ValueError: {e.args!s} "
+                logging.error(f"ERROR! Cannot store due to ValueError: {e.args[0]!s} "
                     "See https://github.com/FIDUCEO/FCDRTools/issues/15")
             else:
                 raise
