@@ -164,8 +164,9 @@ class OrbitPlotter:
 
     def plot_bitfield(self, ax, cax, t0, t1, da, tit):
         # https://gist.github.com/jakevdp/8a992f606899ac24b711
-        flagdefs = dict(zip(da.flag_masks,
-                            da.flag_meanings.split(",")))
+        flagdefs = dict(zip(
+            (int(x.strip()) for x in da.flag_masks.split(",")),
+            da.flag_meanings.split()))
 
 #        if not da.any():
 #            logging.warning("Current unable to plot "
