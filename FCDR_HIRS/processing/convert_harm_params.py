@@ -43,9 +43,9 @@ Harmonisation parameters are derived using software developed by Ralf Quast.
 ###                                         ###
 ###############################################
 ###                                         ###
-### This file is generated using the script ###
+### This file is generated using:           ###
 ###                                         ###
-### convert_hirs_harmonisation_parameters   ###
+### {cmdline:s}
 ###                                         ###
 ### see convert_harm_params.py              ###
 ###                                         ###
@@ -78,7 +78,8 @@ p = parse_cmdline()
 
 # from attachment from email RQ 2018-03-26, sent to SH, JM, EW, GH
 
-scaling = numpy.array([1e-15, 1e-21, 1e-3])
+#scaling = numpy.array([1e-15, 1e-21, 1e-3])
+scaling = numpy.array([1, 1, 1]) # RQ e-mail 2018-10-11, scaling already applied
 
 def get_harm_dict(chans, files):
     """Convert all.
@@ -121,7 +122,7 @@ def get_harm_dict(chans, files):
 
 def write_harm_dict(fp, harms, write_preamble=True):
     if write_preamble:
-        fp.write(preamble)
+        fp.write(preamble.format(cmdline=" ".join(sys.argv)))
 
     print("harmonisation_parameters = ", pprint.pformat(harms[0]),
             file=fp)
