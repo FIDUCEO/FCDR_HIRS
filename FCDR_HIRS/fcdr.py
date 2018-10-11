@@ -711,7 +711,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             da.encoding = q.encoding
             eff.magnitude = da
         for (other, val) in covariances.items():
-            eff.set_covariance(self._effects_by_name[other], val)
+            eff.set_covariance(self._effects_by_name[other], channel, val)
 
     def calculate_offset_and_slope(self, ds, ch, srf=None, tuck=False,
             naive=False, accept_nan_for_nan=False):
@@ -1848,7 +1848,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                             "encoding": self._data_vars_props[
                                         me.names[sbase]][3]})
                 cached_uncertainties[s] = u
-                return (u, {}, {}) if return_more else u
+                return (u, {}, {}, {}) if return_more else u
             else:
                 u = UADA(0, name="u_{!s}".format(sbase),
                     attrs={
@@ -1860,7 +1860,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         "encoding": self._data_vars_props[
                                     me.names[sbase]][3]})
                 cached_uncertainties[s] = u
-                return (u, {}, {}) if return_more else u
+                return (u, {}, {}, {}) if return_more else u
 
         # evaluate expression for this quantity
         e = me.expressions[s]
@@ -1910,7 +1910,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     "units": str(me.units[s])
                 })
             cached_uncertainties[s] = u
-            return (u, {}, {}) if return_more else u
+            return (u, {}, {}, {}) if return_more else u
 
         fu = sympy.Function("u")
         args = typhon.physics.metrology.recursive_args(u_e,
@@ -1969,7 +1969,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         adict = {}
         sub_sensitivities = me.ExpressionDict()
         sub_components = me.ExpressionDict()
-        for v in sorted(args, key=str):
+        cov_comps = me.ExpressionDict()
+        sortedargs = sorted(args, key=str)
+        # move covariances to end, so that I have the sensitivities by the
+        # time I reach them
+        sortedargscopy = sortedargs.copy()
+        for v in sortedargs.copy():
+            if isinstance(v, fu) and len(v.args)==2:
+                idx = sortedargs.index(v)
+                sortedargs.append(sortedargs.pop(idx))
+
+        for v in sortedargs:
             # check which one of the four aforementioned applies
             if isinstance(v, fu) and len(v.args)==1:
                 # this covers both cases (2) and (3); if there is no
@@ -1990,9 +2000,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         sub_components,
                         v.args[0])
                 else:
-                    (adict[v], subsens, subcomp) = self.calc_u_for_variable(
+                    (adict[v], subsens, subcomp, subcov) = self.calc_u_for_variable(
                         v.args[0], quantities, all_effects,
                         cached_uncertainties, return_more=True)
+                    if len(subcov) > 0:
+                        raise ValueError("I expected covariances to only "
+                            "occur at the top-level.  Something's wrong.")
                     # Callee may have taken some uncertainties from cache;
                     # the associated subsens/subcomp are probably the ones
                     # /I/ calculated… see just above!
@@ -2020,6 +2033,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         "not implemented.")
                 eff = effs.copy().pop()
                 adict[v] = eff.covariances[v.args[1]]
+                cov_comps[v.args] = (sub_sensitivities[v.args[0]][0] *
+                                     sub_sensitivities[v.args[1]][0],
+                                     eff.covariances[v.args[1]])
             elif isinstance(v, fu):
                 raise ValueError(
                     f"uncertainty function with {len(v.args):d} arguments?!")
@@ -2093,6 +2109,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             for k in sub_sensitivities:
                 # I already verified that sub_sensitivities and
                 # sub_components have the same keys
+                # NB 2018-10-10: should u_e here be dd[k][0]?
                 args = typhon.physics.metrology.recursive_args(u_e,
                     stop_at=(sympy.Symbol, sympy.Indexed, fu))
                 ta = tuple(args)
@@ -2104,6 +2121,16 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         *[typhon.math.common.promote_maximally(adict[x]).to_root_units()
                             for x in ta]),
                             dd[k][1])
+            for (pair, (sens_pair, cov_pair)) in cov_comps.items():
+                args = typhon.physics.metrology.recursive_args(sens_pair,
+                    stop_at=(sympy.Symbol, sympy.Indexed, fu))
+                ta = tuple(args)
+                f = sympy.lambdify(ta, sens_pair, numpy, dummify=True)
+                cov_comps[pair] = (f(
+                        *[typhon.math.common.promote_maximally(adict[x]).to_root_units()
+                            for x in ta]),
+                        cov_pair)
+                
             # make units nicer.  This may prevent loss of precision
             # problems when values become impractically large or small
             for (k, v) in sub_sensitivities.items():
@@ -2131,7 +2158,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                    sub_components[k][1])
             # FIXME: perhaps I need to add prefixes such that the
             # magnitude becomes close to 1?
-            return (u, sub_sensitivities, sub_components)
+
+            return (u, sub_sensitivities, sub_components, cov_comps)
         else:
             return u
 
@@ -2368,6 +2396,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
             sens_above
         """
+        # FIXME: also consider covariances as inputs
+        # FIXME: how to return covariances?  They fall outside the logic
+        # as they are naturally squared.  Should be returned separately.
 
         if not sens.keys() == comp.keys():
             raise ValueError("Must have same keys in sensitivity dict "
@@ -2390,6 +2421,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #            else:
 #                ipsens = sens_above
 #            yield (k, numpy.sqrt(compk0**2 * sens_to_here**2))
+            # FIXME: seperately yield covariant components?
             yield (k, numpy.sqrt(compk0**2 * sens_above**2))
             yield from self.propagate_uncertainty_components(u,
                 sens[k][1], comp[k][1], sens_to_here)
