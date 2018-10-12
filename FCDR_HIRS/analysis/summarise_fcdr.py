@@ -348,7 +348,8 @@ class FCDRSummary(HomemadeDataset):
                         "fcdr_type": fcdr_type,
                         "satname": sat},
                     NO_CACHE=True)
-                if all(summary.isnull().all()[fields].all().variables.values()):
+                if all(summary.isnull().all()[
+                        [f for f in fields if f in summary.data_vars.keys()]].all().variables.values()):
                     raise DataFileError(f"All data invalid for {sat:s}!")
             except DataFileError:
                 continue
@@ -366,6 +367,15 @@ class FCDRSummary(HomemadeDataset):
                                f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
                 (f, a_all) = figs[channel]
                 for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
+                    try:
+                        if not numpy.isfinite(summary[fld].sel(channel=channel)).any():
+                            logging.error(f"All nans for channel {channel:d} "
+                                f"{fld:s}, skipping")
+                            continue
+                    except KeyError as e:
+                        logging.error("Can't plot ptiles for "
+                            f"channel {channel:d} {fld:s}, no {e.args[0]:s}")
+                        continue
                     #summary[fld].values[summary[fld]==0] = numpy.nan # workaround #126, redundant after fix
                     for (ptile, ls, color) in zip(sorted(ptiles), pstyles, pcolors):
                         if i!=0:
@@ -397,6 +407,8 @@ class FCDRSummary(HomemadeDataset):
                     a.grid(True, axis="both")
                 # prepare some info for later, with zoomed-in y-axes
                 for (fld, a) in zip(fields, a_all.ravel()):
+                    if not fld in summary.data_vars.keys():
+                        continue
                     lo = scipy.stats.mstats.mquantiles(
                         numpy.ma.masked_invalid(
                             summary[fld].sel(channel=channel).sel(ptile=25).values),
@@ -481,9 +493,13 @@ class FCDRSummary(HomemadeDataset):
                 y = summary[f"hist_u_{lab_struc:s}"].sel(channel=ch).sum("date")
                 a.plot(x, y, label=f"Ch. {ch:d}, {lab_struc:s}",
                     color=f"C{k:d}", linestyle="-")
-                y = summary[f"hist_u_{lab_comm:s}"].sel(channel=ch).sum("date")
-                a.plot(x, y, label=f"Ch. {ch:d}, {lab_comm:s}",
-                    color=f"C{k:d}", linestyle=":")
+                try:
+                    y = summary[f"hist_u_{lab_comm:s}"].sel(channel=ch).sum("date")
+                except KeyError as e:
+                    logging.error(f"Cannot plot hist for channel {ch:d}: " + e.args[0])
+                else:
+                    a.plot(x, y, label=f"Ch. {ch:d}, {lab_comm:s}",
+                        color=f"C{k:d}", linestyle=":")
             a.legend()
             a.set_xlim([0,
                 float(summary[f"bins_u_{lab_struc:s}"].sel(channel=chs[0]).isel(bin_edges=idx_hi))])
