@@ -739,7 +739,8 @@ class FCDRGenerator:
         
         # add orig_l1b
         src_filenames = pandas.unique(piece["filename"].sel(time=t_earth))
-        easy["scanline_map_to_origl1bfile"][:] = [src_filenames.tolist().index(fn) for fn in piece["filename"].sel(time=t_earth)]
+        # call .item() to avoid https://bugs.python.org/issue29672
+        easy["scanline_map_to_origl1bfile"][:] = [src_filenames.tolist().index(fn.item()) for fn in piece["filename"].sel(time=t_earth)]
         easy.attrs["source"] = src_filenames
 
         easy = easy.assign_coords(
@@ -848,15 +849,15 @@ class FCDRGenerator:
         # efdqb
         edqb.values[(dpb&dfp.OUTLIER_NOS).any("calibrated_channel").values] \
             |= efdqb.outlier_nos
-        edqb.values[((dmfb.sel(minor_frame=slice(56)).rename(minor_frame='x')&dfmf.SUSPECT_MIRROR)!=0).values] |= efdqb.suspect_mirror
+        edqb.values[((dmfb.sel(minor_frame=slice(56)).rename(minor_frame='x')&dfmf.SUSPECT_MIRROR).values!=0)] |= efdqb.suspect_mirror
         edqb.values[(dpb&dfp.UNCERTAINTY_TOO_LARGE).any("calibrated_channel").values] |= efdqb.uncertainty_too_large
 
         # efqsb
-        eqsb.values[((dsb&dfs.DO_NOT_USE)!=0).values] |= efqsb.do_not_use_scan
-        eqsb.values[((dsb&dfs.BAD_TEMP_NO_RSELF)!=0).values] |= efqsb.bad_temp_no_rself
-        eqsb.values[((dsb&dfs.REDUCED_CONTEXT)!=0).values] |= efqsb.reduced_context
-        eqsb.values[((dsb&dfs.SUSPECT_GEO)!=0).values] |= efqsb.suspect_geo
-        eqsb.values[((dsb&dfs.SUSPECT_TIME)!=0).values] |= efqsb.suspect_time
+        eqsb.values[((dsb&dfs.DO_NOT_USE).values!=0)] |= efqsb.do_not_use_scan
+        eqsb.values[((dsb&dfs.BAD_TEMP_NO_RSELF).values!=0)] |= efqsb.bad_temp_no_rself
+        eqsb.values[((dsb&dfs.REDUCED_CONTEXT).values!=0)] |= efqsb.reduced_context
+        eqsb.values[((dsb&dfs.SUSPECT_GEO).values!=0)] |= efqsb.suspect_geo
+        eqsb.values[((dsb&dfs.SUSPECT_TIME).values!=0)] |= efqsb.suspect_time
         
         # MISSING:
         #
@@ -864,12 +865,12 @@ class FCDRGenerator:
         # UNCERTAINTY_SUSPICIOUS
 
         # efqcb
-        eqcb.values[((dcb&dfc.DO_NOT_USE)!=0).values] |= efqcb.do_not_use
-        eqcb.values[((dcb&dfc.CALIBRATION_IMPOSSIBLE)!=0).values] |= efqcb.calibration_impossible
+        eqcb.values[((dcb&dfc.DO_NOT_USE).values!=0)] |= efqcb.do_not_use
+        eqcb.values[((dcb&dfc.CALIBRATION_IMPOSSIBLE).values!=0)] |= efqcb.calibration_impossible
         # from quality_scanline_bitmask into quality_channel_bitmask
-        eqcb.loc[{"y":(dsb.rename(scanline_earth="y")&dfs.SUSPECT_CALIB)!=0}] |= efqcb.calibration_suspect
-        eqcb.values[((dcb&dfc.SELF_EMISSION_FAILS)!=0).values] |= efqcb.self_emission_fails
-        eqcb.values[((dcb&dfc.UNCERTAINTY_SUSPICIOUS)!=0).values] |= efqcb.uncertainty_suspicious
+        eqcb.loc[{"y":(dsb.rename(scanline_earth="y")&dfs.SUSPECT_CALIB).values!=-1}] |= efqcb.calibration_suspect
+        eqcb.values[((dcb&dfc.SELF_EMISSION_FAILS).values!=0)] |= efqcb.self_emission_fails
+        eqcb.values[((dcb&dfc.UNCERTAINTY_SUSPICIOUS).values!=0)] |= efqcb.uncertainty_suspicious
 
         # summarise per line
         eqcb.values[(dpb&dfp.UNCERTAINTY_TOO_LARGE).any("scanpos").values] |=  \
