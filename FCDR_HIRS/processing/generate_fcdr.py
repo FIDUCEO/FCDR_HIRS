@@ -740,7 +740,7 @@ class FCDRGenerator:
         # add orig_l1b
         src_filenames = pandas.unique(piece["filename"].sel(time=t_earth))
         # call .item() to avoid https://bugs.python.org/issue29672
-        easy["scanline_map_to_origl1bfile"][:] = [src_filenames.tolist().index(fn).item() for fn in piece["filename"].sel(time=t_earth)]
+        easy["scanline_map_to_origl1bfile"][:] = [src_filenames.tolist().index(fn.item()) for fn in piece["filename"].sel(time=t_earth)]
         easy.attrs["source"] = src_filenames
 
         easy = easy.assign_coords(
