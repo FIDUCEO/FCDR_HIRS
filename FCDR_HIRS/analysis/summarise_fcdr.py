@@ -319,10 +319,10 @@ class FCDRSummary(HomemadeDataset):
         allsats = fcdr.list_all_satellites_chronologically()
         if sats == "all":
             sats = allsats
-            satlabel = ""
+            satlabel = "all"
         else:
             sats = [sats]
-            satlabel = self.satname + " "
+            satlabel = self.satname
         
         figs = {}
         for channel in range(1, 20):
@@ -362,7 +362,7 @@ class FCDRSummary(HomemadeDataset):
                 pcolors = [f"C{allsats.index(sat)%10:d}"]*np
 
             for channel in range(1, 20):
-                total_title = (f"HIRS {satlabel:s}ch. {channel:d} "
+                total_title = (f"HIRS {satlabel:s} ch. {channel:d} "
                                f"{start:%Y-%m-%d}--{end:%Y-%m-%d}")
                 (f, a_all) = figs[channel]
                 for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
