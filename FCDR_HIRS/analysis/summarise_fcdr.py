@@ -407,6 +407,7 @@ class FCDRSummary(HomemadeDataset):
                     if i==0 and (len(ptiles)>1 or len(sats)>1):
                         a.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     a.grid(True, axis="both")
+                    a.set_xlim(start, end)
                 # prepare some info for later, with zoomed-in y-axes
                 for (fld, a) in zip(fields, a_all.ravel()):
                     if not fld in summary.data_vars.keys():
