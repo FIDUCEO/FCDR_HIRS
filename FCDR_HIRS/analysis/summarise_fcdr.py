@@ -226,7 +226,9 @@ class FCDRSummary(HomemadeDataset):
                     fields=fields[fcdr_type]+self.extra_fields[fcdr_type])
                 if fcdr_type=="easy" and ds["u_structured"].dims == ():
                     raise DataFileError("See https://github.com/FIDUCEO/FCDR_HIRS/issues/171")
-            except DataFileError:
+            except (DataFileError, KeyError) as e:
+                logging.warning("Could not read "
+                    f"{sd:%Y-%m-%d}--{ed:%Y-%m-%d}: {e!r}: {e.args[0]:s}")
                 continue
             if fcdr_type == "debug":
                 bad = ((2*ds["u_R_Earth_nonrandom"] > ds["R_e"]) |
