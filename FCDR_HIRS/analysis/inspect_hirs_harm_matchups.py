@@ -475,6 +475,18 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
             channel=ds["channel"].item(), lab=lab, **ds.attrs)
             if write else False)
 
+    # histogram of actually chosen K uncorrected
+    a = next(g)
+    (cnts, bins, p) = a.hist(
+        ds["K"],
+        histtype="step",
+        bins=100,
+        density=True,
+        range=scipy.stats.scoreatpercentile(ds["K"], [1, 99]))
+    a.set_xlabel("K [native units]")
+    a.set_ylabel("density")
+    a.set_title("Histogram of chosen K")
+
     for cb in cbs:
         cb.set_label("No. matchups in bin")
 
