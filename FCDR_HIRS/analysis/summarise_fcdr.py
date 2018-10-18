@@ -3,9 +3,9 @@
 
 import matplotlib
 import math
+import itertools
 from .. import common
 import argparse
-
 
 import logging
 
@@ -43,6 +43,18 @@ titles = dict(
     u_independent = "Independent brightness temperature uncertainty [K]",
     u_structured = "Structured brightness temperature uncertainty [K]")
 
+class StoreNameRangePair(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if len(values)%3 != 0:
+            raise ValueError("Name-range pairs must be muliple of 3")
+        ivals = iter(values)
+        setattr(namespace, self.dest, {})
+        D = {}
+        for i in range(len(values)//3):
+            (name, start, end) = itertools.islice(ivals, 0, 3)
+            D[name] = (float(start), float(end))
+        setattr(namespace, self.dest, D)
+
 def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -63,8 +75,24 @@ def get_parser():
     parser.add_argument("--type", action="store", type=str,
         choices=("debug", "easy"),
         default="debug",
-        help="Type of FCDR to consider.  For now, fields are "
-             "hardcoded by type.")
+        help="Type of FCDR to consider.")
+
+    parser.add_argument("--fields", action="store", type=str,
+        nargs="+",
+        default=["default"],
+        help="Fields to summarise or plot.  For example: "
+            "bt u_independent u_structured u_common. "
+            "Passing 'default' will choose a default depending "
+            "on the type.")
+
+    parser.add_argument("--field-ranges", action=StoreNameRangePair,
+        nargs="*",
+        default=[],
+        help="Applicable when mode=store.  For the histograms for different "
+             "fields, define what range is used for estimating the "
+             "histogram.  Must pass a multiple of three in number of "
+             "arguments, with a format: FIELD lower high FIELD lower "
+             "higher.  This argument does not support channel-dependence.")
 
     parser.add_argument("--version", action="store", type=str,
         default="0.8pre",
@@ -86,6 +114,37 @@ def get_parser():
     return parser
 def parse_cmdline():
     return get_parser().parse_args()
+
+import pathlib
+import datetime
+import xarray
+import numpy
+import pandas
+import scipy.stats
+import scipy.stats.mstats
+
+# see https://github.com/pydata/xarray/issues/1661#issuecomment-339525582
+from pandas.tseries import converter
+converter.register()
+
+from typhon.datasets.dataset import (DataFileError, HomemadeDataset)
+from typhon.physics.units.common import ureg, radiance_units as rad_u
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.datasets.tovs import norm_tovs_name
+import pyatmlab.graphics
+from .. import fcdr
+
+labels = dict(
+    u_C_Earth = "noise [counts]",
+    bt = "Brightness temperature [K]",
+    u_independent = "Independent $\Delta$ BT [K]",
+    u_structured = "Structured $\Delta$ BT [K]")
+
+titles = dict(
+    u_C_Earth = "counts noise",
+    bt = labels["bt"][:-3],
+    u_independent = "Independent brightness temperature uncertainty [K]",
+    u_structured = "Structured brightness temperature uncertainty [K]")
 
 class FCDRSummary(HomemadeDataset):
     name = section = "fcdr_hirs_summary"
@@ -120,20 +179,20 @@ class FCDRSummary(HomemadeDataset):
 
     fields = {
         "debug":
-            ["T_b", "u_T_b_random", "u_T_b_nonrandom", "u_T_b_harm",
-            "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom", "u_R_Earth_harm",
-            "u_C_Earth"],
+            {"T_b", "u_T_b_random", "u_T_b_nonrandom",
+            "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
+            "u_C_Earth"},
         "easy":
-            ["bt", "u_independent", "u_structured", "u_common"],
+            {"bt", "u_independent", "u_structured"}
           }
     
     # extra fields needed in analysis but not summarised
     extra_fields = {
         "debug":
-            ["quality_scanline_bitmask", "quality_channel_bitmask",
-             "quality_pixel_bitmask"],
+            {"quality_scanline_bitmask", "quality_channel_bitmask",
+             "quality_pixel_bitmask"},
         "easy":
-            ["quality_scanline_bitmask", "quality_channel_bitmask"],
+            {"quality_scanline_bitmask", "quality_channel_bitmask"},
         }
 
     hist_range = xarray.Dataset(
@@ -154,6 +213,9 @@ class FCDRSummary(HomemadeDataset):
     def __init__(self, *args, satname, **kwargs):
         super().__init__(*args, satname=satname, **kwargs)
 
+        if float(self.format_version) >= 0.7:
+            self.fields = self.fields.copy() # avoid sharing between instances
+            self.fields |= {"u_T_b_harm", "u_R_Earth_harm"}
         # special value 'all' used in summary plotting
         if satname == "all":
             self.start_date = datetime.datetime(1978, 1, 1)
@@ -170,13 +232,22 @@ class FCDRSummary(HomemadeDataset):
 
     def create_summary(self, start_date, end_date,
             fields=None,
-            fcdr_type="debug"):
+            fcdr_type="debug",
+            field_ranges=None):
         dates = pandas.date_range(start_date, end_date+datetime.timedelta(days=1),
             freq="D")
-        if fields is None:
-            fields = self.fields
+        fields = fields if fields is not None else set()
+        fields |= self.fields[fcdr_type]
+        if field_ranges is None:
+            field_ranges = {}
         chandim = "channel" if fcdr_type=="easy" else "calibrated_channel"
         channels = numpy.arange(1, 20)
+
+        hist_range = self.hist_range.copy()
+
+        for (field, (lo, hi)) in field_ranges.items():
+            hist_range[field] = ("edges", [lo, hi])
+
         #bins = numpy.linspace(self.hist_range, self.nbins)
         summary = xarray.Dataset(
             {
@@ -184,12 +255,12 @@ class FCDRSummary(HomemadeDataset):
                   (("date", "ptile", "channel"),
                     numpy.zeros((dates.size-1, self.ptiles.size,
                                  channels.size), dtype="f4")*numpy.nan)
-                for field in fields[fcdr_type]},
+                for field in fields},
             **{f"hist_{field:s}":
                   (("date", "bin_index", "channel"),
                     numpy.zeros((dates.size-1, self.nbins+1,
                                  channels.size), dtype="u4"))
-                for field in fields[fcdr_type]},
+                for field in fields},
             **{f"bins_{field:s}":
                 (("channel", "bin_edges"),
                 # numpy.concatenate([[numpy.concatenate([[0],
@@ -198,21 +269,21 @@ class FCDRSummary(HomemadeDataset):
                     numpy.concatenate([[
                     numpy.concatenate(
                         [[min(
-                            self.hist_range.sel(channel=ch,edges=0)[field]-1,
+                            hist_range.sel(channel=ch,edges=0)[field]-1,
                             0)],
                           numpy.linspace(
-                            self.hist_range.sel(
+                            hist_range.sel(
                                 channel=ch,
                                 edges=0)[field],
-                            self.hist_range.sel(
+                            hist_range.sel(
                                 channel=ch,
                                 edges=1)[field], self.nbins,
                                 dtype="f4"),
                         [max(
-                            self.hist_range.sel(channel=ch,edges=1)[field]+1,
+                            hist_range.sel(channel=ch,edges=1)[field]+1,
                             1000)]])]
                     for ch in channels]))
-                for field in fields[fcdr_type]},
+                for field in fields},
             },
             coords={"date": dates[:-1], "ptile": self.ptiles, "channel": channels}
         )
@@ -223,11 +294,12 @@ class FCDRSummary(HomemadeDataset):
                     locator_args={"data_version": self.data_version,
                                   "format_version": self.format_version,
                                   "fcdr_type": fcdr_type},
-                    fields=fields[fcdr_type]+self.extra_fields[fcdr_type])
+                    fields=fields|self.extra_fields[fcdr_type])
                 if fcdr_type=="easy" and ds["u_structured"].dims == ():
                     raise DataFileError("See https://github.com/FIDUCEO/FCDR_HIRS/issues/171")
-            except (DataFileError, KeyError) as e:
-                logging.warning("Could not read "
+            #except (DataFileError, KeyError) as e:
+            except DataFileError as e:
+                logger.warning("Could not read "
                     f"{sd:%Y-%m-%d}--{ed:%Y-%m-%d}: {e!r}: {e.args[0]:s}")
                 continue
             if fcdr_type == "debug":
@@ -238,11 +310,15 @@ class FCDRSummary(HomemadeDataset):
                 bad = ((2*ds["u_structured"] > ds["bt"]) |
                        ((ds["quality_scanline_bitmask"].astype("uint8") & 1)!=0) |
                        ((ds["quality_channel_bitmask"].astype("uint8") & 1)!=0))
-            for field in fields[fcdr_type]:
+            for field in fields:
                 if field != "u_C_Earth":
                     # workaround for https://github.com/FIDUCEO/FCDR_HIRS/issues/152
-                    ds[field].values[bad.transpose(*ds[field].dims).values] = numpy.nan 
-            for field in fields[fcdr_type]:
+                    try:
+                        ds[field].values[bad.transpose(*ds[field].dims).values] = numpy.nan 
+                    except ValueError:
+                        # I seem to be unabel to mask this field
+                        pass
+            for field in fields:
                 if "hertz" in ds[field].units:
                     da = UADA(ds[field]).to(rad_u["ir"], "radiance")
                 else:
@@ -291,12 +367,12 @@ class FCDRSummary(HomemadeDataset):
             fcdr_type=fcdr_type))
         of.parent.mkdir(parents=True, exist_ok=True)
 
-        for field in fields[fcdr_type]:
+        for field in fields:
             summary[field].encoding.update({
-                "scale_factor": 0.001,
-                "_FillValue": numpy.iinfo("int32").min,
+#                "scale_factor": 0.001,
+#                "_FillValue": numpy.iinfo("int32").min,
                 "zlib": True,
-                "dtype": "int32",
+#                "dtype": "int32",
                 "complevel": 4})
             summary["hist_"+field].encoding.update({
                 "zlib": True,
@@ -304,9 +380,10 @@ class FCDRSummary(HomemadeDataset):
             summary["bins_"+field].encoding.update({
                 "zlib": True,
                 "complevel": 4,
-                "dtype": "int32",
-                "_FillValue": numpy.iinfo("int32").min,
-                "scale_factor": 0.001})
+#                "dtype": "int32",
+#                "_FillValue": numpy.iinfo("int32").min,
+#                "scale_factor": 0.001})
+                })
 
         summary.to_netcdf(str(of))
 
@@ -325,6 +402,9 @@ class FCDRSummary(HomemadeDataset):
         else:
             sats = [sats]
             satlabel = self.satname
+
+        if fields is None:
+            fields = self.fields
         
         figs = {}
         for channel in range(1, 20):
@@ -335,7 +415,7 @@ class FCDRSummary(HomemadeDataset):
             numpy.full((len(sats), 19, len(fields), 2), numpy.nan, dtype="f4"),
             dims=("satname", "channel", "field", "extremum"),
             coords={"satname": sats, "channel": range(1, 20),
-                "field": fields,
+                "field": sorted(fields),
                 "extremum": ["lo", "hi"]})
 
         oldsatname = self.satname
@@ -371,11 +451,11 @@ class FCDRSummary(HomemadeDataset):
                 for (i, (fld, a)) in enumerate(zip(fields, a_all.ravel())):
                     try:
                         if not numpy.isfinite(summary[fld].sel(channel=channel)).any():
-                            logging.error(f"All nans for channel {channel:d} "
+                            logger.error(f"All nans for channel {channel:d} "
                                 f"{fld:s}, skipping")
                             continue
                     except KeyError as e:
-                        logging.error("Can't plot ptiles for "
+                        logger.error("Can't plot ptiles for "
                             f"channel {channel:d} {fld:s}, no {e.args[0]:s}")
                         continue
                     #summary[fld].values[summary[fld]==0] = numpy.nan # workaround #126, redundant after fix
@@ -499,7 +579,7 @@ class FCDRSummary(HomemadeDataset):
                 try:
                     y = summary[f"hist_u_{lab_comm:s}"].sel(channel=ch).sum("date")
                 except KeyError as e:
-                    logging.error(f"Cannot plot hist for channel {ch:d}: " + e.args[0])
+                    logger.error(f"Cannot plot hist for channel {ch:d}: " + e.args[0])
                 else:
                     a.plot(x, y, label=f"Ch. {ch:d}, {lab_comm:s}",
                         color=f"C{k:d}", linestyle=":")
@@ -526,8 +606,12 @@ def summarise():
         format_version=p.format_version)
     start = datetime.datetime.strptime(p.from_date, p.datefmt)
     end = datetime.datetime.strptime(p.to_date, p.datefmt)
+    fields = set(p.fields)
+    if fields == ["default"]:
+        fields = None
     if p.mode == "summarise":
-        summary.create_summary(start, end, fcdr_type=p.type)
+        summary.create_summary(start, end, fcdr_type=p.type,
+            fields=fields, field_ranges=p.field_ranges)
     elif p.mode == "plot":
 #        sumdat = summary.plot_period(start, end, 5, fields=["u_C_Earth"],
 #            ptiles=[50], pstyles=["-"], fcdr_type=p.type)
@@ -536,11 +620,11 @@ def summarise():
             summary.plot_period_hists(start, end, p.type)
 #            fields=["bt", "u_independent", "u_structured"],
 #            fcdr_type="easy")
-        fields = ["bt", "u_independent", "u_structured"]
-        if float(p.format_version) >= 0.7:
-            fields.append("u_common")
+#        fields = ["bt", "u_independent", "u_structured"]
+#        if float(p.format_version) >= 0.7:
+#            fields.append("u_common")
         summary.plot_period_ptiles(start, end,
             fields=fields,
-            fcdr_type="easy",
+            fcdr_type=p.type,
             ptiles=p.ptiles,
             pstyles=p.pstyles.split())
