@@ -536,8 +536,11 @@ def summarise():
             summary.plot_period_hists(start, end, p.type)
 #            fields=["bt", "u_independent", "u_structured"],
 #            fcdr_type="easy")
+        fields = ["bt", "u_independent", "u_structured"]
+        if float(p.format_version) >= 0.7:
+            fields.append("u_common")
         summary.plot_period_ptiles(start, end,
-            fields=["bt", "u_independent", "u_structured", "u_common"],
+            fields=fields,
             fcdr_type="easy",
             ptiles=p.ptiles,
             pstyles=p.pstyles.split())
