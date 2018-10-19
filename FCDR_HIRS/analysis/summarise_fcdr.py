@@ -203,9 +203,14 @@ class FCDRSummary(HomemadeDataset):
              "u_independent", "u_structured", "u_common"]},
         **{field: (("channel", "edges"),
                    [[0, 200]]*10+[[0, 100]]*2+[[0,10]]*7)
-            for field in ("R_e", "u_R_Earth_random",
-                          "u_R_Earth_nonrandom", "u_R_Earth_harm")},
-        "u_C_Earth": (("edges",), [-4097, 4098]),
+            for field in ("R_e", "u_R_Earth",
+                          "u_R_Earth_random",
+                          "u_R_Earth_nonrandom", "u_R_Earth_harm",
+                          "R_selfE", "u_Rself", 
+                          "R_IWCT")},
+        **{field: (("edges",), [-4097, 4098]) for field in
+            ["C_E", "C_IWCT", "C_s", "u_C_Earth", "u_C_space",
+            "u_C_IWCT"]},
         },
         coords={"channel": numpy.arange(1, 20)})
     nbins = 2000
