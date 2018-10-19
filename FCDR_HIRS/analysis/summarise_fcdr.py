@@ -87,7 +87,7 @@ def get_parser():
 
     parser.add_argument("--field-ranges", action=StoreNameRangePair,
         nargs="*",
-        default=[],
+        default={},
         help="Applicable when mode=store.  For the histograms for different "
              "fields, define what range is used for estimating the "
              "histogram.  Must pass a multiple of three in number of "
