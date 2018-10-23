@@ -172,6 +172,7 @@ class FCDRSummary(HomemadeDataset):
     read_returns = "xarray"
     plot_file = ("hirs_summary/"
         "FCDR_hirs_summary_{satname:s}_ch{channel:d}_{start:%Y%m%d}-{end:%Y%m%d}_p{ptilestr:s}"
+        "f{fieldstr:s}_tp{type:s}_"
         "v{data_version:s}_fv{format_version:s}.")
     plot_hist_file = ("hirs_summary/"
         "FCDR_hirs_hist_{satname:s}_{start:%Y%m%d}-{end:%Y%m%d}"
@@ -520,6 +521,8 @@ class FCDRSummary(HomemadeDataset):
                 self.plot_file.format(satname=satlabel, start=start,
                 end=end, channel=channel, data_version=self.data_version,
                 format_version=self.format_version,
+                type=fcdr_type,
+                fieldstr=",".join(fields),
                 ptilestr=','.join(str(p) for p in ptiles)))
         # another set with zoomed-in y-axes
         for channel in range(1, 20):
@@ -533,6 +536,8 @@ class FCDRSummary(HomemadeDataset):
                     end=end, channel=channel,
                     data_version=self.data_version,
                     format_version=self.format_version,
+                    type=fcdr_type,
+                    fieldstr=",".join(fields),
                     ptilestr=','.join(str(p) for p in ptiles))[:-1] + "_zoom.")
         self.satname = oldsatname
 
