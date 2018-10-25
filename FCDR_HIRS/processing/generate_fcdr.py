@@ -92,7 +92,9 @@ Fix encoding for radiances in debug version.
 Added correlation length scales and channel error correlations, according
 to recipes developed by Merchant et al (GH #212, #228).
 
-Use first results from harmonisation (NOAA-16 onwards).
+Use harmonisation for some channels.
+
+Use shifted SRFs, obtained from RTTOV.
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -170,7 +172,7 @@ class FCDRGenerator:
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
     skip_problem_step = datetime.timedelta(seconds=900)
-    data_version = "0.8pre"
+    data_version = "0.8pre2"
     # see comment in models.Rself
     rself_temperatures = ["baseplate", "internal_warm_calibration_target",
         "scanmirror", "scanmotor", "secondary_telescope"]

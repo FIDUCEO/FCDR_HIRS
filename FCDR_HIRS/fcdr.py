@@ -137,8 +137,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def __init__(self, read="L1B", *args, satname, **kwargs):
         for nm in {satname}|self.satellites[satname]:
             try:
-                self.srfs = [typhon.physics.units.em.SRF.fromArtsXML(
-                             nm, self.section, i) for i in range(1, 20)]
+                self.srfs = [typhon.physics.units.em.SRF.fromRTTOV(
+                              typhon.datasets.tovs.norm_tovs_name(nm, "RTTOV"),
+                              self.section, i) for i in range(1, 20)]
             except FileNotFoundError:
                 pass # try the next one
             else:
