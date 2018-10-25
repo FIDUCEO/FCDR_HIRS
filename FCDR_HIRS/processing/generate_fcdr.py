@@ -135,6 +135,10 @@ def parse_cmdline():
             "Use this to reduce data volume for debug version but "
             "still have data throughout lifetime."))
 
+    parser.add_argument("--no-harm", action="store_true",
+        default=False,
+        help='Run without harmonisation.  Will had "_noharm" to version.')
+
     return parser.parse_args()
 p = parse_cmdline()
 
@@ -189,7 +193,7 @@ class FCDRGenerator:
     max_debug_corr_length = 1000
 
     # FIXME: use filename convention through FCDRTools, 
-    def __init__(self, sat, start_date, end_date, modes):
+    def __init__(self, sat, start_date, end_date, modes, no_harm=False):
         logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
             "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. "
             "Software:".format(
@@ -199,10 +203,12 @@ class FCDRGenerator:
         logging.info(info)
         self.info = info
         self.satname = sat
-        self.fcdr = fcdr.which_hirs_fcdr(sat, read="L1B")
+        self.fcdr = fcdr.which_hirs_fcdr(sat, read="L1B", no_harm=no_harm)
         self.fcdr.my_pseudo_fields.clear() # suppress pseudo fields radiance_fid, bt_fid here
         self.start_date = start_date
         self.end_date = end_date
+        if no_harm:
+            self.data_version += "_no_harm"
 
         orbit_filters=[
 #                typhon.datasets.filters.FirstlineDBFilter(
@@ -924,7 +930,8 @@ def main():
         fgen = FCDRGenerator(p.satname,
             datetime.datetime.strptime(p.from_date, p.datefmt),
             datetime.datetime.strptime(p.to_date, p.datefmt),
-            p.modes)
+            p.modes,
+            no_harm=p.no_harm)
         fgen.process()
     else:
         dates = pandas.date_range(p.from_date, p.to_date, freq="MS")
@@ -932,6 +939,7 @@ def main():
             fgen = FCDRGenerator(p.satname,
                 d.to_pydatetime(),
                 d.to_pydatetime() + datetime.timedelta(days=p.days),
-                p.modes)
+                p.modes,
+                no_harm=p.no_harm)
             fgen.process()
 
