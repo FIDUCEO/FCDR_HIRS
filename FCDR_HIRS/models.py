@@ -88,6 +88,21 @@ regression_types = {
     "LR": sklearn.linear_model.LinearRegression}
 
 class RSelf:
+
+    @abc.abstractmethod
+    def fit(self, context, ch):
+        ...
+
+
+    @abc.abstractmethod
+    def test(self, context, ch):
+        ...
+
+    @abc.abstractmethod
+    def evaluate(self, lines, ch):
+        ...
+
+class RSelfTemperature(Rself):
     """Implementation of self emission model using temperatures
 
     This class models the HIRS self emission as a function of a set of
@@ -134,7 +149,6 @@ class RSelf:
         not yet integrated into the present class, although the
         uncertainties themselves are derived from the `RSelf.test` method.
     """
-
     temperatures = ['baseplate', 
         'internal_warm_calibration_target',
         'scanmirror', 'scanmotor',

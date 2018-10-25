@@ -301,7 +301,7 @@ class FCDRGenerator:
                 typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter()]
         self.orbit_filters = orbit_filters
 
-        self.rself = models.RSelf(self.fcdr,
+        self.rself = models.RSelfTemperature(self.fcdr,
             temperatures=self.rself_temperatures,
             regr=self.rself_regr)
         self.modes = modes
