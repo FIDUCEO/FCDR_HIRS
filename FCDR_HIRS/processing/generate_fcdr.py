@@ -915,7 +915,13 @@ class FCDRGenerator:
             data_version=self.data_version,
             fcdr_type=fcdr_type,
             mode="write")
-        return pathlib.Path(fn)
+        return fn.with_name(
+            fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.create_file_name_FCDR_easy(
+                f"HIRS{self.fcdr.version:d}",
+                self.satname,
+                from_time,
+                to_time,
+                self.data_version))
 #        raise NotImplementedError()
             
 
