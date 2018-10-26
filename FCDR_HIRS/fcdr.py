@@ -18,6 +18,7 @@ import xarray
 import sympy
 import pyorbital.orbital
 import pyorbital.astronomy
+import fiduceo.fcdr.writer.fcdr_writer
 
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.utils import get_time_dimensions
@@ -93,8 +94,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     # v0.6: changed y-coordinate which now simply continues numerically
     #
     # v0.7: various changes, adapted to Tom Blocks format, now with SRFs,
-    # LUTs, correlation lengths and scales, and new encodings
-    format_version="0.7"
+    # LUTs, correlation lengths and scales, new encodings, correct
+    # filenames (uppercase satellite names)
+    #
+    # --> jumped to 2.0.0 because I now follow the FCDRTools convention
+    format_version=fiduceo.fcdr.writer.fcdr_writer.__version__
 
     realisations = 100
     srfs = None
