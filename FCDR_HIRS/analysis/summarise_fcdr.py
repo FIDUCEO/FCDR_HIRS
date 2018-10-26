@@ -221,7 +221,7 @@ class FCDRSummary(HomemadeDataset):
 
         if float(self.format_version) >= 0.7:
             self.fields = self.fields.copy() # avoid sharing between instances
-            self.fields |= {"u_T_b_harm", "u_R_Earth_harm"}
+            self.fields["debug"] |= {"u_T_b_harm", "u_R_Earth_harm"}
         # special value 'all' used in summary plotting
         if satname == "all":
             self.start_date = datetime.datetime(1978, 1, 1)
