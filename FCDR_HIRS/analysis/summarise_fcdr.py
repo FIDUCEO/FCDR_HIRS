@@ -522,7 +522,7 @@ class FCDRSummary(HomemadeDataset):
                 end=end, channel=channel, data_version=self.data_version,
                 format_version=self.format_version,
                 type=fcdr_type,
-                fieldstr=",".join(fields),
+                fieldstr=",".join(sorted(fields)),
                 ptilestr=','.join(str(p) for p in ptiles)))
         # another set with zoomed-in y-axes
         for channel in range(1, 20):
@@ -537,7 +537,7 @@ class FCDRSummary(HomemadeDataset):
                     data_version=self.data_version,
                     format_version=self.format_version,
                     type=fcdr_type,
-                    fieldstr=",".join(fields),
+                    fieldstr=",".join(sorted(fields)),
                     ptilestr=','.join(str(p) for p in ptiles))[:-1] + "_zoom.")
         self.satname = oldsatname
 
