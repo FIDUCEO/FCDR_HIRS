@@ -2538,7 +2538,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # check for crossing antimeridian
         Δlon = (satlatlon.isel(scanpos=1) - satlatlon.isel(scanpos=0))["lon"]
         crossing = Δlon>180
-        satlatlon[{"scanline_earth":crossing.values}]["lon"] += 360
+        satlatlon[{"scanline_earth":crossing.values,"scanpos":0}]["lon"] += 360
         satlatlon = satlatlon.mean("scanpos")
         satelev = ds["platform_altitude"]
         (sat_aa, sat_ea) = pyorbital.orbital.get_observer_look(
