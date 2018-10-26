@@ -921,7 +921,8 @@ class FCDRGenerator:
                 self.satname,
                 from_time,
                 to_time,
-                self.data_version))
+                self.data_version).replace(
+                    "EASY", fcdr_type.upper()))
 #        raise NotImplementedError()
             
 
