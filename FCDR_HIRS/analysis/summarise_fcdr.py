@@ -180,11 +180,11 @@ class FCDRSummary(HomemadeDataset):
 
     fields = {
         "debug":
-            {"T_b", "u_T_b_random", "u_T_b_nonrandom",
+            ["T_b", "u_T_b_random", "u_T_b_nonrandom",
             "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
-            "u_C_Earth"},
+            "u_C_Earth"],
         "easy":
-            {"bt", "u_independent", "u_structured"}
+            ["bt", "u_independent", "u_structured"]
           }
     
     # extra fields needed in analysis but not summarised
@@ -221,7 +221,7 @@ class FCDRSummary(HomemadeDataset):
 
         if float(self.format_version) >= 0.7:
             self.fields = self.fields.copy() # avoid sharing between instances
-            self.fields["debug"] |= {"u_T_b_harm", "u_R_Earth_harm"}
+            self.fields["debug"].extend(["u_T_b_harm", "u_R_Earth_harm"])
         # special value 'all' used in summary plotting
         if satname == "all":
             self.start_date = datetime.datetime(1978, 1, 1)
@@ -242,8 +242,8 @@ class FCDRSummary(HomemadeDataset):
             field_ranges=None):
         dates = pandas.date_range(start_date, end_date+datetime.timedelta(days=1),
             freq="D")
-        fields = fields if fields is not None else set()
-        fields |= self.fields[fcdr_type]
+        fields = fields if fields is not None else []
+        fields.extend([f for f in self.fields[fcdr_type] if f not in fields])
         if field_ranges is None:
             field_ranges = {}
         chandim = "channel" if fcdr_type=="easy" else "calibrated_channel"
@@ -300,7 +300,7 @@ class FCDRSummary(HomemadeDataset):
                     locator_args={"data_version": self.data_version,
                                   "format_version": self.format_version,
                                   "fcdr_type": fcdr_type},
-                    fields=fields|self.extra_fields[fcdr_type])
+                    fields=fields+[f for f in self.extra_fields[fcdr_type] if f not in fields])
                 if fcdr_type=="easy" and ds["u_structured"].dims == ():
                     raise DataFileError("See https://github.com/FIDUCEO/FCDR_HIRS/issues/171")
             #except (DataFileError, KeyError) as e:
@@ -410,7 +410,7 @@ class FCDRSummary(HomemadeDataset):
             satlabel = self.satname
 
         if fields is None:
-            fields = self.fields
+            fields = self.fields[fcdr_type]
         
         figs = {}
         for channel in range(1, 20):
@@ -421,7 +421,7 @@ class FCDRSummary(HomemadeDataset):
             numpy.full((len(sats), 19, len(fields), 2), numpy.nan, dtype="f4"),
             dims=("satname", "channel", "field", "extremum"),
             coords={"satname": sats, "channel": range(1, 20),
-                "field": sorted(fields),
+                "field": fields,
                 "extremum": ["lo", "hi"]})
 
         oldsatname = self.satname
@@ -522,7 +522,7 @@ class FCDRSummary(HomemadeDataset):
                 end=end, channel=channel, data_version=self.data_version,
                 format_version=self.format_version,
                 type=fcdr_type,
-                fieldstr=",".join(sorted(fields)),
+                fieldstr=",".join(fields),
                 ptilestr=','.join(str(p) for p in ptiles)))
         # another set with zoomed-in y-axes
         for channel in range(1, 20):
@@ -537,7 +537,7 @@ class FCDRSummary(HomemadeDataset):
                     data_version=self.data_version,
                     format_version=self.format_version,
                     type=fcdr_type,
-                    fieldstr=",".join(sorted(fields)),
+                    fieldstr=",".join(fields),
                     ptilestr=','.join(str(p) for p in ptiles))[:-1] + "_zoom.")
         self.satname = oldsatname
 
@@ -616,7 +616,7 @@ def summarise():
         format_version=p.format_version)
     start = datetime.datetime.strptime(p.from_date, p.datefmt)
     end = datetime.datetime.strptime(p.to_date, p.datefmt)
-    fields = set(p.fields)
+    fields = p.fields
     if fields == ["default"]:
         fields = None
     if p.mode == "summarise":
