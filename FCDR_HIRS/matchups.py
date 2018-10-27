@@ -425,8 +425,10 @@ class HIRSMatchupCombiner:
     """
 
     #: information on the type of FCDR that will be read
-    fcdr_info = {"data_version": "0.8pre", "fcdr_type": "debug"}
-    #: fields that will be read from each of the FCDR (primary, secondary)
+    fcdr_info = {
+        "data_version": "0.8pre2_no_harm",
+        "format_version": "2.0.0",
+        "fcdr_type": "debug"}
     fields_from_each = [
          'B',
          'C_E',
