@@ -734,7 +734,8 @@ def combine_hirs():
             datetime.datetime.strptime(p.from_date, p.datefmt),
             datetime.datetime.strptime(p.to_date, p.datefmt),
             p.satname1, p.satname2,
-            debug=p.debug)
+            debug=p.debug,
+            apply_filters=p.with_filters)
 
         ds = hmc.as_xarray_dataset()
     except (typhon.datasets.dataset.DataFileError, MatchupError) as e:

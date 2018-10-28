@@ -1475,7 +1475,12 @@ class KModelSRFIASIDB(KModel):
             # Kr instead?
         self._y_pred = y_pred
         self.K[channel] = K
-        if self.debug and not debug:
+        # GH 2018-10-28: What the heck?  In commit 8ae7da4 I changed the
+        # following to "if self.debug and not debug" which essentially
+        # means "if x and not x".  What was I thinking?  If I change it
+        # again, I must explain myself!
+#        if self.debug and not debug:
+        if self.debug:
             for v in self.others.values():
                 v.calc_K(channel, ds_to_use=ds_to_use)
         # convert back to si units for conversion, but cannot convert K
@@ -1556,8 +1561,20 @@ class KModelSRFIASIDB(KModel):
         ds["K_backward"] = (("M",), self.K[channel][1])
         if self.debug:
             for (k, v) in self.others.items():
-                ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][0][ok])
-                ds[f"K_other_{k:s}_backward"] = (("M",), v.K[channel][1][ok])
+                if v.K[channel][0].size == ok.sum() and not ok.all():
+                    warnings.warn(
+                        "GH 2018-20-28, I no longer understand the order "
+                        "of filtering.  It seems the others HAVE been "
+                        "filtered? ")
+                    ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][0])
+                    ds[f"K_other_{k:s}_backward"] = (("M",), v.K[channel][1])
+                else:
+                    warnings.warn(
+                        "GH 2018-20-28, I no longer understand the order "
+                        "of filtering.  It seems the others HAVE NOT been "
+                        "filtered? ")
+                    ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][0][ok])
+                    ds[f"K_other_{k:s}_backward"] = (("M",), v.K[channel][1][ok])
                 for direction in ("forward", "backward"):
                     ds[f"K_other_{k:s}_{direction:s}"].attrs.update(
                         units=f"{v.units:~}",
