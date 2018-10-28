@@ -493,7 +493,6 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
     for a in ax_all.flat:
         a.grid(axis="both")
 
-
     f.suptitle("K stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}".format(**ds.attrs)
         + ", channel " + str(ds["channel"].item()) + ", " + lab + "\nchannels used to predict: " +
         ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_prediction"])))
