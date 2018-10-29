@@ -594,7 +594,7 @@ def plot_file_summary_stats(path, write=False):
         for lab in others:
             plot_ds_summary_stats(ds, lab,
                 kmodel.others[lab].Ldb_hirs_simul,
-                write=False) # only write for main
+                write=True)
 
 def main():
     """Main function for script, expects commandline input.
