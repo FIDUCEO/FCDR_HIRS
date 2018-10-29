@@ -22,6 +22,10 @@ def parse_cmdline():
         "for some fields.",
         default=list(range(1, 13)))
 
+    parser.add_argument("--range", action="store", type="int",
+        nargs=2, help="What fraction of orbit to plot, in %.  Normally 0-100.",
+        default=[0, 100])
+
     parser.add_argument("--verbose", action="store_true", default=False)
 
     p = parser.parse_args()
@@ -47,13 +51,14 @@ import pyatmlab.graphics
 #from .. import fcdr
 
 class OrbitPlotter:
-    def __init__(self, f, channels):
+    def __init__(self, f, channels, range=(0, 100)):
         self.path = pathlib.Path(f)
         self.ds = xarray.open_dataset(f)
         (fig, ax_all, cax_all) = self.prepare_figure_and_axes(channels)
         self.fig = fig
         self.ax_all = ax_all
         self.channels = channels
+        self.range = range
         for ch in channels:
             self.plot_channel(ch, ax_all[ch], cax_all[ch])
 #        pyatmlab.graphics.print_or_show(
@@ -101,6 +106,8 @@ class OrbitPlotter:
         ok = (((ds["quality_channel_bitmask"].astype("uint8")&1)==0) &
               ((ds["quality_scanline_bitmask"].astype("uint8")&1)==0))
         dsx = ds.sel(channel=ch).isel(y=ok.sel(channel=ch))
+        start = self.range[0]/100*dsx.dims["y"]
+        end = self.range[1]/100*dsx.dims["y"]
         if dsx.dims["y"] < 5:
             logging.warning(f"Skipping channel {ch:d}, only {dsx.dims['y']:d} valid scanlines")
             ax_all[0].clear()
@@ -207,7 +214,7 @@ def main():
         format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
                 "%(lineno)s: %(message)s"),
         level=logging.DEBUG if p.verbose else logging.INFO)
-    op = OrbitPlotter(p.arg1, p.channels)
+    op = OrbitPlotter(p.arg1, p.channels, range=p.range)
     op.write()
 #    p = parsed_cmdline 
 #    start_time = datetime.datetime.strptime(p.start_time,
