@@ -581,13 +581,12 @@ def plot_file_summary_stats(path, write=False):
     others = [k.replace("K_other_", "").replace("_forward", "")
             for k in ds.data_vars.keys()
             if k.startswith("K_other_") and k.endswith("_forward")]
+    plot_ds_summary_stats(ds, "", kmodel.Ldb_hirs_simul, write=write)
     if others:
         for lab in others:
             plot_ds_summary_stats(ds, lab,
                 kmodel.others[lab].Ldb_hirs_simul,
                 write=False) # only write for main
-    else:
-        plot_ds_summary_stats(ds, kmodel.Ldb_hirs_simul, write=write)
 
 def main():
     """Main function for script, expects commandline input.
