@@ -1590,7 +1590,7 @@ class KModelSRFIASIDB(KModel):
             ds[k].attrs["units"] = f"{self.units:~}"
             ds[k].attrs["description"] = ("Prediction of "
                     f"delta {to_sat:s} from {from_sat:s} ({self.regression:s})")
-            ds[k].attrs["channels_used"] = self.chan_pairs[channel]
+            ds[k].attrs["channels_prediction"] = self.chan_pairs[channel]
         ds.attrs.update(
             mode=self.mode,
             channels_prediction=self.chan_pairs[channel],
