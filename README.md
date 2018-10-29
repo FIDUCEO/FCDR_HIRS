@@ -59,14 +59,23 @@ The steps to generate a new version of the FCDR:
 - Generate an unharmonised FCDR by passing the --no-harm flag to
   generate_fcdr.
 
+- If in development mode, switch to the latest harmonisation generation
+  branch and install.
+
 - From the unharmonised FCDR, create an unfiltered harmonisation database,
   by calling combine_hirs_hirs_matchups with the --without-filters flag.
 
 - Combine the small harmonisatin files into single big ones per pair and
   channel, using merge_hirs_harmonisation
 
+- If in development mode, switch to the latest harmonisation inspection
+  branch and install.
+
 - From the unfiltered harmonisation database, derive filter parameters by
   calling hirs_inspect_harm_matchups with the --write-filters flag
+
+- If in development mode, switch to the latest harmonisation generation
+  branch and install.
 
 - Generate a new harmonisation database, now --with-filters.
 
@@ -76,5 +85,8 @@ The steps to generate a new version of the FCDR:
 
 - Convert the harmonisation parameters to the Python file _harm_defs.py
   using convert_hirs_harmonisation_parameters
+
+- If in development mode, checkout the latest FCDR generation branch and
+  install.
 
 - Run the FCDR with harmonisation
