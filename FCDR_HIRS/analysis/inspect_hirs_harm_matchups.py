@@ -158,6 +158,7 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
             dims=("x",),
             coords={"x": midbins},
             name="y")
+        logging.info(f"Writing filter to {hfpfile!s}")
         da.to_netcdf(hfpfile)
 
 def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
@@ -493,9 +494,16 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
     for a in ax_all.flat:
         a.grid(axis="both")
 
+    try:
+        chanstr = ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_prediction"]))
+    except KeyError:
+        # until commit 828bd13, I inconsistently mixed "channels_prediction"
+        # and "channels_used"
+        chanstr = ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_used"]))
+    
     f.suptitle("K stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}".format(**ds.attrs)
-        + ", channel " + str(ds["channel"].item()) + ", " + lab + "\nchannels used to predict: " +
-        ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_prediction"])))
+        + ", channel " + str(ds["channel"].item()) + ", " + lab
+        + "\nchannels used to predict: " + chanstr)
     f.subplots_adjust(hspace=0.35, wspace=0.3)
     lab = lab.replace("·", "") # in LSF some nodes have ascii filesystem encoding?!
 
