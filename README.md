@@ -1,7 +1,10 @@
 Development code for HIRS FCDR uncertainties.
 
 Upon installation with pip, all the Python-based dependencies should be
-installed automatically.  In addition, you will need:
+installed automatically, except that in some cases you may need the latest
+master.  Not everything is in conda sa you may have to install some things
+from git.  FCDRTools needs to be installed from git master branch,
+possibly typhon too.  pyatmlab is on pypi but not on conda.  In addition, you will need:
 
 - HIRS L1B data in NOAA format, obtainable from the NOAA CLASS archive.
 - spectral response functions that come with RTTOV
@@ -52,15 +55,16 @@ where it is through the environment variable TYPHONRC.
 
 The steps to generate a new version of the FCDR:
 
-- If in development mode, make sure you have checked out and installed the
-  right branch, both to the conda environment you use for development and
-  the one you use in the LSF
+- (devel) Switch to correct branch and install
 
 - Generate an unharmonised FCDR by passing the --no-harm flag to
   generate_fcdr.
 
-- If in development mode, switch to the latest harmonisation generation
-  branch and install.
+- (devel) Switch to correct branch and install
+
+- Use hirs_logfile_analysis script to inspect outcome
+
+- (devel) Switch to correct branch and install
 
 - From the unharmonised FCDR, create an unfiltered harmonisation database,
   by calling combine_hirs_hirs_matchups with the --without-filters flag.
@@ -68,14 +72,12 @@ The steps to generate a new version of the FCDR:
 - Combine the small harmonisatin files into single big ones per pair and
   channel, using merge_hirs_harmonisation
 
-- If in development mode, switch to the latest harmonisation inspection
-  branch and install.
+- (devel) Switch to correct branch and install
 
 - From the unfiltered harmonisation database, derive filter parameters by
   calling hirs_inspect_harm_matchups with the --write-filters flag
 
-- If in development mode, switch to the latest harmonisation generation
-  branch and install.
+- (devel) Switch to correct branch and install
 
 - Generate a new harmonisation database, now --with-filters.
 
@@ -86,7 +88,21 @@ The steps to generate a new version of the FCDR:
 - Convert the harmonisation parameters to the Python file _harm_defs.py
   using convert_hirs_harmonisation_parameters
 
-- If in development mode, checkout the latest FCDR generation branch and
-  install.
+- (devel) Switch to correct branch and install
 
 - Run the FCDR with harmonisation
+
+- (devel) Switch to correct branch and install
+
+- Use hirs_logfile_analysis script to inspect outcome
+
+- (devel) Switch to correct branch and install
+
+- Use summarise_hirs_fcdr with 'summarise' mode to generate summarising
+  statistic
+
+- Use summarise_hirs_fcdr with 'plot' mode to visualise summarising
+  statistic
+
+- For shorter periods of plotting, usi plot_hirs_fcdr (short time series)
+  and hirs_orbit_map (maps)
