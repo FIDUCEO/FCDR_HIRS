@@ -22,7 +22,7 @@ def parse_cmdline():
         "for some fields.",
         default=list(range(1, 13)))
 
-    parser.add_argument("--range", action="store", type="int",
+    parser.add_argument("--range", action="store", type=int,
         nargs=2, help="What fraction of orbit to plot, in %.  Normally 0-100.",
         default=[0, 100])
 
