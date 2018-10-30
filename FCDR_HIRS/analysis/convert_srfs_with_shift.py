@@ -21,21 +21,22 @@ def main():
     # such as channel 10
     std_centroid_per_ch_nm = {
         no+1: numpy.std(
-            [SRF.fromArtsXML(satname.upper().replace("A0", "A"), "hirs", no+1
+            [SRF.fromRTTOV(satname.upper().replace("A0", "A"), "hirs", no+1
                             ).centroid().to("nm", "sp").m
                 for satname in HIRS2.satellites.keys() | HIRS3.satellites.keys() | HIRS4.satellites.keys()
                 if not satname.endswith("13")])
             for no in range(19)}
     (outdir / satname.lower()).mkdir(parents=True, exist_ok=True)
     for ch in range(1, 20):
-        srf = SRF.fromArtsXML(satname.replace("A0", "A"), "hirs", ch)
+        srf = SRF.fromRTTOV(satname.replace("A0", "A"), "hirs", ch)
 
         std = std_centroid_per_ch_nm[ch]
-        for shift in ureg.Quantity(numpy.linspace(-std, std, 7), ureg.nm):
+        #for shift in ureg.Quantity(numpy.linspace(-std, std, 7), ureg.nm):
+        for shift in ureg.Quantity([0], ureg.nm):
             print(now(), "channel", ch, "shift", shift)
             da = srf.shift(shift).as_dataarray("wavenumber")
             da.attrs["shift"] = shift.to("nm").m
             da.attrs["shift_units"] = "nm"
             da.to_netcdf(
                 str(outdir / satname.lower() / satname.lower())
-                    + "_ch{:d}_shift{:+d}pm.nc".format(ch, int(shift.to("pm").m)))
+                    + "_ch{:d}_shift{:+d}pm_rttov.nc".format(ch, int(shift.to("pm").m)))
