@@ -106,8 +106,9 @@ class OrbitPlotter:
         ok = (((ds["quality_channel_bitmask"].astype("uint8")&1)==0) &
               ((ds["quality_scanline_bitmask"].astype("uint8")&1)==0))
         dsx = ds.sel(channel=ch).isel(y=ok.sel(channel=ch))
-        start = self.range[0]/100*dsx.dims["y"]
-        end = self.range[1]/100*dsx.dims["y"]
+        start = self.range[0]*dsx.dims["y"]//100
+        end = self.range[1]*dsx.dims["y"]//100
+        dsx = dsx.isel(y=slice(start, end))
         if dsx.dims["y"] < 5:
             logging.warning(f"Skipping channel {ch:d}, only {dsx.dims['y']:d} valid scanlines")
             ax_all[0].clear()
@@ -131,17 +132,17 @@ class OrbitPlotter:
                 "Common uncertainty [K]",
                 is_uncertainty=True)
         # flags are plotted for all cases, flagged or not
-        dsx = ds.sel(channel=ch)
+        dsx = ds.sel(channel=ch).isel(y=slice(start, end))
         lons = dsx["longitude"].values
         lats = dsx["latitude"].values
         trans = ax_all[0].projection.transform_points(cartopy.crs.Geodetic(), lons, lats)
         t0 = trans[:, :, 0]
         t1 = trans[:, :, 1]
         self.plot_bitfield(ax_all[4], cax_all[4], t0, t1,
-            ds["quality_channel_bitmask"].sel(channel=ch),
+            dsx["quality_channel_bitmask"],
             "Quality channel bitmask")
         self.plot_bitfield(ax_all[5], cax_all[5], t0, t1,
-            ds["quality_scanline_bitmask"],
+            dsx["quality_scanline_bitmask"],
             "Quality scanline bitmask")
 
     def _plot_to(self, ax, cax, t0, t1, val, clab,
@@ -159,17 +160,18 @@ class OrbitPlotter:
                 "seems to cause problems")
             return
         for mask in (t0>1e6, t0<1e-6):
-            img = ax.pcolor(numpy.ma.masked_where(mask, t0),
-                      numpy.ma.masked_where(mask, t1),
-                      numpy.ma.masked_where(mask, val),
-                      transform=ax.projection,
-                      cmap="viridis",
-                      vmin=0 if is_uncertainty else val.min(),
-                      vmax=val.max(),
-                      norm=matplotlib.colors.Normalize(
-                        vmin=0 if is_uncertainty else val.min(),
-                        vmax=val.max()),
-                      )
+            if not mask.all():
+                img = ax.pcolor(numpy.ma.masked_where(mask, t0),
+                          numpy.ma.masked_where(mask, t1),
+                          numpy.ma.masked_where(mask, val),
+                          transform=ax.projection,
+                          cmap="viridis",
+                          vmin=0 if is_uncertainty else val.min(),
+                          vmax=val.max(),
+                          norm=matplotlib.colors.Normalize(
+                            vmin=0 if is_uncertainty else val.min(),
+                            vmax=val.max()),
+                          )
         cb = ax.figure.colorbar(img, cax=cax, orientation="vertical")
         cb.set_label(clab)
 
@@ -186,18 +188,19 @@ class OrbitPlotter:
 
         # FIXME: this suffers once again from spurious horizontal lines
         for mask in (t0>1e5, t0<1e-5):
-            typhon.plots.plots.plot_bitfield(
-                ax,
-                numpy.ma.masked_where(mask, t0),
-                numpy.ma.masked_where(mask, t1),
-                numpy.ma.masked_where(mask,
-                    numpy.tile(da.astype("uint8").values, [56, 1]).T),
-                flagdefs,
-                cmap="Set3",
-                cax=cax,
-                pcolor_args=dict(transform=ax.projection), 
-                colorbar_args=dict(orientation="vertical"),
-                joiner=",\n")
+            if not mask.all():
+                typhon.plots.plots.plot_bitfield(
+                    ax,
+                    numpy.ma.masked_where(mask, t0),
+                    numpy.ma.masked_where(mask, t1),
+                    numpy.ma.masked_where(mask,
+                        numpy.tile(da.astype("uint8").values, [56, 1]).T),
+                    flagdefs,
+                    cmap="Set3",
+                    cax=cax,
+                    pcolor_args=dict(transform=ax.projection), 
+                    colorbar_args=dict(orientation="vertical"),
+                    joiner=",\n")
 
     def write(self):
         p = self.path.absolute()
@@ -206,6 +209,7 @@ class OrbitPlotter:
             "orbitplots/"
             + str((p.relative_to(p.parents[3]).parent / p.stem))
             + "_ch" + ",".join(str(ch) for ch in self.channels)
+            + f"_{self.range[0]:d}-{self.range[1]:d}"
             + ".png")
 
 def main():
