@@ -347,7 +347,7 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
     return res
 
 
-def gap_fill(ds, dim="time", coor="time"):
+def gap_fill(ds, dim="time", coor="time", Δt=None):
     """Expand dataset with gaps filled
 
     This function takes as input an xarray dataset, then expands all
@@ -371,9 +371,49 @@ def gap_fill(ds, dim="time", coor="time"):
         coor [str]
 
             Name of the coordinate.  Defaults to "time".
+
+        Δt [timedelta64]
+
+            Overwrite automatic determination of timedelta for filling.
+
     """
 
-    if cn[0]/cn.sum() < 0.8:
-        raise ValueError("Dataset is too irregular for gap-filling")
+    if Δt is None:
+        # use most common
+        (un, cn) = unique(ds["time"].diff("y"), return_counts=True)
+        if cn[0]/cn.sum() < 0.8:
+            raise ValueError("Dataset is too irregular for automatic Δt")
+        Δt = un[cn.argmax()]
 
-    raise NotImplementedError("Not implemented yet!")
+    gaplength = ((dt.values / timedelta64(6400, 'ms')).round()-1).astype("uint")
+
+    glnz = gaplength.nonzero()[0]
+    glnzv = gaplength[glnz]
+
+    insertions = numpy.concatenate(
+        [numpy.repeat(c, v) for (v, c) in zip(glnzv, glnz)], 0)
+
+    # I need to drop any coordinates that shares a dimension with the
+    # insertion dimension, or I run into
+    # https://github.com/pydata/xarray/issues/2529
+
+    redo = [c for c in ds.coords.items() if dim in c[1].dims]
+
+    newvals = {k: numpy.insert(
+                    v.drop([c for c in v.coords.keys() if dim in v[c].dims]),
+                    insts,
+                    v.encoding.get("_FillValue", numpy.nan),
+                    axis=v.dims.index(dim))
+                if dim in v.dims else v
+                  for (k, v) in ds.data_vars.items()}
+    newcoor = {k: numpy.insert(
+                    v,
+                    insts,
+                    v.encoding.get("_FillValue", numpy.nan),
+                    axis=v.dims.index(dim)
+                for (k, v) in coor_redo.items()}
+    ds_new = xarray.Dataset(newvals)
+    ds_new.assign_coords(newcoor)
+    ds_new.attrs = ds.attrs
+
+    return ds_new
