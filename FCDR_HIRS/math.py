@@ -347,3 +347,33 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
     return res
 
 
+def gap_fill(ds, dim="time", coor="time"):
+    """Expand dataset with gaps filled
+
+    This function takes as input an xarray dataset, then expands all
+    data variables with dimension 'dim', such that any gaps are filled
+    with fill values (nans), and returns a new copy.
+
+    Implementation-wise, it assumes that the most common Δ between any
+    pair of scanlines is the one that should be true throughout the
+    dataset.
+
+    Arguments:
+
+        ds [xarray.Dataset]
+
+            Dataset to be gap-filled
+
+        dim [str]
+
+            Name of dimension to gap-fill.  Defaults to "time". 
+
+        coor [str]
+
+            Name of the coordinate.  Defaults to "time".
+    """
+
+    if cn[0]/cn.sum() < 0.8:
+        raise ValueError("Dataset is too irregular for gap-filling")
+
+    raise NotImplementedError("Not implemented yet!")
