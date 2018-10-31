@@ -747,7 +747,8 @@ class FCDRGenerator:
         transfer = {k: ([mpd.get(d,d) for d in v.dims],
                     v)
                 for (k, v) in newcont.items()}
-        easy = easy.assign(**transfer)
+        for (k, v) in transfer.items():
+            easy[k].transpose(*v[0])[...] = v[1]
         self.debug2easy_flags(easy, piece)
         
         # add orig_l1b
