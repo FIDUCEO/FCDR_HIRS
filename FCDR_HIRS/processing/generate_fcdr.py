@@ -748,7 +748,13 @@ class FCDRGenerator:
                     v)
                 for (k, v) in newcont.items()}
         for (k, v) in transfer.items():
-            easy[k].transpose(*v[0])[...] = v[1]
+            try:
+                easy[k].transpose(*v[0])[...] = v[1]
+            except ValueError as e:
+                if e.args[0] == "repeated axis in transpose":
+                    easy[k].values[...] = v[1].values
+                else:
+                    raise
         self.debug2easy_flags(easy, piece)
         
         # add orig_l1b
@@ -756,12 +762,6 @@ class FCDRGenerator:
         # call .item() to avoid https://bugs.python.org/issue29672
         easy["scanline_map_to_origl1bfile"][:] = [src_filenames.tolist().index(fn.item()) for fn in piece["filename"].sel(time=t_earth)]
         easy.attrs["source"] = ", ".join(src_filenames)
-
-        easy = easy.assign_coords(
-            x=numpy.arange(1, 57),
-            #y=easy["scanline"],
-            y=numpy.arange(easy.dims["y"]),
-            channel=numpy.arange(1, 20))
 
         for k in easy.variables.keys():
             # see
@@ -780,16 +780,6 @@ class FCDRGenerator:
                             k, var, easy[k].attrs[var],
                             easy[k].encoding[var]))
                     del easy[k].attrs[var]
-
-        # .assign does not copy variable attributes or encoding...
-        for (k, v) in transfer.items():
-            # but we don't want to overwrite attributes already there
-            for (kk, vv) in v[1].attrs.items():
-                if kk not in easy[k].attrs:
-                    easy[k].attrs[kk] = vv
-            for (kk, vv) in v[1].encoding.items():
-                if kk not in easy[k].encoding:
-                    easy[k].encoding[kk] = vv
 
         easy["SRF_weights"][...] = piece["SRF_weights"].sel(channel=range(1, 20), n_frequencies=range(easy.dims["n_wavelengths"]))
         easy["SRF_wavelengths"][...] = UADA(
