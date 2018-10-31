@@ -756,6 +756,7 @@ class FCDRGenerator:
                 else:
                     raise
         self.debug2easy_flags(easy, piece)
+        easy["time"].encoding["add_offset"] = piece["time"].encoding["add_offset"]
         
         # add orig_l1b
         src_filenames = pandas.unique(piece["filename"].sel(time=t_earth))
