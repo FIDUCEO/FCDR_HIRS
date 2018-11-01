@@ -32,6 +32,12 @@ def parse_cmdline():
     group.add_argument("--with-bitmasks", action="store_true")
     group.add_argument("--without-bitmasks", action="store_false")
 
+    parser.add_argument("--mark-pixels", action="store", type=float,
+        nargs="*", default=[],
+        help="Mark 0 or more pixels.  The numbers refer to percentile "
+             "values in brightness temperature.  For example, 50 marks "
+             "the median BT pixel, 10 the pixel corresponding to the 10th "
+             "percentile, etc. ")
     p = parser.parse_args()
     return p
 #parsed_cmdline = parse_cmdline()
@@ -41,7 +47,9 @@ import math
 import datetime
 import copy
 import pathlib
+import string
 
+import scipy
 import numpy
 import matplotlib.pyplot
 import matplotlib.colors
@@ -56,7 +64,9 @@ import pyatmlab.graphics
 #from .. import fcdr
 
 class OrbitPlotter:
-    def __init__(self, f, channels, range=(0, 100), plot_bitmasks=True):
+    def __init__(self, f, channels, range=(0, 100),
+                 plot_bitmasks=True,
+                 mark_pixels=[]):
         self.path = pathlib.Path(f)
         self.ds = xarray.open_dataset(f)
         self.channels = channels
@@ -68,7 +78,8 @@ class OrbitPlotter:
         self.fig = fig
         self.ax_all = ax_all
         for ch in channels:
-            self.plot_channel(ch, ax_all[ch], cax_all[ch])
+            self.plot_channel(ch, ax_all[ch], cax_all[ch],
+                mark_pixels=mark_pixels)
 #        pyatmlab.graphics.print_or_show(
 #            f, False, filename)
 
@@ -133,7 +144,8 @@ class OrbitPlotter:
 
         return (f, ax_all, cax_all)
 
-    def plot_channel(self, ch, ax_all, cax_all):
+    def plot_channel(self, ch, ax_all, cax_all,
+                     mark_pixels=[]):
         ds = self.ds
         ok = (((ds["quality_channel_bitmask"].astype("uint8")&1)==0) &
               ((ds["quality_scanline_bitmask"].astype("uint8")&1)==0))
@@ -180,6 +192,20 @@ class OrbitPlotter:
             self.plot_bitfield(ax_all[5], cax_all[5], t0, t1,
                 dsx["quality_scanline_bitmask"],
                 "Quality scanline bitmask")
+
+        if mark_pixels:
+            p_vals = scipy.stats.scoreatpercentile(
+                dsx["bt"].values.ravel(), mark_pixels,
+                interpolation_method="lower")
+            for (lab, p_val) in zip(string.ascii_uppercase, p_vals):
+                (ycoor, xcoor) = [c[0].item() for c in
+                    (dsx["bt"]==p_val).values.nonzero()]
+                lat = dsx["latitude"].isel(y=ycoor, x=xcoor).item()
+                lon = dsx["longitude"].isel(y=ycoor, x=xcoor).item()
+                for ax in ax_all:
+                    ax.plot(lon, lat, marker='o', markersize=5, color="red")
+                    ax.text(lon, lat, lab, fontsize=20, color="red")
+
 
     def _plot_to(self, ax, cax, t0, t1, val, clab,
             is_uncertainty=False,
@@ -262,7 +288,8 @@ def main():
                 "%(lineno)s: %(message)s"),
         level=logging.DEBUG if p.verbose else logging.INFO)
     op = OrbitPlotter(p.arg1, p.channels, range=p.range,
-        plot_bitmasks=p.with_bitmasks)
+        plot_bitmasks=p.with_bitmasks,
+        mark_pixels=p.mark_pixels)
     op.write()
 #    p = parsed_cmdline 
 #    start_time = datetime.datetime.strptime(p.start_time,
