@@ -372,6 +372,10 @@ def gap_fill(ds, dim="time", coor="time", Δt=None):
     pair of scanlines is the one that should be true throughout the
     dataset.
 
+    Currently, any data variables are filled with fill values and any
+    coordinates are linearly interpolated between the two nearest values.
+    There is not yet any provision to interpolate other values.
+
     Arguments:
 
         ds [xarray.Dataset]
@@ -420,6 +424,7 @@ def gap_fill(ds, dim="time", coor="time", Δt=None):
     newvals = {k: numpy.insert(
                     v.drop([c for c in v.coords.keys() if dim in v[c].dims]),
                     insertions,
+                    numpy.datetime64("NaT") if v.dtype.kind == "M" else
                     v.encoding.get("_FillValue", 
                         0 if isinstance(v.values.flat[0], numbers.Integral) else numpy.nan),
                     axis=v.dims.index(dim))
