@@ -28,6 +28,10 @@ def parse_cmdline():
 
     parser.add_argument("--verbose", action="store_true", default=False)
 
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--with-bitmasks", action="store_true")
+    group.add_argument("--without-bitmasks", action="store_false")
+
     p = parser.parse_args()
     return p
 #parsed_cmdline = parse_cmdline()
@@ -52,29 +56,36 @@ import pyatmlab.graphics
 #from .. import fcdr
 
 class OrbitPlotter:
-    def __init__(self, f, channels, range=(0, 100)):
+    def __init__(self, f, channels, range=(0, 100), plot_bitmasks=True):
         self.path = pathlib.Path(f)
         self.ds = xarray.open_dataset(f)
+        self.channels = channels
+        self.range = range
+        self.start = self.range[0]*self.ds.dims["y"]//100
+        self.end = self.range[1]*self.ds.dims["y"]//100
+        self.plot_bitmasks = plot_bitmasks
         (fig, ax_all, cax_all) = self.prepare_figure_and_axes(channels)
         self.fig = fig
         self.ax_all = ax_all
-        self.channels = channels
-        self.range = range
         for ch in channels:
             self.plot_channel(ch, ax_all[ch], cax_all[ch])
 #        pyatmlab.graphics.print_or_show(
 #            f, False, filename)
 
     def prepare_figure_and_axes(self, channels):
-        ncol = 6
+        ncol = 6 if self.plot_bitmasks else 4
         #ncol = int(math.ceil(math.sqrt(len(channels))))
         nrow = len(channels)
         #nrow = int(math.floor(math.sqrt(len(channels))))
         f = matplotlib.pyplot.figure(
-            figsize=(5*(ncol+1),2.5*(nrow+1)))
+            figsize=(6*(ncol+1),2.5*(nrow+1)))
         gs = matplotlib.gridspec.GridSpec(10*nrow, 16*ncol+1)
         #proj = cartopy.crs.Mollweide(central_longitude=90)
-        proj = cartopy.crs.Mollweide(central_longitude=int(self.ds["latitude"].isel(y=0).sel(x=28)+0))
+        central_longitude=int(self.ds["latitude"].isel(y=0).sel(x=28)+0)
+        if self.range[1]-self.range[0] > 30:
+            proj = cartopy.crs.Mollweide(central_longitude=central_longitude)
+        else:
+            proj = cartopy.crs.PlateCarree(central_longitude=central_longitude)
 
         ax_all = {ch: [] for ch in channels}
         cax_all = copy.deepcopy(ax_all)
@@ -87,18 +98,38 @@ class OrbitPlotter:
                 gs[(r*10):(r+1)*10, c*16:(c+1)*16],
                 projection=proj) # passing the projection makes it a GeoAxes
             ax.coastlines()
+            try:
+                gl = ax.gridlines(draw_labels=True)
+                gl.xlabels_top = False
+                gl.ylabels_right = False
+                # see https://stackoverflow.com/a/35483665/974555
+                ax.text(-0.07, 0.55, 'latitude [degrees]', va='bottom', ha='center',
+                        rotation='vertical', rotation_mode='anchor',
+                        transform=ax.transAxes)
+                ax.text(0.5, -0.1, 'longitude [degrees]', va='bottom', ha='center',
+                        rotation='horizontal', rotation_mode='anchor',
+                        transform=ax.transAxes)
+
+            except TypeError: # no labels
+                ax.gridlines()
             cax = f.add_subplot(gs[(r*10):(r+1)*10, (c+1)*16-1])
             ax_all[ch].append(ax)
             cax_all[ch].append(cax)
-            if c==0:
+            if c==0 and len(channels)>1:
                 ax.text(-0.2, 0.5, f"Ch. {ch:d}", transform=ax.transAxes)
-        ax_all[channels[0]][0].set_title("BT")
+        ax_all[channels[0]][0].set_title("Brightness temperature")
         ax_all[channels[0]][1].set_title("Independent uncertainty")
         ax_all[channels[0]][2].set_title("Structured uncertainty")
         ax_all[channels[0]][3].set_title("Common uncertainty")
-        ax_all[channels[0]][4].set_title("Quality channel bitmask")
-        ax_all[channels[0]][5].set_title("Quality scanline bitmask")
-        f.suptitle(self.path.stem)
+        if self.plot_bitmasks:
+            ax_all[channels[0]][4].set_title("Quality channel bitmask")
+            ax_all[channels[0]][5].set_title("Quality scanline bitmask")
+        f.suptitle("FIDCUEO HIRS FCDR " + self.ds.attrs["satellite"] +
+            " {start:%Y-%m-%d %H:%M:%S}–{end:%H:%M:%S}".format(
+                start=self.ds.isel(y=self.start)["time"].values.astype("datetime64[ms]").item(),
+                end=self.ds.isel(y=self.end)["time"].values.astype("datetime64[ms]").item()) +
+                f", channel {channels[0]:d}" if len(channels)==1 else ""
+            )
 
         return (f, ax_all, cax_all)
 
@@ -107,8 +138,8 @@ class OrbitPlotter:
         ok = (((ds["quality_channel_bitmask"].astype("uint8")&1)==0) &
               ((ds["quality_scanline_bitmask"].astype("uint8")&1)==0))
         dsx = ds.sel(channel=ch).isel(y=ok.sel(channel=ch))
-        start = self.range[0]*dsx.dims["y"]//100
-        end = self.range[1]*dsx.dims["y"]//100
+        start = self.start
+        end = self.end
         dsx = dsx.isel(y=slice(start, end))
         dsx = fcm.gap_fill(dsx, "y", "time",
                 numpy.timedelta64(6400, 'ms'))
@@ -124,7 +155,7 @@ class OrbitPlotter:
             t0 = trans[:, :, 0]
             t1 = trans[:, :, 1]
             self._plot_to(ax_all[0], cax_all[0], t0, t1, dsx["bt"].values,
-                "BT [K]")
+                "Brightness temperature [K]")
             self._plot_to(ax_all[1], cax_all[1], t0, t1, dsx["u_independent"].values,
                 "Independent uncertainty [K]",
                 is_uncertainty=True)
@@ -134,19 +165,21 @@ class OrbitPlotter:
             self._plot_to(ax_all[3], cax_all[3], t0, t1, dsx["u_common"].values,
                 "Common uncertainty [K]",
                 is_uncertainty=True)
-        # flags are plotted for all cases, flagged or not
-        dsx = ds.sel(channel=ch).isel(y=slice(start, end))
-        lons = dsx["longitude"].values
-        lats = dsx["latitude"].values
-        trans = ax_all[0].projection.transform_points(cartopy.crs.Geodetic(), lons, lats)
-        t0 = trans[:, :, 0]
-        t1 = trans[:, :, 1]
-        self.plot_bitfield(ax_all[4], cax_all[4], t0, t1,
-            dsx["quality_channel_bitmask"],
-            "Quality channel bitmask")
-        self.plot_bitfield(ax_all[5], cax_all[5], t0, t1,
-            dsx["quality_scanline_bitmask"],
-            "Quality scanline bitmask")
+
+        if self.plot_bitmasks:
+            # flags are plotted for all cases, flagged or not
+            dsx = ds.sel(channel=ch).isel(y=slice(start, end))
+            lons = dsx["longitude"].values
+            lats = dsx["latitude"].values
+            trans = ax_all[0].projection.transform_points(cartopy.crs.Geodetic(), lons, lats)
+            t0 = trans[:, :, 0]
+            t1 = trans[:, :, 1]
+            self.plot_bitfield(ax_all[4], cax_all[4], t0, t1,
+                dsx["quality_channel_bitmask"],
+                "Quality channel bitmask")
+            self.plot_bitfield(ax_all[5], cax_all[5], t0, t1,
+                dsx["quality_scanline_bitmask"],
+                "Quality scanline bitmask")
 
     def _plot_to(self, ax, cax, t0, t1, val, clab,
             is_uncertainty=False,
@@ -228,7 +261,8 @@ def main():
         format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
                 "%(lineno)s: %(message)s"),
         level=logging.DEBUG if p.verbose else logging.INFO)
-    op = OrbitPlotter(p.arg1, p.channels, range=p.range)
+    op = OrbitPlotter(p.arg1, p.channels, range=p.range,
+        plot_bitmasks=p.with_bitmasks)
     op.write()
 #    p = parsed_cmdline 
 #    start_time = datetime.datetime.strptime(p.start_time,
