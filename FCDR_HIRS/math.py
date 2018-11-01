@@ -1,6 +1,12 @@
 """Various specialised mathematical routines
 """
 
+import numbers
+import numpy
+import xarray
+import sklearn.linear_model
+from typhon.physics.units.common import ureg
+
 def calc_y_for_srf_shift(Δλ, y_master, srf0, L_spectral_db, f_spectra, y_ref,
                            unit=ureg.um,
                            regression_type=sklearn.linear_model.LinearRegression,
@@ -347,3 +353,103 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
     return res
 
 
+def vlinspace(a, b, n):
+    """Specialised vectorised linspace
+    """
+
+    # inspired by https://stackoverflow.com/a/42617889/974555
+
+    return a[..., numpy.newaxis] + (b-a)[..., numpy.newaxis]/(n+1) * numpy.arange(1, n+1)
+
+def gap_fill(ds, dim="time", coor="time", Δt=None):
+    """Expand dataset with gaps filled
+
+    This function takes as input an xarray dataset, then expands all
+    data variables with dimension 'dim', such that any gaps are filled
+    with fill values (nans), and returns a new copy.
+
+    Implementation-wise, it assumes that the most common Δ between any
+    pair of scanlines is the one that should be true throughout the
+    dataset.
+
+    Currently, any data variables are filled with fill values and any
+    coordinates are linearly interpolated between the two nearest values.
+    There is not yet any provision to interpolate other values.
+
+    Arguments:
+
+        ds [xarray.Dataset]
+
+            Dataset to be gap-filled
+
+        dim [str]
+
+            Name of dimension to gap-fill.  Defaults to "time". 
+
+        coor [str]
+
+            Name of the coordinate.  Defaults to "time".
+
+        Δt [timedelta64]
+
+            Overwrite automatic determination of timedelta for filling.
+
+    """
+
+    if Δt is None:
+        # use most common
+        (un, cn) = numpy.unique(ds["time"].diff("y"), return_counts=True)
+        if cn[0]/cn.sum() < 0.8:
+            raise ValueError("Dataset is too irregular for automatic Δt")
+        Δt = un[cn.argmax()]
+
+    dt = ds[coor].diff(dim)
+    gaplength = ((dt.values / Δt).round()-1).astype("uint")
+
+    glnz = gaplength.nonzero()[0]
+    glnzv = gaplength[glnz]
+
+    insertions = numpy.concatenate(
+        [numpy.repeat(c, v) for (v, c) in zip(glnzv, glnz)], 0)
+
+    # I need to drop any coordinates that shares a dimension with the
+    # insertion dimension, or I run into
+    # https://github.com/pydata/xarray/issues/2529
+
+    redo = {k:v for (k,v) in ds.coords.items() if dim in v.dims}
+    # to prepare for interpolation, convert ints to floats
+    redo = {k:v.astype(numpy.float64) if v.dtype.kind in "iu" else v
+            for (k, v) in redo.items()}
+
+    newvals = {k: numpy.insert(
+                    v.drop([c for c in v.coords.keys() if dim in v[c].dims]),
+                    insertions,
+                    numpy.datetime64("NaT") if v.dtype.kind == "M" else
+                    v.encoding.get("_FillValue", 
+                        0 if isinstance(v.values.flat[0], numbers.Integral) else numpy.nan),
+                    axis=v.dims.index(dim))
+                if dim in v.dims else v
+                  for (k, v) in ds.data_vars.items()}
+    
+    # for coordinates, interpolate linearly between the ends of the gaps.
+    # FIXME1: this is not good for lat/lon, should use geotiepoints to
+    # treat those as a special case, but to do it well is even more
+    # nontrivial
+    # FIXME2: this assumes that 'dim' is the first dimension, and I
+    # have not tested it for >2 dimensions
+    coor_insertions = {k: numpy.concatenate(
+        [vlinspace(s.values,e.values,c) for (s,e,c) in zip(
+            v[{dim:glnz-1}], v[{dim:glnz}], glnzv)],
+        0 if len(v.dims)==1 else v.dims.index(dim)+1).T
+                for (k, v) in redo.items()}
+    newcoor = {k: numpy.insert(
+                    v.drop([c for c in v.coords.keys() if dim in v[c].dims]),
+                    insertions,
+                    coor_insertions[k],
+                    axis=v.dims.index(dim))
+                for (k, v) in redo.items()}
+    ds_new = xarray.Dataset(newvals)
+    ds_new = ds_new.assign_coords(**newcoor)
+    ds_new.attrs = ds.attrs
+
+    return ds_new
