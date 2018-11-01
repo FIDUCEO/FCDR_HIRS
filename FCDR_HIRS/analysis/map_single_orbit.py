@@ -46,6 +46,7 @@ import xarray
 import cartopy
 import cartopy.crs
 import typhon.plots.plots
+from .. import math as fcm
 
 import pyatmlab.graphics
 #from .. import fcdr
@@ -109,6 +110,8 @@ class OrbitPlotter:
         start = self.range[0]*dsx.dims["y"]//100
         end = self.range[1]*dsx.dims["y"]//100
         dsx = dsx.isel(y=slice(start, end))
+        dsx = fcm.gap_fill(dsx, "y", "time",
+                numpy.timedelta64(6400, 'ms'))
         if dsx.dims["y"] < 5:
             logging.warning(f"Skipping channel {ch:d}, only {dsx.dims['y']:d} valid scanlines")
             ax_all[0].clear()
@@ -159,19 +162,26 @@ class OrbitPlotter:
                 f"{clab:s}, skipping because splitting plot "
                 "seems to cause problems")
             return
+        val = val.copy()
+        inval = numpy.isnan(val)
+        val[inval] = 0
+        loest = val[~inval].min()
+        hiest = val[~inval].max()
         for mask in (t0>1e6, t0<1e-6):
+            mask |= inval
             if not mask.all():
                 img = ax.pcolor(numpy.ma.masked_where(mask, t0),
                           numpy.ma.masked_where(mask, t1),
                           numpy.ma.masked_where(mask, val),
                           transform=ax.projection,
                           cmap="viridis",
-                          vmin=0 if is_uncertainty else val.min(),
-                          vmax=val.max(),
+                          #vmin=0 if is_uncertainty else loest,
+                          vmin=loest,
+                          vmax=hiest,
                           norm=matplotlib.colors.Normalize(
-                            vmin=0 if is_uncertainty else val.min(),
-                            vmax=val.max()),
-                          )
+                            #vmin=0 if is_uncertainty else loest,
+                            vmin=loest,
+                            vmax=hiest))
         cb = ax.figure.colorbar(img, cax=cax, orientation="vertical")
         cb.set_label(clab)
 
