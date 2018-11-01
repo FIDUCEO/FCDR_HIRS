@@ -1,6 +1,12 @@
 """Various specialised mathematical routines
 """
 
+import numbers
+import numpy
+import xarray
+import sklearn.linear_model
+from typhon.physics.units.common import ureg
+
 def calc_y_for_srf_shift(Δλ, y_master, srf0, L_spectral_db, f_spectra, y_ref,
                            unit=ureg.um,
                            regression_type=sklearn.linear_model.LinearRegression,
@@ -380,12 +386,13 @@ def gap_fill(ds, dim="time", coor="time", Δt=None):
 
     if Δt is None:
         # use most common
-        (un, cn) = unique(ds["time"].diff("y"), return_counts=True)
+        (un, cn) = numpy.unique(ds["time"].diff("y"), return_counts=True)
         if cn[0]/cn.sum() < 0.8:
             raise ValueError("Dataset is too irregular for automatic Δt")
         Δt = un[cn.argmax()]
 
-    gaplength = ((dt.values / timedelta64(6400, 'ms')).round()-1).astype("uint")
+    dt = ds[coor].diff(dim)
+    gaplength = ((dt.values / Δt).round()-1).astype("uint")
 
     glnz = gaplength.nonzero()[0]
     glnzv = gaplength[glnz]
@@ -397,23 +404,27 @@ def gap_fill(ds, dim="time", coor="time", Δt=None):
     # insertion dimension, or I run into
     # https://github.com/pydata/xarray/issues/2529
 
-    redo = [c for c in ds.coords.items() if dim in c[1].dims]
+    redo = {k:v for (k,v) in ds.coords.items() if dim in v.dims}
 
     newvals = {k: numpy.insert(
                     v.drop([c for c in v.coords.keys() if dim in v[c].dims]),
-                    insts,
-                    v.encoding.get("_FillValue", numpy.nan),
+                    insertions,
+                    v.encoding.get("_FillValue", 
+                        0 if isinstance(v.values.flat[0], numbers.Integral) else numpy.nan),
                     axis=v.dims.index(dim))
                 if dim in v.dims else v
                   for (k, v) in ds.data_vars.items()}
+    # FIXME: rather than fill_value, should interpolate or at least offer
+    # the option to interpolate
     newcoor = {k: numpy.insert(
-                    v,
-                    insts,
-                    v.encoding.get("_FillValue", numpy.nan),
-                    axis=v.dims.index(dim)
-                for (k, v) in coor_redo.items()}
+                    v.drop([c for c in v.coords.keys() if dim in v[c].dims]),
+                    insertions,
+                    v.encoding.get("_FillValue",
+                        0 if isinstance(v.values.flat[0], numbers.Integral) else numpy.nan),
+                    axis=v.dims.index(dim))
+                for (k, v) in redo.items()}
     ds_new = xarray.Dataset(newvals)
-    ds_new.assign_coords(newcoor)
+    ds_new.assign_coords(**newcoor)
     ds_new.attrs = ds.attrs
 
     return ds_new
