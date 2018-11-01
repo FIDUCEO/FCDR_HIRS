@@ -353,6 +353,14 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
     return res
 
 
+def vlinspace(a, b, n):
+    """Specialised vectorised linspace
+    """
+
+    # inspired by https://stackoverflow.com/a/42617889/974555
+
+    return a[..., numpy.newaxis] + (b-a)[..., numpy.newaxis]/(n+1) * numpy.arange(1, n+1)
+
 def gap_fill(ds, dim="time", coor="time", Δt=None):
     """Expand dataset with gaps filled
 
@@ -405,6 +413,9 @@ def gap_fill(ds, dim="time", coor="time", Δt=None):
     # https://github.com/pydata/xarray/issues/2529
 
     redo = {k:v for (k,v) in ds.coords.items() if dim in v.dims}
+    # to prepare for interpolation, convert ints to floats
+    redo = {k:v.astype(numpy.float64) if v.dtype.kind in "iu" else v
+            for (k, v) in redo.items()}
 
     newvals = {k: numpy.insert(
                     v.drop([c for c in v.coords.keys() if dim in v[c].dims]),
@@ -414,17 +425,26 @@ def gap_fill(ds, dim="time", coor="time", Δt=None):
                     axis=v.dims.index(dim))
                 if dim in v.dims else v
                   for (k, v) in ds.data_vars.items()}
-    # FIXME: rather than fill_value, should interpolate or at least offer
-    # the option to interpolate
+    
+    # for coordinates, interpolate linearly between the ends of the gaps.
+    # FIXME1: this is not good for lat/lon, should use geotiepoints to
+    # treat those as a special case, but to do it well is even more
+    # nontrivial
+    # FIXME2: this assumes that 'dim' is the first dimension, and I
+    # have not tested it for >2 dimensions
+    coor_insertions = {k: numpy.concatenate(
+        [vlinspace(s.values,e.values,c) for (s,e,c) in zip(
+            v[{dim:glnz-1}], v[{dim:glnz}], glnzv)],
+        0 if len(v.dims)==1 else v.dims.index(dim)+1).T
+                for (k, v) in redo.items()}
     newcoor = {k: numpy.insert(
                     v.drop([c for c in v.coords.keys() if dim in v[c].dims]),
                     insertions,
-                    v.encoding.get("_FillValue",
-                        0 if isinstance(v.values.flat[0], numbers.Integral) else numpy.nan),
+                    coor_insertions[k],
                     axis=v.dims.index(dim))
                 for (k, v) in redo.items()}
     ds_new = xarray.Dataset(newvals)
-    ds_new.assign_coords(**newcoor)
+    ds_new = ds_new.assign_coords(**newcoor)
     ds_new.attrs = ds.attrs
 
     return ds_new
