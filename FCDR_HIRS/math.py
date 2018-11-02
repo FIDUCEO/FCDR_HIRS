@@ -409,8 +409,9 @@ def gap_fill(ds, dim="time", coor="time", Δt=None):
     glnz = gaplength.nonzero()[0]
     glnzv = gaplength[glnz]
 
+    # add 1 to glnz because we want insertions before not after
     insertions = numpy.concatenate(
-        [numpy.repeat(c, v) for (v, c) in zip(glnzv, glnz)], 0)
+        [numpy.repeat(c, v) for (v, c) in zip(glnzv, glnz+1)], 0)
 
     # I need to drop any coordinates that shares a dimension with the
     # insertion dimension, or I run into
@@ -425,8 +426,8 @@ def gap_fill(ds, dim="time", coor="time", Δt=None):
                     v.drop([c for c in v.coords.keys() if dim in v[c].dims]),
                     insertions,
                     numpy.datetime64("NaT") if v.dtype.kind == "M" else
-                    v.encoding.get("_FillValue", 
-                        0 if isinstance(v.values.flat[0], numbers.Integral) else numpy.nan),
+                        numpy.nan if v.dtype.kind in "cf" else
+                        0,
                     axis=v.dims.index(dim))
                 if dim in v.dims else v
                   for (k, v) in ds.data_vars.items()}
