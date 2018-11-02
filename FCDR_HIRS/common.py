@@ -3,6 +3,8 @@
 Should probably be sorted into smaller modules.
 """
 
+import sys
+import logging
 import datetime
 import numpy
 import xarray
@@ -134,3 +136,20 @@ def sample_flags(da, period="1H", dim="time"):
         perc = perc.mean(dim=d)
     
     return (perc, da.flag_meanings.split())
+
+
+_root_logger_set = False
+def set_root_logger(level, filename=None):
+    global _root_logger_set
+    if _root_logger_set:
+        raise RuntimeError("Root logger configured twice!")
+    _root_logger_set = True
+    logger = logging.getLogger()
+    if filename:
+        handler = logging.FileHandler(filename, mode="a", encoding="utf-8")
+    else:
+        handler = logging.StreamHandler(sys.stderr)
+    logger.setLevel(level)
+    handler.setFormatter(
+        logging.Formatter("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:%(lineno)s: %(message)s"))
+    logger.addHandler(handler)

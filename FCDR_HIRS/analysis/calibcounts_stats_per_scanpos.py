@@ -10,6 +10,28 @@ average measure the same.  Let's verify this.
 from .. import common
 import argparse
 
+import logging
+import matplotlib
+#matplotlib.use("Agg")
+import pathlib
+#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+
+import datetime
+import itertools
+import math
+import scipy.stats
+import random
+
+import numpy
+import matplotlib.pyplot
+import matplotlib.ticker
+
+import typhon.plots
+matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
+import pyatmlab.graphics
+
+from .. import fcdr
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -64,36 +86,6 @@ def parse_cmdline():
 
     p = parser.parse_args()
     return p
-
-parsed_cmdline = parse_cmdline()
-
-import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-            "%(lineno)s: %(message)s"),
-    filename=parsed_cmdline.log,
-    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-
-import matplotlib
-#matplotlib.use("Agg")
-import pathlib
-#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
-
-import datetime
-import itertools
-import math
-import scipy.stats
-import random
-
-import numpy
-import matplotlib.pyplot
-import matplotlib.ticker
-
-import typhon.plots
-matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
-import pyatmlab.graphics
-
-from .. import fcdr
 
 def plot_calibcount_stats(h, Mall, channels,
         title="", filename=""):
@@ -275,9 +267,12 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
             anomaly=anomaly)
 
 def main():
-    p = parsed_cmdline
+    p = parse_cmdline()
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.info,
+        p.log)
     read_and_plot_calibcount_stats(p.satname, from_date, to_date,
         p.channels, p.plot_distributions, p.plot_examples,
         p.random_seed, 

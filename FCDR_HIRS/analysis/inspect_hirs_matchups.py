@@ -6,6 +6,36 @@ Anomalies averaged per orbit.
 
 import argparse
 
+
+import logging
+                      
+import datetime
+import pathlib
+
+import numpy
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot
+import netCDF4
+import scipy.stats
+
+import typhon.plots
+import pyatmlab.graphics
+import matplotlib.ticker
+
+from typhon.physics.units import radiance_units as rad_u
+from typhon.datasets.tovs import HIRSHIRS
+
+from .. import (fcdr, matchups, common)
+matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
+
+#srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-094_2009-102_v2.nc")
+#srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-096_2009-102.nc")
+#srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/mms/mmd/mmd05/hirs_n17_n16/mmd05_hirs-n17_hirs-n16_2011-251_2011-257.nc")
+
+hh = HIRSHIRS()
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description="Run some checks on BC matchups",
@@ -37,41 +67,6 @@ def parse_cmdline():
 
     p = parser.parse_args()
     return p
-parsed_cmdline = parse_cmdline()
-
-import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-             "%(lineno)s: %(message)s"),
-    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-
-                      
-import datetime
-import pathlib
-
-import numpy
-
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot
-import netCDF4
-import scipy.stats
-
-import typhon.plots
-import pyatmlab.graphics
-import matplotlib.ticker
-
-from typhon.physics.units import radiance_units as rad_u
-from typhon.datasets.tovs import HIRSHIRS
-
-from .. import (fcdr, matchups)
-matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
-
-#srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-094_2009-102_v2.nc")
-#srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-096_2009-102.nc")
-#srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/mms/mmd/mmd05/hirs_n17_n16/mmd05_hirs-n17_hirs-n16_2011-251_2011-257.nc")
-
-hh = HIRSHIRS()
 
 class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
     def plot_channel(self, ch):#, prim="n17", sec="n16"):
@@ -194,14 +189,18 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
                 self.M["time"][0].astype(datetime.datetime),
                 self.M["time"][-1].astype(datetime.datetime), ch))
 
+logging.basicConfig(
+    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
+             "%(lineno)s: %(message)s"),
+
 def main():
-    p = parsed_cmdline
+    p = parse_cmdline()
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
     hmi = HIRSMatchupInspector(
         datetime.datetime.strptime(p.from_date, p.datefmt),
         datetime.datetime.strptime(p.to_date, p.datefmt),
         p.prim, p.sec)
     for ch in range(1, 20):
         hmi.plot_channel(ch)#, prim="n14", sec="n12")
-   
-if __name__ == "__main__":
-    main()

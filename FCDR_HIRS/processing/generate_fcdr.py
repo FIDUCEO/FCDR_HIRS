@@ -112,6 +112,26 @@ import functools
 import operator
 import enum
 import types
+import logging
+
+import pkg_resources
+import datetime
+
+import numpy
+import pandas
+import xarray
+import typhon.datasets.dataset
+import typhon.datasets.filters
+from typhon.physics.units.common import radiance_units as rad_u
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from .. import fcdr
+from .. import models
+from .. import effects
+from .. import measurement_equation as me
+from .. import _fcdr_defs
+from .. import metrology
+
+import fiduceo.fcdr.writer.fcdr_writer
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -140,33 +160,6 @@ def parse_cmdline():
         help='Run without harmonisation.  Will had "_noharm" to version.')
 
     return parser.parse_args()
-p = parse_cmdline()
-
-import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-            "%(lineno)s: %(message)s"),
-    filename=p.log,
-    level=logging.DEBUG if p.verbose else logging.INFO)
-
-import pkg_resources
-import datetime
-
-import numpy
-import pandas
-import xarray
-import typhon.datasets.dataset
-import typhon.datasets.filters
-from typhon.physics.units.common import radiance_units as rad_u
-from typhon.physics.units.tools import UnitsAwareDataArray as UADA
-from .. import fcdr
-from .. import models
-from .. import effects
-from .. import measurement_equation as me
-from .. import _fcdr_defs
-from .. import metrology
-
-import fiduceo.fcdr.writer.fcdr_writer
 
 class FCDRGenerator:
     # for now, step_size should be smaller than segment_size and I will
@@ -933,6 +926,12 @@ def main():
         category=FutureWarning)
 #    warnings.filterwarnings("error",
 #        message="invalid value encountered in log", category=RuntimeWarning)
+    p = parse_cmdline()
+
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
+
     if p.days == 0:
         fgen = FCDRGenerator(p.satname,
             datetime.datetime.strptime(p.from_date, p.datefmt),

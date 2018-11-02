@@ -6,27 +6,7 @@ matplotlib.use("Agg")
 from .. import common
 import argparse
 
-def parse_cmdline():
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    parser = common.add_to_argparse(parser,
-        include_period=True,
-        include_sat=True,
-        include_channels=True,
-        include_temperatures=False)
-
-    p = parser.parse_args()
-    return p
-parsed_cmdline = parse_cmdline()
-
 import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-             "%(lineno)s: %(message)s"),
-    filename=parsed_cmdline.log,
-    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
 
 import pathlib
 import itertools
@@ -42,10 +22,25 @@ from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 import pyatmlab.graphics
 from .. import fcdr
 from .. import _fcdr_defs
+from .. import common
 
 # NB: https://github.com/pydata/xarray/issues/1661#issuecomment-339525582
 from pandas.tseries import converter
 converter.register()
+
+def parse_cmdline():
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser = common.add_to_argparse(parser,
+        include_period=True,
+        include_sat=True,
+        include_channels=True,
+        include_temperatures=False)
+
+    p = parser.parse_args()
+    return p
 
 class FCDRMonitor:
     figname = ("fcdr_perf/{self.satname:s}_{tb:%Y}/ch{ch:d}/"
@@ -283,8 +278,7 @@ class FCDRMonitor:
         a.set_title("Joint distribution for {name:s}".format(name=name))
         return hb
 
-def plot():
-    p = parsed_cmdline
+def plot(p):
     fm = FCDRMonitor(
         datetime.datetime.strptime(p.from_date, p.datefmt),
         datetime.datetime.strptime(p.to_date, p.datefmt),
@@ -294,4 +288,8 @@ def plot():
         fm.plot_timeseries(ch)
 
 def main():
-    plot()
+    p = parse_cmdline()
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
+    plot(p)

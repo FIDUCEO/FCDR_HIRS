@@ -5,6 +5,16 @@ Note that this could be more generic than just for HIRS FCDR
 
 import argparse
 
+import logging
+
+import datetime
+import matplotlib.pyplot
+import mpl_toolkits.basemap
+
+import pyatmlab.graphics
+from .. import fcdr
+from .. import common
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description="Show field on map",
@@ -42,19 +52,6 @@ def parse_cmdline():
 
     p = parser.parse_args()
     return p
-parsed_cmdline = parse_cmdline()
-import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-            "%(lineno)s: %(message)s"),
-    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-
-import datetime
-import matplotlib.pyplot
-import mpl_toolkits.basemap
-
-import pyatmlab.graphics
-from .. import fcdr
 
 def plot_field(lon, lat, fld, filename, tit, cblabel, **kwargs):
     (f, a) = matplotlib.pyplot.subplots(figsize=(14, 8))
@@ -104,9 +101,12 @@ def read_and_plot_field(satname, field, start_time, duration, channels=[],
                     "HIRS_{satname:s}_{field:s}_{start_time:%Y%m%d%H%M}.png".format(**locals()),
                     **kwargs)
 
-
 def main():
-    p = parsed_cmdline 
+    p = parse_cmdline()
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
+
     start_time = datetime.datetime.strptime(p.start_time,
         "%Y-%m-%dT%H:%M")
     (hours, minutes) = p.duration.split(":")

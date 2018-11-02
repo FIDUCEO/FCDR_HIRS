@@ -74,10 +74,6 @@ tl = dict(C_E="C_Earth",
           R_selfE="Rself")
 
 import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-            "%(lineno)s: %(message)s"),
-    level=logging.DEBUG)
 
 import itertools
 import datetime
@@ -711,6 +707,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
 def combine_hirs():
     p = parse_cmdline_hirs()
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
     warnings.filterwarnings("error",
         message="iteration over an xarray.Dataset will change",
         category=FutureWarning)
@@ -769,6 +768,9 @@ def combine_hirs():
 
 def combine_iasi():
     p = parse_cmdline_iasi()
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
     warnings.filterwarnings("error",
         message="iteration over an xarray.Dataset will change",
         category=FutureWarning)
@@ -903,6 +905,9 @@ def merge_all(*files):
 
 def merge_files():
     p = parse_cmdline_merge()
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
     logging.info(f"Merging {len(p.files):d} files")
     new = merge_all(*p.files)
     logging.info(f"Writing to {p.out:s}")

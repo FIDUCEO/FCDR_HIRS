@@ -2,8 +2,57 @@ import logging
 import numpy
 import argparse
 
-# logging needs to be handled here, therefore also argument parsing
-# see http://stackoverflow.com/q/20240464/974555
+import sys
+import os
+import re
+import math
+import datetime
+import itertools
+import functools
+import pickle
+import pathlib
+import lzma
+
+import numpy.lib.recfunctions
+import scipy.stats
+import scipy.odr
+
+import netCDF4
+
+import matplotlib
+if __name__ == "__main__":
+    matplotlib.use("Agg")
+    
+import matplotlib.pyplot
+
+import progressbar
+import numexpr
+import mpl_toolkits.basemap
+import sklearn.cross_decomposition
+#from memory_profiler import profile
+
+import typhon.plots
+import typhon.math
+import typhon.math.stats
+
+import typhon.datasets.tovs
+import pyatmlab.io
+import typhon.config
+import pyatmlab.physics
+import pyatmlab.graphics
+import pyatmlab.db
+
+from typhon.constants import (micro, centi, tera, nano)
+from typhon.physics.units import ureg, radiance_units as rad_u
+
+from .. import fcdr
+from .. import math as fhmath
+from .. import common
+
+hirs_iasi_matchup = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS")
+
+unit_specrad_wn = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
+unit_specrad_freq = ureg.W / (ureg.m**2 * ureg.sr * ureg.Hz)
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -234,70 +283,6 @@ def parse_cmdline():
 
     p = parser.parse_args()
     return p
-parsed_cmdline = parse_cmdline()
-
-if parsed_cmdline.log == "":
-    logging.basicConfig(
-        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-                 "%(lineno)s: %(message)s"),
-        level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-else:
-    logging.basicConfig(
-        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-                 "%(lineno)s: %(message)s"),
-        filename=parsed_cmdline.log,
-        level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-
-import sys
-import os
-import re
-import math
-import datetime
-import itertools
-import functools
-import pickle
-import pathlib
-import lzma
-
-import numpy.lib.recfunctions
-import scipy.stats
-import scipy.odr
-
-import netCDF4
-
-import matplotlib
-if __name__ == "__main__":
-    matplotlib.use("Agg")
-    
-import matplotlib.pyplot
-
-import progressbar
-import numexpr
-import mpl_toolkits.basemap
-import sklearn.cross_decomposition
-#from memory_profiler import profile
-
-import typhon.plots
-import typhon.math
-import typhon.math.stats
-
-import typhon.datasets.tovs
-import pyatmlab.io
-import typhon.config
-import pyatmlab.physics
-import pyatmlab.graphics
-import pyatmlab.db
-
-from typhon.constants import (micro, centi, tera, nano)
-from typhon.physics.units import ureg, radiance_units as rad_u
-
-from .. import fcdr
-from .. import math as fhmath
-
-hirs_iasi_matchup = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS")
-
-unit_specrad_wn = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
-unit_specrad_freq = ureg.W / (ureg.m**2 * ureg.sr * ureg.Hz)
 
 class HIM(typhon.datasets.dataset.MultiFileDataset):
     """For HIRS-IASI-Matchups
@@ -2713,10 +2698,13 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 "HIRS_{:d}_exp_radrange_{:s}.".format(ch, lab))
 
 def main():
-    p = parsed_cmdline
+    p = parse_cmdline()
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
+        
     print(p)
     numexpr.set_num_threads(p.threads)
-
 
     with numpy.errstate(divide="raise", over="raise", under="warn", invalid="raise"):
         vis = IASI_HIRS_analyser(usecache=p.cache)

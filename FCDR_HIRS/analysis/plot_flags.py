@@ -8,6 +8,16 @@ import pathlib
 import argparse
 from .. import common
 
+import logging
+
+import datetime
+import xarray
+import numpy
+import matplotlib.pyplot
+import typhon.datasets.tovs
+import pyatmlab.graphics
+import typhon.datasets.filters
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -21,26 +31,6 @@ def parse_cmdline():
 
     p = parser.parse_args()
     return p
-parsed_cmdline = parse_cmdline()
-
-import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-            "%(lineno)s: %(message)s"),
-    filename=parsed_cmdline.log,
-    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-
-
-import datetime
-import xarray
-import numpy
-import matplotlib.pyplot
-import typhon.datasets.tovs
-import pyatmlab.graphics
-import typhon.datasets.filters
-
-def parse_cmdline():
-    pass
 
 def plot(sat, start, end):
     h = typhon.datasets.tovs.which_hirs(sat)
@@ -92,7 +82,11 @@ def plot(sat, start, end):
             sat=sat, start=start, end=end))
 
 def main():
-    p = parsed_cmdline
+    p = parse_cmdline()
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
+        
     sat = p.satname
     start = datetime.datetime.strptime(p.from_date, p.datefmt)
     end = datetime.datetime.strptime(p.to_date, p.datefmt)

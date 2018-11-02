@@ -7,6 +7,66 @@ Anomalies averaged per orbit.
 
 import argparse
 
+import logging
+import datetime
+import itertools
+import pathlib
+import math
+
+import numpy
+import matplotlib
+#matplotlib.use("Agg")
+# Source: http://stackoverflow.com/a/20709149/974555
+#if parsed_cmdline.plot_noise_with_other:
+#    matplotlib.rc('text', usetex=True)
+#    matplotlib.rcParams['text.latex.preamble'] = [
+#           r'\usepackage{siunitx}',   # i need upright \micro symbols, but you need...
+#           r'\sisetup{detect-all}',   # ...this to force siunitx to actually use your fonts
+#           #r'\usepackage{helvet}',    # set the normal font here
+#           #r'\usepackage{sansmath}',  # load up the sansmath so that math -> helvet
+#           #r'\sansmath',              # <- tricky! -- gotta actually tell tex to use!
+#           r'\DeclareSIUnit\count{count}'  # siunitx doesn't know this one
+    ]
+# this too must be before importing matplotlib.pyplot
+#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+import matplotlib.pyplot
+import matplotlib.gridspec
+import matplotlib.dates
+import matplotlib.ticker
+
+import pandas
+from pandas.core.indexes.base import InvalidIndexError
+import xarray
+
+#from memory_profiler import profile
+
+import typhon.plots
+import typhon.config
+#try:
+#    typhon.plots.install_mplstyles() # seems to be needed to run in queueing system
+#except FileExistsError:
+#    pass
+#matplotlib.pyplot.style.use("typhon")
+matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
+colours = ["blue", "green", "red", "purple", "cyan", "tan", "black", "orange", "brown"]
+import scipy.stats
+
+import typhon.math.stats
+import typhon.datasets.dataset
+from typhon.physics.units.common import ureg
+
+import pyatmlab.stats
+#import pyatmlab.config
+import pyatmlab.graphics
+#import pyatmlab.datasets.tovs
+#from pyatmlab.units import ureg
+
+from .. import common
+from .. import fcdr
+
+srcfile_temp_iwt = pathlib.Path(typhon.config.conf["main"]["myscratchdir"],
+                       "hirs_{sat:s}_{year:d}_temp_iwt.npz")
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description="Study noise and temperature over time",
@@ -149,72 +209,6 @@ def parse_cmdline():
     
     p = parser.parse_args()
     return p
-parsed_cmdline = parse_cmdline()
-
-import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-             "%(lineno)s: %(message)s"),
-    filename=parsed_cmdline.log,
-    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-
-import datetime
-import itertools
-import pathlib
-import math
-
-import numpy
-import matplotlib
-#matplotlib.use("Agg")
-# Source: http://stackoverflow.com/a/20709149/974555
-if parsed_cmdline.plot_noise_with_other:
-    matplotlib.rc('text', usetex=True)
-    matplotlib.rcParams['text.latex.preamble'] = [
-           r'\usepackage{siunitx}',   # i need upright \micro symbols, but you need...
-           r'\sisetup{detect-all}',   # ...this to force siunitx to actually use your fonts
-           #r'\usepackage{helvet}',    # set the normal font here
-           #r'\usepackage{sansmath}',  # load up the sansmath so that math -> helvet
-           #r'\sansmath',              # <- tricky! -- gotta actually tell tex to use!
-           r'\DeclareSIUnit\count{count}'  # siunitx doesn't know this one
-    ]
-# this too must be before importing matplotlib.pyplot
-#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
-import matplotlib.pyplot
-import matplotlib.gridspec
-import matplotlib.dates
-import matplotlib.ticker
-
-import pandas
-from pandas.core.indexes.base import InvalidIndexError
-import xarray
-
-#from memory_profiler import profile
-
-import typhon.plots
-import typhon.config
-#try:
-#    typhon.plots.install_mplstyles() # seems to be needed to run in queueing system
-#except FileExistsError:
-#    pass
-#matplotlib.pyplot.style.use("typhon")
-matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
-colours = ["blue", "green", "red", "purple", "cyan", "tan", "black", "orange", "brown"]
-import scipy.stats
-
-import typhon.math.stats
-import typhon.datasets.dataset
-from typhon.physics.units.common import ureg
-
-import pyatmlab.stats
-#import pyatmlab.config
-import pyatmlab.graphics
-#import pyatmlab.datasets.tovs
-#from pyatmlab.units import ureg
-
-from .. import fcdr
-
-srcfile_temp_iwt = pathlib.Path(typhon.config.conf["main"]["myscratchdir"],
-                       "hirs_{sat:s}_{year:d}_temp_iwt.npz")
 
 def get_timeseries_temp_iwt_anomaly(sat, year_start=2005, year_end=2017):
     L = []
@@ -1371,7 +1365,11 @@ class NoiseAnalyser:
 # 1, 2, 8, 19
 
 def main():
-    p = parsed_cmdline
+    p = parse_cmdline()
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO
+        filename=p.log)
+        
     if p.plot_iwt_anomaly:
         write_timeseries_per_day_iwt_anomaly_period(
             "noaa19", datetime.date(2013, 3, 1),

@@ -5,6 +5,41 @@ import matplotlib
 from .. import common
 import argparse
 
+
+import logging
+
+import pathlib
+import itertools
+import datetime
+import xarray
+import numpy
+import pandas
+import scipy.stats
+import scipy.stats.mstats
+
+# see https://github.com/pydata/xarray/issues/1661#issuecomment-339525582
+from pandas.tseries import converter
+converter.register()
+
+from typhon.datasets.dataset import (DataFileError, HomemadeDataset)
+from typhon.physics.units.common import ureg, radiance_units as rad_u
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.datasets.tovs import norm_tovs_name
+import pyatmlab.graphics
+from .. import fcdr
+
+labels = dict(
+    u_C_Earth = "noise [counts]",
+    bt = "Brightness temperature [K]",
+    u_independent = "Independent $\Delta$ BT [K]",
+    u_structured = "Structured $\Delta$ BT [K]")
+
+titles = dict(
+    u_C_Earth = "counts noise",
+    bt = labels["bt"][:-3],
+    u_independent = "Independent brightness temperature uncertainty [K]",
+    u_structured = "Structured brightness temperature uncertainty [K]")
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -44,46 +79,6 @@ def parse_cmdline():
             "to prevent styles misinterpreted as flag hyphens.")
     p = parser.parse_args()
     return p
-parsed_cmdline = parse_cmdline()
-
-import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-             "%(lineno)s: %(message)s"),
-    filename=parsed_cmdline.log,
-    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-
-import pathlib
-import itertools
-import datetime
-import xarray
-import numpy
-import pandas
-import scipy.stats
-import scipy.stats.mstats
-
-# see https://github.com/pydata/xarray/issues/1661#issuecomment-339525582
-from pandas.tseries import converter
-converter.register()
-
-from typhon.datasets.dataset import (DataFileError, HomemadeDataset)
-from typhon.physics.units.common import ureg, radiance_units as rad_u
-from typhon.physics.units.tools import UnitsAwareDataArray as UADA
-from typhon.datasets.tovs import norm_tovs_name
-import pyatmlab.graphics
-from .. import fcdr
-
-labels = dict(
-    u_C_Earth = "noise [counts]",
-    bt = "Brightness temperature [K]",
-    u_independent = "Independent $\Delta$ BT [K]",
-    u_structured = "Structured $\Delta$ BT [K]")
-
-titles = dict(
-    u_C_Earth = "counts noise",
-    bt = labels["bt"][:-3],
-    u_independent = "Independent brightness temperature uncertainty [K]",
-    u_structured = "Structured brightness temperature uncertainty [K]")
 
 class FCDRSummary(HomemadeDataset):
     name = section = "fcdr_hirs_summary"
@@ -479,7 +474,10 @@ class FCDRSummary(HomemadeDataset):
             end=end, data_version=self.data_version))
 
 def summarise():
-    p = parsed_cmdline
+    p = parse_cmdline()
+    common.set_root_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        filename=p.log)
 #    if p.mode != "summarise":
 #        raise NotImplementedError("Only summarising implemented yet")
     summary = FCDRSummary(satname=p.satname, data_version=p.version)

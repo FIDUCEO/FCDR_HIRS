@@ -10,11 +10,6 @@ import os
 import pathlib
 import logging
 import argparse
-if __name__ == "__main__":
-    logging.basicConfig(
-        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-                 "%(lineno)s: %(message)s"),
-        level=logging.INFO)
 
 import numpy
 p = pathlib.Path("/home/users/gholl/.cache/matplotlib/tex.cache")
@@ -231,6 +226,7 @@ def convert_period(h, sat, start_date, end_date, **kwargs):
 
 def main():
     p = parse_cmdline()
+    common.set_root_logger(logging.INFO)
     h = fcdr.which_hirs_fcdr(p.satname)
     convert_period(h, p.satname, 
             datetime.datetime.strptime(p.from_date, p.datefmt),
