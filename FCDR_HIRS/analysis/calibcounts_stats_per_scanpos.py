@@ -272,7 +272,7 @@ def main():
     p = parse_cmdline()
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)
-    common.set_root_logger(
+    common.set_logger(
         logging.DEBUG if p.verbose else logging.info,
         p.log)
     read_and_plot_calibcount_stats(p.satname, from_date, to_date,

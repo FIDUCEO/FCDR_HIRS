@@ -146,7 +146,7 @@ def read_and_plot_rself_test(sat, from_date, to_date, temperatures,
 def main():
     import warnings
     p = parse_cmdline()
-    common.set_root_logger(
+    common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         p.log)
 #    warnings.filterwarnings("error")

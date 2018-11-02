@@ -1367,7 +1367,7 @@ class NoiseAnalyser:
 
 def main():
     p = parse_cmdline()
-    common.set_root_logger(
+    common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO
         filename=p.log)
         

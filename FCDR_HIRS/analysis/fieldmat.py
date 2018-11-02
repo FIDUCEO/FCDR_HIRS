@@ -1047,7 +1047,7 @@ def read_and_plot_field_matrices(p):
 
 def main():
     p = parse_cmdline()
-    common.set_root_logger(
+    common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         p.log)
     matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))

@@ -709,7 +709,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
 def combine_hirs():
     p = parse_cmdline_hirs()
-    common.set_root_logger(
+    common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         p.log)
     warnings.filterwarnings("error",
@@ -770,7 +770,7 @@ def combine_hirs():
 
 def combine_iasi():
     p = parse_cmdline_iasi()
-    common.set_root_logger(
+    common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         p.log)
     warnings.filterwarnings("error",
@@ -907,7 +907,7 @@ def merge_all(*files):
 
 def merge_files():
     p = parse_cmdline_merge()
-    common.set_root_logger(
+    common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         p.log)
     logger.info(f"Merging {len(p.files):d} files")

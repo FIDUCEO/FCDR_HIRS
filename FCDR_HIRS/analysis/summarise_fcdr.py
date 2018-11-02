@@ -477,7 +477,7 @@ class FCDRSummary(HomemadeDataset):
 
 def summarise():
     p = parse_cmdline()
-    common.set_root_logger(
+    common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         filename=p.log)
 #    if p.mode != "summarise":
