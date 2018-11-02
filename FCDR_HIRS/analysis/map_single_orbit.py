@@ -26,6 +26,9 @@ from .. import math as fcm
 from .. import common
 
 import pyatmlab.graphics
+
+logger = logging.getLogger(__name__)
+
 #from .. import fcdr
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -161,7 +164,7 @@ class OrbitPlotter:
         dsx = fcm.gap_fill(dsx, "y", "time",
                 numpy.timedelta64(6400, 'ms'))
         if dsx.dims["y"] < 5:
-            logging.warning(f"Skipping channel {ch:d}, only {dsx.dims['y']:d} valid scanlines")
+            logger.warning(f"Skipping channel {ch:d}, only {dsx.dims['y']:d} valid scanlines")
             ax_all[0].clear()
             ax_all[1].clear()
             ax_all[2].clear()
@@ -222,7 +225,7 @@ class OrbitPlotter:
         # https://stackoverflow.com/q/46548044/974555.
 
         if (val==0).all():
-            logging.warning("Only zeroes for "
+            logger.warning("Only zeroes for "
                 f"{clab:s}, skipping because splitting plot "
                 "seems to cause problems")
             return
@@ -256,7 +259,7 @@ class OrbitPlotter:
             da.flag_meanings.split()))
 
 #        if not da.any():
-#            logging.warning("Current unable to plot "
+#            logger.warning("Current unable to plot "
 #                "bitfields where no data are flagged")
 #            return
 

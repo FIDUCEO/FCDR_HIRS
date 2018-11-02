@@ -29,6 +29,7 @@ from typhon.datasets.tovs import HIRSHIRS
 
 from .. import (fcdr, matchups, common)
 matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
+logger = logging.getLogger(__name__)
 
 #srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-094_2009-102_v2.nc")
 #srcfile = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/HIRS_matchups/mmd05_hirs-ma_hirs-n17_2009-096_2009-102.nc")
@@ -188,10 +189,6 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
                 prim, sec,
                 self.M["time"][0].astype(datetime.datetime),
                 self.M["time"][-1].astype(datetime.datetime), ch))
-
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-             "%(lineno)s: %(message)s"),
 
 def main():
     p = parse_cmdline()

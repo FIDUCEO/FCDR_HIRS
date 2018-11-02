@@ -28,6 +28,8 @@ from .. import common
 from pandas.tseries import converter
 converter.register()
 
+logger = logging.getLogger(__name__)
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -84,7 +86,7 @@ class FCDRMonitor:
 #            ds[v][bad] = numpy.nan 
 
         if not numpy.isfinite(ds["T_b"]).any():
-            logging.warning("Found no valid BTs for "
+            logger.warning("Found no valid BTs for "
                 f"channel {ch:d}, skipping")
             return
 
@@ -229,7 +231,7 @@ class FCDRMonitor:
         unit = ureg(da.units).u
         name = getattr(da.attrs, "long_name", da.name)
         if da.isnull().all():
-            logging.error("All nans :(")
+            logger.error("All nans :(")
             return
         da.plot(ax=a)
         da.plot.hist(ax=a_h)
@@ -269,7 +271,7 @@ class FCDRMonitor:
         unit = ureg(da.units).u
         name = getattr(da.attrs, "long_name", da.name)
         if da.isnull().all():
-            logging.error("still all nans ☹")
+            logger.error("still all nans ☹")
             return
         hb = a.hexbin(da, Δda, gridsize=50, cmap="viridis", mincnt=1,
             marginals=False)

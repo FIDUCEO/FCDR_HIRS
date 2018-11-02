@@ -15,6 +15,7 @@ import pyatmlab.graphics
 from .. import fcdr
 from .. import common
 
+logger = logging.getLogger(__name__)
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description="Show field on map",

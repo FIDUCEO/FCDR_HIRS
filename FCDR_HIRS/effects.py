@@ -351,9 +351,6 @@ class Effect:
         not mean anything about the error correlation, which is treated
         separately.
         """
-#        if self._magnitude.identical(self._init_magnitude):
-#            logging.warning("uncertainty magnitude not set for " +
-#                self.name)
         return self._magnitude
 
     @magnitude.setter

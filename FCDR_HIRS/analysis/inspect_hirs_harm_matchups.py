@@ -27,6 +27,7 @@ from .. import matchups
 from .. import fcdr
 from .. import common
 
+logger = logging.getLogger(__name__)
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,

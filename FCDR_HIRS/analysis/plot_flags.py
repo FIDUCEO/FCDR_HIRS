@@ -18,6 +18,7 @@ import typhon.datasets.tovs
 import pyatmlab.graphics
 import typhon.datasets.filters
 
+logger = logging.getLogger(__name__)
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,

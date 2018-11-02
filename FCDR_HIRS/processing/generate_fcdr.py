@@ -133,6 +133,8 @@ from .. import metrology
 
 import fiduceo.fcdr.writer.fcdr_writer
 
+logger = logging.getLogger(__name__)
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -187,13 +189,13 @@ class FCDRGenerator:
 
     # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes, no_harm=False):
-        logging.info("Preparing to generate FCDR for {sat:s} HIRS, "
+        logger.info("Preparing to generate FCDR for {sat:s} HIRS, "
             "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. "
             "Software:".format(
             sat=sat, start=start_date, end_time=end_date))
         pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
         info = pr.stdout.decode("utf-8")
-        logging.info(info)
+        logger.info(info)
         self.info = info
         self.satname = sat
         self.fcdr = fcdr.which_hirs_fcdr(sat, read="L1B", no_harm=no_harm)
@@ -226,7 +228,7 @@ class FCDRGenerator:
         """
         start = start or self.start_date
         end_time = end_time or self.end_date
-        logging.info("Now processing FCDR for {self.satname:s} HIRS, "
+        logger.info("Now processing FCDR for {self.satname:s} HIRS, "
             "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. ".format(
             self=self, start=start, end_time=end_time))
         anyok = False
@@ -248,8 +250,8 @@ class FCDRGenerator:
             else:
                 anyok = True
         if anyok:
-            logging.info("Successfully completed, completed successfully.")
-            logging.info("Everything seems fine.")
+            logger.info("Successfully completed, completed successfully.")
+            logger.info("Everything seems fine.")
         else:
             raise fcdr.FCDRError("All has failed")
     
@@ -383,7 +385,7 @@ class FCDRGenerator:
         (flags_scanline, flags_channel, flags_minorframe, flags_pixel) = self.fcdr.get_flags(
             subset, context, R_E)
         if ((self.dd.data["time"][-1] - self.dd.data["time"][0]).values.astype("m8[s]").astype(datetime.timedelta) / self.window_size) < 0.9:
-            logging.warn("Reduced context available, flagging data")
+            logger.warn("Reduced context available, flagging data")
             flags_scanline |= _fcdr_defs.FlagsScanline.REDUCED_CONTEXT
         
         # "sum" doesn't work because it's initialised with 0 and then the
@@ -418,7 +420,7 @@ class FCDRGenerator:
         tempcode = _fcdr_defs._temp_coding.copy()
         tempcode["scale_factor"] /= 10
         if uRe.dims == ():
-            logging.error("Scalar uncertainty?!  Hopefully the lines "
+            logger.error("Scalar uncertainty?!  Hopefully the lines "
                 "immediately above give some hint of what's going on "
                 "here!")
             uTb = UADA(0, dims=uRe.dims, coords=uRe.coords, attrs=dict(units="K"))
@@ -505,7 +507,7 @@ class FCDRGenerator:
                 self.fcdr._effects, sensRe, ds, flags=self.fcdr._flags,
                 robust=True, return_vectors=True, interpolate_lengths=True)
         except fcdr.FCDRError as e:
-            logging.error("Failed to calculate correlation length scales: "
+            logger.error("Failed to calculate correlation length scales: "
                           f"{e.args[0]}")
         else:
             # add those to the ds
@@ -598,7 +600,7 @@ class FCDRGenerator:
         for mode in self.modes:
             fn = self.get_filename_for_piece(piece, fcdr_type=mode)
             fn.parent.mkdir(exist_ok=True, parents=True)
-            logging.info("Storing to {!s}".format(fn))
+            logger.info("Storing to {!s}".format(fn))
             getattr(self, "store_piece_{:s}".format(mode))(piece, fn)
 
     def store_piece_debug(self, piece, fn):
@@ -629,17 +631,17 @@ class FCDRGenerator:
                 fn,
                 overwrite=True)
         except FileExistsError as e:
-            logging.info("Already exists: {!s}".format(e.args[0]))
+            logger.info("Already exists: {!s}".format(e.args[0]))
         except ValueError as e:
             if "chunksize" in e.args[0]:
-                logging.error(f"ERROR! Cannot store due to ValueError: {e.args[0]!s} "
+                logger.error(f"ERROR! Cannot store due to ValueError: {e.args[0]!s} "
                     "See https://github.com/FIDUCEO/FCDRTools/issues/15")
             else:
                 raise
 
     def store_piece_none(self, piece, fn):
         """Do not store anything!"""
-        logging.info("You told me to write nothing.  I will not write "
+        logger.info("You told me to write nothing.  I will not write "
             f"anything to {fn!s} nor to anywhere else (but I have "
             "accidentally created a directory already, oops).")
 
@@ -706,7 +708,7 @@ class FCDRGenerator:
                     ))
         except KeyError as e:
             # assuming they're missing because their calculation failed
-            logging.warning("Correlation length scales missing in debug FCDR." 
+            logger.warning("Correlation length scales missing in debug FCDR." 
                 "See above, I guess their calculation failed. "
                 f"For the record: {e.args[0]}")
 

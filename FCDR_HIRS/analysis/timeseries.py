@@ -66,6 +66,7 @@ from .. import fcdr
 
 srcfile_temp_iwt = pathlib.Path(typhon.config.conf["main"]["myscratchdir"],
                        "hirs_{sat:s}_{year:d}_temp_iwt.npz")
+logger = logging.getLogger(__name__)
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -214,12 +215,12 @@ def get_timeseries_temp_iwt_anomaly(sat, year_start=2005, year_end=2017):
     L = []
     for year in range(year_start, year_end):
         try:
-            logging.debug("Reading {:d}".format(year))
+            logger.debug("Reading {:d}".format(year))
             D = numpy.load(str(srcfile_temp_iwt).format(sat=sat, year=year))
             L.extend(D["selection"])
         except FileNotFoundError:
             pass
-    logging.info("Processing")
+    logger.info("Processing")
     dts = numpy.array([x[0] for x in L], "M8[s]")
     anomalies = numpy.concatenate(
         [(x[1].mean(0).mean(1) - x[1].mean())[:, numpy.newaxis] for x in L], 1).T
@@ -235,7 +236,7 @@ def plot_timeseries_temp_iwt_anomaly(sat, nrow=4):
     for (i, ax) in enumerate(ax_all):
         ix_st = i * dts.shape[0]//nrow
         ix_end = min((i+1) * dts.shape[0]//nrow, dts.shape[0]-1)
-        logging.info("Plotting part {:d}/{:d}".format(i+1, nrow))
+        logger.info("Plotting part {:d}/{:d}".format(i+1, nrow))
         ax.plot(dts[ix_st:ix_end], anomalies[ix_st:ix_end, :])
         ax.set_ylabel(r"$\Delta$ T [K]")
         ax.locator_params(axis="x", tight=True, nbins=4)
@@ -283,7 +284,7 @@ def write_timeseries_per_day_iwt_anomaly_period(sat, start_date, end_date):
     X = extract_timeseries_per_day_iwt_anomaly_period(sat, start_date, end_date)
     dest = pathlib.Path(typhon.config.conf["main"]["myscratchdir"],
         "hirs_iwt_anom_{:s}_{:%Y%m%d}-{:%Y%m%d}".format(sat, start_date, end_date))
-    logging.info("Writing {!s}".format(dest))
+    logger.info("Writing {!s}".format(dest))
     with dest.open("wt", encoding="ascii") as fp:
         fp.writelines([("{:%Y-%m-%d}" + 5*" {:.5f}" + "\n").format(
                 x["date"].astype("M8[s]").astype(datetime.datetime), *x["anomalies"])
@@ -292,7 +293,7 @@ def write_timeseries_per_day_iwt_anomaly_period(sat, start_date, end_date):
 
 def plot_timeseries_temp_iwt_anomaly_all_sats():
     for sat in {"noaa18", "noaa19", "metopa", "metopb"}:
-        logging.info("Plotting {:s}".format(sat))
+        logger.info("Plotting {:s}".format(sat))
         plot_timeseries_temp_iwt_anomaly(sat)
         
 
@@ -348,14 +349,14 @@ class NoiseAnalyser:
                         NO_CACHE=True,
                         enforce_no_duplicates=False)
                 except typhon.datasets.dataset.DataFileError:
-                    logging.info("No IASI found in "
+                    logger.info("No IASI found in "
                         "[{:%Y-%m-%d %H:%M}-{:%Y-%m-%d %H:%M}]".format(
                             dt, dt+step))
                     #self.Miasi = None
                     pass
                 else:
                     found_iasi = True
-                    logging.info("Combining HIASI with HIRS…")
+                    logger.info("Combining HIASI with HIRS…")
                     Mhrscmb.append(
                             self.hiasi.combine(Miasi, self.hirs, Mhrsall,
                             other_args=hrsargs, trans={"time": "time"},
@@ -506,7 +507,7 @@ class NoiseAnalyser:
             corr_info={},
             hiasi_mode="perc",
             width_factor=1):
-        logging.info("Channel {:d}".format(ch))
+        logger.info("Channel {:d}".format(ch))
         M = self.Mhrsall
 #        ch = self.ch
         start_date = self.start_date
@@ -534,7 +535,7 @@ class NoiseAnalyser:
         self.fig = matplotlib.pyplot.figure(figsize=(18*width_factor, 3*N))
         #(f, ax) = matplotlib.pyplot.subplots(N, 1, figsize=(16, 3*N))
         #itax = iter(ax)
-        logging.info("Plotting calibration counts + noise")
+        logger.info("Plotting calibration counts + noise")
         self.counter = itertools.count()
         a_cc = ah_cc = a_ccn = ah_ccn = None
         if len(all_tp) > 0:
@@ -580,7 +581,7 @@ class NoiseAnalyser:
                 include_gain=include_gain)
             # some self-emission characteristics
 
-        logging.info("Finalising")
+        logger.info("Finalising")
 
         if include_rself:
             for cb in allcb:
@@ -602,7 +603,7 @@ class NoiseAnalyser:
                 y=1.05,
                 fontsize=26)
         self.fig.subplots_adjust(hspace=0.5, top=0.95)
-        logging.info("Writing out")
+        logger.info("Writing out")
         # Write only PNG, the rest is too slow / memory-intensive
         # For some reason, sometimes it still fails to use the LaTeX
         # cache.  Make sure we create it /again/ ?!
@@ -648,7 +649,7 @@ class NoiseAnalyser:
             (t, x, adv) = D[tp]
             nok = (~x.mask).any(1).sum()
             if nok < 3:
-                logging.warning("Found only {:d} valid timestamps with "
+                logger.warning("Found only {:d} valid timestamps with "
                     "{:s} counts, not plotting".format(nok, tp))
                 continue
             success = True
@@ -695,9 +696,9 @@ class NoiseAnalyser:
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
         ah = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
-        logging.info("Plotting gain")
+        logger.info("Plotting gain")
         if ((~med_gain.mask).sum()) < 3:
-            logging.warning("Not enough valid gain values found, skipping")
+            logger.warning("Not enough valid gain values found, skipping")
             return (None, None)
 #        a.plot_date(t_slope.astype(datetime.datetime),
         a.xaxis_date()
@@ -739,7 +740,7 @@ class NoiseAnalyser:
         """
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
-        logging.info("Plotting correlation timeseries ({:s})".format(typ))
+        logger.info("Plotting correlation timeseries ({:s})".format(typ))
         correlations = self.get_correlations(timeres, typ, calibpos).sel(cha=ch)
         # in case I need to select based on max_std or min_std I need to
         # calculate all correlations anyway
@@ -769,7 +770,7 @@ class NoiseAnalyser:
         success = False
         for (cha, chb) in sorted(chpairs):
             if correlations.sel(chb=chb).shape[0] < 3:
-                logging.warning("Found only {:d} valid values for "
+                logger.warning("Found only {:d} valid values for "
                     "({:d}, {:d}), skipping".format(
                         correlations.sel(chb=chb).shape[0], cha, chb))
                 continue
@@ -796,7 +797,7 @@ class NoiseAnalyser:
         C = next(self.counter)
         a = self.fig.add_subplot(self.gridspec[C, :self.ifte])
         ah = self.fig.add_subplot(self.gridspec[C, self.ifhs:])
-        logging.info("Plotting temperatures")
+        logger.info("Plotting temperatures")
         ax2lims = None
         t = M["time"].astype("M8[s]").astype(datetime.datetime)
         for (i, (tmpfld, xt)) in enumerate(self.loop_through_temps(M, temperatures)):
@@ -860,7 +861,7 @@ class NoiseAnalyser:
         # views followed by earth views...
         ΔRself = ureg.Quantity(numpy.diff(y), ureg.count) / med_gain[1:]
         if (~ΔRself.mask).sum() < 3:
-            logging.error("Found only {:d} valid values for ΔRself, not "
+            logger.error("Found only {:d} valid values for ΔRself, not "
                           "plotting".format((~ΔRself.mask).sum()))
             return []
         # plot ΔR(ΔT) for those temperatures that change considerably
@@ -1328,14 +1329,14 @@ class NoiseAnalyser:
             include_gain=True,
             include_corr=(),
             corr_info={}):
-        logging.info("Channel {:d}".format(ch))
+        logger.info("Channel {:d}".format(ch))
         M = self.Mhrsall
 #        ch = self.ch
         start_date = self.start_date
         end_date = self.end_date
         #k = int(numpy.ceil(len(temperatures)/2)*2)
         Ntemps = len(temperatures)
-        logging.info("Getting calibration counts + noise")
+        logger.info("Getting calibration counts + noise")
         if len(all_tp) > 0:
             D_ccn = self.get_calib_counts_noise(M=M, ch=ch, all_tp=all_tp)
 
@@ -1386,11 +1387,11 @@ def main():
 #            ch=p.channel)
 
     if p.plot_noise:
-        logging.info("Plotting noise")
+        logger.info("Plotting noise")
         na.plot_noise()
 
     if p.plot_noise_with_other:
-        logging.info("Plotting more noise")
+        logger.info("Plotting more noise")
         for ch in p.channel:
             if p.store_only:
                 na.get_noise_with_other(ch, temperatures=p.temp_fields,
@@ -1415,7 +1416,7 @@ def main():
                     width_factor=p.width_factor)
 
     if p.plot_noise_correlation_timeseries:
-        logging.info("Plotting noise correlation timeseries")
+        logger.info("Plotting noise correlation timeseries")
         na.plot_noise_correlation_timeseries()
 
     if p.plot_noise_map:

@@ -91,6 +91,8 @@ import typhon.datasets._tovs_defs
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 
+logger = logging.getLogger(__name__)
+
 class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     # FIXME: go through NetCDFDataset functionality
     # Experiencing problems with extreme slowness and hanging writing to
@@ -266,38 +268,38 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 for nm in ([self.prim_name, self.sec_name] if self.mode == "hirs" else [self.sec_name])
                 for fld in ["channel", "pixel", "scanline"]]] & 0x01)!=0
         ok = ~functools.reduce(operator.or_, [v.values for v in donotuse.data_vars.values()])
-        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after donotuse-filtering")
+        logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after donotuse-filtering")
         # skip values with zero uncertainties.  Those should not exist,
         # but https://github.com/FIDUCEO/FCDR_HIRS/issues/161 .
         to_check = ds.sel(calibrated_channel=channel)[[f'{s:s}_u_{tl.get(t,t):s}' for t in take_for_each for s in (self.prim_name, self.sec_name) if f'{s:s}_u_{tl.get(t,t):s}' in ds.data_vars.keys()]]
         bad = (to_check==0)
         ok &= sum([v.values for v in bad.data_vars.values()])==0 
-        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after 0-uncertainty-filtering")
+        logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after 0-uncertainty-filtering")
         # here check only sec; prim only checked if prim not iasi
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
-        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after secondary isfinite-filtering")
+        logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after secondary isfinite-filtering")
         ok &= self.kmodel.filter(mdim, channel)
-        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after kmodel-filtering")
+        logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after kmodel-filtering")
         ok &= self.krmodel.filter(mdim, channel)
-        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after krmodel-filtering")
+        logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after krmodel-filtering")
         # WORKAROUND, REMOVE AFTER FIXING #281#
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_R_Earth_random"].sel(calibrated_channel=channel)).values
-        logging.debug(f"{ok.sum().item():d}/{ok.size:d} matchups left after removing non-finite uncertainties from secondary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
+        logger.debug(f"{ok.sum().item():d}/{ok.size:d} matchups left after removing non-finite uncertainties from secondary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
         #
         if self.prim_name != "iasi":
             ok &= numpy.isfinite(ds[f"{self.prim_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
-            logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after primary isfinite-filtering")
+            logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after primary isfinite-filtering")
             # WORKAROUND, REMOVE AFTER FIXING #281#
             ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
             ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_R_Earth_random"].sel(calibrated_channel=channel)).values
-            logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after removing non-finite uncertainties from primary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
+            logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after removing non-finite uncertainties from primary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
             #
             ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
                    (ds[f"{self.sec_name:s}_scantype"] == 0)).values
         else:
             ok &= (ds[f"{self.sec_name:s}_scantype"] == 0).values
-        logging.debug(f"{ok.sum():d}/{ok.size:d} matchups left after scantype-filtering")
+        logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after scantype-filtering")
         if ok.sum() == 0:
             raise MatchupError("No matchups pass filters")
         ds = ds[{mdim:ok}]
@@ -661,7 +663,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
     def write(self, outfile):
         ds = self.as_xarray_dataset()
-        logging.info("Storing to {:s}".format(
+        logger.info("Storing to {:s}".format(
             outfile,
             mode='w',
             format="NETCDF4"))
@@ -682,7 +684,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     en=harm["time1".format(self.prim_name)].values[-1].astype("M8[s]").astype(datetime.datetime),
                     ))
         pathlib.Path(out).parent.mkdir(exist_ok=True, parents=True)
-        logging.info("Writing {:s}".format(out))
+        logger.info("Writing {:s}".format(out))
         if not numpy.all(
                 [numpy.isfinite(harm[k]).all()
                     for k in harm.data_vars.keys()
@@ -698,7 +700,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             for (k, v) in ds_new.data_vars.items():
                 v.encoding["zlib"] = True
             ds_out = out[:-3] + "_ds.nc"
-            logging.info("Writing {:s}".format(ds_out))
+            logger.info("Writing {:s}".format(ds_out))
             # unlimited_dims may fail:
             # https://github.com/pydata/xarray/issues/1849
             # ds_new.to_netcdf(ds_out.replace("_ch1", ""),
@@ -745,7 +747,7 @@ def combine_hirs():
             sys.exit(1)
         # copy over
         for i in range(50):
-            logging.info(f"Copying files from {tmpdir:s} to {hmc.basedir:s} (attempt {i+1:d})")
+            logger.info(f"Copying files from {tmpdir:s} to {hmc.basedir:s} (attempt {i+1:d})")
             try:
                 subprocess.run(["rsync", "-av", tmpdir + "/", hmc.basedir + "/"], 
                     stdout=subprocess.PIPE,
@@ -816,7 +818,7 @@ def merge_all(*files):
                 wmatcumsum = dsl["w_matrix_nnz"].cumsum("w_matrix_count")
             except KeyError:
                 if i==0:
-                    logging.error(f"Incomplete file: {files[j]:s}")
+                    logger.error(f"Incomplete file: {files[j]:s}")
                     blacklist.append(j)
                 continue
             w_mat_val_all.append(dsl["w_matrix_val"][int(wmatcumsum[i-1] if i>0 else 0):int(wmatcumsum[i])])
@@ -831,7 +833,7 @@ def merge_all(*files):
             w_mat_row_num[i] += w_mat_row[-1]
 
     if len(blacklist) > 0:
-        logging.error("Some files failed to process:")
+        logger.error("Some files failed to process:")
         for j in blacklist:
             print(files[j], file=sys.stderr)
         sys.exit(1)
@@ -876,7 +878,7 @@ def merge_all(*files):
                         for da in ds_all], dim="M")
             except KeyError as e:
                 if "K_other" in e.args[0]:
-                    logging.error(f"Skipping {e.args[0]:s}, not found in all")
+                    logger.error(f"Skipping {e.args[0]:s}, not found in all")
                 else:
                     raise
         else:
@@ -908,9 +910,9 @@ def merge_files():
     common.set_root_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         p.log)
-    logging.info(f"Merging {len(p.files):d} files")
+    logger.info(f"Merging {len(p.files):d} files")
     new = merge_all(*p.files)
-    logging.info(f"Writing to {p.out:s}")
+    logger.info(f"Writing to {p.out:s}")
     for (k, v) in new.data_vars.items():
         v.encoding["zlib"] = True
     # workaround/prevent https://github.com/pydata/xarray/issues/1849

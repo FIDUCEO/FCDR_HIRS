@@ -1,11 +1,14 @@
 """Various specialised mathematical routines
 """
 
+import logging
 import numbers
 import numpy
 import xarray
 import sklearn.linear_model
 from typhon.physics.units.common import ureg
+
+logger = logging.getLogger(__name__)
 
 def calc_y_for_srf_shift(Δλ, y_master, srf0, L_spectral_db, f_spectra, y_ref,
                            unit=ureg.um,
@@ -337,7 +340,7 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
             predict_quantity=predict_quantity,
             u_y_ref=u_y_ref,
             u_y_target=u_y_target)
-        logging.debug("Shifting {:0<13.7~}: cost {:0<12.8~}".format(
+        logger.debug("Shifting {:0<13.7~}: cost {:0<12.8~}".format(
             Δλ*unit, cost))
         return cost.to("1").m
 

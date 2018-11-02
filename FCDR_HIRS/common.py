@@ -140,16 +140,18 @@ def sample_flags(da, period="1H", dim="time"):
 
 _root_logger_set = False
 def set_root_logger(level, filename=None):
+    """Set propertios of FIDUCEO root logger
+    """
     global _root_logger_set
     if _root_logger_set:
         raise RuntimeError("Root logger configured twice!")
     _root_logger_set = True
-    logger = logging.getLogger()
+    logger = logging.getLogger(__name__).parent # should be FCDR_HIRS
     if filename:
         handler = logging.FileHandler(filename, mode="a", encoding="utf-8")
     else:
         handler = logging.StreamHandler(sys.stderr)
     logger.setLevel(level)
     handler.setFormatter(
-        logging.Formatter("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:%(lineno)s: %(message)s"))
+        logging.Formatter("%(levelname)-8s %(name)s %(asctime)s %(module)s.%(funcName)s:%(lineno)s: %(message)s"))
     logger.addHandler(handler)

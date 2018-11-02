@@ -28,6 +28,8 @@ from typhon.datasets.tovs import norm_tovs_name
 import pyatmlab.graphics
 from .. import fcdr
 
+logger = logging.getLogger(__name__)
+
 labels = dict(
     u_C_Earth = "noise [counts]",
     bt = "Brightness temperature [K]",
@@ -235,7 +237,7 @@ class FCDRSummary(HomemadeDataset):
                     da = ds[field]
                 if not da.notnull().any():
                     # hopeless
-                    logging.warning(f"All bad data for {self.satname:s} "
+                    logger.warning(f"All bad data for {self.satname:s} "
                         f"{sd.year:d}-{sd.month:d}-{sd.day:d}–{ed.year:d}-{ed.month:d}-{ed.day}, not "
                         f"summarising {field:s}.")
                     continue

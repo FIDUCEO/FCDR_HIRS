@@ -33,6 +33,8 @@ from typhon.datasets import tovs
 from typhon.datasets.dataset import DataFileError
 from .. import cached
 
+logger = logging.getLogger(__name__)
+
 month_pairs = dict(
     tirosn = ((1978, 11), (1979, 12)),
     noaa06 = ((1979, 7), (1983, 3)),

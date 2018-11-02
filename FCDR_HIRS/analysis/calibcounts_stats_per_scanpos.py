@@ -32,6 +32,8 @@ import pyatmlab.graphics
 
 from .. import fcdr
 
+logger = logging.getLogger(__name__)
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -184,10 +186,10 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
     accnt = ccnt - mccnt if anomaly else ccnt
     aok = ~(accnt[:, :, :].mask.any(2).any(1))
     if not aok.any():
-        logging.error("Nothing to plot.  All flagged.")
+        logger.error("Nothing to plot.  All flagged.")
         return
     accnt = accnt[aok, :, :]
-    logging.info("Found {:d} unflagged calibration cycles".format(accnt.shape[0]))
+    logger.info("Found {:d} unflagged calibration cycles".format(accnt.shape[0]))
     
     channels = numpy.asarray(channels)
     if mode == "random":
