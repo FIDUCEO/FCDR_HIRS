@@ -26,6 +26,8 @@ from .fcdr import make_debug_fcdr_dims_consistent
 from . import _fcdr_defs
 from .exceptions import FCDRError
 
+logger = logging.getLogger(__name__)
+
 def evaluate_uncertainty(e, unset="raise"):
     """Evaluate uncertainty for expression.
 
@@ -489,7 +491,7 @@ def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
 
     ## Allocation ##
 
-    logging.debug("Allocating arrays for correlation calculations")
+    logger.debug("Allocating arrays for correlation calculations")
 
     all_coords = {
         "n_c": numpy.arange(1, n_c+1),
@@ -1073,7 +1075,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
         errmsg = ("No valid data found, cannot calculate "
             "correlation length scales")
         if robust:
-            logging.error(errmsg)
+            logger.error(errmsg)
             Δ_e = Δ_l = xarray.DataArray(
                 numpy.zeros((n_c, 2))*numpy.nan,
                 dims=("n_c", "val"),
@@ -1106,11 +1108,11 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     ccs = itertools.count()
     cci = itertools.count()
     for (cj, j) in enumerate(effects.keys()): # loop over terms
-        logging.debug(f"Processing term {cj:d}, {j!s}")
+        logger.debug(f"Processing term {cj:d}, {j!s}")
         try:
             C = accum_sens_coef(sensRe, j)
         except KeyError as k:
-            logging.error(f"I have {len(effects[j]):d} effects associated "
+            logger.error(f"I have {len(effects[j]):d} effects associated "
                 f"with term {j!s}, but I have no sensitivity coefficient "
                 "for this term.  I don't think I used it in the "
                 "measurement equation.  For the purposes of the " 
@@ -1139,7 +1141,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             warnings.warn(f"Zero effects for term {j!s}!", UserWarning)
         for k in effects[j]: # loop over effects for term (usually exactly one)
             if k.magnitude is None:
-                logging.warn(f"Magnitude for {k.name:s} is None, not "
+                logger.warn(f"Magnitude for {k.name:s} is None, not "
                     "considering for correlation scale calculations.")
                 continue
 
@@ -1169,7 +1171,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                 R_lΛek = k.calc_R_lΛek(ds,
                         sampling_l=sampling_l, sampling_e=sampling_e)
             except NotImplementedError:
-                logging.error("No method to estimate R_eΛlk or R_lΛek "
+                logger.error("No method to estimate R_eΛlk or R_lΛek "
                     f"implemented for effect {k.name:s}")
                 continue
 

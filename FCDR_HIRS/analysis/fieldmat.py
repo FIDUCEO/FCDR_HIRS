@@ -5,6 +5,64 @@
 import argparse
 from .. import common
 
+import logging
+
+import matplotlib
+# matplotlib.use("Agg") # now in matplotlibrc
+import pathlib
+# now in "inmyvenv"
+# pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+
+
+import datetime
+import scipy.stats
+import numpy
+import itertools
+import abc
+
+import matplotlib.pyplot
+import matplotlib.ticker
+import matplotlib.gridspec
+import typhon.plots
+import typhon.plots.plots
+import pyatmlab.graphics
+
+from typhon.physics.units.common import ureg
+from .. import fcdr
+from typhon.datasets import tovs
+from typhon.datasets.dataset import DataFileError
+from .. import cached
+
+logger = logging.getLogger(__name__)
+
+month_pairs = dict(
+    tirosn = ((1978, 11), (1979, 12)),
+    noaa06 = ((1979, 7), (1983, 3)),
+    noaa07 = ((1981, 8), (1984, 12)),
+    noaa08 = ((1983, 5), (1984, 6)),
+    noaa09 = ((1985, 2), (1988, 11)),
+    noaa10 = ((1986, 11), (1991, 9)),
+    noaa11 = ((1988, 11), (1998, 12)),
+    noaa12 = ((1991, 9), (1998, 11)),
+    noaa14 = ((1995, 1), (2005, 12)),
+    noaa15 = ((1999, 1), (2009, 6)),
+    noaa16 = ((2001, 1), (2014, 6)),
+    noaa17 = ((2002, 7), (2013, 4)),
+    noaa18 = ((2006, 11), (2011, 3)),
+    noaa19 = ((2009, 4), (2013, 7)),
+    metopa = ((2006, 12), (2016, 10)),
+    metopb = ((2013, 2), (2017, 5)))
+
+period_pairs = {sat:
+    ((datetime.datetime(*start, 1, 0, 0), datetime.datetime(*start, 28, 23, 59)),
+     (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 28, 23, 59)))
+        for (sat, (start, end)) in month_pairs.items()}
+
+#period_pairs = {sat:
+#    ((datetime.datetime(*start, 28, 12, 0), datetime.datetime(*start, 28, 23, 59)),
+#     (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 1, 12, 0)))
+#        for (sat, (start, end)) in month_pairs.items()}
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description="Plot field scatter density matrices (SDM)",
@@ -66,69 +124,6 @@ def parse_cmdline():
 
     p = parser.parse_args()
     return p
-
-parsed_cmdline = parse_cmdline()
-
-import logging
-#logging.basicConfig(
-#    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-#            "%(lineno)s: %(message)s"),
-#    filename=parsed_cmdline.log,
-#    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-
-import matplotlib
-# matplotlib.use("Agg") # now in matplotlibrc
-import pathlib
-# now in "inmyvenv"
-# pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
-
-
-import datetime
-import scipy.stats
-import numpy
-import itertools
-import abc
-
-import matplotlib.pyplot
-import matplotlib.ticker
-import matplotlib.gridspec
-import typhon.plots
-import typhon.plots.plots
-import pyatmlab.graphics
-
-from typhon.physics.units.common import ureg
-from .. import fcdr
-from typhon.datasets import tovs
-from typhon.datasets.dataset import DataFileError
-from .. import cached
-
-month_pairs = dict(
-    tirosn = ((1978, 11), (1979, 12)),
-    noaa06 = ((1979, 7), (1983, 3)),
-    noaa07 = ((1981, 8), (1984, 12)),
-    noaa08 = ((1983, 5), (1984, 6)),
-    noaa09 = ((1985, 2), (1988, 11)),
-    noaa10 = ((1986, 11), (1991, 9)),
-    noaa11 = ((1988, 11), (1998, 12)),
-    noaa12 = ((1991, 9), (1998, 11)),
-    noaa14 = ((1995, 1), (2005, 12)),
-    noaa15 = ((1999, 1), (2009, 6)),
-    noaa16 = ((2001, 1), (2014, 6)),
-    noaa17 = ((2002, 7), (2013, 4)),
-    noaa18 = ((2006, 11), (2011, 3)),
-    noaa19 = ((2009, 4), (2013, 7)),
-    metopa = ((2006, 12), (2016, 10)),
-    metopb = ((2013, 2), (2017, 5)))
-
-period_pairs = {sat:
-    ((datetime.datetime(*start, 1, 0, 0), datetime.datetime(*start, 28, 23, 59)),
-     (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 28, 23, 59)))
-        for (sat, (start, end)) in month_pairs.items()}
-
-#period_pairs = {sat:
-#    ((datetime.datetime(*start, 28, 12, 0), datetime.datetime(*start, 28, 23, 59)),
-#     (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 1, 12, 0)))
-#        for (sat, (start, end)) in month_pairs.items()}
 
 def plot_field_matrix(MM, ranges, title, filename, units):
     f = typhon.plots.plots.scatter_density_plot_matrix(
@@ -1008,9 +1003,8 @@ class MatrixPlotter:
 #                add_x=r==3, add_y=c==0)
 
  
-def read_and_plot_field_matrices():
+def read_and_plot_field_matrices(p):
 #    h = fcdr.which_hirs_fcdr(sat)
-    p = parsed_cmdline
         
     #temp_fields_full = ["temp_{:s}".format(t) for t in p.temp_fields]
     mp = MatrixPlotter()
@@ -1052,10 +1046,9 @@ def read_and_plot_field_matrices():
 
 
 def main():
-    logging.basicConfig(
-        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-                "%(lineno)s: %(message)s"),
-        filename=parsed_cmdline.log,
-        level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
+    p = parse_cmdline()
+    common.set_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
     matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
-    read_and_plot_field_matrices()
+    read_and_plot_field_matrices(p)

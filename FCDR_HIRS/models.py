@@ -20,6 +20,8 @@ from typhon.physics.units.common import ureg
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.datasets import _tovs_defs
 
+logger = logging.getLogger(__name__)
+
 regression_types = {
     "PLSR": sklearn.cross_decomposition.PLSRegression,
     "LR": sklearn.linear_model.LinearRegression}
@@ -213,7 +215,7 @@ class RSelf:
 
     def _ensure_enough_OK(self, ds, OK):
         if OK.sum() < .5*OK.size:
-            logging.warning("When trying to fit or test self-emission model in "
+            logger.warning("When trying to fit or test self-emission model in "
                 "period {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M} for channel "
                 "{:d}, only "
                 "{:d}/{:d} space calibration lines pass tests.  Proceeding "

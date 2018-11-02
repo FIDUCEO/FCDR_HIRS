@@ -39,6 +39,8 @@ from . import _fcdr_defs
 from . import _harm_defs
 from .exceptions import (FCDRError, FCDRWarning) # used to be here
 
+logger = logging.getLogger(__name__)
+
 class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     """Produce, write, study, and read HIRS FCDR.
 
@@ -826,7 +828,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "I cannot proceed like this, please investigate what's "
                 "going on and handle it properly.")
         elif not naive and numpy.isnan(offset).any():
-            logging.warn("Found cases where counts_space == counts_iwct == 0.  "
+            logger.warn("Found cases where counts_space == counts_iwct == 0.  "
                 "Setting both slope and offset to inf (instead of nan).")
             offset.values[numpy.isnan(offset)] = numpy.inf
 
@@ -983,7 +985,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         dsix = self.within_enough_context(ds, context, ch, 1)
         n_within_context = ds.loc[dsix]["time"].size
         if 0 < n_within_context < ds["time"].size and not naive:
-            logging.warning("It appears that, despite best efforts, "
+            logger.warning("It appears that, despite best efforts, "
                 "the context does not sufficiently cover the period "
                 "for which the FCDR is to be calculated.  I want to "
                 "calculate FCDR for channel {:d} for "
@@ -1013,7 +1015,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             channel=ch)).rename({"channel": "calibrated_channel"})
 
         if n_within_context == 0:
-            logging.error("Less than two calibration lines in period "
+            logger.error("Less than two calibration lines in period "
                 "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M} for channel {:d}!  Data unusable.".format(
                 *context["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime),
                 ch))
@@ -1165,7 +1167,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     #                            "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, which "
     #                            "means I cannot fall back to interpolation "
     #                            "either!  Sorry, I give up!")
-                        logging.error(errmsg +
+                        logger.error(errmsg +
                             "Will flag data and reduce to basic interpolation!")
     #                    if not ch in self._flags["channel"]:
     #                        self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
@@ -1245,7 +1247,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     (slope.size>0 and numpy.isfinite(slope).all())):
                     raise ValueError("There's nans in slope or offset when "
                         "interpolated but not in original, this is a bug.")
-                logging.error("Looks like some or all slopes/offsets are "
+                logger.error("Looks like some or all slopes/offsets are "
                      "impossible to calculate "
                     f"for channel {ch:d}.  That's not good.  Do not touch.")
                 self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
@@ -1526,7 +1528,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             flag_s = self._flags["scanline"][idx0]
             flag_c = self._flags["channel"].sel(calibrated_channel=ch)[idx0]
             flag_any = (flag_c.values!=0)|(flag_p.values!=0)|(flag_s.values!=0) 
-            logging.warning(
+            logger.warning(
                 "Despite best efforts, after filtering outliers and "
                 "accounting for flagged data due to various problems and all "
                 "that, I still find {:d} scanlines for channel {:d} "
@@ -1670,16 +1672,16 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         srf = self.srfs[ch-1]
         if realisations is None:
             realisations = self.realisations
-        logging.info("Estimating noise")
+        logger.info("Estimating noise")
         (t_noise_level, noise_level) = self.estimate_noise(M, ch)
         # note, this can't be vectorised easily anyway because of the SRF
         # integration bit
-        logging.info("Calibrating")
+        logger.info("Calibrating")
         (time, offset, slope, a2) = self.calculate_offset_and_slope(M, ch, srf)
         # NOTE:
         # See https://github.com/numpy/numpy/issues/7787 on numpy.median
         # losing the unit
-        logging.info("Interpolating") 
+        logger.info("Interpolating") 
         (interp_offset, interp_slope) = self.interpolate_between_calibs(M["time"],
             time, 
             ureg.Quantity(numpy.median(offset, 1), offset.u),
@@ -1687,12 +1689,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         interp_noise_level = numpy.interp(M["time"].view("u8"),
                     t_noise_level.view("u8")[~noise_level.mask],
                     noise_level[~noise_level.mask])
-        logging.info("Allocating")
+        logger.info("Allocating")
         rad_wn = ureg.Quantity(numpy.empty(
             shape=M["counts"].shape[:2] + (realisations,),
             dtype="f4"), rad_u["ir"])
         bt = ureg.Quantity(numpy.empty_like(rad_wn), ureg.K)
-        logging.info("Estimating {:d} realisations for "
+        logger.info("Estimating {:d} realisations for "
             "{:,} radiances".format(realisations,
                rad_wn.size))
         bar = progressbar.ProgressBar(maxval=realisations,
@@ -1715,7 +1717,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 ureg.K)
             bar.update(i)
         bar.finish()
-        logging.info("Done")
+        logger.info("Done")
 
         return (rad_wn, bt)
 
@@ -2095,7 +2097,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     
         hope = True
         if any([v.size==0 for (k, v) in adict.items()]):
-            logging.error("FATAL! One or more components have size zero. "
+            logger.error("FATAL! One or more components have size zero. "
                 "I cannot propagate uncertainties!")
             adict = {k: UADA(0, dims=(), coords={}, attrs={"units": v.units}) for (k, v) in adict.items()}
             self._flags["scanline"] |= (_fcdr_defs.FlagsScanline.DO_NOT_USE|_fcdr_defs.FlagsScanline.UNCERTAINTY_SUSPICIOUS)
@@ -2853,7 +2855,7 @@ def make_debug_fcdr_dims_consistent(dest, src, impossible="warn",
                 dest.scanline_earth.values[0].astype("M8[ms]").astype(datetime.datetime),
                 dest.scanline_earth.values[-1].astype("M8[ms]").astype(datetime.datetime)))
             if impossible=="warn": # reduced context, this is dangerous
-                logging.warning(msg)
+                logger.warning(msg)
             else:
                 raise ValueError(msg)
             kind="zero"

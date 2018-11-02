@@ -3,6 +3,31 @@
 
 import argparse
 from .. import common
+
+import logging
+
+import sys
+import math
+import pathlib
+import unicodedata
+
+import numpy
+import matplotlib.pyplot
+import xarray
+import scipy.stats
+
+import pyatmlab.graphics
+
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.physics.units.common import radiance_units as rad_u
+import typhon.physics.units.em
+import typhon.config
+
+from .. import matchups
+from .. import fcdr
+from .. import common
+
+logger = logging.getLogger(__name__)
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -24,34 +49,6 @@ def parse_cmdline():
         help="Write filters to files") 
 
     return parser.parse_args()
-p = parse_cmdline()
-
-import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-            "%(lineno)s: %(message)s"),
-    filename=p.log,
-    level=logging.DEBUG if p.verbose else logging.INFO)
-
-import sys
-import math
-import pathlib
-import unicodedata
-
-import numpy
-import matplotlib.pyplot
-import xarray
-import scipy.stats
-
-import pyatmlab.graphics
-
-from typhon.physics.units.tools import UnitsAwareDataArray as UADA
-from typhon.physics.units.common import radiance_units as rad_u
-import typhon.physics.units.em
-import typhon.config
-
-from .. import matchups
-from .. import fcdr
 
 def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
         write=False):
@@ -467,7 +464,11 @@ def plot_file_summary_stats(path, write=False):
     else:
         plot_ds_summary_stats(ds, kmodel.Ldb_hirs_simul, write=write)
 
-
-
 def main():
+    p = parse_cmdline()
+
+    common.set_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
+        
     plot_file_summary_stats(pathlib.Path(p.file), write=p.write_filters)

@@ -6,6 +6,28 @@ from .. import common
 import argparse
 import json
 
+
+import logging
+import numpy
+import matplotlib
+# matplotlib.use("Agg") # now in matplotlibrc
+import pathlib
+#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+
+import matplotlib.ticker
+import scipy.stats
+import datetime
+import typhon.plots
+import pyatmlab.graphics
+
+from typhon.physics.units.common import ureg, radiance_units as rad_u
+
+from .. import models
+from .. import fcdr
+from .. import common
+
+logger = logging.getLogger(__name__)
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -28,32 +50,6 @@ def parse_cmdline():
 
     p = parser.parse_args()
     return p
-
-parsed_cmdline = parse_cmdline()
-
-import logging
-logging.basicConfig(
-    format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-            "%(lineno)s: %(message)s"),
-    filename=parsed_cmdline.log,
-    level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-
-import numpy
-import matplotlib
-# matplotlib.use("Agg") # now in matplotlibrc
-import pathlib
-#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
-
-import matplotlib.ticker
-import scipy.stats
-import datetime
-import typhon.plots
-import pyatmlab.graphics
-
-from typhon.physics.units.common import ureg, radiance_units as rad_u
-
-from .. import models
-from .. import fcdr
 
 def plot_rself_test(h, ds, temperatures, channels,
         regr_type, regr_args, tit, fn):
@@ -149,9 +145,12 @@ def read_and_plot_rself_test(sat, from_date, to_date, temperatures,
 
 def main():
     import warnings
+    p = parse_cmdline()
+    common.set_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
 #    warnings.filterwarnings("error")
 #    warnings.filterwarnings("always", category=DeprecationWarning)
-    p = parsed_cmdline
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)
     read_and_plot_rself_test(p.satname, from_date, to_date,

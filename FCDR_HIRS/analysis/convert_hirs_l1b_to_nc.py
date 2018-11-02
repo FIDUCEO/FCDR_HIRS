@@ -10,11 +10,6 @@ import os
 import pathlib
 import logging
 import argparse
-if __name__ == "__main__":
-    logging.basicConfig(
-        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-                 "%(lineno)s: %(message)s"),
-        level=logging.INFO)
 
 import numpy
 p = pathlib.Path("/home/users/gholl/.cache/matplotlib/tex.cache")
@@ -36,6 +31,8 @@ import pyatmlab.tools
 
 from .. import common
 from .. import fcdr
+
+logger = logging.getLogger(__name__)
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -75,17 +72,17 @@ def convert_granule(h, satname, dt, gran, orbit_filters, overwrite=False):
     for of in orbit_filters:
         lines = of.filter(lines, **extra) # this is where flags are applied now
     if lines.size == 0:
-        logging.error("Apparently empty: {!s}".format(gran))
+        logger.error("Apparently empty: {!s}".format(gran))
         return
 
     outfile = pathlib.Path(str((outdir / gran.name).with_suffix(".nc")).format(
             sat=satname, year=dt.year, month=dt.month, day=dt.day))
 
     if outfile.exists() and not overwrite:
-        logging.info("Already exists: {!s}".format(outfile))
+        logger.info("Already exists: {!s}".format(outfile))
         return
 
-    logging.debug("{!s} → {!s}".format(gran, outfile))
+    logger.debug("{!s} → {!s}".format(gran, outfile))
     outfile.parent.mkdir(parents=True, exist_ok=True)
     with netCDF4.Dataset(str(outfile), mode="w", clobber=True, 
             format="NETCDF4") as ds:
@@ -196,7 +193,7 @@ def convert_granule(h, satname, dt, gran, orbit_filters, overwrite=False):
 
 
 def convert_period(h, sat, start_date, end_date, **kwargs):
-    logging.info("Converting NOAA to NetCDF, {:s} "
+    logger.info("Converting NOAA to NetCDF, {:s} "
         "{:%Y-%m-%d %H:%M:%S}–{:%Y-%m-%d %H:%M:%S}".format(
             sat, start_date, end_date))
     orbit_filters = (
@@ -222,7 +219,7 @@ def convert_period(h, sat, start_date, end_date, **kwargs):
             convert_granule(h, sat, dt, gran, orbit_filters, **kwargs)
         except (typhon.datasets.dataset.InvalidDataError,
                 typhon.datasets.dataset.InvalidFileError) as exc:
-            logging.error("Unable to process {!s}: {:s}: {!s}".format(
+            logger.error("Unable to process {!s}: {:s}: {!s}".format(
                 gran, type(exc).__name__, exc))
         bar.update((dt-start_date)/(end_date-start_date))
     # do not finalise filters, I don't have an overall array to put in!
@@ -231,6 +228,7 @@ def convert_period(h, sat, start_date, end_date, **kwargs):
 
 def main():
     p = parse_cmdline()
+    common.set_logger(logging.INFO)
     h = fcdr.which_hirs_fcdr(p.satname)
     convert_period(h, p.satname, 
             datetime.datetime.strptime(p.from_date, p.datefmt),

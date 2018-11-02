@@ -5,42 +5,6 @@
 import logging
 import argparse
 
-def parse_cmdline():
-    parser = argparse.ArgumentParser(
-        description="Show orbit on map",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-    parser.add_argument("arg1", action="store", type=str,
-        help="Either path to an orbit file, or satellite name.  In latter "
-             "case also need to give timestamp")
-
-    parser.add_argument("--time", action="store", type=str,
-        help="Time in %%Y-%%m-%%dT%%H:%%M")
-
-    parser.add_argument("--channels", action="store", type=int,
-        nargs="+", help="Channels to consider.  Only used/needed "
-        "for some fields.",
-        default=list(range(1, 13)))
-
-    parser.add_argument("--range", action="store", type=int,
-        nargs=2, help="What fraction of orbit to plot, in %%.  Normally 0-100.",
-        default=[0, 100])
-
-    parser.add_argument("--verbose", action="store_true", default=False)
-
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--with-bitmasks", action="store_true")
-    group.add_argument("--without-bitmasks", action="store_false")
-
-    parser.add_argument("--mark-pixels", action="store", type=float,
-        nargs="*", default=[],
-        help="Mark 0 or more pixels.  The numbers refer to percentile "
-             "values in brightness temperature.  For example, 50 marks "
-             "the median BT pixel, 10 the pixel corresponding to the 10th "
-             "percentile, etc. ")
-    p = parser.parse_args()
-    return p
-#parsed_cmdline = parse_cmdline()
 
 import itertools
 import math
@@ -59,9 +23,53 @@ import cartopy
 import cartopy.crs
 import typhon.plots.plots
 from .. import math as fcm
+from .. import common
 
 import pyatmlab.graphics
+
+logger = logging.getLogger(__name__)
+
 #from .. import fcdr
+def parse_cmdline():
+    parser = argparse.ArgumentParser(
+        description="Show orbit on map",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser = common.add_to_argparse(parser,
+        include_period=False,
+        include_sat=0,
+        include_channels=False,
+        include_temperatures=False,
+        include_debug=False)
+
+    parser.add_argument("arg1", action="store", type=str,
+        help="Either path to an orbit file, or satellite name.  In latter "
+             "case also need to give timestamp")
+
+    parser.add_argument("--time", action="store", type=str,
+        help="Time in %%Y-%%m-%%dT%%H:%%M")
+
+    parser.add_argument("--channels", action="store", type=int,
+        nargs="+", help="Channels to consider.  Only used/needed "
+        "for some fields.",
+        default=list(range(1, 13)))
+
+    parser.add_argument("--range", action="store", type=int,
+        nargs=2, help="What fraction of orbit to plot, in %%.  Normally 0-100.",
+        default=[0, 100])
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--with-bitmasks", action="store_true")
+    group.add_argument("--without-bitmasks", action="store_false")
+
+    parser.add_argument("--mark-pixels", action="store", type=float,
+        nargs="*", default=[],
+        help="Mark 0 or more pixels.  The numbers refer to percentile "
+             "values in brightness temperature.  For example, 50 marks "
+             "the median BT pixel, 10 the pixel corresponding to the 10th "
+             "percentile, etc. ")
+    p = parser.parse_args()
+    return p
 
 class OrbitPlotter:
     def __init__(self, f, channels, range=(0, 100),
@@ -156,7 +164,7 @@ class OrbitPlotter:
         dsx = fcm.gap_fill(dsx, "y", "time",
                 numpy.timedelta64(6400, 'ms'))
         if dsx.dims["y"] < 5:
-            logging.warning(f"Skipping channel {ch:d}, only {dsx.dims['y']:d} valid scanlines")
+            logger.warning(f"Skipping channel {ch:d}, only {dsx.dims['y']:d} valid scanlines")
             ax_all[0].clear()
             ax_all[1].clear()
             ax_all[2].clear()
@@ -217,7 +225,7 @@ class OrbitPlotter:
         # https://stackoverflow.com/q/46548044/974555.
 
         if (val==0).all():
-            logging.warning("Only zeroes for "
+            logger.warning("Only zeroes for "
                 f"{clab:s}, skipping because splitting plot "
                 "seems to cause problems")
             return
@@ -251,7 +259,7 @@ class OrbitPlotter:
             da.flag_meanings.split()))
 
 #        if not da.any():
-#            logging.warning("Current unable to plot "
+#            logger.warning("Current unable to plot "
 #                "bitfields where no data are flagged")
 #            return
 
@@ -283,10 +291,10 @@ class OrbitPlotter:
 
 def main():
     p = parse_cmdline()
-    logging.basicConfig(
-        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-                "%(lineno)s: %(message)s"),
-        level=logging.DEBUG if p.verbose else logging.INFO)
+    common.set_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
+
     op = OrbitPlotter(p.arg1, p.channels, range=p.range,
         plot_bitmasks=p.with_bitmasks,
         mark_pixels=p.mark_pixels)

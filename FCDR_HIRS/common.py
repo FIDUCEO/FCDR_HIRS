@@ -3,6 +3,8 @@
 Should probably be sorted into smaller modules.
 """
 
+import sys
+import logging
 import datetime
 import numpy
 import xarray
@@ -134,3 +136,40 @@ def sample_flags(da, period="1H", dim="time"):
         perc = perc.mean(dim=d)
     
     return (perc, da.flag_meanings.split())
+
+
+_root_logger_set = False
+def set_logger(level, filename=None, root=True):
+    """Set propertios of FIDUCEO root logger
+
+    Arguments:
+
+        level
+
+            What loglevel to use.
+
+        filename
+
+            What file to log to.  None for sys.stderr.
+
+        root
+
+            Use root logger (True), so that it applies to modules outside
+            FCDR_HIRS, or only apply it to FCDR_HIRS logging (False)
+    """
+    global _root_logger_set
+    if root:
+        if _root_logger_set:
+            raise RuntimeError("Root logger configured twice!")
+        logger = logging.getLogger()
+        _root_logger_set = True
+    else:
+        logger = logging.getLogger(__name__).parent # should be FCDR_HIRS
+    if filename:
+        handler = logging.FileHandler(filename, mode="a", encoding="utf-8")
+    else:
+        handler = logging.StreamHandler(sys.stderr)
+    logger.setLevel(level)
+    handler.setFormatter(
+        logging.Formatter("%(levelname)-8s %(name)s %(asctime)s %(module)s.%(funcName)s:%(lineno)s: %(message)s"))
+    logger.addHandler(handler)

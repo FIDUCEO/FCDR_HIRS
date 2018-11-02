@@ -2,8 +2,58 @@ import logging
 import numpy
 import argparse
 
-# logging needs to be handled here, therefore also argument parsing
-# see http://stackoverflow.com/q/20240464/974555
+import sys
+import os
+import re
+import math
+import datetime
+import itertools
+import functools
+import pickle
+import pathlib
+import lzma
+
+import numpy.lib.recfunctions
+import scipy.stats
+import scipy.odr
+
+import netCDF4
+
+import matplotlib
+if __name__ == "__main__":
+    matplotlib.use("Agg")
+    
+import matplotlib.pyplot
+
+import progressbar
+import numexpr
+import mpl_toolkits.basemap
+import sklearn.cross_decomposition
+#from memory_profiler import profile
+
+import typhon.plots
+import typhon.math
+import typhon.math.stats
+
+import typhon.datasets.tovs
+import pyatmlab.io
+import typhon.config
+import pyatmlab.physics
+import pyatmlab.graphics
+import pyatmlab.db
+
+from typhon.constants import (micro, centi, tera, nano)
+from typhon.physics.units import ureg, radiance_units as rad_u
+
+from .. import fcdr
+from .. import math as fhmath
+from .. import common
+
+hirs_iasi_matchup = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS")
+
+unit_specrad_wn = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
+unit_specrad_freq = ureg.W / (ureg.m**2 * ureg.sr * ureg.Hz)
+logger = logging.getLogger(__name__)
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -234,70 +284,6 @@ def parse_cmdline():
 
     p = parser.parse_args()
     return p
-parsed_cmdline = parse_cmdline()
-
-if parsed_cmdline.log == "":
-    logging.basicConfig(
-        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-                 "%(lineno)s: %(message)s"),
-        level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-else:
-    logging.basicConfig(
-        format=("%(levelname)-8s %(asctime)s %(module)s.%(funcName)s:"
-                 "%(lineno)s: %(message)s"),
-        filename=parsed_cmdline.log,
-        level=logging.DEBUG if parsed_cmdline.verbose else logging.INFO)
-
-import sys
-import os
-import re
-import math
-import datetime
-import itertools
-import functools
-import pickle
-import pathlib
-import lzma
-
-import numpy.lib.recfunctions
-import scipy.stats
-import scipy.odr
-
-import netCDF4
-
-import matplotlib
-if __name__ == "__main__":
-    matplotlib.use("Agg")
-    
-import matplotlib.pyplot
-
-import progressbar
-import numexpr
-import mpl_toolkits.basemap
-import sklearn.cross_decomposition
-#from memory_profiler import profile
-
-import typhon.plots
-import typhon.math
-import typhon.math.stats
-
-import typhon.datasets.tovs
-import pyatmlab.io
-import typhon.config
-import pyatmlab.physics
-import pyatmlab.graphics
-import pyatmlab.db
-
-from typhon.constants import (micro, centi, tera, nano)
-from typhon.physics.units import ureg, radiance_units as rad_u
-
-from .. import fcdr
-from .. import math as fhmath
-
-hirs_iasi_matchup = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS")
-
-unit_specrad_wn = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
-unit_specrad_freq = ureg.W / (ureg.m**2 * ureg.sr * ureg.Hz)
 
 class HIM(typhon.datasets.dataset.MultiFileDataset):
     """For HIRS-IASI-Matchups
@@ -336,7 +322,7 @@ class LUTAnalysis:
             # First read all, then construct PCA, so that all go into PCA.
             # Hopefully I have enough memory for that, or I need to implement
             # incremental PCA.
-            logging.info("Found no LUT, creating new")
+            logger.info("Found no LUT, creating new")
             y = None
             for g in itertools.islice(self.graniter, *self.lut_slice_build):
                 if y is None:
@@ -344,7 +330,7 @@ class LUTAnalysis:
                 else:
                     y = numpy.hstack([y, self._get_next_y_for_lut(g, sat, channels)])
             #y = numpy.vstack(y_all)
-            logging.info("Constructing PCA-based lookup table")
+            logger.info("Constructing PCA-based lookup table")
             db = pyatmlab.db.LargeFullLookupTable.fromData(y,
                 dict(PCA=dict(
                     npc=npc,
@@ -360,10 +346,10 @@ class LUTAnalysis:
             raise NotImplementedError("linear LUT always made new")
         db = None
         for g in itertools.islice(self.graniter, *self.lut_slice_build):
-            logging.info("Adding to lookup table: {!s}".format(g))
+            logger.info("Adding to lookup table: {!s}".format(g))
             y = self._get_next_y_for_lut(g, sat, channels)
             if db is None: # first time
-                logging.info("Constructing lookup table")
+                logger.info("Constructing lookup table")
                 db = pyatmlab.db.LargeFullLookupTable.fromData(y,
                     {"ch{:d}".format(i+1):
                      dict(range=(tb[..., i][tb[..., i]>0].min()*0.95,
@@ -373,7 +359,7 @@ class LUTAnalysis:
                         for i in channels},
                         use_pca=False)
             else:
-                logging.info("Extending lookup table")
+                logger.info("Extending lookup table")
                 db.addData(y)
         return db
 
@@ -400,7 +386,7 @@ class LUTAnalysis:
                                         channels=channels,
                                         make_new=make_new)
 #        out = "/group_workspaces/cems/fiduceo/Users/gholl/hirs_lookup_table/test/test_{:%Y%m%d-%H%M%S}.dat".format(datetime.datetime.now())
-#        logging.info("Storing lookup table to {:s}".format(out))
+#        logger.info("Storing lookup table to {:s}".format(out))
 #        db.toFile(out)
 
     # Using the lookup table, calculate expected differences: taking a set of
@@ -466,7 +452,7 @@ class LUTAnalysis:
           y-axis: differences for all channels 11
         """
         N = 12
-        logging.info("Simulating radiances using lookup-table...")
+        logger.info("Simulating radiances using lookup-table...")
         hs = self.lut_simulate_all_hirs(radiances)
         cont = radiances[["ch{:d}".format(i+1) for i in range(N)]].view(
                     radiances["ch1"].dtype).reshape(
@@ -551,7 +537,7 @@ class LUTAnalysis:
                    ("y_mean", radiances.dtype),
                    ("y_std", radiances.dtype),
                    ("y_ptp", radiances.dtype)])
-        logging.info("Using LUT to find IASI for {:,} HIRS spectra".format(radiances.size))
+        logger.info("Using LUT to find IASI for {:,} HIRS spectra".format(radiances.size))
         if self.dobar:
             bar = progressbar.ProgressBar(maxval=radiances.size,
                     widgets=pyatmlab.tools.my_pb_widget)
@@ -564,7 +550,7 @@ class LUTAnalysis:
             except KeyError:
                 n = 0
             except EOFError as v:
-                logging.error("Could not read from LUT: {!s}".format(v))
+                logger.error("Could not read from LUT: {!s}".format(v))
                 n = 0
             else:
                 n = cont.size
@@ -741,14 +727,14 @@ class LUTAnalysis:
             for npc in ([i for i in (3, 4) if i < len(channels)] or
                         [len(channels)]):
                 for fact in (1.0, 2.0, 4.0, 8.0):
-                    logging.info("Considering LUT with npc={:d}, "
+                    logger.info("Considering LUT with npc={:d}, "
                                 "fact={:.1f}, ch={!s}".format(npc, fact, list(channels)))
     #                p = pathlib.Path(basedir) / (subname.format(npc=npc, fact=fact))
                     try:
                         self.get_lookup_table(sat="NOAA18", pca=True, x=fact,
                             npc=npc, channels=channels, make_new=False)
                     except FileNotfoundError:
-                        logging.error("Does not exist yet, skipping")
+                        logger.error("Does not exist yet, skipping")
                         continue
                     D[tuple(b.size for b in self.lut.bins)] = self.lut_visualise_stats_unseen_data(sat=sat)
             (f1, a1) = matplotlib.pyplot.subplots(2, 2)
@@ -812,18 +798,18 @@ class LUTAnalysis:
             bins = [numpy.linspace(pca.Y[:, i].min(), pca.Y[:, i].max(), max(p, 2))
                 for (i, p) in enumerate(nbins)]
             for n in all_n:
-                logging.info("Binning, scale={:.1f}, n={:d}".format(
+                logger.info("Binning, scale={:.1f}, n={:d}".format(
                     bin_scale, n))
                 bnd = typhon.math.stats.bin_nd(
                     [pca.Y[:, i] for i in range(n)],
                     bins[:n])
                 (no, frac, lowest, med, highest) = self._calc_bin_stats(bnd)
-                logging.info("PCA {:d} comp., {:s} bins/comp: {:.3%} {:d}/{:d}/{:d}".format(
+                logger.info("PCA {:d} comp., {:s} bins/comp: {:.3%} {:d}/{:d}/{:d}".format(
                       n, "/".join(["{:d}".format(x) for x in bnd.shape]),
                       frac, lowest, med, highest))
                 nos = numpy.argsort(no)
                 busiest_bins = bnd.ravel()[nos[-nbusy:]].tolist()
-                logging.info("Ranges in {nbusy:d} busiest bins:".format(
+                logger.info("Ranges in {nbusy:d} busiest bins:".format(
                                 nbusy=nbusy))
                 print("{:>4s} {:>5s}/{:>5s}/{:>5s} {:>5s} {:>5s}".format(
                       "Ch.", "min", "mean", "max", "PTP", "STD"))
@@ -865,12 +851,12 @@ class LUTAnalysis:
         #bins = numpy.linspace(170, 310, 20)
         chans = range(12) # thermal channels only
         tot = int(scipy.misc.comb(12, N))
-        logging.info("Studying {:d} combinations".format(tot))
+        logger.info("Studying {:d} combinations".format(tot))
         for (k, combi) in enumerate(itertools.combinations(chans, N)):
             bnd =  typhon.math.stats.bin_nd([btflat[i] for i in combi], 
                                          [bins[i] for i in combi])
             (frac, lowest, med, highest) = self._calc_bin_stats(bnd)
-            logging.info("{:d}/{:d} channel combination {!s}: {:.3%} {:d}/{:d}/{:d}".format(
+            logger.info("{:d}/{:d} channel combination {!s}: {:.3%} {:d}/{:d}/{:d}".format(
                   k, tot, combi, frac, lowest, med, highest))
 
 
@@ -958,7 +944,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         self._gran = value
 
     def __init__(self, mode="Viju", usecache=True):
-        #logging.info("Finding and reading IASI")
+        #logger.info("Finding and reading IASI")
         if mode == "iasinc":
             self.iasi = typhon.datasets.tovs.IASIEPS(name="iasinc")
             self.choice = [(38, 47), (37, 29), (100, 51), (52, 11)]
@@ -975,11 +961,11 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 srfs[sat] = [typhon.physics.units.em.SRF.fromArtsXML(sat,
                     "hirs", ch) for ch in range(1, 20)]
             except FileNotFoundError as msg:
-                logging.error("Skipping {:s}: {!s}".format(
+                logger.error("Skipping {:s}: {!s}".format(
                               sat, msg))
         self.srfs = srfs
 #        for coor in self.choice:
-#            logging.info("Considering {coor!s}: Latitude {lat:.1f}°, "
+#            logger.info("Considering {coor!s}: Latitude {lat:.1f}°, "
 #                "Longitude {lon:.1f}°, Time {time!s}, SZA {sza!s})".format(
 #                coor=coor, lat=self.gran["lat"][coor[0], coor[1]],
 #                lon=self.gran["lon"][coor[0], coor[1]],
@@ -1012,7 +998,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         specrad_freq = self.get_y(unit="specrad_freq")
 
         with numpy.errstate(divide="warn", invalid="warn"):
-            logging.info("...converting {:d} spectra to BTs...".format(
+            logger.info("...converting {:d} spectra to BTs...".format(
                 specrad_freq.shape[0]))
             Tb = typhon.physics.units.em.specrad_frequency_to_planck_bt(
                 specrad_freq, self.iasi.frequency)
@@ -1035,9 +1021,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
             srf = self.srfs[sat][c-1]
             if c in srfshift:
                 srf = srf.shift(srfshift[c])
-                logging.debug("Calculating channel radiance {:s}-{:d}{:+.2~}".format(sat, c, srfshift[c]))
+                logger.debug("Calculating channel radiance {:s}-{:d}{:+.2~}".format(sat, c, srfshift[c]))
             else:
-                logging.debug("Calculating channel radiance {:s}-{:d}".format(sat, c))
+                logger.debug("Calculating channel radiance {:s}-{:d}".format(sat, c))
             L = srf.integrate_radiances(self.iasi.frequency, specrad_f)
 
             L_chans[..., i] = L
@@ -1065,7 +1051,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         bt2d = bt2d[:, channels]
         btok = (bt2d>0).all(1)
 
-        logging.info("Calculating PCA")
+        logger.info("Calculating PCA")
         pca = matplotlib.mlab.PCA(bt2d[btok, :])
         Ys = numpy.ma.zeros(shape=bt2d.shape, dtype="f4")
         Ys.mask = numpy.zeros_like(Ys, dtype="bool")
@@ -1087,7 +1073,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             y = y.to(rad_u["ir"])
         y = y.reshape(-1, y.shape[-1])
         spectra = y.reshape(-1, self.iasi.frequency.size)[selection, :]
-        logging.info("Visualising")
+        logger.info("Visualising")
         (f, a_spectrum_all) = matplotlib.pyplot.subplots(nrows, 1, figsize=(12, 8))
         xlims = [(3.6, 4.7), (6.3, 7.5), (9.2, 12.9), (13.0, 15.2)]
         chans = [(13, 14, 15, 16, 17, 18, 19), (11, 12), (8, 9, 10),
@@ -1099,7 +1085,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 pass # choose spectra per area
         for (xlim, ch, a_spectrum) in zip(xlims, chans, a_spectrum_all.ravel()):
             a_srf = a_spectrum.twinx()
-            logging.info("Plotting spectra")
+            logger.info("Plotting spectra")
             self._plot_spectra(spectra, x_quantity, a_spectrum)
 #            for ch in range(1, 19):
 #                self._plot_srf_with_spectra(ch, {sat}, x_quantity,
@@ -1120,7 +1106,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             a_spectrum.grid()
 
             # Plot channels
-            logging.info("Plotting channels")
+            logger.info("Plotting channels")
             for c in ch:
                 self._plot_srfs(c, {sat}, x_quantity, ax=a_srf)
                 srf = self.srfs[sat][c-1]
@@ -1430,13 +1416,13 @@ class IASI_HIRS_analyser(LUTAnalysis):
         srf_nom = self.srfs[satellite][channel-1] # index 0 -> channel 1 etc.
 
         if y.size/y.shape[-1] > 1e5:
-            logging.debug("Integrating {:,} spectra to radiances".format(
+            logger.debug("Integrating {:,} spectra to radiances".format(
                 y.size//y.shape[-1]))
 
         L_nom = srf_nom.integrate_radiances(self.iasi.frequency, y)
 
         if y.size/y.shape[-1] > 1e5:
-            logging.debug("Converting {:,} radiances to brightness temperatures".format(
+            logger.debug("Converting {:,} radiances to brightness temperatures".format(
                 y.size//y.shape[-1]))
 
         bt_nom = srf_nom.channel_radiance2bt(L_nom)
@@ -1448,7 +1434,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     widgets=pyatmlab.tools.my_pb_widget)
             bar.start()
 
-        logging.info("Shifting {:,} spectra by {:d} values between "
+        logger.info("Shifting {:,} spectra by {:d} values between "
             "{:+~} and {:+~}".format(y.size//y.shape[-1], len(shift), shift[0], shift[-1]))
         for (i, sh) in enumerate(shift):
             srf_new = srf_nom.shift(sh)
@@ -2382,7 +2368,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         for (i, ch) in enumerate(channels):
             p_all = []
             for shift in ref_dλ:
-                logging.info("Estimating {sat2:s} ch {ch:d} from {sat:s} "
+                logger.info("Estimating {sat2:s} ch {ch:d} from {sat:s} "
                              "channels {self.pred_channels!s}, shift "
                              "{shift:+5.3~}, db {db:s}, ref {ref:s}, "
                              "cls {regression_type.__name__:s}, args "
@@ -2545,7 +2531,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             rad_wn_all[i, :, :] = h.Mtorad(M,
                 srf0.shift(ureg.Quantity(res.x, ureg.um)), ch)
 
-            logging.debug("Estimate {:d}/{:d}: {:.5f} nm (“truth”: {:.3f} nm), "
+            logger.debug("Estimate {:d}/{:d}: {:.5f} nm (“truth”: {:.3f} nm), "
                           "ΔL = {:.3~}".format(
                 i+1, estimates.size, estimates[i]*1e3,
                 shift_reference.to(ureg.nm).m,
@@ -2585,11 +2571,11 @@ class IASI_HIRS_analyser(LUTAnalysis):
 #        dmpfile.parent.mkdir(parents=True, exist_ok=True)
 #        with lzma.open(str(dmpfile.with_suffix(".pkl.lzma")),
 #                mode="wb", preset=lzma.PRESET_DEFAULT) as fp:
-#            logging.info("Dumping to {!s}".format(
+#            logger.info("Dumping to {!s}".format(
 #                    dmpfile.with_suffix(".pkl.lzma")))
 #            pickle.dump((estimates, rad_wn_ref, rad_wn_all), fp)
 
-        logging.info("Writing to {!s}".format(tofile) + ".{dat,info}")
+        logger.info("Writing to {!s}".format(tofile) + ".{dat,info}")
         Δrad = rad_wn_all - rad_wn_ref[numpy.newaxis, ...]
 
         with tofile.with_suffix(".info").open("a", encoding="utf-8") as fp:
@@ -2676,17 +2662,17 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
     def plot_expected_range(self, nbins=80, lab="", channels=range(1, 20)):
         # spectral_radiance
-        logging.info("Obtaining spectral radiance")
+        logger.info("Obtaining spectral radiance")
         L_specrad = self.get_y("specrad_freq")
         sats = self.srfs.keys()
         tbs = {}
         for sat in sats:
-            logging.info("Calculating brightness temperatures for {:s}".format(sat))
+            logger.info("Calculating brightness temperatures for {:s}".format(sat))
             tbs[sat] = self.get_tb_channels(sat, specrad_f=L_specrad,
                 channels=range(1, 20))
 
         for ch in channels:
-            logging.info("Visualising channel {:d}".format(ch))
+            logger.info("Visualising channel {:d}".format(ch))
             tb_ch = numpy.array([tbs[sat][:, 0, ch-1].m for sat in sats])
             x = tb_ch.mean(0)
             y = tb_ch.ptp(0)
@@ -2713,10 +2699,13 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 "HIRS_{:d}_exp_radrange_{:s}.".format(ch, lab))
 
 def main():
-    p = parsed_cmdline
+    p = parse_cmdline()
+    common.set_logger(
+        logging.DEBUG if p.verbose else logging.INFO,
+        p.log)
+        
     print(p)
     numexpr.set_num_threads(p.threads)
-
 
     with numpy.errstate(divide="raise", over="raise", under="warn", invalid="raise"):
         vis = IASI_HIRS_analyser(usecache=p.cache)
@@ -2741,19 +2730,19 @@ def main():
                 vis.gran = vis.iasi.read_period(start=start, end=end,
                     NO_CACHE=not p.cache)
             if p.seed > 0:
-                logging.info("Seeding with {:d}".format(p.seed))
+                logger.info("Seeding with {:d}".format(p.seed))
                 numpy.random.seed(p.seed)
             selection = numpy.random.choice(range(vis.gran["lat"].size), p.spectrum_count)
 #        N = 40
 #        col = 50
         if p.plot_shifted_srf_in_subplots:
             for ch in {range(1, 7), range(7, 13), range(13, 19)}:
-                logging.info("Plotting SRFS in subplots, {!s}".format(ch))
+                logger.info("Plotting SRFS in subplots, {!s}".format(ch))
                 vis.plot_srfs_in_subplots("NOAA19", "NOAA18",
                     x_quantity="wavelength", y_unit="TB",
                     selection=selection, chans=ch)
                 for sh in (0.02*ureg.um, -0.02*ureg.um):
-                    logging.info("Plotting SRFS in subplots, {!s}, "
+                    logger.info("Plotting SRFS in subplots, {!s}, "
                         "shifted {:~}".format(ch, sh))
                     vis.plot_srfs_in_subplots("NOAA19", "NOAA18",
                         x_quantity="wavelength", y_unit="TB",
@@ -2842,7 +2831,7 @@ def main():
 
         if p.plot_bt_srf_shift:
             for ch in p.channels:
-                logging.info("Plotting shifts for {:s} ch. {:d}".format(
+                logger.info("Plotting shifts for {:s} ch. {:d}".format(
                     p.sat, ch))
                 vis.plot_bt_srf_shift(p.sat, ch)
 
@@ -2869,7 +2858,7 @@ def main():
                                         method="bounded",
                                         args=(ureg.um,))
 
-                logging.info("Finding variation of minima for "
+                logger.info("Finding variation of minima for "
                     "{p.sat:s} channel {ch:d}, reference {shift:~}. "
                     "Using multiple linear regression. "
                     "Optimising with {optimiser:s}.".format(
@@ -2945,7 +2934,7 @@ def main():
 #                #vis.plot_Te_vs_T(h)
 #                vis.plot_channel_BT_deviation(h)
 #            except FileNotFoundError as msg:
-#                logging.error("Skipping {:s}: {!s}".format(h, msg))
+#                logger.error("Skipping {:s}: {!s}".format(h, msg))
         if p.write_channel_locations != "":
             vis.write_channel_locations(p.write_channel_locations,
                 channels=p.channels)
@@ -2956,4 +2945,4 @@ def main():
         if p.vis_expected_range:
             vis.plot_expected_range(lab="{start:%Y%m%d}-{end:%Y%m%d}".format(
                 start=start, end=end), channels=p.channels)
-        logging.info("Done")
+        logger.info("Done")
