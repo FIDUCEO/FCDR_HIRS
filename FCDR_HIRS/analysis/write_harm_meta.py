@@ -5,6 +5,7 @@ import datetime
 now = datetime.datetime.now
 import sympy
 import typhon.physics.units
+from typhon.datasets.tovs import norm_tovs_name
 
 from .. import fcdr
 from .. import measurement_equation as me
@@ -23,15 +24,14 @@ def write_table_for_channel(ch, fn):
                 (fcdr.HIRS2FCDR.satellites.keys()|
                  fcdr.HIRS3FCDR.satellites.keys()|
                  fcdr.HIRS4FCDR.satellites.keys())-{'noaa13'}):
-            srf = typhon.physics.units.SRF.fromArtsXML(
-                    satname.upper().replace("NOAA0", "NOAA"), "hirs", ch)
+            srf = typhon.physics.units.SRF.fromRTTOV(
+                norm_tovs_name(satname, "RTTOV"), "hirs", ch)
             (α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients(
-                satname, "fcdr_hirs", ch)
+                satname, "fcdr_hirs", ch, include_shift=False)
             f_eff = λ_eff.to("Hz", "sp")
             Δf_eff= ((λ_eff+Δλ_eff).to("Hz", "sp") -
                      (λ_eff-Δλ_eff).to("Hz", "sp"))/2
-            # get short name: lower-case, 3 letters except for tn, ma, mb
-            short = (satname[0] + satname[-(2 if satname[-1].isdigit() else 1):]).lower()
+            short = norm_tovs_name(satname, "BC")
             fp.write(f"{short:<6s} "
                      f"{float(f_eff):<10.3e} {float(α):<10.5f} {float(β):<10.6f} "
                      f"{float(Δf_eff):<10.3e} {float(Δα):<10.4e} {float(Δβ):<10.4e}\n")
