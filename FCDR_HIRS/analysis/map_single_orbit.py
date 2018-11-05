@@ -1,5 +1,18 @@
-"""Plot single easy FCDR orbit file on set of maps
+"""Plot (segment of) single easy FCDR orbit file on set of maps
 
+This module and script plots a single orbit or a segment of an orbit on a
+projected map.  It always plots the brightness temperature as well as two
+or three uncertainty components, depending on whether the FCDR it is
+plotted from is harmonised or not.  It also optionally plots bitfields to
+show what parts of the orbit may be masked.
+
+By default it plots channels 1–12, but it can plot as few as one or as
+many as 19 channels.
+
+It can either plot the full orbit (default), or a section of the orbit.
+To plot only a section of the orbit, use the --range option.
+
+There is the option to mark one or more pixels.
 """
 
 import logging
@@ -32,7 +45,7 @@ logger = logging.getLogger(__name__)
 #from .. import fcdr
 def parse_cmdline():
     parser = argparse.ArgumentParser(
-        description="Show orbit on map",
+        description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser = common.add_to_argparse(parser,
@@ -161,8 +174,13 @@ class OrbitPlotter:
         start = self.start
         end = self.end
         dsx = dsx.isel(y=slice(start, end))
-        dsx = fcm.gap_fill(dsx, "y", "time",
-                numpy.timedelta64(6400, 'ms'))
+        print(f"Channel {ch:d}:")
+        print("Selecting lines", dsx.isel(y=0)["y"].item(), "to", dsx.isel(y=-1)["y"].item(), "inclusive")
+        print("Covering {start:%Y-%m-%d %H:%M:%S}–{end:%H:%M:%S}".format(
+                start=dsx.isel(y=0)["time"].values.astype("datetime64[ms]").item(),
+                end=dsx.isel(y=-1)["time"].values.astype("datetime64[ms]").item()))
+
+        dsx = fcm.gap_fill(dsx, "y", "time", numpy.timedelta64(6400, 'ms'))
         if dsx.dims["y"] < 5:
             logger.warning(f"Skipping channel {ch:d}, only {dsx.dims['y']:d} valid scanlines")
             ax_all[0].clear()
@@ -208,8 +226,11 @@ class OrbitPlotter:
             for (lab, p_val) in zip(string.ascii_uppercase, p_vals):
                 (ycoor, xcoor) = [c[0].item() for c in
                     (dsx["bt"]==p_val).values.nonzero()]
-                lat = dsx["latitude"].isel(y=ycoor, x=xcoor).item()
-                lon = dsx["longitude"].isel(y=ycoor, x=xcoor).item()
+                dsp = dsx.isel(y=ycoor, x=xcoor)
+                lat = dsp["latitude"].item()
+                lon = dsp["longitude"].item()
+                print(lab, "x", dsp["x"].item(), "y", dsp["y"].item(),
+                    "bt", dsp["bt"].item(), "lat", lat, "lon", lon)
                 for ax in ax_all:
                     ax.plot(lon, lat, marker='o', markersize=5, color="red")
                     ax.text(lon, lat, lab, fontsize=20, color="red")
