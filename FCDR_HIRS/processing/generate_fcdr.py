@@ -187,6 +187,7 @@ class FCDRGenerator:
     # file.  For the easy, it's N//2 where N is length of orbit.
     max_debug_corr_length = 1000
 
+    dd = None
     # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes, no_harm=False):
         logger.info("Preparing to generate FCDR for {sat:s} HIRS, "
@@ -213,10 +214,6 @@ class FCDRGenerator:
                 typhon.datasets.filters.TimeMaskFilter(self.fcdr),
                 typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter()]
         self.orbit_filters = orbit_filters
-        self.dd = typhon.datasets.dataset.DatasetDeque(
-            self.fcdr, self.window_size, start_date,
-            orbit_filters=orbit_filters,
-            pseudo_fields=self.pseudo_fields)
 
         self.rself = models.RSelf(self.fcdr,
             temperatures=self.rself_temperatures,
@@ -226,6 +223,11 @@ class FCDRGenerator:
     def process(self, start=None, end_time=None):
         """Generate FCDR for indicated period
         """
+        self.dd = typhon.datasets.dataset.DatasetDeque(
+            self.fcdr, self.window_size, self.start_date,
+            orbit_filters=self.orbit_filters,
+            pseudo_fields=self.pseudo_fields)
+
         start = start or self.start_date
         end_time = end_time or self.end_date
         logger.info("Now processing FCDR for {self.satname:s} HIRS, "
@@ -305,11 +307,22 @@ class FCDRGenerator:
 
             self.store_piece(piece)
 
-    def get_piece(self, from_, to, return_more=False):
+    def get_piece(self, from_, to, return_more=False, reset_context=False):
         """Get FCDR piece for period.
 
         Returns a single xarray.Dataset
         """
+        if reset_context or self.dd is None:
+            if self.dd is None:
+                self.dd = typhon.datasets.dataset.DatasetDeque(
+                    self.fcdr, self.window_size, from_,
+                    orbit_filters=self.orbit_filters,
+                    pseudo_fields=self.pseudo_fields)
+            else:
+                self.dd.reset(start,
+                    orbit_filters=self.orbit_filters,
+                    pseudo_fields=self.pseudo_fields)
+
         subset = self.dd.data.sel(time=slice(from_, to))
         # This is not supposed to happen consistently, but may happen if
         # for some 24-hour period the first >6 hours were not available
