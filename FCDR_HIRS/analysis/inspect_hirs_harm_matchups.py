@@ -158,7 +158,7 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
             dims=("x",),
             coords={"x": midbins},
             name="y")
-        logging.info(f"Writing filter to {hfpfile!s}")
+        logger.info(f"Writing filter to {hfpfile!s}")
         da.to_netcdf(hfpfile)
 
 def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
