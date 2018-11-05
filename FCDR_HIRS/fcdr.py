@@ -1433,7 +1433,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
 
         (α, β, λ_eff, Δα, Δβ, Δλ_eff) = srf.estimate_band_coefficients(
-            self.satname, self.section, ch)
+            self.satname, self.section, ch, include_shift=False)
 #        (α, β, f_eff, Δα, Δβ, Δf_eff) = (numpy.float32(0),
 #            numpy.float32(1), srf.centroid().to(ureg.THz, "sp"), 0, 0, 0)
 
