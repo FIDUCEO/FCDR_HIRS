@@ -55,16 +55,16 @@ where it is through the environment variable TYPHONRC.
 
 The steps to generate a new version of the FCDR:
 
-- (devel) Switch to correct branch and install
+- (devel) Switch to correct branch, rebase on master, and install
 
 - Generate an unharmonised FCDR by passing the --no-harm flag to
   generate_fcdr.
 
-- (devel) Switch to correct branch and install
+- (devel) Switch to correct branch, rebase on master, and install
 
 - Use hirs_logfile_analysis script to inspect outcome
 
-- (devel) Switch to correct branch and install
+- (devel) Switch to correct branch, rebase on master, and install
 
 - From the unharmonised FCDR, create an unfiltered harmonisation database,
   by calling combine_hirs_hirs_matchups with the --without-filters flag.
@@ -72,12 +72,12 @@ The steps to generate a new version of the FCDR:
 - Combine the small harmonisatin files into single big ones per pair and
   channel, using merge_hirs_harmonisation
 
-- (devel) Switch to correct branch and install
+- (devel) Switch to correct branch, rebase on master, and install
 
 - From the unfiltered harmonisation database, derive filter parameters by
   calling hirs_inspect_harm_matchups with the --write-filters flag
 
-- (devel) Switch to correct branch and install
+- (devel) Switch to correct branch, rebase on master, and install
 
 - Generate a new harmonisation database, now --with-filters.
 
@@ -88,15 +88,15 @@ The steps to generate a new version of the FCDR:
 - Convert the harmonisation parameters to the Python file _harm_defs.py
   using convert_hirs_harmonisation_parameters
 
-- (devel) Switch to correct branch and install
+- (devel) Switch to correct branch, rebase on master, and install
 
 - Run the FCDR with harmonisation
 
-- (devel) Switch to correct branch and install
+- (devel) Switch to correct branch, rebase on master, and install
 
 - Use hirs_logfile_analysis script to inspect outcome
 
-- (devel) Switch to correct branch and install
+- (devel) Switch to correct branch, rebase on master, and install
 
 - Use summarise_hirs_fcdr with 'summarise' mode to generate summarising
   statistic
@@ -104,5 +104,5 @@ The steps to generate a new version of the FCDR:
 - Use summarise_hirs_fcdr with 'plot' mode to visualise summarising
   statistic
 
-- For shorter periods of plotting, usi plot_hirs_fcdr (short time series)
+- For shorter periods of plotting, use plot_hirs_fcdr (short time series)
   and hirs_orbit_map (maps)
