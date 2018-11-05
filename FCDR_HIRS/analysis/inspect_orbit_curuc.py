@@ -5,8 +5,32 @@ import matplotlib
 import matplotlib.pyplot
 import numpy
 import xarray
+import argparse
+import sys
 
 import pyatmlab.graphics
+
+def parse_cmdline():
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument("path", action="store", type=str,
+        help="Path for which to show CURUC stuff")
+
+    parser.add_argument("--x", action="store", type=int,
+        nargs="*",
+        help="List of x-coordinates for which to recalculate/show detailed info")
+
+    parser.add_argument("--y", action="store", type=int,
+        nargs="*",
+        help="List of y-coordinates for which to recalculate/show detailed info")
+
+    parser.add_argument("--lines", action="store", type=int,
+        nargs=2,
+        help="Range of lines to explore in detail")
+
+    return parser.parse_args()
 
 def plot_compare_correlation_scanline(ds):
     ds5 = ds.sel(calibrated_channel=5)
@@ -28,4 +52,6 @@ def plot_compare_correlation_scanline(ds):
     pyatmlab.graphics.print_or_show(f, False, "orbit_curuc_test.")
 
 def main():
-    plot_compare_correlation_scanline(xarray.open_dataset("/group_workspaces/cems2/fiduceo/Data/FCDR/HIRS/v0.8pre/debug/metopa/2015/02/01/FIDUCEO_FCDR_L1C_HIRS4_metopa_20150201205557_20150201223710_debug_v0.8pre_fv0.6.nc"))
+    p = parse_cmdline()
+    sys.exit("The development of this script is still in progress.")
+    plot_compare_correlation_scanline(xarray.open_dataset(p.path))
