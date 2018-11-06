@@ -111,48 +111,56 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         scnlinlab = "scanline at {:%Y-%m-%d %H:%M:%S}".format(
             ds["time"].isel(y=y).values.astype("M8[ms]").item())
         # cross-element error covariance matrix for line
-        (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 8))
+        (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_esΛl"][channel-1, y-lines[0], :, :]
         S = _S_radsi_to_K(S, srf=srf)
-        p = a.pcolor(S)
-        cb = f.colorbar(p, cax=a)
+        p = a.pcolor(S.m)
+        cb = f.colorbar(p)
         cb.set_label("$S_{es}^l$ [K$^2$]")
         a.set_xlabel("e")
         a.set_ylabel(a.get_xlabel())
         a.set_title("Cross-element error covariance matrix "
             + shared_tit
+            + "\n"
             + scnlinlab)
+        a.set_aspect("equal")
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_element_S" + shared_fn +
             f"x{x:d}y{y:d}.")
 
         # cross-line error covariance matrix for element
+        (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_lsΛe"][channel-1, x, :, :]
         S = _S_radsi_to_K(S, srf=srf)
-        p = a.pcolor(S)
-        cb = f.colorbar(p, cax=a)
+        p = a.pcolor(S.m)
+        cb = f.colorbar(p)
         cb.set_label("$S_{ls}^e$ [K$^2$]")
         a.set_xlabel("l")
         a.set_ylabel(a.get_xlabel())
         a.set_title("Cross-line error covariance matrix "
+            + "\n"
             + shared_tit
             + f"element {x:d}")
+        a.set_aspect("equal")
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_line_S" + shared_fn +
             f"_x{x:d}y{y:d}.")
 
         # cross-channel error covariance matrix
+        (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_csΛp"].sel(n_l=y-lines[0], n_e=x)
         S = _S_radsi_to_K(S, srf=srf)
-        p = a.pcolor(S)
-        cb = f.colorbar(p, cax=a)
+        p = a.pcolor(S.m)
+        cb = f.colorbar(p)
         cb.set_label("$S_{cs}^p$ [K$^2$]")
         a.set_xlabel("channel")
         a.set_ylabel(a.get_xlabel())
         a.set_title("Cross-channel error covariance matrix "
             + shared_tit
+            + "\n"
             + scnlinlab
-            + f"element {x:d}")
+            + f" element {x:d}")
+        a.set_aspect("equal")
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_channel_S" + shared_fn +
             f"_x{x:d}y{y:d}.")
@@ -186,5 +194,5 @@ def main():
         y_all=p.y_all,
         channel=p.channel)
 
-    sys.exit("The development of this script is still in progress.")
-    plot_compare_correlation_scanline(xarray.open_dataset(p.path))
+#    sys.exit("The development of this script is still in progress.")
+#    plot_compare_correlation_scanline(xarray.open_dataset(p.path))
