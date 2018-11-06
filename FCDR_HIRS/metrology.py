@@ -599,7 +599,8 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         U_eΛls_diag, U_lΛes_diag, U_cΛps_diag, U_cΛpi_diag,
         C_eΛls_diag, C_lΛes_diag, C_cΛps_diag, C_cΛpi_diag,
         all_coords, brokenchan, brokenline, return_vectors=False,
-        interpolate_lengths=False, cutoff_l=None, cutoff_e=None):
+        interpolate_lengths=False, cutoff_l=None, cutoff_e=None,
+        return_locals=False):
     """Apply CURUC recipes.
 
     Arguments correspond to the ones returned by allocate_curuc:
@@ -856,7 +857,8 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         Δ_e_full_all[{"n_c": brokenchan}] = numpy.nan
     
     return (Δ_l_all, Δ_e_all, R_ci, R_cs) + (
-        (Δ_l_full_all, Δ_e_full_all) if return_vectors else ())
+        (Δ_l_full_all, Δ_e_full_all) if return_vectors else ()) + (
+        (locals(),) if return_locals else ())
 
 def interpolate_Δ_x(Δ_x, cutoff):
     """Interpolate Δ_e or Δ_l vectors to fill sampling gaps
@@ -950,7 +952,7 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
 def calc_corr_scale_channel(effects, sensRe, ds, 
         sampling_l=8, sampling_e=1, flags=None,
         robust=False, return_vectors=False,
-        interpolate_lengths=False):
+        interpolate_lengths=False, return_locals=False):
     """Calculate correlation length scales per channel
 
     Note that this function expects quite specific data structured
@@ -1013,6 +1015,11 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             only given every 5 lines.  If True, a spline interpolation is
             applied and average correlation length is returned at every
             separation.
+
+        return_locals: bool
+
+            Return complete dictionary of locals.  When deep inspection is
+            a must.
 
     Returns:
 
@@ -1126,7 +1133,8 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                         "n_c": all_coords["n_c"]})
 
             return (Δ_l, Δ_e, R_ci, R_cs) + (
-                (Δ_l_full_all, Δ_e_full_all) if return_vectors else ())
+                (Δ_l_full_all, Δ_e_full_all) if return_vectors else ()) + (
+                (locals(),) if return_locals else ())
         else:
             raise FCDRError(errmsg)
 
@@ -1247,4 +1255,4 @@ def calc_corr_scale_channel(effects, sensRe, ds,
         C_eΛls_diag, C_lΛes_diag, C_cΛps_diag, C_cΛpi_diag,
         all_coords, brokenchan, brokenline, return_vectors=return_vectors,
         interpolate_lengths=interpolate_lengths, cutoff_l=n_l,
-        cutoff_e=n_e)
+        cutoff_e=n_e, return_locals=return_locals)

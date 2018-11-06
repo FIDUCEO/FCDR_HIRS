@@ -4,17 +4,26 @@ Includes functionality for figures 3 and 4 from
 Merchant, Holl, ... (submitted 2018).
 """
 
+import datetime
+import argparse
+import sys
+import pathlib
+import logging
+
 import matplotlib
 import matplotlib.pyplot
 import numpy
 import xarray
-import argparse
-import sys
-import pathlib
+
+import typhon.physics.units.em
+import typhon.datasets.tovs
+from typhon.physics.units.common import radiance_units as rad_u
 
 import pyatmlab.graphics
 
 from ..processing.generate_fcdr import FCDRGenerator
+from ..common import set_logger
+from .. import metrology
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -34,24 +43,113 @@ def parse_cmdline():
         dest="y_all",
         help="List of y-coordinates for which to recalculate/show detailed info")
 
+    parser.add_argument("--channel", action="store", type=int,
+        help="Channel")
+
     parser.add_argument("--lines", action="store", type=int,
         nargs=2,
         help="Range of lines to explore in detail")
 
     return parser.parse_args()
 
-def plot_curuc_for_pixels(ds, lines, x_all, y_all):
+def _S_radsi_to_K(S, srf):
+    S = S.values * rad_u["si"]**2
+    return numpy.sign(S) * numpy.sqrt(numpy.abs(S)).to("K", "radiance", srf=srf)**2
+
+def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     """Plot some CURUC stats for specific pixels
 
     Produce the plots for figures 3 and 4 from the easyFCDR paper.
     """
-    start = ds["time"].isel(y=lines[0])
-    end = ds["time"].isel(y=lines[1])
+    start = ds["time"].isel(y=lines[0]).values.astype("M8[ms]").item()
+    end = ds["time"].isel(y=lines[1]).values.astype("M8[ms]").item()
 
     # recalculate FCDR to get CURUC specifically for this segment
-    fg = FCDRGenerator(None, None, [], no_harm=False) # no storing, no period
-    ds_new = fg.get_piece(start, end, reset_context=True)
-    raise NotImplementedError("I'm not quite there yet")
+    fg = FCDRGenerator(ds.satellite, 
+        datetime.datetime.now(),
+        datetime.datetime.now(), [], no_harm=False) # no storing, dates not relevant
+    (ds_new, sensRe) = fg.get_piece(start, end, return_more=True, reset_context=True)
+
+    (Δ_l, Δ_e, R_ci, R_cs, Δ_l_full, Δ_e_full, D) = metrology.calc_corr_scale_channel(
+        fg.fcdr._effects, sensRe, ds_new, flags=fg.fcdr._flags,
+        robust=True, return_vectors=True, interpolate_lengths=True,
+        sampling_l=1, sampling_e=1, return_locals=True)
+
+    # get centroid
+    srf = typhon.physics.units.em.fromRTTOV(
+        typhon.datasets.tovs.norm_tovs_name(ds["satellite"], mode="RTTOV"),
+        "hirs", channel)
+    cntr = srf.centroid().to("µm", "sp")
+    shared_tit = (f"{ds['satellite']:s} channel {channel:d} ({cntr:~}) ")
+    period_tit = f"{start:%Y-%m-%d %H:%M:%S} – {end:%H:%M:%S}"
+
+    shared_fn = (f"{ds['satellite']:s}_ch{channel:d}_{start:%Y%m%d%H%M%S}-{end:%H%M%S}")
+    # cross-element error correlation function
+    (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 4.5))
+    a.plot(Δ_e_full["Δp"], Δ_e_full.sel(n_c=channel))
+    a.set_xlabel("Δe")
+    a.set_ylabel("$[r_e]_{\Delta e}$")
+    a.set_title("Cross-element error correlation function "
+                + shared_tit + period_tit)
+    pyatmlab.graphics.print_or_show(f, False,
+        "cross_element_error_correlation_function_"+shared_fn+".")
+
+    # cross-line error correlation function
+    (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 4.5))
+    a.plot(Δ_l_full["Δp"], Δ_l_full.sel(n_c=channel))
+    a.set_xlabel("Δl")
+    a.set_ylabel("$[r_l]_{\Delta l}$")
+    a.set_title("Cross-line error correlation function "
+                + shared_tit + period_tit)
+    pyatmlab.graphics.print_or_show(f, False,
+        "cross_line_error_correlation_function_"+shared_fn+".")
+
+    for (x, y) in zip(x_all, y_all):
+        scnlinlab = "scanline at {:%Y-%m-%d %H:%M:%S".format(
+            ds["time"].isel(y=y).values.astype("M8[ms]").item())
+        # cross-element error covariance matrix for line
+        (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 8))
+        S = D["S_esΛl"][channel-1, y-lines[0], :, :]
+        S = _S_radsi_to_K(S, srf=srf)
+        p = a.pcolor(S)
+        cb = f.colorbar(p, cax=a)
+        cb.set_label("$S_{es}^l$ [K$^2$]")
+        a.set_xlabel("e")
+        a.set_ylabel(a.get_xlabel())
+        a.set_title("Cross-element error covariance matrix "
+            + shared_tit
+            + scnlinlab)
+        pyatmlab.graphics.print_or_show(f,
+            "cross_element_S" + shared_fn +
+            f"x{x:d}y{y:d}.")
+
+        # cross-line error covariance matrix for element
+        S = D["S_leΛe"][channel-1, x, :, :]
+        S = _S_radsi_to_K(S, srf=srf)
+        p = a.pcolor(S)
+        cb = f.colorbar(p, cax=a)
+        cb.set_label("$S_{ls}^e$ [K$^2$]")
+        a.set_xlabel("l")
+        a.set_ylabel(a.get_xlabel())
+        a.set_title("Cross-line error covariance matrix "
+            + shared_tit
+            + f"element {x:d}")
+        pyatmlab.graphics.print_or_show(f,
+            "cross_line_S" + shared_fn +
+            f"_x{x:d}y{y:d}.")
+
+        # cross-channel error covariance matrix
+        S = D["S_csΛp"].isel(n_l=y-lines[0], n_e=x)
+        S = _S_radsi_to_K(S, srf=srf)
+        p = a.pcolor(S)
+        cb = f.colorbar(p, cax=a)
+        cb.set_label("$S_{cs}^p$ [K$^2$]")
+        a.set_xlabel("channel")
+        a.set_ylabel(a.get_xlabel())
+        a.set_title("Cross-channel error covariance matrix "
+            + shared_tit
+            + scnlinlab
+            + f"element {x:d}")
 
 def plot_compare_correlation_scanline(ds):
     ds5 = ds.sel(calibrated_channel=5)
@@ -74,11 +172,13 @@ def plot_compare_correlation_scanline(ds):
 
 def main():
     p = parse_cmdline()
+    set_logger(logging.DEBUG)
     plot_curuc_for_pixels(
         xarray.open_dataset(p.path),
         lines=p.lines,
         x_all=p.x_all,
-        y_all=p.y_all)
+        y_all=p.y_all,
+        channel=p.channel)
 
     sys.exit("The development of this script is still in progress.")
     plot_compare_correlation_scanline(xarray.open_dataset(p.path))
