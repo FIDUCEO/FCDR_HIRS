@@ -37,6 +37,7 @@ import cartopy.crs
 import typhon.plots.plots
 from .. import math as fcm
 from .. import common
+from . import inspect_orbit_curuc
 
 import pyatmlab.graphics
 
@@ -81,6 +82,10 @@ def parse_cmdline():
              "values in brightness temperature.  For example, 50 marks "
              "the median BT pixel, 10 the pixel corresponding to the 10th "
              "percentile, etc. ")
+
+    parser.add_argument("--do-curuc", action="store_true", default=False,
+        help="Follow orbit plot by calling hirs_curuc_checker")
+
     p = parser.parse_args()
     return p
 
@@ -98,8 +103,10 @@ class OrbitPlotter:
         (fig, ax_all, cax_all) = self.prepare_figure_and_axes(channels)
         self.fig = fig
         self.ax_all = ax_all
+        self.selections = {}
         for ch in channels:
-            self.plot_channel(ch, ax_all[ch], cax_all[ch],
+            self.selections[ch] = self.plot_channel(
+                ch, ax_all[ch], cax_all[ch],
                 mark_pixels=mark_pixels)
 #        pyatmlab.graphics.print_or_show(
 #            f, False, filename)
@@ -175,6 +182,8 @@ class OrbitPlotter:
         end = self.end
         dsx = dsx.isel(y=slice(start, end))
         print(f"Channel {ch:d}:")
+        linerange = [dsx.isel(y=0)["y"].item(),
+                     dsx.isel(y=-1)["y"].item()]
         print("Selecting lines", dsx.isel(y=0)["y"].item(), "to", dsx.isel(y=-1)["y"].item(), "inclusive")
         print("Covering {start:%Y-%m-%d %H:%M:%S}–{end:%H:%M:%S}".format(
                 start=dsx.isel(y=0)["time"].values.astype("datetime64[ms]").item(),
@@ -219,6 +228,7 @@ class OrbitPlotter:
                 dsx["quality_scanline_bitmask"],
                 "Quality scanline bitmask")
 
+        pixels = []
         if mark_pixels:
             p_vals = scipy.stats.scoreatpercentile(
                 dsx["bt"].values.ravel(), mark_pixels,
@@ -234,6 +244,8 @@ class OrbitPlotter:
                 for ax in ax_all:
                     ax.plot(lon, lat, marker='o', markersize=5, color="red")
                     ax.text(lon, lat, lab, fontsize=20, color="red")
+                pixels.append((dsp["x"].item(), dsp["y"].item()))
+        return (linerange, pixels)
 
 
     def _plot_to(self, ax, cax, t0, t1, val, clab,
@@ -320,6 +332,17 @@ def main():
         plot_bitmasks=p.with_bitmasks,
         mark_pixels=p.mark_pixels)
     op.write()
+
+    if p.do_curuc:
+        for ch in p.channels:
+            (lines, pixels) = op.selections[ch]
+            (xpix, ypix) = zip(pixels)
+            inspect_orbit_curuc.plot_curuc_for_pixels(
+                xarray.open_dataset(p.arg1),
+                lines=lines,
+                x_all=xpix,
+                y_all=ypix,
+                channel=ch)
 #    p = parsed_cmdline 
 #    start_time = datetime.datetime.strptime(p.start_time,
 #        "%Y-%m-%dT%H:%M")

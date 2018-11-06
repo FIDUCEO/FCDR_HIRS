@@ -22,13 +22,20 @@ from typhon.physics.units.common import radiance_units as rad_u
 import pyatmlab.graphics
 
 from ..processing.generate_fcdr import FCDRGenerator
-from ..common import set_logger
+from ..common import (set_logger, add_to_argparse)
 from .. import metrology
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser = add_to_argparse(parser,
+        include_period=False,
+        include_sat=False,
+        include_channels=False,
+        include_temperatures=False,
+        include_debug=False)
 
     parser.add_argument("path", action="store", type=pathlib.Path,
         help="Path for which to show CURUC stuff")
@@ -107,6 +114,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     pyatmlab.graphics.print_or_show(f, False,
         "curuc/cross_line_error_correlation_function_"+shared_fn+".")
 
+    cmap = "magma_r"
     for (x, y) in zip(x_all, y_all):
         scnlinlab = "scanline at {:%Y-%m-%d %H:%M:%S}".format(
             ds["time"].isel(y=y).values.astype("M8[ms]").item())
@@ -114,10 +122,10 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_esΛl"][channel-1, y-lines[0], :, :]
         S = _S_radsi_to_K(S, srf=srf)
-        p = a.pcolor(S.m)
+        p = a.pcolor(S.m, cmap=cmap)
         cb = f.colorbar(p)
         cb.set_label("$S_{es}^l$ [K$^2$]")
-        a.set_xlabel("e")
+        a.set_xlabel("$\Delta$e")
         a.set_ylabel(a.get_xlabel())
         a.set_title("Cross-element error covariance matrix "
             + shared_tit
@@ -132,10 +140,10 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_lsΛe"][channel-1, x, :, :]
         S = _S_radsi_to_K(S, srf=srf)
-        p = a.pcolor(S.m)
+        p = a.pcolor(S.m, cmap=cmap)
         cb = f.colorbar(p)
         cb.set_label("$S_{ls}^e$ [K$^2$]")
-        a.set_xlabel("l")
+        a.set_xlabel("$\Delta$l")
         a.set_ylabel(a.get_xlabel())
         a.set_title("Cross-line error covariance matrix "
             + "\n"
@@ -150,7 +158,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_csΛp"].sel(n_l=y-lines[0], n_e=x)
         S = _S_radsi_to_K(S, srf=srf)
-        p = a.pcolor(S.m)
+        p = a.pcolor(S.m, cmap=cmap)
         cb = f.colorbar(p)
         cb.set_label("$S_{cs}^p$ [K$^2$]")
         a.set_xlabel("channel")
@@ -161,6 +169,10 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
             + scnlinlab
             + f" element {x:d}")
         a.set_aspect("equal")
+        a.set_xticks(numpy.arange(ds.dims["channel"]))
+        a.set_xticklabels([str(x) for x in ds["channel"]])
+        a.set_yticks(numpy.arange(ds.dims["channel"]))
+        a.set_yticklabels([str(x) for x in ds["channel"]])
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_channel_S" + shared_fn +
             f"_x{x:d}y{y:d}.")
@@ -186,7 +198,7 @@ def plot_compare_correlation_scanline(ds):
 
 def main():
     p = parse_cmdline()
-    set_logger(logging.DEBUG)
+    set_logger(logging.DEBUG if p.verbose else logging.INFO)
     plot_curuc_for_pixels(
         xarray.open_dataset(p.path),
         lines=p.lines,

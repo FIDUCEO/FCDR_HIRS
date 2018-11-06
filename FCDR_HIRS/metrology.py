@@ -1137,7 +1137,17 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                 (locals(),) if return_locals else ())
         else:
             raise FCDRError(errmsg)
-
+    else:
+        rat = brokenline.sum()/brokenline.size
+        if rat > 0.75:
+            lev = logger.warning
+        elif 0.1 < rat < 0.75:
+            lev = logger.info
+        else:
+            lev = logger.debug
+        lev(f"In correlation calculation, "
+            f"{brokenline.sum().item():d}/{brokenline.size:d} "
+            "lines invalid")
 
     ## Copying data to correct format ##
 
