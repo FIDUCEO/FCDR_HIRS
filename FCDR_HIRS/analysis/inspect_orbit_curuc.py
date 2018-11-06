@@ -75,24 +75,27 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         robust=True, return_vectors=True, interpolate_lengths=True,
         sampling_l=1, sampling_e=1, return_locals=True)
 
+    del sensRe # this causes pyatmlabs get_verbose_stack_description to
+               # fail as pprint.pprint can't sort Relational objects
+
     # get centroid
-    srf = typhon.physics.units.em.fromRTTOV(
-        typhon.datasets.tovs.norm_tovs_name(ds["satellite"], mode="RTTOV"),
+    srf = typhon.physics.units.em.SRF.fromRTTOV(
+        typhon.datasets.tovs.norm_tovs_name(ds.satellite, mode="RTTOV"),
         "hirs", channel)
     cntr = srf.centroid().to("µm", "sp")
-    shared_tit = (f"{ds['satellite']:s} channel {channel:d} ({cntr:~}) ")
+    shared_tit = (f"{ds.satellite:s} channel {channel:d} ({cntr:.4~}) ")
     period_tit = f"{start:%Y-%m-%d %H:%M:%S} – {end:%H:%M:%S}"
 
-    shared_fn = (f"{ds['satellite']:s}_ch{channel:d}_{start:%Y%m%d%H%M%S}-{end:%H%M%S}")
+    shared_fn = (f"{ds.satellite:s}_ch{channel:d}_{start:%Y%m%d%H%M%S}-{end:%H%M%S}")
     # cross-element error correlation function
     (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 4.5))
     a.plot(Δ_e_full["Δp"], Δ_e_full.sel(n_c=channel))
     a.set_xlabel("Δe")
     a.set_ylabel("$[r_e]_{\Delta e}$")
     a.set_title("Cross-element error correlation function "
-                + shared_tit + period_tit)
+                + shared_tit + "\n" + period_tit)
     pyatmlab.graphics.print_or_show(f, False,
-        "cross_element_error_correlation_function_"+shared_fn+".")
+        "curuc/cross_element_error_correlation_function_"+shared_fn+".")
 
     # cross-line error correlation function
     (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 4.5))
@@ -100,12 +103,12 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     a.set_xlabel("Δl")
     a.set_ylabel("$[r_l]_{\Delta l}$")
     a.set_title("Cross-line error correlation function "
-                + shared_tit + period_tit)
+                + shared_tit + "\n" + period_tit)
     pyatmlab.graphics.print_or_show(f, False,
-        "cross_line_error_correlation_function_"+shared_fn+".")
+        "curuc/cross_line_error_correlation_function_"+shared_fn+".")
 
     for (x, y) in zip(x_all, y_all):
-        scnlinlab = "scanline at {:%Y-%m-%d %H:%M:%S".format(
+        scnlinlab = "scanline at {:%Y-%m-%d %H:%M:%S}".format(
             ds["time"].isel(y=y).values.astype("M8[ms]").item())
         # cross-element error covariance matrix for line
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 8))
@@ -119,12 +122,12 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_title("Cross-element error covariance matrix "
             + shared_tit
             + scnlinlab)
-        pyatmlab.graphics.print_or_show(f,
-            "cross_element_S" + shared_fn +
+        pyatmlab.graphics.print_or_show(f, False,
+            "curuc/cross_element_S" + shared_fn +
             f"x{x:d}y{y:d}.")
 
         # cross-line error covariance matrix for element
-        S = D["S_leΛe"][channel-1, x, :, :]
+        S = D["S_lsΛe"][channel-1, x, :, :]
         S = _S_radsi_to_K(S, srf=srf)
         p = a.pcolor(S)
         cb = f.colorbar(p, cax=a)
@@ -134,12 +137,12 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_title("Cross-line error covariance matrix "
             + shared_tit
             + f"element {x:d}")
-        pyatmlab.graphics.print_or_show(f,
-            "cross_line_S" + shared_fn +
+        pyatmlab.graphics.print_or_show(f, False,
+            "curuc/cross_line_S" + shared_fn +
             f"_x{x:d}y{y:d}.")
 
         # cross-channel error covariance matrix
-        S = D["S_csΛp"].isel(n_l=y-lines[0], n_e=x)
+        S = D["S_csΛp"].sel(n_l=y-lines[0], n_e=x)
         S = _S_radsi_to_K(S, srf=srf)
         p = a.pcolor(S)
         cb = f.colorbar(p, cax=a)
@@ -150,6 +153,9 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
             + shared_tit
             + scnlinlab
             + f"element {x:d}")
+        pyatmlab.graphics.print_or_show(f, False,
+            "curuc/cross_channel_S" + shared_fn +
+            f"_x{x:d}y{y:d}.")
 
 def plot_compare_correlation_scanline(ds):
     ds5 = ds.sel(calibrated_channel=5)
