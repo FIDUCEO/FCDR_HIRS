@@ -115,7 +115,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         "curuc/cross_line_error_correlation_function_"+shared_fn+".png")
 
     cmap = "magma_r"
-    imshow_args = {"cmap": cmap, "interpolation": None, "origin": "lower"}
+    imshow_args = {"cmap": cmap, "interpolation": None, "origin": "upper"}
     for (x, y) in zip(x_all, y_all):
         scnlinlab = "scanline at {:%Y-%m-%d %H:%M:%S}".format(
             ds["time"].isel(y=y).values.astype("M8[ms]").item())
