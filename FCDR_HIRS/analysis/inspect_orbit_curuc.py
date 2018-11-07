@@ -97,8 +97,8 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     # cross-element error correlation function
     (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 4.5))
     a.plot(Δ_e_full["Δp"], Δ_e_full.sel(n_c=channel))
-    a.set_xlabel("Δe")
-    a.set_ylabel("$[r_e]_{\Delta e}$")
+    a.set_xlabel("separation between elements")
+    a.set_ylabel("mean correlation coefficient")
     a.set_title("Cross-element error correlation function "
                 + shared_tit + "\n" + period_tit)
     pyatmlab.graphics.print_or_show(f, False,
@@ -107,15 +107,15 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     # cross-line error correlation function
     (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 4.5))
     a.plot(Δ_l_full["Δp"], Δ_l_full.sel(n_c=channel))
-    a.set_xlabel("Δl")
-    a.set_ylabel("$[r_l]_{\Delta l}$")
+    a.set_xlabel("separation between lines")
+    a.set_ylabel("mean correlation coefficient")
     a.set_title("Cross-line error correlation function "
                 + shared_tit + "\n" + period_tit)
     pyatmlab.graphics.print_or_show(f, False,
         "curuc/cross_line_error_correlation_function_"+shared_fn+".png")
 
     cmap = "magma_r"
-    imshow_args = {"cmap": cmap, "interpolation": None, "origin": "upper"}
+    imshow_args = {"cmap": cmap, "interpolation": None, "origin": "upper"
     for (x, y) in zip(x_all, y_all):
         scnlinlab = "scanline at {:%Y-%m-%d %H:%M:%S}".format(
             ds["time"].isel(y=y).values.astype("M8[ms]").item())
@@ -126,8 +126,8 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         #p = a.pcolor(S.m, cmap=cmap)
         p = a.imshow(S.m, **imshow_args)
         cb = f.colorbar(p)
-        cb.set_label("$S_{es}^l$ [K$^2$]")
-        a.set_xlabel("$\Delta$e")
+        cb.set_label("Covariance [K$^2$]")
+        a.set_xlabel("separation between elements")
         a.set_ylabel(a.get_xlabel())
         a.set_title("Cross-element error covariance matrix "
             + shared_tit
@@ -145,8 +145,8 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         #p = a.pcolor(S.m, cmap=cmap)
         p = a.imshow(S.m, **imshow_args)
         cb = f.colorbar(p)
-        cb.set_label("$S_{ls}^e$ [K$^2$]")
-        a.set_xlabel("$\Delta$l")
+        cb.set_label("Covariance [K$^2$]")
+        a.set_xlabel("separation between lines")
         a.set_ylabel(a.get_xlabel())
         a.set_title("Cross-line error covariance matrix "
             + "\n"
@@ -164,7 +164,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         #p = a.pcolor(S.m, cmap=cmap)
         p = a.imshow(S.m, **imshow_args)
         cb = f.colorbar(p)
-        cb.set_label("$S_{cs}^p$ [K$^2$]")
+        cb.set_label("Covariance [K$^2$]")
         a.set_xlabel("channel")
         a.set_ylabel(a.get_xlabel())
         a.set_title("Cross-channel error covariance matrix "
