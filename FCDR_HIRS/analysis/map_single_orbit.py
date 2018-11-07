@@ -17,7 +17,7 @@ There is the option to mark one or more pixels.
 
 import logging
 import argparse
-
+import sys
 
 import itertools
 import math
@@ -178,6 +178,8 @@ class OrbitPlotter:
         ok = (((ds["quality_channel_bitmask"].astype("uint8")&1)==0) &
               ((ds["quality_scanline_bitmask"].astype("uint8")&1)==0))
         dsx = ds.sel(channel=ch).isel(y=ok.sel(channel=ch))
+        if ok.sel(channel=ch).sum() < 20:
+            sys.exit("Less than 20 lines left after filtering, no plot")
         start = self.start
         end = self.end
         dsx = dsx.isel(y=slice(start, end))
@@ -230,9 +232,9 @@ class OrbitPlotter:
 
         pixels = []
         if mark_pixels:
-            p_vals = scipy.stats.scoreatpercentile(
+            p_vals = numpy.nanpercentile(
                 dsx["bt"].values.ravel(), mark_pixels,
-                interpolation_method="lower")
+                interpolation="lower")
             for (lab, p_val) in zip(string.ascii_uppercase, p_vals):
                 (ycoor, xcoor) = [c[0].item() for c in
                     (dsx["bt"]==p_val).values.nonzero()]
@@ -244,7 +246,8 @@ class OrbitPlotter:
                 for ax in ax_all:
                     ax.plot(lon, lat, marker='o', markersize=5, color="red")
                     ax.text(lon, lat, lab, fontsize=20, color="red")
-                pixels.append((dsp["x"].item(), dsp["y"].item()))
+                pixels.append((int(dsp["x"].item()),
+                               int(dsp["y"].item())))
         return (linerange, pixels)
 
 
@@ -336,7 +339,7 @@ def main():
     if p.do_curuc:
         for ch in p.channels:
             (lines, pixels) = op.selections[ch]
-            (xpix, ypix) = zip(pixels)
+            (xpix, ypix) = zip(*pixels)
             inspect_orbit_curuc.plot_curuc_for_pixels(
                 xarray.open_dataset(p.arg1),
                 lines=lines,

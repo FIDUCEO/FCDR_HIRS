@@ -102,7 +102,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     a.set_title("Cross-element error correlation function "
                 + shared_tit + "\n" + period_tit)
     pyatmlab.graphics.print_or_show(f, False,
-        "curuc/cross_element_error_correlation_function_"+shared_fn+".")
+        "curuc/cross_element_error_correlation_function_"+shared_fn+".png")
 
     # cross-line error correlation function
     (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 4.5))
@@ -112,9 +112,10 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     a.set_title("Cross-line error correlation function "
                 + shared_tit + "\n" + period_tit)
     pyatmlab.graphics.print_or_show(f, False,
-        "curuc/cross_line_error_correlation_function_"+shared_fn+".")
+        "curuc/cross_line_error_correlation_function_"+shared_fn+".png")
 
     cmap = "magma_r"
+    imshow_args = {"cmap": cmap, "interpolation": None, "origin": "lower"}
     for (x, y) in zip(x_all, y_all):
         scnlinlab = "scanline at {:%Y-%m-%d %H:%M:%S}".format(
             ds["time"].isel(y=y).values.astype("M8[ms]").item())
@@ -122,7 +123,8 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_esΛl"][channel-1, y-lines[0], :, :]
         S = _S_radsi_to_K(S, srf=srf)
-        p = a.pcolor(S.m, cmap=cmap)
+        #p = a.pcolor(S.m, cmap=cmap)
+        p = a.imshow(S.m, **imshow_args)
         cb = f.colorbar(p)
         cb.set_label("$S_{es}^l$ [K$^2$]")
         a.set_xlabel("$\Delta$e")
@@ -134,13 +136,14 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_aspect("equal")
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_element_S" + shared_fn +
-            f"x{x:d}y{y:d}.")
+            f"x{x:d}y{y:d}.png")
 
         # cross-line error covariance matrix for element
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_lsΛe"][channel-1, x, :, :]
         S = _S_radsi_to_K(S, srf=srf)
-        p = a.pcolor(S.m, cmap=cmap)
+        #p = a.pcolor(S.m, cmap=cmap)
+        p = a.imshow(S.m, **imshow_args)
         cb = f.colorbar(p)
         cb.set_label("$S_{ls}^e$ [K$^2$]")
         a.set_xlabel("$\Delta$l")
@@ -152,13 +155,14 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_aspect("equal")
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_line_S" + shared_fn +
-            f"_x{x:d}y{y:d}.")
+            f"_x{x:d}y{y:d}.png")
 
         # cross-channel error covariance matrix
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_csΛp"].sel(n_l=y-lines[0], n_e=x)
         S = _S_radsi_to_K(S, srf=srf)
-        p = a.pcolor(S.m, cmap=cmap)
+        #p = a.pcolor(S.m, cmap=cmap)
+        p = a.imshow(S.m, **imshow_args)
         cb = f.colorbar(p)
         cb.set_label("$S_{cs}^p$ [K$^2$]")
         a.set_xlabel("channel")
@@ -170,12 +174,12 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
             + f" element {x:d}")
         a.set_aspect("equal")
         a.set_xticks(numpy.arange(ds.dims["channel"]))
-        a.set_xticklabels([str(x) for x in ds["channel"]])
+        a.set_xticklabels([str(x.item()) for x in ds["channel"]])
         a.set_yticks(numpy.arange(ds.dims["channel"]))
-        a.set_yticklabels([str(x) for x in ds["channel"]])
+        a.set_yticklabels([str(x.item()) for x in ds["channel"]])
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_channel_S" + shared_fn +
-            f"_x{x:d}y{y:d}.")
+            f"_x{x:d}y{y:d}.png")
 
 def plot_compare_correlation_scanline(ds):
     ds5 = ds.sel(calibrated_channel=5)
