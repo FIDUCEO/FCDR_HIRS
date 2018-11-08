@@ -1091,7 +1091,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             n_e=all_coords["n_e"],
             n_c=all_coords["n_c"])
 
-    fracbad = bad.sum()/bad.size
+    fracbad = (bad.sum()/bad.size).item()
     (logger.error if fracbad > 0.9 
      else logger.warning if 0.1 < fracbad < 0.9
      else logger.info)(f"CURUC: {fracbad:.2%} of pixels in segment bad")
