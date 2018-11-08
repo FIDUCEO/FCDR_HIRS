@@ -1060,6 +1060,29 @@ def calc_corr_scale_channel(effects, sensRe, ds,
            xarray.DataArray((flags["scanline"].isel(scanline_earth=all_coords["n_l"]) & _fcdr_defs.FlagsScanline.DO_NOT_USE).values!=0, dims=flags["scanline"].dims, coords=flags["scanline"].isel(scanline_earth=all_coords["n_l"]).coords) |
            xarray.DataArray((flags["pixel"].isel(scanline_earth=all_coords["n_l"]) & _fcdr_defs.FlagsPixel.DO_NOT_USE).values!=0, dims=flags["pixel"].dims, coords=flags["pixel"].isel(scanline_earth=all_coords["n_l"]).coords))
 
+    # I want to set bad pixels not to nan, but to some interpolated value
+    # or the median (https://github.com/FIDUCEO/FCDR_HIRS/issues/322).
+    # The 'bad' array is based on the sampled resolution, but the sampling
+    # operation counts as advanced indexing (see
+    # https://docs.scipy.org/doc/numpy-1.15.1/reference/arrays.indexing.html#advanced-indexing
+    # or http://xarray.pydata.org/en/stable/indexing.html#copies-vs-views). 
+    # Advanced indexing returns a copy, although __setitem__ still works
+    # (https://stackoverflow.com/a/37842121/974555), this means I can't
+    # assign to a chained advanced assignment
+    # (ds["T_b"]{"scanline:earth":all_coords["n_l"]}[bad] = 42 will have
+    # no result).  Therefore, I'm generating a special version of 'bad'
+    # that applies before the sampling.
+
+    fullbad = (xarray.DataArray(((flags["channel"] & _fcdr_defs.FlagsChannel.DO_NOT_USE).values!=0), dims=flags["channel"].dims, coords=flags["channel"].coords) |
+           xarray.DataArray((flags["scanline"] & _fcdr_defs.FlagsScanline.DO_NOT_USE).values!=0, dims=flags["scanline"].dims, coords=flags["scanline"].coords) |
+           xarray.DataArray((flags["pixel"] & _fcdr_defs.FlagsPixel.DO_NOT_USE).values!=0, dims=flags["pixel"].dims, coords=flags["pixel"].coords))
+
+    ds = ds.copy() # don't want to change it for the caller…
+    for (k, v) in ((k, v) for (k, v) in ds.data_vars.items()
+                    if set(v.dims) == set(fullbad.dims)):
+        v.values[fullbad.transpose(*v.dims).values] = numpy.median(
+            v.values[(~fullbad).transpose(*v.dims).values])
+
     bad = bad.rename(
         {"scanline_earth": "n_l",
          "scanpos": "n_e",
@@ -1068,9 +1091,14 @@ def calc_corr_scale_channel(effects, sensRe, ds,
             n_e=all_coords["n_e"],
             n_c=all_coords["n_c"])
 
+    fracbad = bad.sum()/bad.size
+    (logger.error if fracbad > 0.9 
+     else logger.warning if 0.1 < fracbad < 0.9
+     else logger.info)(f"CURUC: {fcacbad:.2%} of pixels in segment bad")
+
     # Decide how to treat 
     brokenchan = bad.any("n_e").all("n_l")
-    brokenline = bad.sel(n_c=~brokenchan).any("n_e").any("n_c")
+    brokenline = bad.sel(n_c=~brokenchan).all("n_e").all("n_c")
     if brokenchan.all() or brokenline.all():
         errmsg = ("No valid data found, cannot calculate "
             "correlation length scales")
