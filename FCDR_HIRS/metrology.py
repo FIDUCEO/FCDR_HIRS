@@ -1094,7 +1094,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
     fracbad = bad.sum()/bad.size
     (logger.error if fracbad > 0.9 
      else logger.warning if 0.1 < fracbad < 0.9
-     else logger.info)(f"CURUC: {fcacbad:.2%} of pixels in segment bad")
+     else logger.info)(f"CURUC: {fracbad:.2%} of pixels in segment bad")
 
     # Decide how to treat 
     brokenchan = bad.any("n_e").all("n_l")
