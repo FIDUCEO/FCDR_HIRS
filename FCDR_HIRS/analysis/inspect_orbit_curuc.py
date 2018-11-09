@@ -61,18 +61,11 @@ def parse_cmdline():
 
     return parser.parse_args()
 
-def _S_radsi_to_K(S, srf, ref_L):
+def _S_radsi_to_K(S, u_radK):
     """Convert covariance matrix in radiance to one in BT
 
-    For cross-line and cross-element covariances, this is done by adding
-    sqrt(S) to ref_L, converting to BT, then subtracting ref_BT and
-    squaring.
-
-    For cross-channel covariances, it is more complicated.
-    In pseudocode::
-
-        S_bt[i, j] = (((ref_L[i] + u_L[i, j]).to("K") - ref_bt[i]) *
-                      ((ref_L[j] + u_L[i, j]).to("K") - ref_bt[j]))
+    This is done by first converting covariance matrices to correlation
+    matrices using one set of uncertainties, then back with another.
 
     Arguments:
 
@@ -80,53 +73,16 @@ def _S_radsi_to_K(S, srf, ref_L):
 
             Covariance matrix in rad_si units
 
-        srf
+        u_radK
 
-            Either single typhon.physics.units.em.SRF or list
-            thereoff
-
-        ref_L
-
-            Reference radiances in rad_si units, relative to which the
-            convertion to S in BT will be performed
+            Uncertainties in brightens temperature in K.
 
     """
-    S_L = S.values * rad_u["si"]**2
-    sgn = numpy.sign(S_L)
-    u_L = numpy.sqrt(numpy.abs(S_L))
-    if isinstance(ref_L, (numbers.Number, numpy.ndarray)):
-        ref_L = ureg.Quantity(ref_L, rad_u["si"])
-    elif isinstance(ref_L, xarray.DataArray):
-        ref_L = UADA(ref_L)
-        if not "units" in ref_L.attrs.keys():
-            ref_L.attrs["units"] = rad_u["si"]
-    else:
-        raise TypeError("expected number of array for ref_L, got {!s}".format(
-            type(ref_L)))
-
-    if isinstance(srf, list): # FIXME: should be sequence more flexible
-        ref_bt = xarray.zeros_like(ref_L)
-        ref_bt.attrs["units"] = "K"
-        ref_bt.values[...] = [L.to("K", "radiance", srf=srf[i]) for (i, L) in enumerate(ref_L)]
-        u_L = UADA(
-            u_L.m,
-            attrs={"units":u_L.u},
-            dims=("calibrated_channel", "calibrated_channel"),
-            coords={"calibrated_channel": ref_L["calibrated_channel"]})
-        ref_bt = ureg.Quantity(ref_bt.values, ref_bt.attrs["units"])
-        S_bt = sgn * numpy.array(
-            [((ureg.Quantity(ref_L.values[i]+u_L.values[i,j], rad_u["si"]).to("K", "radiance", srf=srf1)-ref_bt[i]) *
-              (ureg.Quantity(ref_L.values[j]+u_L.values[i,j], rad_u["si"]).to("K", "radiance", srf=srf2)-ref_bt[j])).m
-             for (i, srf1) in enumerate(srf)
-             for (j, srf2) in enumerate(srf)]).reshape(
-                (len(srf), len(srf))) # transpose?
-        S_bt = ureg.Quantity(S_bt, ureg.K**2)
-    else: # for each channel
-        ref_bt = ref_L.to("K", "radiance", srf=srf)
-        u_bt = (ref_L + u_L).to("K", "radiance", srf=srf)-ref_bt
-        S_bt = sgn*u_bt**2
-
-    return S_bt
+    S_L = ureg.Quantity(S.values, rad_u["si"]**2)
+    uRe = ureg.Quantity(numpy.sqrt(numpy.diag(S_L)), rad_u["si"])
+    R = S_L / (uRe[:, numpy.newaxis]*uRe[numpy.newaxis, :])  
+    S_BT = R * (u_radK[:, numpy.newaxis]*u_radK[numpy.newaxis, :])
+    return S_BT
 
 def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     """Plot some CURUC stats for specific pixels
@@ -186,8 +142,9 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         # cross-element error covariance matrix for line
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_esΛl"][channel-1, y-lines[0], :, :]
-        S = _S_radsi_to_K(S, srf=srf,
-            ref_L=ds_new.isel(scanline_earth=y_new,scanpos=x,calibrated_channel=channel)["R_e"].item())
+        # WARNING FIXME: what is the correct BT to put in?
+        S = _S_radsi_to_K(S,
+             u_radK=ds_new.sel(calibrated_channel=channel).isel(scanline_earth=y_new)["u_T_b_Earth_nonrandom"])
         #p = a.pcolor(S.m, cmap=cmap)
         p = a.imshow(S.m, **imshow_args)
         cb = f.colorbar(p)
@@ -206,8 +163,9 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         # cross-line error covariance matrix for element
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_lsΛe"][channel-1, x, :, :]
-        S = _S_radsi_to_K(S, srf=srf,
-            ref_L=ds_new.isel(scanline_earth=y_new,scanpos=x,calibrated_channel=channel)["R_e"].item())
+        # WARNING FIXME: what is the correct BT to put in?
+        S = _S_radsi_to_K(S,
+             u_radK=ds_new.sel(calibrated_channel=channel).isel(scanpos=x)["u_T_b_Earth_nonrandom"])
         #p = a.pcolor(S.m, cmap=cmap)
         p = a.imshow(S.m, **imshow_args)
         cb = f.colorbar(p)
@@ -226,8 +184,9 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         # cross-channel error covariance matrix
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         S = D["S_csΛp"].sel(n_l=y-lines[0], n_e=x)
-        S = _S_radsi_to_K(S, srf=fg.fcdr.srfs,
-            ref_L=ds_new.isel(scanline_earth=y_new,scanpos=x)["R_e"])
+        # WARNING FIXME: what is the correct BT to put in?
+        S = _S_radsi_to_K(S,
+             u_radK=ds_new.isel(scanpos=x,scanline_earth=y_new)["u_T_b_Earth_nonrandom"])
         #p = a.pcolor(S.m, cmap=cmap)
         p = a.imshow(S.m, vmax=sorted(S.m.flat)[-2], **imshow_args)
         cb = f.colorbar(p)
