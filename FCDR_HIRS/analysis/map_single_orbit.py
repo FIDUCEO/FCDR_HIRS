@@ -112,7 +112,7 @@ class OrbitPlotter:
 #            f, False, filename)
 
     def prepare_figure_and_axes(self, channels):
-        ncol = 6 if self.plot_bitmasks else 4
+        ncol = 7 if self.plot_bitmasks else 4
         #ncol = int(math.ceil(math.sqrt(len(channels))))
         nrow = len(channels)
         #nrow = int(math.floor(math.sqrt(len(channels))))
@@ -163,6 +163,7 @@ class OrbitPlotter:
         if self.plot_bitmasks:
             ax_all[channels[0]][4].set_title("Quality channel bitmask")
             ax_all[channels[0]][5].set_title("Quality scanline bitmask")
+            ax_all[channels[0]][6].set_title("Quality pixel bitmask")
         f.suptitle("FIDCUEO HIRS FCDR " + self.ds.attrs["satellite"] +
             " {start:%Y-%m-%d %H:%M:%S}–{end:%H:%M:%S}".format(
                 start=self.ds.isel(y=self.start)["time"].values.astype("datetime64[ms]").item(),
@@ -229,6 +230,9 @@ class OrbitPlotter:
             self.plot_bitfield(ax_all[5], cax_all[5], t0, t1,
                 dsx["quality_scanline_bitmask"],
                 "Quality scanline bitmask")
+            self.plot_bitfield(ax_all[6], cax_all[6], t0, t1,
+                dsx["quality_pixel_bitmask"],
+                "Quality pixel bitmask")
 
         pixels = []
         if mark_pixels:
@@ -307,7 +311,10 @@ class OrbitPlotter:
                     numpy.ma.masked_where(mask, t0),
                     numpy.ma.masked_where(mask, t1),
                     numpy.ma.masked_where(mask,
-                        numpy.tile(da.astype("uint8").values, [56, 1]).T),
+                        da.astype("uint8").values
+                            if "x" in da.dims
+                            else numpy.tile(da.astype("uint8").values,
+                        [56, 1]).T),
                     flagdefs,
                     cmap="Set3",
                     cax=cax,
