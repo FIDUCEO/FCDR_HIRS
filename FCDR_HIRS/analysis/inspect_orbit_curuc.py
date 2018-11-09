@@ -136,7 +136,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     cmap = "magma_r"
     imshow_args = {"cmap": cmap, "interpolation": None, "origin": "upper"}
     for (x, y) in zip(x_all, y_all):
-        y_new = abs(ds_new["time"]-ds.sel(y=y)["time"]).argmin().item()
+        y_new = abs(ds_new["scanline_earth"]-ds.sel(y=y)["time"]).argmin().item()
         scnlinlab = "scanline at {:%Y-%m-%d %H:%M:%S}".format(
             ds["time"].isel(y=y).values.astype("M8[ms]").item())
         # cross-element error covariance matrix for line
