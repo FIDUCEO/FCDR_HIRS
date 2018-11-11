@@ -496,8 +496,8 @@ def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
     all_coords = {
         "n_c": numpy.arange(1, n_c+1),
         "n_s": numpy.arange(0, n_s),
-        "n_l": numpy.arange(1, n_l+1, sampling_l),
-        "n_e": numpy.arange(1, n_e+1, sampling_e),
+        "n_l": numpy.arange(0, n_l, sampling_l),
+        "n_e": numpy.arange(0, n_e, sampling_e),
         "n_i": numpy.arange(0, n_i)}
 
     R_eΛls = xarray.DataArray(
