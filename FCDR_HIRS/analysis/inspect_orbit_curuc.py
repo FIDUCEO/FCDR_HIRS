@@ -162,7 +162,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
 
         # cross-line error covariance matrix for element
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
-        S = D["S_lsΛe"].sel(n_c=channel, n_e=x)
+        S = D["S_lsΛe"].sel(n_c=channel, n_e=x-1)
         # WARNING FIXME: what is the correct BT to put in?
         S = _S_radsi_to_K(S,
              u_radK=ds_new.sel(calibrated_channel=channel).isel(scanpos=x)["u_T_b_nonrandom"].values)
@@ -183,7 +183,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
 
         # cross-channel error covariance matrix
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
-        S = D["S_csΛp"].sel(n_l=y-lines[0], n_e=x)
+        S = D["S_csΛp"].sel(n_l=y-lines[0], n_e=x-1)
         # WARNING FIXME: what is the correct BT to put in?
         S = _S_radsi_to_K(S,
              u_radK=ds_new.isel(scanpos=x,scanline_earth=y_new)["u_T_b_nonrandom"].values)
