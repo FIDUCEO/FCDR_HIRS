@@ -207,6 +207,46 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
             "curuc/cross_channel_S" + shared_fn +
             f"_x{x:d}y{y:d}.png")
 
+        # cross-channel correlation matrix for correlated noise effect only
+        (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
+        R = ds_new["channel_correlation_matrix"]
+        p = a.imshow(R.values, vmax=1, vmin=1, **imshow_args)
+        cb = f.colorbar(p)
+        cb.set_label("Correlation coefficient")
+        a.set_xlabel("channel")
+        a.set_ylabel(a.get_xlabel())
+        a.set_title(
+            "Cross-channel error correlation matrix due to correlated noise" +
+            shared_tit)
+        a.set_aspect("equal")
+        a.set_xticks(numpy.arange(ds.dims["channel"]))
+        a.set_xticklabels([str(x.item()) for x in ds["channel"]])
+        a.set_yticks(numpy.arange(ds.dims["channel"]))
+        a.set_yticklabels([str(x.item()) for x in ds["channel"]])
+        pyatmlab.graphics.print_or_show(f, False,
+            "curuc/cross_channel_R_correlated_noise" + shared_fn +
+            f".png")
+
+        # cross-channel covariance matrix for correlated noise effect only
+        (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
+        u_radK=ds_new.isel(scanpos=x-1,scanline_earth=y_new)["u_T_b_random"].values
+        S = R.values * (u_radK[:, numpy.newaxis]*u_radK[numpy.newaxis, :])
+        p = a.imshow(S.m, vmax=sorted(S.m.flat)[-2], **imshow_args)
+        cb = f.colorbar(p)
+        cb.set_label("Covariance [K$^2$]")
+        a.set_xlabel("channel")
+        a.set_ylabel(a.get_xlabel())
+        a.set_title("Cross-channel error covariance matrix due to correlated noise"
+            + shared_tit)
+        a.set_aspect("equal")
+        a.set_xticks(numpy.arange(ds.dims["channel"]))
+        a.set_xticklabels([str(x.item()) for x in ds["channel"]])
+        a.set_yticks(numpy.arange(ds.dims["channel"]))
+        a.set_yticklabels([str(x.item()) for x in ds["channel"]])
+        pyatmlab.graphics.print_or_show(f, False,
+            "curuc/cross_channel_S_correlated_noise" + shared_fn +
+            f".png")
+
 def plot_compare_correlation_scanline(ds):
     ds5 = ds.sel(calibrated_channel=5)
     y_real = ds5["cross_line_radiance_error_correlation_length_average"]
