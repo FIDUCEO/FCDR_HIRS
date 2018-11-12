@@ -2308,7 +2308,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             ΔTb.loc[{"calibrated_channel": ch}] = (high-low)/2
         return ΔTb
 
-    def estimate_channel_correlation_matrix(self, ds_context, calpos=20):
+    def estimate_channel_correlation_matrix(self, ds_context, calpos=20,
+            type="spearman"):
         """Estimate channel correlation matrix
 
         Calculates correlation coefficients between space view anomalies
@@ -2319,7 +2320,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Cs = ds_context["counts"].isel(time=ds_context["scantype"].values == self.typ_space)
 
         ΔCs = (Cs - Cs.mean("scanpos"))
-        S = numpy.corrcoef(ΔCs.sel(scanpos=calpos).T)
+        if type == "pearson":
+            S = numpy.corrcoef(ΔCs.sel(scanpos=calpos).T)
+        elif type == "spearman":
+            S = scipy.stats.spearmanr(ΔCs.sel(scanpos=calpos))[0][3:8, 3:8]
+        else:
+            raise ValueError(f"Unknown type: {type:s}")
         da = xarray.DataArray(S,
             coords={"channel": ds_context.coords["channel"]},
             dims=("channel", "channel"))
