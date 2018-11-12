@@ -231,7 +231,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         u_radK=ds_new.isel(scanpos=x-1,scanline_earth=y_new)["u_T_b_random"].values
         S = R.values[:, :19][:19, :] * (u_radK[:, numpy.newaxis]*u_radK[numpy.newaxis, :])
-        p = a.imshow(S.m, vmax=sorted(S.m.flat)[-2], **imshow_args)
+        p = a.imshow(S, vmax=sorted(S.flat)[-2], **imshow_args)
         cb = f.colorbar(p)
         cb.set_label("Covariance [K$^2$]")
         a.set_xlabel("channel")
