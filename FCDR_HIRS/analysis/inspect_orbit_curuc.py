@@ -225,7 +225,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_yticks(numpy.arange(ds.dims["channel"]))
         a.set_yticklabels([str(x.item()) for x in ds["channel"]])
         pyatmlab.graphics.print_or_show(f, False,
-            "curuc/cross_channel_R_correlated_noise" + shared_fn +
+            "curuc/cross_channel_R_correlated_noise_" + shared_fn +
             f".png")
 
         # cross-channel covariance matrix for correlated noise effect only
