@@ -2323,7 +2323,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         if type == "pearson":
             S = numpy.corrcoef(ΔCs.sel(scanpos=calpos).T)
         elif type == "spearman":
-            S = scipy.stats.spearmanr(ΔCs.sel(scanpos=calpos))[0][3:8, 3:8]
+            S = scipy.stats.spearmanr(ΔCs.sel(scanpos=calpos))[0]
         else:
             raise ValueError(f"Unknown type: {type:s}")
         da = xarray.DataArray(S,
