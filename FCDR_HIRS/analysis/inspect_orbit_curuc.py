@@ -217,7 +217,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_xlabel("channel")
         a.set_ylabel(a.get_xlabel())
         a.set_title(
-            "Cross-channel error correlation matrix due to correlated noise" +
+            "Cross-channel error correlation matrix due to correlated noise\n" +
             shared_tit)
         a.set_aspect("equal")
         a.set_xticks(numpy.arange(ds.dims["channel"]))
