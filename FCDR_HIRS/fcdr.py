@@ -2327,6 +2327,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         da.attrs = self._data_vars_props[da.name][2]
         da.encoding = self._data_vars_props[da.name][3]
         da.attrs["note"] = "covers only crosstalk effect"
+        if da.min().item() < -1 or da.max().item() > 1:
+            raise ValueError("Found correlations out of range!")
         return da
 
     def get_BT_to_L_LUT(self):
