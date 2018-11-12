@@ -210,7 +210,8 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         # cross-channel correlation matrix for correlated noise effect only
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
         R = ds_new["channel_correlation_matrix"]
-        p = a.imshow(R.values, vmax=1, vmin=-1, **imshow_args)
+        p = a.imshow(R.values, vmax=1, vmin=-1, cmap="PuOr_r",
+            interpolation="none", origin="upper")
         cb = f.colorbar(p)
         cb.set_label("Correlation coefficient")
         a.set_xlabel("channel")
