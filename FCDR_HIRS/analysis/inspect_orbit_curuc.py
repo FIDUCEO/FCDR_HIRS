@@ -237,7 +237,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         cb.set_label("Covariance [K$^2$]")
         a.set_xlabel("channel")
         a.set_ylabel(a.get_xlabel())
-        a.set_title("Cross-channel error covariance matrix due to correlated noise"
+        a.set_title("Cross-channel error covariance matrix due to correlated noise\n"
             + shared_tit)
         a.set_aspect("equal")
         a.set_xticks(numpy.arange(ds.dims["channel"]))
@@ -245,7 +245,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_yticks(numpy.arange(ds.dims["channel"]))
         a.set_yticklabels([str(x.item()) for x in ds["channel"]])
         pyatmlab.graphics.print_or_show(f, False,
-            "curuc/cross_channel_S_correlated_noise" + shared_fn +
+            "curuc/cross_channel_S_correlated_noise_" + shared_fn +
             f".png")
 
 def plot_compare_correlation_scanline(ds):
