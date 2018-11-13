@@ -86,13 +86,23 @@ def parse_cmdline():
     parser.add_argument("--do-curuc", action="store_true", default=False,
         help="Follow orbit plot by calling hirs_curuc_checker")
 
+    parser.add_argument("--btrange", action="store", type=float,
+        nargs=2,
+        help="Use this range for BTs.  If not given, base range on content.")
+
+    parser.add_argument("--urange", action="store", type=float,
+        nargs=2,
+        help="Use this range for uncertainties.  If not given, base range on content.")
+
     p = parser.parse_args()
     return p
 
 class OrbitPlotter:
     def __init__(self, f, channels, range=(0, 100),
                  plot_bitmasks=True,
-                 mark_pixels=[]):
+                 mark_pixels=[],
+                 btrange=None,
+                 urange=None):
         self.path = pathlib.Path(f)
         self.ds = xarray.open_dataset(f)
         self.channels = channels
@@ -100,6 +110,8 @@ class OrbitPlotter:
         self.start = self.range[0]*self.ds.dims["y"]//100
         self.end = self.range[1]*self.ds.dims["y"]//100
         self.plot_bitmasks = plot_bitmasks
+        self.btrange = btrange
+        self.urange = urange
         (fig, ax_all, cax_all) = self.prepare_figure_and_axes(channels)
         self.fig = fig
         self.ax_all = ax_all
@@ -157,14 +169,14 @@ class OrbitPlotter:
             if c==0 and len(channels)>1:
                 ax.text(-0.2, 0.5, f"Ch. {ch:d}", transform=ax.transAxes)
         ax_all[channels[0]][0].set_title("Brightness temperature")
-        ax_all[channels[0]][1].set_title("Independent uncertainty")
-        ax_all[channels[0]][2].set_title("Structured uncertainty")
-        ax_all[channels[0]][3].set_title("Common uncertainty")
+        ax_all[channels[0]][1].set_title("Independent")
+        ax_all[channels[0]][2].set_title("Structured")
+        ax_all[channels[0]][3].set_title("Common")
         if self.plot_bitmasks:
             ax_all[channels[0]][4].set_title("Quality channel bitmask")
             ax_all[channels[0]][5].set_title("Quality scanline bitmask")
             ax_all[channels[0]][6].set_title("Quality pixel bitmask")
-        f.suptitle("FIDCUEO HIRS FCDR " + self.ds.attrs["satellite"] +
+        f.suptitle("FIDUCEO HIRS FCDR " + self.ds.attrs["satellite"] +
             " {start:%Y-%m-%d %H:%M:%S}–{end:%H:%M:%S}".format(
                 start=self.ds.isel(y=self.start)["time"].values.astype("datetime64[ms]").item(),
                 end=self.ds.isel(y=self.end)["time"].values.astype("datetime64[ms]").item()) +
@@ -205,15 +217,15 @@ class OrbitPlotter:
             t0 = trans[:, :, 0]
             t1 = trans[:, :, 1]
             self._plot_to(ax_all[0], cax_all[0], t0, t1, dsx["bt"].values,
-                "Brightness temperature [K]")
+                "Brightness temperature / K")
             self._plot_to(ax_all[1], cax_all[1], t0, t1, dsx["u_independent"].values,
-                "Independent uncertainty [K]",
+                "Uncertainty / K",
                 is_uncertainty=True)
             self._plot_to(ax_all[2], cax_all[2], t0, t1, dsx["u_structured"].values,
-                "Structured uncertainty [K]",
+                "Uncertainty / K",
                 is_uncertainty=True)
             self._plot_to(ax_all[3], cax_all[3], t0, t1, dsx["u_common"].values,
-                "Common uncertainty [K]",
+                "Uncertainty / K",
                 is_uncertainty=True)
 
         if self.plot_bitmasks:
@@ -272,8 +284,13 @@ class OrbitPlotter:
         val = val.copy()
         inval = numpy.isnan(val)
         val[inval] = 0
-        loest = val[~inval].min()
-        hiest = val[~inval].max()
+        if self.urange and is_uncertainty:
+            loest, hiest = self.urange
+        elif self.btrange and not is_uncertainty:
+            loest, hiest = self.btrange
+        else:
+            loest = val[~inval].min()
+            hiest = val[~inval].max()
         for mask in (t0>1e6, t0<1e-6):
             mask |= inval
             if not mask.all():
@@ -282,11 +299,9 @@ class OrbitPlotter:
                           numpy.ma.masked_where(mask, val),
                           transform=ax.projection,
                           cmap="viridis",
-                          #vmin=0 if is_uncertainty else loest,
                           vmin=loest,
                           vmax=hiest,
                           norm=matplotlib.colors.Normalize(
-                            #vmin=0 if is_uncertainty else loest,
                             vmin=loest,
                             vmax=hiest))
         cb = ax.figure.colorbar(img, cax=cax, orientation="vertical")
@@ -340,7 +355,9 @@ def main():
 
     op = OrbitPlotter(p.arg1, p.channels, range=p.range,
         plot_bitmasks=p.with_bitmasks,
-        mark_pixels=p.mark_pixels)
+        mark_pixels=p.mark_pixels,
+        btrange=p.btrange,
+        urange=p.urange)
     op.write()
 
     if p.do_curuc:
