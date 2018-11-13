@@ -2317,7 +2317,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         As per #87.  
         """
-        Cs = ds_context["counts"].isel(time=ds_context["scantype"].values == self.typ_space)
+        Cs = ds_context["counts"].isel(
+            time=ds_context["scantype"].values == self.typ_space,
+            scanpos=slice(8, None))
         bad = self.filter_calibcounts.filter_outliers(Cs.values)
         ok = ~bad[:, calpos, :].any(1)
 
