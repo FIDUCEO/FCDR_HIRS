@@ -116,7 +116,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     # cross-element error correlation function
     (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 4.5))
     a.plot(Δ_e_full["Δp"], Δ_e_full.sel(n_c=channel))
-    a.set_xlabel("element")
+    a.set_xlabel("separation between elements")
     a.set_ylabel("mean correlation coefficient")
     a.set_title("Cross-element error correlation function "
                 + shared_tit + "\n" + period_tit)
@@ -126,7 +126,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     # cross-line error correlation function
     (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 4.5))
     a.plot(Δ_l_full["Δp"], Δ_l_full.sel(n_c=channel))
-    a.set_xlabel("scanline")
+    a.set_xlabel("separation between scanlines")
     a.set_ylabel("mean correlation coefficient")
     a.set_title("Cross-line error correlation function "
                 + shared_tit + "\n" + period_tit)
@@ -149,7 +149,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         p = a.imshow(S.m, **imshow_args)
         cb = f.colorbar(p)
         cb.set_label("Covariance [K$^2$]")
-        a.set_xlabel("separation between elements")
+        a.set_xlabel("element")
         a.set_ylabel(a.get_xlabel())
         a.set_title("Cross-element error covariance matrix")
 #            + shared_tit
@@ -170,7 +170,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         p = a.imshow(S.m, **imshow_args)
         cb = f.colorbar(p)
         cb.set_label("Covariance [K$^2$]")
-        a.set_xlabel("separation between lines")
+        a.set_xlabel("scanline")
         a.set_ylabel(a.get_xlabel())
         a.set_title("Cross-line error covariance matrix")
 #            + "\n"
