@@ -2318,12 +2318,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         As per #87.  
         """
         Cs = ds_context["counts"].isel(time=ds_context["scantype"].values == self.typ_space)
+        bad = self.filter_calibcounts.filter_outliers(Cs.values)
+        ok = ~bad[:, calpos, :].any(1)
 
         ΔCs = (Cs - Cs.mean("scanpos"))
         if type == "pearson":
-            S = numpy.corrcoef(ΔCs.sel(scanpos=calpos).T)
+            S = numpy.corrcoef(ΔCs.isel(time=ok).sel(scanpos=calpos).T)
         elif type == "spearman":
-            S = scipy.stats.spearmanr(ΔCs.sel(scanpos=calpos))[0]
+            S = scipy.stats.spearmanr(ΔCs.isel(time=ok).sel(scanpos=calpos))[0]
         else:
             raise ValueError(f"Unknown type: {type:s}")
         da = xarray.DataArray(S,
