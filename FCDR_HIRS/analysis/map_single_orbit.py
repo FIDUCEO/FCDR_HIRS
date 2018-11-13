@@ -129,7 +129,7 @@ class OrbitPlotter:
         nrow = len(channels)
         #nrow = int(math.floor(math.sqrt(len(channels))))
         f = matplotlib.pyplot.figure(
-            figsize=(6*(ncol+1),2.5*(nrow+1)))
+            figsize=(4*(ncol+1),2.5*(nrow+1)))
         gs = matplotlib.gridspec.GridSpec(10*nrow, 16*ncol+1)
         #proj = cartopy.crs.Mollweide(central_longitude=90)
         central_longitude=int(self.ds["latitude"].isel(y=0).sel(x=28)+0)
@@ -163,7 +163,7 @@ class OrbitPlotter:
 
             except TypeError: # no labels
                 ax.gridlines()
-            cax = f.add_subplot(gs[(r*10):(r+1)*10, (c+1)*16-1])
+            cax = f.add_subplot(gs[(r*10):(r+1)*10, (c+1)*16-2])
             ax_all[ch].append(ax)
             cax_all[ch].append(cax)
             if c==0 and len(channels)>1:
@@ -183,6 +183,7 @@ class OrbitPlotter:
                 f", channel {channels[0]:d}" if len(channels)==1 else ""
             )
 
+        f.subplots_adjust(wspace=0, left=0, right=0.95)
         return (f, ax_all, cax_all)
 
     def plot_channel(self, ch, ax_all, cax_all,
