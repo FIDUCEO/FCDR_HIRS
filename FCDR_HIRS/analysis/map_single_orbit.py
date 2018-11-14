@@ -283,6 +283,17 @@ class OrbitPlotter:
                 for ax in ax_all:
                     ax.plot(lon, lat, marker='o', markersize=5, color="red")
                     ax.text(lon, lat, lab, fontsize=20, color="red")
+                    ax.plot(
+                        dsx.isel(y=ycoor)["longitude"],
+                        dsx.isel(y=ycoor)["latitude"],
+                        linestyle=":",
+                        color="red")
+                    ax.plot(
+                        dsx.isel(x=xcoor)["longitude"],
+                        dsx.isel(x=xcoor)["latitude"],
+                        linestyle=":",
+                        color="red")
+                    dsx.isel(x=xcoor)["latitude"]
                 pixels.append((int(dsp["x"].item()),
                                int(dsp["y"].item())))
         return (linerange, pixels)
