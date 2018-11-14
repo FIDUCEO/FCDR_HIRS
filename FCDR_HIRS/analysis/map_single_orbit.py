@@ -154,7 +154,7 @@ class OrbitPlotter:
             it = itertools.product(
                 enumerate(
                     itertools.chain.from_iterable(
-                        itertools.repeat(ch, 2) for ch in range(channels))),
+                        itertools.repeat(ch, 2) for ch in channels)),
                 range(ncol))
         else:
             # [((0, 1), 0), ((0, 1), 1), ..., ((0, 1), ncol),
