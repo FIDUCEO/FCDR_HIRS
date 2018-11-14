@@ -94,6 +94,10 @@ def parse_cmdline():
         nargs=2,
         help="Use this range for uncertainties.  If not given, base range on content.")
 
+    parser.add_argument("--split", action="store_true",
+        help="Split each channel over two lines.  Only works if "
+            "--without-bitmasks.")
+
     p = parser.parse_args()
     return p
 
@@ -102,7 +106,8 @@ class OrbitPlotter:
                  plot_bitmasks=True,
                  mark_pixels=[],
                  btrange=None,
-                 urange=None):
+                 urange=None,
+                 split=False):
         self.path = pathlib.Path(f)
         self.ds = xarray.open_dataset(f)
         self.channels = channels
@@ -112,6 +117,7 @@ class OrbitPlotter:
         self.plot_bitmasks = plot_bitmasks
         self.btrange = btrange
         self.urange = urange
+        self.split = split
         (fig, ax_all, cax_all) = self.prepare_figure_and_axes(channels)
         self.fig = fig
         self.ax_all = ax_all
@@ -124,9 +130,9 @@ class OrbitPlotter:
 #            f, False, filename)
 
     def prepare_figure_and_axes(self, channels):
-        ncol = 7 if self.plot_bitmasks else 4
+        ncol = 7 if self.plot_bitmasks else 2 if self.split else 4
         #ncol = int(math.ceil(math.sqrt(len(channels))))
-        nrow = len(channels)
+        nrow = len(channels) * (2 if self.split else 1)
         #nrow = int(math.floor(math.sqrt(len(channels))))
         f = matplotlib.pyplot.figure(
             figsize=(4*(ncol+1),2.5*(nrow+1)))
@@ -140,8 +146,21 @@ class OrbitPlotter:
 
         ax_all = {ch: [] for ch in channels}
         cax_all = copy.deepcopy(ax_all)
-        for ((r, ch), c) in itertools.product(
-                enumerate(channels), range(ncol)):
+        if self.split:
+            # [((0, 1), 0), ((0, 1), 1),
+            #  ((1, 1), 0), ((1, 1), 1),
+            #  ((2, 2), 0), ((2, 2), 1),
+            #  ((3, 2), 0), ((3, 2), 1)]
+            it = itertools.product(
+                enumerate(
+                    itertools.chain.from_iterable(
+                        itertools.repeat(ch, 2) for ch in range(channels))),
+                range(ncol))
+        else:
+            # [((0, 1), 0), ((0, 1), 1), ..., ((0, 1), ncol),
+            #  ((1, 2), 0), ((1, 2), 1), ..., ((1, 2), ncol)]
+            it = itertools.product(enumerate(channels), range(ncol))
+        for ((r, ch), c) in it:
 #        for ((r, c), ch) in zip(
 #                itertools.product(range(nrow), range(ncol)),
 #                channels):
@@ -358,7 +377,8 @@ def main():
         plot_bitmasks=p.with_bitmasks,
         mark_pixels=p.mark_pixels,
         btrange=p.btrange,
-        urange=p.urange)
+        urange=p.urange,
+        split=p.split)
     op.write()
 
     if p.do_curuc:
