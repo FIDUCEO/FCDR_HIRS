@@ -135,8 +135,8 @@ class OrbitPlotter:
         nrow = len(channels) * (2 if self.split else 1)
         #nrow = int(math.floor(math.sqrt(len(channels))))
         f = matplotlib.pyplot.figure(
-            figsize=(4*(ncol+1),2.5*(nrow+1)))
-        gs = matplotlib.gridspec.GridSpec(10*nrow, 16*ncol+1)
+            figsize=((3 if self.split else 4)*(ncol+1),(3 if self.split else 2.5)*(nrow+1)))
+        gs = matplotlib.gridspec.GridSpec(10*nrow-2, 16*ncol+1)
         #proj = cartopy.crs.Mollweide(central_longitude=90)
         central_longitude=int(self.ds["latitude"].isel(y=0).sel(x=28)+0)
         if self.range[1]-self.range[0] > 30:
@@ -165,7 +165,7 @@ class OrbitPlotter:
 #                itertools.product(range(nrow), range(ncol)),
 #                channels):
             ax = f.add_subplot(
-                gs[(r*10):(r+1)*10, c*16:(c+1)*16],
+                gs[(r*10):(r+1)*10-2, c*16:(c+1)*16],
                 projection=proj) # passing the projection makes it a GeoAxes
             ax.coastlines()
             try:
@@ -173,16 +173,16 @@ class OrbitPlotter:
                 gl.xlabels_top = False
                 gl.ylabels_right = False
                 # see https://stackoverflow.com/a/35483665/974555
-                ax.text(-0.07, 0.55, 'latitude [degrees]', va='bottom', ha='center',
+                ax.text(-0.1, 0.55, 'latitude [degrees]', va='bottom', ha='center',
                         rotation='vertical', rotation_mode='anchor',
                         transform=ax.transAxes)
-                ax.text(0.5, -0.1, 'longitude [degrees]', va='bottom', ha='center',
+                ax.text(0.5, -0.15, 'longitude [degrees]', va='bottom', ha='center',
                         rotation='horizontal', rotation_mode='anchor',
                         transform=ax.transAxes)
 
             except TypeError: # no labels
                 ax.gridlines()
-            cax = f.add_subplot(gs[(r*10):(r+1)*10, (c+1)*16-2])
+            cax = f.add_subplot(gs[(r*10):(r+1)*10-2, (c+1)*16-2])
             ax_all[ch].append(ax)
             cax_all[ch].append(cax)
             if c==0 and len(channels)>1:
@@ -199,7 +199,8 @@ class OrbitPlotter:
             " {start:%Y-%m-%d %H:%M:%S}–{end:%H:%M:%S}".format(
                 start=self.ds.isel(y=self.start)["time"].values.astype("datetime64[ms]").item(),
                 end=self.ds.isel(y=self.end)["time"].values.astype("datetime64[ms]").item()) +
-                f", channel {channels[0]:d}" if len(channels)==1 else ""
+                f", channel {channels[0]:d}" if len(channels)==1 else "",
+                y=0.96
             )
 
         f.subplots_adjust(wspace=0, left=0, right=0.95)
