@@ -121,7 +121,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     a.set_title("Cross-element error correlation function "
                 + shared_tit + "\n" + period_tit)
     pyatmlab.graphics.print_or_show(f, False,
-        "curuc/cross_element_error_correlation_function_"+shared_fn+".png")
+        "curuc/cross_element_error_correlation_function_"+shared_fn+".")
 
     # cross-line error correlation function
     (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 4.5))
@@ -131,7 +131,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     a.set_title("Cross-line error correlation function "
                 + shared_tit + "\n" + period_tit)
     pyatmlab.graphics.print_or_show(f, False,
-        "curuc/cross_line_error_correlation_function_"+shared_fn+".png")
+        "curuc/cross_line_error_correlation_function_"+shared_fn+".")
 
     cmap = "magma_r"
     imshow_args = {"cmap": cmap, "interpolation": None, "origin": "upper"}
@@ -158,7 +158,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_aspect("equal")
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_element_S" + shared_fn +
-            f"x{x:d}y{y:d}.png")
+            f"x{x:d}y{y:d}.")
 
         # cross-line error covariance matrix for element
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
@@ -179,7 +179,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_aspect("equal")
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_line_S" + shared_fn +
-            f"_x{x:d}y{y:d}.png")
+            f"_x{x:d}y{y:d}.")
 
         # cross-channel error covariance matrix
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
@@ -205,7 +205,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_yticklabels([str(x.item()) for x in ds["channel"]])
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_channel_S" + shared_fn +
-            f"_x{x:d}y{y:d}.png")
+            f"_x{x:d}y{y:d}.")
 
         # cross-channel correlation matrix for correlated noise effect only
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
@@ -226,7 +226,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_yticklabels([str(x.item()) for x in ds["channel"]])
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_channel_R_correlated_noise_" + shared_fn +
-            f".png")
+            f".")
 
         # cross-channel covariance matrix for correlated noise effect only
         (f, a) = matplotlib.pyplot.subplots(1, 1, figsize=(8, 6))
@@ -246,7 +246,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_yticklabels([str(x.item()) for x in ds["channel"]])
         pyatmlab.graphics.print_or_show(f, False,
             "curuc/cross_channel_S_correlated_noise_" + shared_fn +
-            f".png")
+            f".")
 
 def plot_compare_correlation_scanline(ds):
     ds5 = ds.sel(calibrated_channel=5)
