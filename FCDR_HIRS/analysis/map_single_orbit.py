@@ -173,7 +173,7 @@ class OrbitPlotter:
                 gl.xlabels_top = False
                 gl.ylabels_right = False
                 # see https://stackoverflow.com/a/35483665/974555
-                ax.text(-0.1, 0.55, 'latitude [degrees]', va='bottom', ha='center',
+                ax.text(-0.15, 0.55, 'latitude [degrees]', va='bottom', ha='center',
                         rotation='vertical', rotation_mode='anchor',
                         transform=ax.transAxes)
                 ax.text(0.5, -0.15, 'longitude [degrees]', va='bottom', ha='center',
