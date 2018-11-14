@@ -377,7 +377,7 @@ class OrbitPlotter:
             + str((p.relative_to(p.parents[3]).parent / p.stem))
             + "_ch" + ",".join(str(ch) for ch in self.channels)
             + f"_{self.range[0]:d}-{self.range[1]:d}"
-            + ".png")
+            + ".")
 
 def main():
     p = parse_cmdline()
