@@ -55,7 +55,10 @@ where it is through the environment variable TYPHONRC.
 
 The steps to generate a new version of the FCDR:
 
-- (devel) Switch to correct branch, rebase on master, and install
+- (devel) Switch to correct branch, rebase on master, and install.
+  Perhaps need to create a dedicated branch, merge multiple development
+  branches (verify wich git branch --merged).  Also for typhon and
+  FCDRTools if applicable.
 
 - Generate an unharmonised FCDR by passing the --no-harm flag to
   generate_fcdr.
