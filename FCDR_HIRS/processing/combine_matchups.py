@@ -625,8 +625,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         freq = ureg.Quantity(numpy.loadtxt(self.hiasi.freqfile), ureg.Hz)
         specrad_wn = UADA(self.ds.isel(line=ok)["ref_radiance"])
         specrad_f = specrad_wn.to(rad_u["si"], "radiance")
-        srf = typhon.physics.units.em.SRF.fromArtsXML(
-                "METOPA", "hirs", channel)
+        srf = typhon.physics.units.em.SRF.fromRTTOV(
+                "metop_2", "hirs", channel)
         L = srf.integrate_radiances(freq,
             ureg.Quantity(specrad_f.values, specrad_f.attrs["units"]))
         harm["X1"] = (
