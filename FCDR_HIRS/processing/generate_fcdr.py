@@ -627,9 +627,6 @@ class FCDRGenerator:
         # already included with add_attributes
 #        piece_easy.attrs["warning"] = ("TRIAL VERSION, DO NOT USE UNDER "
 #            "ANY CIRCUMSTANCES FOR ANY PURPOSE EVER")
-        piece_easy.attrs["source"] = ("Produced with HIRS_FCDR code, "
-            "version {!s}".format(
-                pkg_resources.get_distribution("FCDR_HIRS").version))
         piece_easy.attrs["history"] = "Produced on {:%Y-%m-%dT%H:%M:%SZ}.".format(
             datetime.datetime.utcnow()) + "\n" + VERSION_HISTORY_EASY
         piece_easy.attrs["references"] = "In preparation"
