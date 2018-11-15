@@ -627,9 +627,6 @@ class FCDRGenerator:
         # already included with add_attributes
 #        piece_easy.attrs["warning"] = ("TRIAL VERSION, DO NOT USE UNDER "
 #            "ANY CIRCUMSTANCES FOR ANY PURPOSE EVER")
-        piece_easy.attrs["source"] = ("Produced with HIRS_FCDR code, "
-            "version {!s}".format(
-                pkg_resources.get_distribution("FCDR_HIRS").version))
         piece_easy.attrs["history"] = "Produced on {:%Y-%m-%dT%H:%M:%SZ}.".format(
             datetime.datetime.utcnow()) + "\n" + VERSION_HISTORY_EASY
         piece_easy.attrs["references"] = "In preparation"
@@ -757,7 +754,7 @@ class FCDRGenerator:
         src_filenames = pandas.unique(piece["filename"].sel(time=t_earth))
         # call .item() to avoid https://bugs.python.org/issue29672
         easy["scanline_map_to_origl1bfile"][:] = [src_filenames.tolist().index(fn.item()) for fn in piece["filename"].sel(time=t_earth)]
-        easy.attrs["source"] = src_filenames
+        easy.attrs["source"] = ", ".join(src_filenames)
 
         easy = easy.assign_coords(
             x=numpy.arange(1, 57),
