@@ -127,6 +127,7 @@ import datetime
 import numpy
 import pandas
 import xarray
+import isodate
 import typhon.datasets.dataset
 import typhon.datasets.filters
 from typhon.physics.units.common import radiance_units as rad_u
@@ -695,8 +696,8 @@ class FCDRGenerator:
         """
         #pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
         ds.attrs.update(
-            author="Gerrit Holl and the FIDUCEO team",
-            email="fiduceo-coordinator@lists.reading.ac.uk",
+            creator_name="Gerrit Holl and the FIDUCEO team",
+            creator_email="fiduceo-coordinator@lists.reading.ac.uk",
             title="HIRS FCDR",
             satellite=self.satname,
             url="http://www.fiduceo.eu/",
@@ -705,6 +706,8 @@ class FCDRGenerator:
             institution="University of Reading",
             data_version=self.data_version,
             WARNING=effects.WARNING,
+            comment="Beta version.  Not intended for scientific use.",
+            references="Holl et al. (to be submitted)",
             history = "Produced from L1B on {:%Y-%m-%dT%H:%M:%SZ}".format(
                 datetime.datetime.utcnow())
             )
@@ -720,9 +723,13 @@ class FCDRGenerator:
             piece["time"][0].values.astype("M8[s]").astype(datetime.datetime)).stem
         at_end = self.fcdr.find_most_recent_granule_before(
             piece["time"][-1].values.astype("M8[s]").astype(datetime.datetime)).stem
+        start = piece["time"][0].values.astype("M8[ms]").astype(datetime.datetime)
+        end = piece["time"][-1].values.astype("M8[ms]").astype(datetime.datetime)
+        duration = end - start
         piece.attrs.update(
-            time_coverage_start=piece["time"][0].values.astype("M8[ms]").astype(datetime.datetime).isoformat(),
-            time_coverage_end=piece["time"][-1].values.astype("M8[ms]").astype(datetime.datetime).isoformat())
+            time_coverage_start=start.isoformat(),
+            time_coverage_end=end.isoformat(),
+            time_coverage_duration=isodate.duration_isoformat(duration))
 
         # add orig_l1b
         t_earth = piece["scanline_earth"]
@@ -1015,7 +1022,6 @@ class FCDRGenerator:
         """Copy appropriate flags from debug to easy
         """
         easy.attrs.update(piece.attrs)
-        raise NotImplementedError
 
     _i = 0
     def get_filename_for_piece(self, piece, fcdr_type):
