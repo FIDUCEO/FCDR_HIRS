@@ -1021,7 +1021,8 @@ class FCDRGenerator:
     def debug2easy_attrs(self, easy, piece):
         """Copy appropriate flags from debug to easy
         """
-        easy.attrs.update(piece.attrs)
+        easy.attrs.update(
+            {k:v for (k,v) in piece.attrs.items() if k in easy.attrs.keys()})
 
     _i = 0
     def get_filename_for_piece(self, piece, fcdr_type):
