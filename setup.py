@@ -108,7 +108,9 @@ setup(
                       "pyorbital",
                       "cartopy",
                       "docrep",
-                      "sphinx-issues"],
+                      "sphinx-issues",
+                      "isodate",
+                      "cartopy"],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,
