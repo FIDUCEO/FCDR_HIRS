@@ -1398,6 +1398,21 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             rad_wn = self.custom_calibrate(C_Earth, interp_slope,
                 interp_offset, a2, Rself, a_4)
 
+            if not has_Rself: # need to set manually
+                newcoor = dict(
+                    Rself_start=xarray.DataArray(
+                        numpy.tile(Rself_0_start, Rself.shape[0]),
+                        dims=("time",),
+                        coords={"time": Rself.time}),
+                    Rself_end=xarray.DataArray(
+                        numpy.tile(Rself_0_end, Rself.shape[0]),
+                        dims=("time",),
+                        coords={"time": Rself.time}))
+                Rself = Rself_0.assign_coords(**newcoor)
+                rad_wn = rad_wn.assign_coords(**newcoor)
+                T_b = T_b.assign_coords(**newcoor)
+
+
             # for debugging purposes, calculate various other radiances
             a2_0 = UADA(0,
                     name="a2", coords={"calibrated_channel": ch},
