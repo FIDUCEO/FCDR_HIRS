@@ -1468,7 +1468,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     numpy.tile(Rself_0_end, Rself.shape[0]),
                     dims=("time",),
                     coords={"time": Rself.time}))
-            Rself_0 = Rself_0.assign_coords(**newcoor)
+            Rself = Rself_0.assign_coords(**newcoor)
             rad_wn = rad_wn.assign_coords(**newcoor)
             T_b = T_b.assign_coords(**newcoor)
 
