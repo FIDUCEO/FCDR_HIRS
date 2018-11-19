@@ -1409,8 +1409,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         dims=("time",),
                         coords={"time": Rself.time}))
                 Rself = Rself_0.assign_coords(**newcoor)
-                rad_wn = rad_wn.assign_coords(**newcoor)
-                T_b = T_b.assign_coords(**newcoor)
 
 
             # for debugging purposes, calculate various other radiances
