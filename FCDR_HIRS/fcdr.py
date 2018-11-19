@@ -635,6 +635,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             concat_coords=(), **coords):
         """Convert quantity to xarray and put into self._quantities
 
+        Or self._other_quantities if it's not in the measurement equation.
+
         TODO: need to assign time coordinates so that I can later
         extrapolate calibration_cycle dimension to scanline dimension.
 
@@ -646,8 +648,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         q = self._quantity_to_xarray(quantity, name,
                 dropdims=["channel", "calibrated_channel"],
                 **coords)
-        if s in self._quantities:
-            da = self._quantities[s]
+        if s is None: 
+            s = name
+            dest = self._other_quantities
+        else:
+            dest = self._quantities
+        if s in dest:
+            da = dest[s]
             in_coords = [x for x in ("channel", "calibrated_channel")
                             if x in da.coords]
             if len(in_coords) != 1:
@@ -659,10 +666,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 coords=[in_coords[0]]+list(concat_coords))
             # NB: https://github.com/pydata/xarray/issues/1297
             da.encoding = q.encoding
-            self._quantities[s] = da
+            dest[s] = da
             return da
         else:
-            self._quantities[s] = q
+            dest[s] = q
             return q
 
     def _tuck_effect_channel(self, name, quantity, channel,
@@ -883,6 +890,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 a2)
 
     _quantities = {}
+    _other_quantities = {}
     _effects = None
     _effects_by_name = None
     _flags = {"scanline": {}, "channel": {}}
@@ -1602,6 +1610,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # the quantities I calculate so I can use them for the
         # uncertainties after.
         self._quantities.clear() # don't accidentally use old quantities…
+        self._other_quantities.clear()
         self._reset_flags(ds)
 #        self._flags["scanline"].clear()
 #        self._flags["channel"].clear()
