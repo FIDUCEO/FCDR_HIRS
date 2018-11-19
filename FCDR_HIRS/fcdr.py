@@ -1403,8 +1403,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     name="a2", coords={"calibrated_channel": ch},
                     attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
-            # Rself_0 already set
-            Rself_0.assign_coords(**Rself.coords)
+            # Rself_0 already set, but not with right coords
+            Rself_0 = Rself_0.assign_coords(**Rself.coords)
             a4_0 = UADA(0,
                     name="harmonisation bias",
                     attrs={"units": rad_u["si"]})
