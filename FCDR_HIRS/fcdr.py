@@ -1261,6 +1261,16 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
                     _fcdr_defs.FlagsChannel.DO_NOT_USE|
                     _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
+            # to be used if I have none, but also for debugging otherwise
+            Rself_0 = UADA(numpy.zeros(shape=C_Earth["time"].shape),
+                         coords=C_Earth["time"].coords,
+                         name="Rself", attrs={"units":   
+                str(rad_u["si"])})
+
+            Rself_0_start = Rself_0_end = xarray.DataArray(
+                [numpy.datetime64(0, 's')], dims=["time_rself"])
+
+
             if has_Rself:
                 # we do have a working self-emission model, probably
                 interp_offset = interp_offset_modes["zero"]
@@ -1320,10 +1330,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 # to the difference between linear and zero-order
                 # interpolation.
                 interp_offset = interp_offset_modes["zero" if naive else "cubic"]
-                Rself = UADA(numpy.zeros(shape=C_Earth["time"].shape),
-                             coords=C_Earth["time"].coords,
-                             name="Rself", attrs={"units":   
-                    str(rad_u["si"])})
+                Rself = Rself_0
                 RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
                         coords=offset["time"].coords, attrs=Rself.attrs)
     #            u_Rself = UADA([0], dims=["rself_update_time"],
@@ -1344,9 +1351,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     dims=["time_rself"],
                     attrs={"units": offset.attrs["units"]})
 
-                Rself_start = Rself_end = xarray.DataArray(
-                    [numpy.datetime64(0, 's')], dims=["time_rself"])
-                
     #            # make sure dimensions etc. are the same as when we do have a
     #            # working model
     #            try:
@@ -1399,10 +1403,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     name="a2", coords={"calibrated_channel": ch},
                     attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
-            Rself_0 = UADA(numpy.zeros(shape=C_Earth["time"].shape),
-                             coords=C_Earth["time"].coords,
-                             name="Rself", attrs={"units":   
-                    str(rad_u["si"])})
+            # Rself_0 already set
+            Rself_0.assign_coords(**Rself.coords)
             a4_0 = UADA(0,
                     name="harmonisation bias",
                     attrs={"units": rad_u["si"]})
@@ -1459,14 +1461,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         if not has_Rself: # need to set manually
             newcoor = dict(
                 Rself_start=xarray.DataArray(
-                    numpy.tile(Rself_start, Rself.shape[0]),
+                    numpy.tile(Rself_0_start, Rself.shape[0]),
                     dims=("time",),
                     coords={"time": Rself.time}),
                 Rself_end=xarray.DataArray(
-                    numpy.tile(Rself_end, Rself.shape[0]),
+                    numpy.tile(Rself_0_end, Rself.shape[0]),
                     dims=("time",),
                     coords={"time": Rself.time}))
-            Rself = Rself.assign_coords(**newcoor)
+            Rself_0 = Rself_0.assign_coords(**newcoor)
             rad_wn = rad_wn.assign_coords(**newcoor)
             T_b = T_b.assign_coords(**newcoor)
 
@@ -1552,7 +1554,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # debug radiances
             for (k, v) in rad_wn_dbg.items():
                 self._tuck_quantity_channel(
-                    f"rad_wn_{k:s}", v, calibrated_channel=ch)
+                    f"rad_wn_{k:s}", v, calibrated_channel=ch,
+                    concat_coords=["Rself_start", "Rself_end"])
         rad_wn = rad_wn.rename({"time": "scanline_earth"})
 
 
