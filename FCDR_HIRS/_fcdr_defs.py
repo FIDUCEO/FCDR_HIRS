@@ -387,7 +387,6 @@ FCDR_data_vars_props = dict(
 )
 for (skip1, skip2, skip3) in itertools.product(
         (0, 1), repeat=3):
-    ["linear", "norself", "nooffset"]:
     if not (skip1 or skip2 or skip3):
         continue
     lab = (("linear" if skip1 else "") +
