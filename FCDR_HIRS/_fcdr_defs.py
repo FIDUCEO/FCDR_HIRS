@@ -395,7 +395,7 @@ for (skip1, skip2, skip3) in itertools.product(
     FCDR_data_vars_props[f"rad_wn_{lab:s}"]= (
         f"rad_wn_{lab:s}",
         ("scanline_earth", "scanpos", "calibrated_channel"),
-        {"units": rad_u["ir"]},
+        {"units": rad_u["si"]},
         _coding)
 
 p = FCDR_data_vars_props

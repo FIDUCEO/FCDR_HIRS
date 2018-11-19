@@ -1544,8 +1544,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # debug radiances
             for (k, v) in rad_wn_dbg.items():
                 self._tuck_quantity_channel(
-                    f"rad_wn_{k:s}", v, calibrated_channel=ch,
-                    concat_coords=["Rself_start", "Rself_end"])
+                    f"rad_wn_{k:s}", v, calibrated_channel=ch)
         rad_wn = rad_wn.rename({"time": "scanline_earth"})
 
 
