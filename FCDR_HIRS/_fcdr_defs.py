@@ -1,6 +1,7 @@
 """Definitions related to HIRS FCDR
 """
 
+import itertools
 import enum
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.datasets._tovs_defs import (_u1_coding, _u2_coding, _coding,
@@ -384,6 +385,19 @@ FCDR_data_vars_props = dict(
         {"long_name": "Azimuth angle (from the north) of the Sun as seen from the ground"},
         _ang_coding),
 )
+for (skip1, skip2, skip3) in itertools.product(
+        (0, 1), repeat=3):
+    ["linear", "norself", "nooffset"]:
+    if not (skip1 or skip2 or skip3):
+        continue
+    lab = (("linear" if skip1 else "") +
+           ("norself" if skip2 else "") +
+           ("nooffset" if skip3 else ""))
+    FCDR_data_vars_props[f"rad_wn_{lab:s}"]= (
+        f"rad_wn_{lab:s}",
+        ("scanline_earth", "scanpos", "calibrated_channel"),
+        {"units": rad_u["ir"]},
+        _coding)
 
 p = FCDR_data_vars_props
 for (var, corr) in {("R_Earth", "O_Re"),

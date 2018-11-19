@@ -641,8 +641,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Returns quantity as stored.
         """
 
-        s = me.symbols[symbol_name]
-        name = me.names[s] # FIXME: fails for Indexed?
+        s = me.symbols.get(symbol_name)
+        name = me.names.get(s, symbol_name) # FIXME: fails for Indexed?
         q = self._quantity_to_xarray(quantity, name,
                 dropdims=["channel", "calibrated_channel"],
                 **coords)
@@ -1386,6 +1386,37 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             rad_wn = self.custom_calibrate(C_Earth, interp_slope,
                 interp_offset, a2, Rself, a_4)
 
+            # for debugging purposes, calculate various other radiances
+            a2_0 = UADA(0,
+                    name="a2", coords={"calibrated_channel": ch},
+                    attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
+
+            Rself_0 = UADA(numpy.zeros(shape=C_Earth["time"].shape),
+                             coords=C_Earth["time"].coords,
+                             name="Rself", attrs={"units":   
+                    str(rad_u["si"])})
+            a4_0 = UADA(0,
+                    name="harmonisation bias",
+                    attrs={"units": rad_u["si"]})
+
+
+            rad_wn_dbg = {}
+
+            parcal = functools.partial(self.custom_calibrate,
+                C_Earth, interp_slope, interp_offset)
+            nom_args = [a2, Rself, a_4]
+            oth_args = [a2_0, Rself_0, a4_0]
+            labs = ["linear", "norself", "nooffset"]
+            for (skipa2, skiprself, skipa4) in itertools.product((0,1),repeat=3):
+                lab = "linear"*skipa2+skiprself*"norself"+skipa4*"nooffset"
+                if not lab:
+                    continue
+                rad_wn_dbg[lab] = self.custom_calibrate(
+                    C_Earth, interp_slope, interp_offset,
+                    a2_0 if skipa2 else a2,
+                    Rself_0 if skiprself else Rself,
+                    a4_0 if skipa4 else a_4)
+
             bad = self.filter_earthcounts.filter_outliers(C_Earth.values)
             # I need to compare to space counts.
             C_space = self._quantities[me.symbols["C_s"]]
@@ -1509,6 +1540,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # the zero-terms
             for s in (s for s in me.symbols.keys() if s.startswith("O_")):
                 self._tuck_quantity_channel(s, 0, calibrated_channel=ch)
+
+            # debug radiances
+            for (k, v) in rad_wn_dbg.items():
+                self._tuck_quantity_channel(
+                    f"rad_wn_{k:s}", v, calibrated_channel=ch,
+                    concat_coords=["Rself_start", "Rself_end"])
         rad_wn = rad_wn.rename({"time": "scanline_earth"})
 
 
