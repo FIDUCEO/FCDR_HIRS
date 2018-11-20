@@ -38,7 +38,9 @@ warning_modes = dict(
     Lself_suspect = "When trying to fit or test self-emission model",
     calibzero = "Found cases where counts_space == counts_iwct == 0.",
     remaining_timeseq = "Still has time sequence issues",
-    magnitude_none = "is None, not considering for correlation scale calculations.")
+    magnitude_none = "is None, not considering for correlation scale calculations.",
+    curuc_bad_pixels = "of pixels in segment bad",
+    )
 
 # alternative: collections.Counter
 error_counts = dict.fromkeys(error_modes, 0)
