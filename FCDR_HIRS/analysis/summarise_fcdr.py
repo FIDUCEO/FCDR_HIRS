@@ -198,7 +198,7 @@ class FCDRSummary(HomemadeDataset):
 
     hist_range = xarray.Dataset(
         {
-        **{field: (("edges",), [170, 320]) for field in ("T_b", "bt")},
+        **{field: (("edges",), [170, 320]) for field in ("T_b", "bt", "T_IWCT")},
         **{field: (("edges",), [0, 50]) for field in 
             ["u_T_b_random", "u_T_b_nonrandom", "u_T_b_harm",
              "u_independent", "u_structured", "u_common"]},
@@ -208,7 +208,10 @@ class FCDRSummary(HomemadeDataset):
                           "u_R_Earth_random",
                           "u_R_Earth_nonrandom", "u_R_Earth_harm",
                           "R_selfE", "u_Rself", 
-                          "R_IWCT")},
+                          "R_IWCT", 'rad_wn_nooffset', 'rad_wn_norself',
+                          'rad_wn_norselfnooffset', 'rad_wn_linear',
+                          'rad_wn_linearnooffset', 'rad_wn_linearnorself',
+                          'rad_wn_linearnorselfnooffset' )},
         **{field: (("edges",), [-4097, 4098]) for field in
             ["C_E", "C_IWCT", "C_s", "u_C_Earth", "u_C_space",
             "u_C_IWCT"]},
