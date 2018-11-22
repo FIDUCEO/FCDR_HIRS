@@ -302,7 +302,7 @@ class FCDRSummary(HomemadeDataset):
             try:
                 ds = self.hirs.read_period(sd, ed,
                     onerror="skip",
-                    excs=inspect.signature(self.hirs.read_period).parameters["excs"].default + (KeyError,),
+                    excs=inspect.signature(self.hirs.read_period).parameters["excs"].default + (KeyError, OSError),
                     locator_args={"data_version": self.data_version,
                                   "format_version": self.format_version,
                                   "fcdr_type": fcdr_type},
