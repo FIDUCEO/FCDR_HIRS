@@ -222,7 +222,7 @@ class FCDRSummary(HomemadeDataset):
     def __init__(self, *args, satname, **kwargs):
         super().__init__(*args, satname=satname, **kwargs)
 
-        if [int(d) for d in self.format_version.split(".")] > [0, 7]:
+        if float(self.format_version) >= 0.7:
             self.fields = self.fields.copy() # avoid sharing between instances
             self.fields["debug"].extend(["u_T_b_harm", "u_R_Earth_harm"])
         # special value 'all' used in summary plotting
