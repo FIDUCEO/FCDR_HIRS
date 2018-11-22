@@ -6,6 +6,7 @@ import math
 import itertools
 from .. import common
 import argparse
+import inspect
 
 import logging
 
@@ -300,6 +301,8 @@ class FCDRSummary(HomemadeDataset):
         for (sd, ed) in zip(dates[:-1], dates[1:]):
             try:
                 ds = self.hirs.read_period(sd, ed,
+                    onerror="skip",
+                    excs=inspect.signature(self.hirs.read_period).parameters["excs"].default + (KeyError,),
                     locator_args={"data_version": self.data_version,
                                   "format_version": self.format_version,
                                   "fcdr_type": fcdr_type},
