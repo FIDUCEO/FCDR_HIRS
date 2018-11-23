@@ -385,13 +385,14 @@ FCDR_data_vars_props = dict(
         {"long_name": "Azimuth angle (from the north) of the Sun as seen from the ground"},
         _ang_coding),
 )
-for (skip1, skip2, skip3) in itertools.product(
-        (0, 1), repeat=3):
-    if not (skip1 or skip2 or skip3):
+for allskips in itertools.product(
+        (0, 1), repeat=4):
+    if not any(allskips):
         continue
-    lab = (("linear" if skip1 else "") +
-           ("norself" if skip2 else "") +
-           ("nooffset" if skip3 else ""))
+    lab = (("linear" if skip[0] else "") +
+           ("norself" if skip[1] else "") +
+           ("nooffset" if skip[2] else "") +
+           ("noεcorr" if skip[3] else ""))
     FCDR_data_vars_props[f"rad_wn_{lab:s}"]= (
         f"rad_wn_{lab:s}",
         ("scanline_earth", "scanpos", "calibrated_channel"),
