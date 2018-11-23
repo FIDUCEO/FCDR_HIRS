@@ -506,7 +506,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname].get(ch, [0,0,0])[1],
                 name="correction to emissivity")
         if not -0.98 < a_3 < 0.02:
-            warnings.warn(f"Channel {ch:d}: ε + a₃ = {(self.ε+a_3).item():.2f}.  Problem?", FCDRWarning)
+            warnings.warn(f"Channel {ch:d}: ε + a₃ = {(self.ε+a_3).item():.4f}.  Problem?", FCDRWarning)
 
         # FIXME: for consistency, should replace this one also with
         # band-corrections — at least temporarily.  Perhaps this wants to
