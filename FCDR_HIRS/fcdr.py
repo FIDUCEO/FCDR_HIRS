@@ -1421,20 +1421,30 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     name="harmonisation bias",
                     attrs={"units": rad_u["si"]})
 
+            # naive (no harm) version of slope, offset with no ε
+            # correction
+            
+            (time, offset_noa3, slope_noa3, a2_noa3) = self.calculate_offset_and_slope(
+                context, ch, srf, tuck=False, naive=True)
+            (interp_offset_noa3, interp_slope_noa3, interp_bad_noa3) = self.interpolate_between_calibs(
+                ds["time"], time,
+                offset_noa3.median(dim="scanpos", keep_attrs=True),
+                slope_noa3.median(dim="scanpos", keep_attrs=True),
+                bad, kind="zero")
 
             rad_wn_dbg = {}
 
-            parcal = functools.partial(self.custom_calibrate,
-                C_Earth, interp_slope, interp_offset)
-            nom_args = [a2, Rself, a_4]
-            oth_args = [a2_0, Rself_0, a4_0]
-            labs = ["linear", "norself", "nooffset"]
-            for (skipa2, skiprself, skipa4) in itertools.product((0,1),repeat=3):
-                lab = "linear"*skipa2+skiprself*"norself"+skipa4*"nooffset"
+            for (skipa2, skiprself, skipa4, skipa3) in itertools.product((0,1),repeat=4):
+                lab = ("linear"*skipa2 +
+                       "norself"*skiprself+
+                       "nooffset"*skipa4+
+                       "noεcorr"*skipa3)
                 if not lab:
                     continue
                 rad_wn_dbg[lab] = self.custom_calibrate(
-                    C_Earth, interp_slope, interp_offset,
+                    C_Earth,
+                    interp_slope_noa3 if skipa3 else interp_slope,
+                    interp_offset_noa3 if skipa3 else interp_offset,
                     a2_0 if skipa2 else a2,
                     Rself_0 if skiprself else Rself,
                     a4_0 if skipa4 else a_4)
