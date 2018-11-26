@@ -466,9 +466,9 @@ class FCDRGenerator:
         uRe_harm.name = uRe.name + "_harm"
         uTb_harm.name = uTb.name + "_harm"
         uc = xarray.Dataset({k: v.magnitude for (k, v) in self.fcdr._effects_by_name.items()})
-        qc = xarray.Dataset(self.fcdr._quantities)
         qc = xarray.Dataset(
             {str(k): v for (k, v) in self.fcdr._quantities.items()})
+        qe = xarray.Dataset(self.fcdr._other_quantities)
         (SRF_weights, SRF_frequencies) = self.get_srfs()
 
         (sat_za, sat_aa, sun_za, sun_aa) = self.fcdr.calc_angles(
@@ -478,7 +478,7 @@ class FCDRGenerator:
         # uncertainty scanline coordinate conflicts with subset scanline
         # coordinate, drop the former
         stuff_to_merge = [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
-                            qc,
+                            qc, qe,
                           subset.rename({k.name: "original_"+k.name
                                 for k in (sat_za, sat_aa, sun_za, sun_aa)
                                 if k.name in subset.data_vars.keys()}),

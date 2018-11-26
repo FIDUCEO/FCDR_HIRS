@@ -505,9 +505,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         else:
             a_3 = UADA(_harm_defs.harmonisation_parameters[self.satname].get(ch, [0,0,0])[1],
                 name="correction to emissivity")
-        if a_3 > 0.02:
-            warnings.warn(f"Channel {ch:d}: ε + a₃ > 1!  Perhaps there is a "
-                "problem with the blackbody?", FCDRWarning)
+        if not -0.98 < a_3 < 0.02:
+            warnings.warn(f"Channel {ch:d}: ε + a₃ = {(self.ε+a_3).item():.4f}.  Problem?", FCDRWarning)
 
         # FIXME: for consistency, should replace this one also with
         # band-corrections — at least temporarily.  Perhaps this wants to
@@ -635,19 +634,26 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             concat_coords=(), **coords):
         """Convert quantity to xarray and put into self._quantities
 
+        Or self._other_quantities if it's not in the measurement equation.
+
         TODO: need to assign time coordinates so that I can later
         extrapolate calibration_cycle dimension to scanline dimension.
 
         Returns quantity as stored.
         """
 
-        s = me.symbols[symbol_name]
-        name = me.names[s] # FIXME: fails for Indexed?
+        s = me.symbols.get(symbol_name)
+        name = me.names.get(s, symbol_name) # FIXME: fails for Indexed?
         q = self._quantity_to_xarray(quantity, name,
                 dropdims=["channel", "calibrated_channel"],
                 **coords)
-        if s in self._quantities:
-            da = self._quantities[s]
+        if s is None: 
+            s = name
+            dest = self._other_quantities
+        else:
+            dest = self._quantities
+        if s in dest:
+            da = dest[s]
             in_coords = [x for x in ("channel", "calibrated_channel")
                             if x in da.coords]
             if len(in_coords) != 1:
@@ -659,10 +665,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 coords=[in_coords[0]]+list(concat_coords))
             # NB: https://github.com/pydata/xarray/issues/1297
             da.encoding = q.encoding
-            self._quantities[s] = da
+            dest[s] = da
             return da
         else:
-            self._quantities[s] = q
+            dest[s] = q
             return q
 
     def _tuck_effect_channel(self, name, quantity, channel,
@@ -883,6 +889,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 a2)
 
     _quantities = {}
+    _other_quantities = {}
     _effects = None
     _effects_by_name = None
     _flags = {"scanline": {}, "channel": {}}
@@ -1253,6 +1260,16 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
                     _fcdr_defs.FlagsChannel.DO_NOT_USE|
                     _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
+            # to be used if I have none, but also for debugging otherwise
+            Rself_0 = UADA(numpy.zeros(shape=C_Earth["time"].shape),
+                         coords=C_Earth["time"].coords,
+                         name="Rself", attrs={"units":   
+                str(rad_u["si"])})
+
+            Rself_0_start = Rself_0_end = xarray.DataArray(
+                [numpy.datetime64(0, 's')], dims=["time_rself"])
+
+
             if has_Rself:
                 # we do have a working self-emission model, probably
                 interp_offset = interp_offset_modes["zero"]
@@ -1312,10 +1329,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 # to the difference between linear and zero-order
                 # interpolation.
                 interp_offset = interp_offset_modes["zero" if naive else "cubic"]
-                Rself = UADA(numpy.zeros(shape=C_Earth["time"].shape),
-                             coords=C_Earth["time"].coords,
-                             name="Rself", attrs={"units":   
-                    str(rad_u["si"])})
+                Rself = Rself_0
                 RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
                         coords=offset["time"].coords, attrs=Rself.attrs)
     #            u_Rself = UADA([0], dims=["rself_update_time"],
@@ -1336,9 +1350,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     dims=["time_rself"],
                     attrs={"units": offset.attrs["units"]})
 
-                Rself_start = Rself_end = xarray.DataArray(
-                    [numpy.datetime64(0, 's')], dims=["time_rself"])
-                
     #            # make sure dimensions etc. are the same as when we do have a
     #            # working model
     #            try:
@@ -1386,6 +1397,58 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             rad_wn = self.custom_calibrate(C_Earth, interp_slope,
                 interp_offset, a2, Rself, a_4)
 
+            if not has_Rself: # need to set manually
+                newcoor = dict(
+                    Rself_start=xarray.DataArray(
+                        numpy.tile(Rself_0_start, Rself.shape[0]),
+                        dims=("time",),
+                        coords={"time": Rself.time}),
+                    Rself_end=xarray.DataArray(
+                        numpy.tile(Rself_0_end, Rself.shape[0]),
+                        dims=("time",),
+                        coords={"time": Rself.time}))
+                Rself = Rself_0.assign_coords(**newcoor)
+
+
+            # for debugging purposes, calculate various other radiances
+            a2_0 = UADA(0,
+                    name="a2", coords={"calibrated_channel": ch},
+                    attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
+
+            # Rself_0 already set, but not with right coords
+            Rself_0 = Rself_0.assign_coords(**Rself.coords)
+            a4_0 = UADA(0,
+                    name="harmonisation bias",
+                    attrs={"units": rad_u["si"]})
+
+            # naive (no harm) version of slope, offset with no ε
+            # correction
+            
+            (time, offset_noa3, slope_noa3, a2_noa3) = self.calculate_offset_and_slope(
+                context, ch, srf, tuck=False, naive=True)
+            (interp_offset_noa3, interp_slope_noa3, interp_bad_noa3) = self.interpolate_between_calibs(
+                ds["time"], time,
+                offset_noa3.median(dim="scanpos", keep_attrs=True),
+                slope_noa3.median(dim="scanpos", keep_attrs=True),
+                bad, kind="zero")
+
+            rad_wn_dbg = {}
+
+            for (skipa2, skiprself, skipa4, skipa3) in itertools.product((0,1),repeat=4):
+                lab = ("linear"*skipa2 +
+                       "norself"*skiprself+
+                       "nooffset"*skipa4+
+                       "noεcorr"*skipa3)
+                if not lab:
+                    continue
+                rad_wn_dbg[lab] = self.custom_calibrate(
+                    C_Earth,
+                    interp_slope_noa3 if skipa3 else interp_slope,
+                    interp_offset_noa3 if skipa3 else interp_offset,
+                    a2_0 if skipa2 else a2,
+                    Rself_0 if skiprself else Rself,
+                    a4_0 if skipa4 else a_4)
+
             bad = self.filter_earthcounts.filter_outliers(C_Earth.values)
             # I need to compare to space counts.
             C_space = self._quantities[me.symbols["C_s"]]
@@ -1420,14 +1483,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         if not has_Rself: # need to set manually
             newcoor = dict(
                 Rself_start=xarray.DataArray(
-                    numpy.tile(Rself_start, Rself.shape[0]),
+                    numpy.tile(Rself_0_start, Rself.shape[0]),
                     dims=("time",),
                     coords={"time": Rself.time}),
                 Rself_end=xarray.DataArray(
-                    numpy.tile(Rself_end, Rself.shape[0]),
+                    numpy.tile(Rself_0_end, Rself.shape[0]),
                     dims=("time",),
                     coords={"time": Rself.time}))
-            Rself = Rself.assign_coords(**newcoor)
+            Rself = Rself_0.assign_coords(**newcoor)
             rad_wn = rad_wn.assign_coords(**newcoor)
             T_b = T_b.assign_coords(**newcoor)
 
@@ -1509,6 +1572,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # the zero-terms
             for s in (s for s in me.symbols.keys() if s.startswith("O_")):
                 self._tuck_quantity_channel(s, 0, calibrated_channel=ch)
+
+            # debug radiances
+            for (k, v) in rad_wn_dbg.items():
+                self._tuck_quantity_channel(
+                    f"rad_wn_{k:s}", v, calibrated_channel=ch,
+                    concat_coords=["Rself_start", "Rself_end"])
         rad_wn = rad_wn.rename({"time": "scanline_earth"})
 
 
@@ -1566,6 +1635,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # the quantities I calculate so I can use them for the
         # uncertainties after.
         self._quantities.clear() # don't accidentally use old quantities…
+        self._other_quantities.clear()
         self._reset_flags(ds)
 #        self._flags["scanline"].clear()
 #        self._flags["channel"].clear()
