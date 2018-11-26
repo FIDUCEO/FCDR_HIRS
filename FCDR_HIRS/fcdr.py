@@ -2534,19 +2534,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         # satellite angles
         satlatlon = ds[["lat","lon"]].sel(
-            scanpos=[math.floor(self.n_perline/2),
-                     math.ceil(self.n_perline/2)]).reset_coords(["lat", "lon"])
-        if numpy.sign(satlatlon["lon"]).prod()<0:
-            # we're crossing the antimeridian
-            satlatlon["lon"] += 360
-            satlatlon = satlatlon.mean("scanpos")
-            if satlatlon["lon"].item() > 360:
-                satlatlon["lon"] -= 360
-        else:
-            # not very accurate, but this is a temporary solution anyway,
-            # as ultimately the satellite lat/lon needs to be recalculated
-            # from TLEs when we redo the geolocation (#235)
-            satlatlon = satlatlon.mean("scanpos")
+            scanpos=[28, 29]).reset_coords(["lat", "lon"])
+        # check for crossing antimeridian
+        Δlon = (satlatlon.isel(scanpos=1) - satlatlon.isel(scanpos=0))["lon"]
+        crossing = Δlon>180
+        satlatlon["lon"][{"scanline_earth":crossing.values,"scanpos":0}] += 360
+        satlatlon = satlatlon.mean("scanpos")
         satelev = ds["platform_altitude"]
         (sat_aa, sat_ea) = pyorbital.orbital.get_observer_look(
             satlatlon["lon"],
