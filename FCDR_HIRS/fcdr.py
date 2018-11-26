@@ -2308,7 +2308,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             ΔTb.loc[{"calibrated_channel": ch}] = (high-low)/2
         return ΔTb
 
-    def estimate_channel_correlation_matrix(self, ds_context, calpos=20):
+    def estimate_channel_correlation_matrix(self, ds_context, calpos=20,
+            type="spearman"):
         """Estimate channel correlation matrix
 
         Calculates correlation coefficients between space view anomalies
@@ -2316,10 +2317,19 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         As per #87.  
         """
-        Cs = ds_context["counts"].isel(time=ds_context["scantype"].values == self.typ_space)
+        Cs = ds_context["counts"].isel(
+            time=ds_context["scantype"].values == self.typ_space,
+            scanpos=slice(8, None))
+        bad = self.filter_calibcounts.filter_outliers(Cs.values)
+        ok = ~bad[:, calpos, :].any(1)
 
         ΔCs = (Cs - Cs.mean("scanpos"))
-        S = numpy.corrcoef(ΔCs.sel(scanpos=calpos).T)
+        if type == "pearson":
+            S = numpy.corrcoef(ΔCs.isel(time=ok).sel(scanpos=calpos).T)
+        elif type == "spearman":
+            S = scipy.stats.spearmanr(ΔCs.isel(time=ok).sel(scanpos=calpos))[0]
+        else:
+            raise ValueError(f"Unknown type: {type:s}")
         da = xarray.DataArray(S,
             coords={"channel": ds_context.coords["channel"]},
             dims=("channel", "channel"))
@@ -2327,6 +2337,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         da.attrs = self._data_vars_props[da.name][2]
         da.encoding = self._data_vars_props[da.name][3]
         da.attrs["note"] = "covers only crosstalk effect"
+        if da.min().item() < -1 or da.max().item() > 1:
+            raise ValueError("Found correlations out of range!")
         return da
 
     def get_BT_to_L_LUT(self):
