@@ -36,6 +36,9 @@ See issue #22
     group.add_argument('--with_filters', action='store_true')
     group.add_argument('--without_filters', action='store_false')
 
+    parser.add_argument("--src-version", action="store", type=str,
+        default="0.8pre2_no_harm",
+        help="Source version to use for matchup enhancement")
     return parser
 def parse_cmdline_hirs():
     return get_parser_hirs().parse_args()
@@ -133,8 +136,12 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                  kmodel=None,
                  krmodel=None,
                  debug=False,
-                 apply_filters=True):
-        super().__init__(start_date, end_date, prim, sec)
+                 apply_filters=True,
+                 hirs_data_version=None,
+                 hirs_format_version=None):
+        super().__init__(start_date, end_date, prim, sec,
+            hirs_data_version=hirs_data_version,
+            hirs_format_version=hirs_format_version)
         # parent has set self.mode to either "hirs" or "reference"
         if self.mode not in ("hirs", "reference"):
             raise RuntimeError("My father has been bad.")
@@ -743,7 +750,8 @@ def combine_hirs():
             datetime.datetime.strptime(p.to_date, p.datefmt),
             p.satname1, p.satname2,
             debug=p.debug,
-            apply_filters=p.with_filters)
+            apply_filters=p.with_filters,
+            hirs_data_version=p.src_version)
 
         ds = hmc.as_xarray_dataset()
     except (typhon.datasets.dataset.DataFileError, MatchupError) as e:
