@@ -599,6 +599,22 @@ class HIRSMatchupCombiner:
 
         self.sec_hirs = fcdr.which_hirs_fcdr(sec_name, read="L1C")
 
+        # we might want to gather fields from multiple versions of the
+        # debug FCDR.  In this case, we need multiple other_args
+        # dictionaries, in particular for the fields 'locator_args' and
+        # perhaps 'fields'.  Most arguments will be the same, therefore
+        # functools.partial first
+        comb = functools.partial(hh.combine, 
+            ds, timetol=numpy.timedelta64(4, 's'),
+            col_dim_name="scanpos")
+        prim_comb = functools.partial(comb,
+            self.prim_hirs, trans={"time_{:s}".format(prim_name): "time"},
+            col_field="hirs-{:s}_x".format(prim_name),
+            time_name="time_"+prim_name)
+        sec_comb = functools.partial(comb,
+            self.sec_hirs, trans={"time_{:s}".format(sec_name): "time"},
+            col_field="hirs-{:s}_x".format(sec_name),
+            time_name="time_"+sec_name)
         if self.mode == "reference":
             # There is no Mcp, for the primary (reference) is IASI
             Mcp = None
@@ -611,24 +627,16 @@ class HIRSMatchupCombiner:
                     ("lat_earth", "lon_earth"))
         elif self.mode == "hirs":
             try:
-                Mcp = hh.combine(ds, self.prim_hirs, trans={"time_{:s}".format(prim_name): "time"},
-                                 timetol=numpy.timedelta64(4, 's'),
-                                 col_field="hirs-{:s}_x".format(prim_name),
-                                 col_dim_name="scanpos",
-                                 other_args={"locator_args": self.fcdr_info,
-                                             "fields": self.fields_from_each,
-                                             "orbit_filters": [CalibrationCountDimensionReducer()],
-                                             "NO_CACHE": True},
-                                 time_name="time_"+prim_name).drop(
+                Mcp = prim_comb(
+                    other_args={"locator_args": self.fcdr_info,
+                                "fields": self.fields_from_each,
+                                "orbit_filters": [CalibrationCountDimensionReducer()],
+                                "NO_CACHE": True}).drop(
                         ("lat_earth", "lon_earth"))
-                Mcs = hh.combine(ds, self.sec_hirs, trans={"time_{:s}".format(sec_name): "time"},
-                                 timetol=numpy.timedelta64(4, 's'),
-                                 col_field="hirs-{:s}_x".format(sec_name),
-                                 col_dim_name="scanpos",
-                                 other_args={"locator_args": self.fcdr_info,
-                                             "orbit_filters": [CalibrationCountDimensionReducer()],
-                                             "fields": self.fields_from_each},
-                                 time_name="time_"+sec_name).drop(
+                Mcs = sec_comb(
+                    other_args={"locator_args": self.fcdr_info,
+                                "orbit_filters": [CalibrationCountDimensionReducer()],
+                                "fields": self.fields_from_each}).drop(
                         ("lat_earth", "lon_earth"))
             except ValueError as e:
                 if e.args[0] == "array of sample points is empty":
