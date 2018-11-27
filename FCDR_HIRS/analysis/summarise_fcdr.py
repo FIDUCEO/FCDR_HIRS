@@ -7,6 +7,8 @@ import itertools
 from .. import common
 import argparse
 import inspect
+import functools
+import errno
 
 import logging
 
@@ -529,15 +531,28 @@ class FCDRSummary(HomemadeDataset):
                 f.autofmt_xdate()
             summary.close()
             del summary
+        
+        
+        form = functools.partial(
+            self.plot_file.format,
+            satname=satlabel, start=start,
+            end=end, data_version=self.data_version,
+            format_version=self.format_version,
+            type=fcdr_type, ptilestr=','.join(str(p) for p in ptiles))
+        fieldstr=",".join(fields)
+        fieldstr_compact=",".join(nm[:2]+nm[-2:] for nm in fields)
+
         for channel in range(1, 20):
             (f, a_all) = figs[channel]
-            graphics.print_or_show(f, None, 
-                self.plot_file.format(satname=satlabel, start=start,
-                end=end, channel=channel, data_version=self.data_version,
-                format_version=self.format_version,
-                type=fcdr_type,
-                fieldstr=",".join(fields),
-                ptilestr=','.join(str(p) for p in ptiles)))
+            try:
+                graphics.print_or_show(f, False, 
+                    form(channel=channel, fieldstr=fieldstr))
+            except OSError as e:
+                if e.errno == errno.ENAMETOOLONG:
+                    graphics.print_or_show(f, False, 
+                        form(channel=channel, fieldstr=fieldstr_compact))
+                else:
+                    raise
         # another set with zoomed-in y-axes
         for channel in range(1, 20):
             (f, a_all) = figs[channel]
@@ -545,14 +560,17 @@ class FCDRSummary(HomemadeDataset):
                 lo = ranges.loc[{"channel": channel, "field": fld, "extremum": "lo"}].min()
                 hi = ranges.loc[{"channel": channel, "field": fld, "extremum": "hi"}].max()
                 a.set_ylim([lo, hi])
-            graphics.print_or_show(f, None, 
-                self.plot_file.format(satname=satlabel, start=start,
-                    end=end, channel=channel,
-                    data_version=self.data_version,
-                    format_version=self.format_version,
-                    type=fcdr_type,
-                    fieldstr=",".join(fields),
-                    ptilestr=','.join(str(p) for p in ptiles))[:-1] + "_zoom.")
+            try:
+                graphics.print_or_show(
+                    f, False, 
+                    form(channel=channel, fieldstr=fieldstr)[:-1]+"_zoom.")
+            except OSError as e:
+                if e.errno == errno.ENAMETOOLONG:
+                    graphics.print_or_show(
+                        f, False,
+                        form(channel=channel, fieldstr=fieldstr_compact)[:-1]+"_zoom.")
+                else:
+                    raise
         self.satname = oldsatname
 
 
