@@ -543,7 +543,9 @@ class HIRSMatchupCombiner:
     mode = None
     def __init__(self, start_date, end_date, prim_name, sec_name,
             hirs_data_version=None,
-            hirs_format_version=None):
+            hirs_format_version=None,
+            extra_data_versions=None,
+            extra_format_versions=None):
         """Create HIRSMatchupCombiner object
 
         Parameters
