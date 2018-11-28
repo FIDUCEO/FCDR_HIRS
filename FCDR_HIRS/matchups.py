@@ -545,7 +545,8 @@ class HIRSMatchupCombiner:
             hirs_data_version=None,
             hirs_format_version=None,
             extra_data_versions=None,
-            extra_format_versions=None):
+            extra_format_versions=None,
+            extra_fields=None):
         """Create HIRSMatchupCombiner object
 
         Parameters
@@ -567,6 +568,8 @@ class HIRSMatchupCombiner:
         # readibly available in the matchups from BC, so it would take
         # more effort to gather the necessary context information.  See
         # #117.
+        if extra_fields is None:
+            extra_fields = []
         if prim_name.lower() == "iasi":
             if sec_name.lower() not in ("metopa", "ma"):
                 raise ValueError(f"When primary is IASI, secondary "
@@ -622,7 +625,7 @@ class HIRSMatchupCombiner:
             "format_version": hirs_format_version or self.hirs_format_version,
             "fcdr_type": "debug"}
         other_args_part = {"locator_args": fcdr_info,
-                           "fields": self.fields_from_each}
+                           "fields": self.fields_from_each + extra_fields}
         if self.mode == "reference":
             # There is no Mcp, for the primary (reference) is IASI
             Mcp = None
@@ -630,8 +633,7 @@ class HIRSMatchupCombiner:
                 self.sec_hirs,
                 trans={"mon_time": "time"},
                 timetol=numpy.timedelta64(4, 's'),
-                other_args={"locator_args": fcdr_info,
-                            "fields": self.fields_from_each}).drop(
+                other_args=other_args_part).drop(
                     ("lat_earth", "lon_earth"))
         elif self.mode == "hirs":
             try:

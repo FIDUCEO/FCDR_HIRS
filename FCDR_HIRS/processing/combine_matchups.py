@@ -58,13 +58,14 @@ Convert HIRS-IASI matchups for harmonisation
 
     parser.add_argument("--extra-data-versions", action="store", type=str,
         nargs="*", default=[],
-        help="Additional data versions to consider.  Must pass same number "
-             "to --extra-format-versions")
+        help="NOT SUPPORTED")
 
     parser.add_argument("--extra-format-versions", action="store", type=str,
         nargs="*", default=[],
-        help="Additional data versions to consider.  Must pass same number "
-             "to --extra-format-versions")
+        help="NOT SUPPORTED")
+    parser.add_argument("--extra-fields", action="store", type=str,
+        nargs="*", default=[],
+        help="Extra fields from both sats to add to the matchups")
 
     return parser
 def parse_cmdline_iasi():
@@ -150,12 +151,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                  hirs_data_version=None,
                  hirs_format_version=None,
                  extra_data_versions=None,
-                 extra_format_versions=None):
+                 extra_format_versions=None,
+                 extra_fields=None):
         super().__init__(start_date, end_date, prim, sec,
             hirs_data_version=hirs_data_version,
             hirs_format_version=hirs_format_version,
             extra_data_versions=extra_data_versions,
-            extra_format_versions=extra_format_versions)
+            extra_format_versions=extra_format_versions,
+            extra_fields=extra_fields)
         # parent has set self.mode to either "hirs" or "reference"
         if self.mode not in ("hirs", "reference"):
             raise RuntimeError("My father has been bad.")
@@ -791,7 +794,8 @@ def combine_hirs():
             p.satname1, p.satname2,
             debug=p.debug,
             apply_filters=p.with_filters,
-            hirs_data_version=p.src_version)
+            hirs_data_version=p.src_version,
+            extra_fields=p.extra_fields)
 
         ds = hmc.as_xarray_dataset()
     except (typhon.datasets.dataset.DataFileError, MatchupError) as e:
