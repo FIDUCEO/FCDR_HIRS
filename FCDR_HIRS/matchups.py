@@ -621,6 +621,8 @@ class HIRSMatchupCombiner:
             "data_version": hirs_data_version or self.hirs_data_version,
             "format_version": hirs_format_version or self.hirs_format_version,
             "fcdr_type": "debug"}
+        other_args_part = {"locator_args": fcdr_info,
+                           "fields": self.fields_from_each}
         if self.mode == "reference":
             # There is no Mcp, for the primary (reference) is IASI
             Mcp = None
@@ -633,22 +635,37 @@ class HIRSMatchupCombiner:
                     ("lat_earth", "lon_earth"))
         elif self.mode == "hirs":
             try:
-                Mcp = prim_comb(
-                    other_args={"locator_args": fcdr_info,
-                                "fields": self.fields_from_each,
-                                "orbit_filters": [CalibrationCountDimensionReducer()],
-                                "NO_CACHE": True}).drop(
+                poa = other_args_part.copy()
+                poa["NO_CACHE"] = True
+                soa = other_args_part.copy()
+                for oa in (poa, soa):
+                    oa["orbit_filters"] = [CalibrationCountDimensionReducer()]
+                Mcp = prim_comb(other_args=poa).drop(
                         ("lat_earth", "lon_earth"))
                 Mcs = sec_comb(
-                    other_args={"locator_args": fcdr_info,
-                                "orbit_filters": [CalibrationCountDimensionReducer()],
-                                "fields": self.fields_from_each}).drop(
+                    other_args=soa).drop(
                         ("lat_earth", "lon_earth"))
             except ValueError as e:
                 if e.args[0] == "array of sample points is empty":
                     raise NoDataError("Not enough matching data found, can't interpolate")
                 else:
                     raise
+            else:
+                extras = {}
+                if extra_data_versions:
+                    for (dv, fv) in (extra_data_versions, extra_format_versions):
+                        fcdr_info["data_version"] = dv
+                        fcdr_info["format_version"] = fv
+                        # shallow copy, same fcdr_info
+                        poa = poa.copy()
+                        soa = soa.copy()
+                        for oa in (poa, soa):
+                            oa["orbit_filters"] = [CalibrationCountDimensionReducer()]
+                        extras[f"v{dv:s}fv{fv:s}"] = (
+                            (prim_comb(other_args=poa).drop(
+                                ("lat_earth", "lon_earth")),
+                             sec_comb(other_args=soa).drop(
+                                ("lat_earth", "lon_earth"))))
         else:
             raise RuntimeError(f"Mode can't possibly be {self.mode:s}!")
 
@@ -659,6 +676,7 @@ class HIRSMatchupCombiner:
         self.Mcs = Mcs
         self.prim_name = prim_name
         self.sec_name = sec_name
+        self.extras = extras
 
 
 class KModel(metaclass=abc.ABCMeta):

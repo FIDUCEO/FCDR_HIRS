@@ -56,6 +56,16 @@ Convert HIRS-IASI matchups for harmonisation
         include_channels=False,
         include_temperatures=False)
 
+    parser.add_argument("--extra-data-versions", action="store", type=str,
+        nargs="*", default=[],
+        help="Additional data versions to consider.  Must pass same number "
+             "to --extra-format-versions")
+
+    parser.add_argument("--extra-format-versions", action="store", type=str,
+        nargs="*", default=[],
+        help="Additional data versions to consider.  Must pass same number "
+             "to --extra-format-versions")
+
     return parser
 def parse_cmdline_iasi():
     return get_parser_iasi().parse_args()
@@ -138,10 +148,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                  debug=False,
                  apply_filters=True,
                  hirs_data_version=None,
-                 hirs_format_version=None):
+                 hirs_format_version=None,
+                 extra_data_versions=None,
+                 extra_format_versions=None):
         super().__init__(start_date, end_date, prim, sec,
             hirs_data_version=hirs_data_version,
-            hirs_format_version=hirs_format_version)
+            hirs_format_version=hirs_format_version,
+            extra_data_versions=extra_data_versions,
+            extra_format_versions=extra_format_versions)
         # parent has set self.mode to either "hirs" or "reference"
         if self.mode not in ("hirs", "reference"):
             raise RuntimeError("My father has been bad.")
@@ -214,9 +228,21 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 rename_dimensions={"scanline": "collocation"})
                     for (tp, src) in ((self.prim_hirs, self.Mcp),
                                       (self.sec_hirs, self.Mcs)))
+            extras_ds = {nm:
+                tuple(
+                    tp.as_xarray_dataset(
+                        src,
+                        skip_dimensions=["scanpos"],
+                        rename_dimensions={"scanline": "collocation"})
+                    for (tp, src) in ((self.prim_hirs, v[0]), (self.sec_hirs, v[1])))
+                for (nm, v) in self.extras.items()}
+
         elif is_xarray:
             p_ds = self.Mcp.copy() if self.mode=="hirs" else None
             s_ds = self.Mcs.copy()
+            extras_ds = {nm: (v[0].copy() if self.mode=="hirs" else None,
+                              v[1].copy())
+                        for (nm, v) in self.extras.items()}
         else:
             raise RuntimeError("Onmogelĳk.  Impossible.  Unmöglich.")
         #
@@ -228,11 +254,23 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     for nm in p_ds.variables.keys()
                     if nm not in keep|set(p_ds.dims)},
                 inplace=True)
+            for (enm, v) in extras_ds.items():
+                v[0].rename(
+                    {vnm: f"{self.prim_name:s}_{vnm:s}_{enm:s}"
+                        for enm in v[0].variables.keys()
+                        if enm not in keep|set(v[0].dims)},
+                    inplace=True)
         s_ds.rename(
             {nm: "{:s}_{:s}".format(self.sec_name, nm)
                 for nm in s_ds.variables.keys()
                 if nm not in keep|set(s_ds.dims)},
             inplace=True)
+        for (enm, v) in extras_ds.items():
+            v[1].rename(
+                {vnm: f"{self.prim_name:s}_{vnm:s}_{enm:s}"
+                    for enm in v[1].variables.keys()
+                    if enm not in keep|set(v[1].dims)},
+                inplace=True)
         # dimension prt_number_iwt may differ
         if (self.mode == "hirs" and
             "prt_number_iwt" in p_ds.dims and
@@ -251,7 +289,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     else numpy.zeros(self.ds.dims["line"]), 
                 dims=["matchup_count" if self.mode=="hirs" else "line"],
                 name=self.msd_field)
-            ]
+            ] + list(itertools.chain.from_iterable(extras_ds.values()))
         ds = xarray.merge(to_merge)
         return ds
 
@@ -737,6 +775,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
 def combine_hirs():
     p = parse_cmdline_hirs()
+    if p.extra_data_versions:
+        sys.exit("Extra data versions not supported, this was a mistake")
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         p.log,
