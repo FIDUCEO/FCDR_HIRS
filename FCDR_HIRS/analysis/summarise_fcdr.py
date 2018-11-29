@@ -204,7 +204,8 @@ class FCDRSummary(HomemadeDataset):
         **{field: (("edges",), [170, 320]) for field in ("T_b", "bt", "T_IWCT")},
         **{field: (("edges",), [0, 50]) for field in 
             ["u_T_b_random", "u_T_b_nonrandom", "u_T_b_harm",
-             "u_independent", "u_structured", "u_common"]},
+             "u_independent", "u_structured", "u_common",
+             "toa_brightness_temperature"]},
         **{field: (("channel", "edges"),
                    [[0, 200]]*10+[[0, 100]]*2+[[0,10]]*7)
             for field in ("R_e", "u_R_Earth",
@@ -222,6 +223,7 @@ class FCDRSummary(HomemadeDataset):
                           'rad_wn_linearnooffsetnoεcorr',
                           'rad_wn_linearnorselfnoεcorr',
                           'rad_wn_linearnorselfnooffsetnoεcorr',
+                          "toa_outgoing_radiance_per_unit_frequency"
                           )},
         **{field: (("edges",), [-4097, 4098]) for field in
             ["C_E", "C_IWCT", "C_s", "u_C_Earth", "u_C_space",
