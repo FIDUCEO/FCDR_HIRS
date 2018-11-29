@@ -216,6 +216,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         self.kmodel = kmodel
         self.krmodel = krmodel
         self.apply_filters = apply_filters
+        self.extra_fields = extra_fields
 
     def as_xarray_dataset(self):
         """Returns SINGLE xarray dataset for matchups
@@ -654,6 +655,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         harm[f"nominal_measurand_original{i:d}"] = (("M",),
             ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))
         harm[f"nominal_measurand_original{i:d}"].attrs.update(ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel).attrs)
+
+        for f in self.extra_fields:
+            harm[f"extra_{f:s}{i:d}"] = (("M",), ds[f"{sat:s}_{f:s}"].sel(calibrated_channel=channel))
 
         if self.mode == "reference":
             sdsidx = {"line": ok}
