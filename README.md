@@ -61,11 +61,12 @@ The steps to generate a new version of the FCDR:
   FCDRTools if applicable.
 
 - Generate an unharmonised FCDR by passing the --no-harm flag to
-  generate_fcdr.
+  generate_fcdr.  Gerrit has scripts in bitbucket that can help with the
+  job submission.
 
 - (devel) Switch to correct branch, rebase on master, and install
 
-- Use hirs_logfile_analysis script to inspect outcome
+- Use hirs_logfile_analysis script to inspect outcome.
 
 - (devel) Switch to correct branch, rebase on master, and install
 
@@ -78,34 +79,45 @@ The steps to generate a new version of the FCDR:
 - (devel) Switch to correct branch, rebase on master, and install
 
 - From the unfiltered harmonisation database, derive filter parameters by
-  calling hirs_inspect_harm_matchups with the --write-filters flag
+  calling hirs_inspect_harm_matchups with the --write-filters flag.
+  Perhaps inspect the resulting plots.
 
 - (devel) Switch to correct branch, rebase on master, and install
 
 - Generate a new harmonisation database, now --with-filters.
 
-- Run merge_hirs_harmonisation on the same
+- Run merge_hirs_harmonisation on the same.
+
+- Inspect the results with hirs_inspect_harm_matchups.
 
 - Run the harmonisation.  Ralf Quast <ralf.quast@fastopt.de> can do this.
 
-- Convert the harmonisation parameters to the Python file _harm_defs.py
+- Write the harmonisation parameters to the Python file _harm_defs.py
   using convert_hirs_harmonisation_parameters
 
 - (devel) Switch to correct branch, rebase on master, and install
 
-- Run the FCDR with harmonisation
+- Generate the FCDR with harmonisation.  Gerrit has scripts in bitbucket
+  that can help with the job submission.
 
 - (devel) Switch to correct branch, rebase on master, and install
 
-- Use hirs_logfile_analysis script to inspect outcome
+- Use hirs_logfile_analysis script to inspect outcome.
+
+- (devel) Switch to correct branch, rebase on master, and install
+
+- If needed, rerun (partially) failed jobs.
 
 - (devel) Switch to correct branch, rebase on master, and install
 
 - Use summarise_hirs_fcdr with 'summarise' mode to generate summarising
-  statistic
+  statistics.
 
 - Use summarise_hirs_fcdr with 'plot' mode to visualise summarising
-  statistic
+  statistics.
 
 - For shorter periods of plotting, use plot_hirs_fcdr (short time series)
-  and hirs_orbit_map (maps)
+  and hirs_orbit_map (maps).
+
+- Possibly generate yet another set of enhanced matchups, such that we can
+  look at matchup-derived statistics on the resulting FCDR.
