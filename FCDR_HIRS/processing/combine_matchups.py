@@ -876,6 +876,7 @@ def combine_iasi():
         datetime.datetime.strptime(p.to_date, p.datefmt),
         "iasi", "metopa",
         hirs_data_version=p.hirs_src_version,
+        apply_filters=p.with_filters,
         extra_fields=p.hirs_extra_fields)
 
     ds = hmc.as_xarray_dataset()
