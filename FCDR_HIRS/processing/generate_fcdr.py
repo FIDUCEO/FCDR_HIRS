@@ -390,6 +390,12 @@ class FCDRGenerator:
             operator.add,
             ((v[0]*v[1]).to(rad_u["si"]**2) for v in covcomps.values()))
 
+        R_E_alt = xarray.DataArray(
+            self.fcdr.get_L_cached_meq(),
+            dims=R_E.dims,
+            attrs=R_E.attrs,
+            coords=R_E.coords)
+        R_E_alt.name = "R_E_alt"
 #        u_from = xarray.Dataset(dict([(f"u_from_{k!s}", v) for (k, v) in
 #                    unc_components.items()]))
         S = self.fcdr.estimate_channel_correlation_matrix(context)
@@ -489,7 +495,8 @@ class FCDRGenerator:
                             S, lookup_table_BT, LUT_radiance,
                             flags_scanline, flags_channel,
                             flags_minorframe, flags_pixel,
-                            u_from, SRF_weights, SRF_frequencies]
+                            u_from, SRF_weights, SRF_frequencies,
+                            R_E_alt]
         ds = xarray.merge(
             [da.drop("scanline").rename(
                 {"lat": "lat_earth", "lon": "lon_earth"})
