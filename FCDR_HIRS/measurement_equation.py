@@ -276,7 +276,7 @@ names = {
 expression_Re_simplified = recursive_substitution(
     expressions[symbols["R_e"]],
     expressions=expressions,
-    stop_at=symbols["T_IWCT"]).subs(
+    stop_at={symbols["T_IWCT"], symbols["h"], symbols["c"], symbols["k_b"]}).subs(
         {symbols["R_selfIWCT"]: 0,
          symbols["O_RIWCT"]: 0,
          symbols["O_Re"]: 0,
