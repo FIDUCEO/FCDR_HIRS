@@ -515,8 +515,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # NB: pint seems to silently drop xarray.DataArray information,
         # see https://github.com/hgrecco/pint/issues/479
         # instead use UADA
-        L_iwct = (self.ε + a_3).item() * srf.blackbody_radiance(
-            ureg.Quantity(T_iwct.values, ureg.K))
+        B = srf.blackbody_radiance(ureg.Quantity(T_iwct.values, ureg.K))
+        L_iwct = (self.ε + a_3).item() * B
         #L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
         L_iwct = UADA(L_iwct,
             dims=T_iwct.dims,
@@ -573,6 +573,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._tuck_quantity_channel("R_IWCT", L_iwct,
                 calibrated_channel=ch, **calibcycle_coords)
             # store 'N', C_PRT[n], d_PRT[n, k], O_TPRT, O_TIWCT…
+            self._tuck_quantity_channel("B",
+                B.assign_coords(time=counts_space["time"].values),
+                calibrated_channel=ch)
         return (UADA(counts_space["time"]),
                 UADA(L_iwct),
                 UADA(counts_iwct),
@@ -881,8 +884,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     covariances={
                         "a_3": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[2, 1],
                         "a_4": _harm_defs.harmonisation_parameter_covariances[self.satname].get(ch, numpy.zeros((3,3)))[2, 0]})
-            self._tuck_quantity_channel("B", L_iwct.assign_coords(time=slope.coords["time"]),
-                calibrated_channel=ch)
         return (time,
                 offset,
                 slope,
