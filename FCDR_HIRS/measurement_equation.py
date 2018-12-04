@@ -6,6 +6,7 @@ import numbers
 import numpy
 import scipy.constants
 import xarray
+import collections
 
 import sympy
 from sympy.core.symbol import Symbol
@@ -167,6 +168,8 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False,
     """
     o = None
     intermediates = set()
+    if not isinstance(stop_at, collections.abc.Container):
+        stop_at = {stop_at}
     if isinstance(e, sympy.Symbol) and e in expressions:
         return recursive_substitution(expressions[e],
             stop_at=stop_at, return_intermediates=return_intermediates,
@@ -174,7 +177,7 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False,
     while o != e:
         o = e
         for sym in typhon.physics.metrology.recursive_args(e):
-            if sym != stop_at:
+            if sym not in stop_at:
                 # subs only works for simple values but is faster
                 # replace works for arbitrarily complex expressions but is
                 # slower and may yield false positives
