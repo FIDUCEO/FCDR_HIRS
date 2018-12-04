@@ -1717,7 +1717,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         fe = sympy.lambdify(ta, e, numpy, dummify=True)
         adict = {k:v for (k,v) in self._quantities.items() if k in fargs}
         adict = self._make_adict_dims_consistent_if_needed(adict, me.symbols["R_e"])
-        return fe(*[typhon.math.common.promote_maximally(adict[x]).to_root_units() for x in ta])
+        L_meq = fe(*[typhon.math.common.promote_maximally(adict[x]).to_root_units() for x in ta])
+        return L_meq.to(rad_u["si"])
 
     def estimate_noise(self, M, ch, typ="both"):
         """Calculate noise level at each calibration line.
