@@ -518,6 +518,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         B = srf.blackbody_radiance(ureg.Quantity(T_iwct.values, ureg.K))
         L_iwct = (self.ε + a_3).item() * B
         #L_iwct = ureg.Quantity(L_iwct.astype("f4"), L_iwct.u)
+        B = UADA(B,
+            dims=T_iwct.dims,
+            coords={**T_iwct.coords, "calibrated_channel": ch},
+            attrs={"units": str(B.u)})
         L_iwct = UADA(L_iwct,
             dims=T_iwct.dims,
             coords={**T_iwct.coords, "calibrated_channel": ch},
