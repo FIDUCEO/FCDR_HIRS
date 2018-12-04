@@ -1710,15 +1710,23 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         implementation of the same.
         """
 
-        e = me.expressions[me.symbols["R_e"]]
-        fargs = typhon.physics.metrology.recursive_args(
-            e, stop_at=(sympy.Symbol, sympy.Indexed))
-        ta = tuple(fargs)
-        fe = sympy.lambdify(ta, e, numpy, dummify=True)
-        adict = {k:v for (k,v) in self._quantities.items() if k in fargs}
-        adict = self._make_adict_dims_consistent_if_needed(adict, me.symbols["R_e"])
-        L_meq = fe(*[typhon.math.common.promote_maximally(adict[x]).to_root_units() for x in ta])
-        return L_meq.to(rad_u["si"])
+        L_meq = []
+        for e in (me.expressions[me.symbols["R_e"]],
+                  me.expression_Re_simplified):
+            fargs = typhon.physics.metrology.recursive_args(
+                e, stop_at=(sympy.Symbol, sympy.Indexed))
+            ta = tuple(fargs)
+            fe = sympy.lambdify(ta, e, numpy, dummify=True)
+            adict = {k:v for (k,v) in self._quantities.items() if k in fargs}
+            adict = self._make_adict_dims_consistent_if_needed(adict, me.symbols["R_e"])
+            L_meq.append(fe(*[typhon.math.common.promote_maximally(adict[x]).to_root_units()
+                              for x in ta]))
+        return (self._quantity_to_xarray(
+                    L_meq[0].to(rad_u["si"]),
+                    "R_e_alt_meq_full"),
+                self._quantity_to_xarray(
+                    L_meq[1].to(rad_u["si"]),
+                    "R_e_alt_meq_simple"))
 
     def estimate_noise(self, M, ch, typ="both"):
         """Calculate noise level at each calibration line.
