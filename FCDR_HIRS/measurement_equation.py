@@ -278,7 +278,8 @@ expression_Re_simplified = recursive_substitution(
          symbols["O_RIWCT"]: 0,
          symbols["O_Re"]: 0,
          symbols["R_refl"]: 0,
-         symbols["R_selfs"]: 0,
+         symbols["R_selfs"]: 0})
+expression_Re_simplified_2 = expression_Re_simplified.subs({
          symbols["a_4"]: symbols["h_1"],
          symbols["a_3"]: symbols["h_3"],
          symbols["a_2"]: symbols["h_2"]})
