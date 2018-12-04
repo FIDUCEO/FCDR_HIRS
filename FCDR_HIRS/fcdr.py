@@ -1715,8 +1715,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             e, stop_at=(sympy.Symbol, sympy.Indexed))
         ta = tuple(fargs)
         fe = sympy.lambdify(ta, e, numpy, dummify=True)
-        adict = self._quantities
-        return fe(*[typhon.math.common.promote_maximally(adict[x]).to_root_units() for x in tuple(fargs)])
+        adict = {k:v for (k,v) in self._quantities.items() if k in fargs}
+        adict = self._make_adict_dims_consistent_if_needed(adict, me.symbols["R_e"])
+        return fe(*[typhon.math.common.promote_maximally(adict[x]).to_root_units() for x in ta])
 
     def estimate_noise(self, M, ch, typ="both"):
         """Calculate noise level at each calibration line.
@@ -2203,22 +2204,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         ta = tuple(args)
         # dummify=True because some args are not valid identifiers
         f = sympy.lambdify(ta, u_e, numpy, dummify=True)
-        # multiple dimensions with time coordinates:
-        # - calibration_cycle
-        # - scanline_earth
-        # Any dimension other than calibration_cycle needs to be
-        # interpolated to have dimension scanline_earth before further
-        # processing.
-        src_dims = set().union(itertools.chain.from_iterable(
-            x.dims for x in adict.values() if hasattr(x, 'dims')))
-        dest_dims = set(self._data_vars_props[me.names[sbase]][1])
-        if not dest_dims <= src_dims: # problem!
-            warnings.warn("Cannot correctly estimate uncertainty u({!s}). "
-                "Destination has dimensions {!s}, arguments (between them) "
-                "have {!s}!".format(sbase, dest_dims, src_dims or "none"),
-                FCDRWarning)
-        if not src_dims <= dest_dims: # needs reducing
-            adict = self._make_adict_dims_consistent(adict)
+        adict = self._make_adict_dims_consistent_if_needed(adict, sbase)
         # verify/convert dimensions
         u = f(*[typhon.math.common.promote_maximally(
                     adict[x]).to_root_units() for x in ta])
@@ -2285,6 +2271,26 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             return (u, sub_sensitivities, sub_components, cov_comps)
         else:
             return u
+    
+    def _make_adict_dims_consistent_if_needed(self, adict, var):
+
+        # multiple dimensions with time coordinates:
+        # - calibration_cycle
+        # - scanline_earth
+        # Any dimension other than calibration_cycle needs to be
+        # interpolated to have dimension scanline_earth before further
+        # processing.
+        src_dims = set().union(itertools.chain.from_iterable(
+            x.dims for x in adict.values() if hasattr(x, 'dims')))
+        dest_dims = set(self._data_vars_props[me.names[var]][1])
+        if not dest_dims <= src_dims: # problem!
+            warnings.warn("Cannot correctly estimate uncertainty u({!s}). "
+                "Destination has dimensions {!s}, arguments (between them) "
+                "have {!s}!".format(var, dest_dims, src_dims or "none"),
+                FCDRWarning)
+        if not src_dims <= dest_dims: # needs reducing
+            adict = self._make_adict_dims_consistent(adict)
+        return adict
 
     def _make_adict_dims_consistent(self, adict):
         """Ensure adict dims are consistent
