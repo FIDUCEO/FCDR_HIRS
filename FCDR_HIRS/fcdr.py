@@ -1698,7 +1698,26 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             else:
                 bt_all.m.mask |= D["radiance_fid_naive"].mask
         return bt_all
-   
+
+    def get_L_cached_meq(self):
+        """Calculate radiance from cached quantities using measurement equation
+
+        After we have calculated L using regular calculate_radiance, we
+        can make another estimate using the measurement equation, mostly
+        to check consistency.  The regular L calculation is not currently
+        directly through the measurement equation as defined in the
+        measurement_equation module, but is a rather directly in code
+        implementation of the same.
+        """
+
+        e = me.expressions[me.symbols["R_e"]]
+        fargs = typhon.physics.metrology.recursive_args(
+            e, stop_at=(sympy.Symbol, sympy.Indexed))
+        ta = tuple(fargs)
+        fe = sympy.lambdify(ta, e, numpy, dummify=True)
+        adict = self._quantities
+        return fe(*[typhon.math.common.promote_maximally(adict[x]).to_root_units() for x in tuple(fargs)])
+
     def estimate_noise(self, M, ch, typ="both"):
         """Calculate noise level at each calibration line.
 
