@@ -392,7 +392,7 @@ class FCDRGenerator:
 
         R_E_alt = xarray.DataArray(
             self.fcdr.get_L_cached_meq(),
-            dims=R_E.dims,
+            dims=("calibrated_channel", "scanline_earth", "scanpos"),
             attrs=R_E.attrs,
             coords=R_E.coords)
         R_E_alt.name = "R_E_alt"
