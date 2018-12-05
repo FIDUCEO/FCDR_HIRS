@@ -1551,10 +1551,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._tuck_effect_channel("f_eff", Δλ_eff.to(ureg.GHz, "sp"), ch)
             self._quantities[me.symbols["ε"]] = self._quantity_to_xarray(
                 self.ε, name=me.names[me.symbols["ε"]])
-            self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
-                a_3, name=me.names[me.symbols["a_3"]])
-            self._quantities[me.symbols["a_4"]] = self._quantity_to_xarray(
-                a_4, name=me.names[me.symbols["a_4"]])
+            self._tuck_quantity_channel("a_3", a_3, calibrated_channel=ch)
+            self._tuck_quantity_channel("a_4", a_4, calibrated_channel=ch)
             if naive or self.no_harm:
                 self._tuck_effect_channel("a_3", 0, ch,
                     covariances={"a_2": 0, "a_4": 0})
