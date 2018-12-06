@@ -1457,8 +1457,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 (interp_offset_dbg, interp_slope_dbg,
                     interp_bad_dbg) = self.interpolate_between_calibs(
                         ds["time"], time,
-                        offset_noa3.median(dim="scanpos", keep_attrs=True),
-                        slope_noa3.median(dim="scanpos", keep_attrs=True),
+                        offset_dbg.median(dim="scanpos", keep_attrs=True),
+                        slope_dbg.median(dim="scanpos", keep_attrs=True),
                         bad, kind="zero")
 
                 rad_wn_dbg[lab] = self.custom_calibrate(
