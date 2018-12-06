@@ -793,7 +793,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         # nonlinearity
         # order: see e-mail RQ 2018-04-06 and 2018-10-11
-        if self.no_harm or not self.include_nonlinearity:
+        if self.no_harm or not include_nonlinearity:
             a2 = UADA(0, 
                 name="a2", coords={"calibrated_channel": ch},
                 attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
