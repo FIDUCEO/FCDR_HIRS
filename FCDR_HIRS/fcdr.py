@@ -787,6 +787,18 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "is deprecated since 2017-02-22, should pass "
                 "xarray.Dataset ", DeprecationWarning)
             ds = self.as_xarray_dataset(ds)
+
+        # nonlinearity
+        # order: see e-mail RQ 2018-04-06 and 2018-10-11
+        if naive or self.no_harm:
+            a2 = UADA(0, 
+                name="a2", coords={"calibrated_channel": ch},
+                attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
+        else:
+            a2 = UADA(_harm_defs.harmonisation_parameters[self.satname].get(ch, [0,0,0])[2],
+                name="a2", coords={"calibrated_channel": ch},
+                attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
+
         (time, L_iwct, counts_iwct, counts_space) = self.extract_calibcounts_and_temp(ds, ch, srf, tuck=tuck, naive=naive)
         #L_space = ureg.Quantity(numpy.zeros_like(L_iwct), L_iwct.u)
         L_space = UADA(xarray.zeros_like(L_iwct),
@@ -801,18 +813,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             counts_iwct.variable - counts_space.variable,
             coords=counts_space.coords, name="Δcounts",
             attrs=counts_space.attrs)
-        slope = ΔL/Δcounts
-
-        # nonlinearity
-        # order: see e-mail RQ 2018-04-06 and 2018-10-11
-        if naive or self.no_harm:
-            a2 = UADA(0, 
-                name="a2", coords={"calibrated_channel": ch},
-                attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
-        else:
-            a2 = UADA(_harm_defs.harmonisation_parameters[self.satname].get(ch, [0,0,0])[2],
-                name="a2", coords={"calibrated_channel": ch},
-                attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
+        ΔLΛ2 = UADA(
+            counts_iwct.variable**2 - counts_space.variable**2,
+            coords=counts_space.coords, name="Δcounts",
+            attrs=counts_space.attrs)
+        ΔLΛ2.attrs["units"] = ureg.count**2
+        slope = (ΔL - a2*ΔLΛ2)/Δcounts
 
         offset = -counts_space**2 * a2 -slope * counts_space
 
