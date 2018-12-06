@@ -386,7 +386,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     def extract_calibcounts_and_temp(self, ds, ch, srf=None,
             return_u=False, return_ix=False, tuck=False,
-            naive=False):
+            include_emissivity_correction=True):
         """Calculate calibration counts and IWCT temperature
 
         In the IR, space view temperature can be safely estimated as 0
@@ -499,7 +499,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         # emissivity correction
         # order: see e-mail RQ 2018-04-06
-        if naive or self.no_harm:
+        if self.no_harm or not include_emissivity_correction:
             a_3 = UADA(0,
                 name="correction to emissivity")
         else:
@@ -736,7 +736,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             eff.set_covariance(self._effects_by_name[other], channel, val)
 
     def calculate_offset_and_slope(self, ds, ch, srf=None, tuck=False,
-            naive=False, accept_nan_for_nan=False):
+            naive=False,
+            include_emissivity_correction=True, 
+            include_nonlinearity=True,
+            accept_nan_for_nan=False):
         """Calculate offset and slope.
 
         Arguments:
@@ -799,7 +802,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 name="a2", coords={"calibrated_channel": ch},
                 attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
-        (time, L_iwct, counts_iwct, counts_space) = self.extract_calibcounts_and_temp(ds, ch, srf, tuck=tuck, naive=naive)
+        (time, L_iwct, counts_iwct,
+            counts_space) = self.extract_calibcounts_and_temp(
+                ds, ch, srf, tuck=tuck,
+                include_emissivity_correction=include_emissivity_correction)
         #L_space = ureg.Quantity(numpy.zeros_like(L_iwct), L_iwct.u)
         L_space = UADA(xarray.zeros_like(L_iwct),
             coords={k:v 
@@ -884,7 +890,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 calibrated_channel=ch, **coords)
             self._tuck_quantity_channel("a_2", a2,
                 calibrated_channel=ch)
-            if naive or self.no_harm:
+            if self.no_harm or not include_nonlinearity:
                 self._tuck_effect_channel("a_2", 0, ch,
                     covariances={"a_3": 0, "a_4": 0})
             else:
@@ -1432,16 +1438,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     name="harmonisation bias",
                     attrs={"units": rad_u["si"]})
 
-            # naive (no harm) version of slope, offset with no ε
-            # correction
-            
-            (time, offset_noa3, slope_noa3, a2_noa3) = self.calculate_offset_and_slope(
-                context, ch, srf, tuck=False, naive=True)
-            (interp_offset_noa3, interp_slope_noa3, interp_bad_noa3) = self.interpolate_between_calibs(
-                ds["time"], time,
-                offset_noa3.median(dim="scanpos", keep_attrs=True),
-                slope_noa3.median(dim="scanpos", keep_attrs=True),
-                bad, kind="zero")
 
             rad_wn_dbg = {}
 
@@ -1452,11 +1448,24 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                        "noεcorr"*skipa3)
                 if not lab:
                     continue
+
+                (time, offset_dbg, slope_dbg,
+                    a2_dbg) = self.calculate_offset_and_slope(
+                        context, ch, srf, tuck=False,
+                        include_nonlinearity=not skipa2,
+                        include_emissivity_correction=not skipa3)
+                (interp_offset_dbg, interp_slope_dbg,
+                    interp_bad_dbg) = self.interpolate_between_calibs(
+                        ds["time"], time,
+                        offset_noa3.median(dim="scanpos", keep_attrs=True),
+                        slope_noa3.median(dim="scanpos", keep_attrs=True),
+                        bad, kind="zero")
+
                 rad_wn_dbg[lab] = self.custom_calibrate(
                     C_Earth,
-                    interp_slope_noa3 if skipa3 else interp_slope,
-                    interp_offset_noa3 if skipa3 else interp_offset,
-                    a2_0 if skipa2 else a2,
+                    interp_slope_dbg,
+                    interp_offset_dbg,
+                    a2_dbg,
                     Rself_0 if skiprself else Rself,
                     a4_0 if skipa4 else a_4)
 
