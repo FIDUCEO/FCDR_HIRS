@@ -6,6 +6,7 @@ import numbers
 import numpy
 import scipy.constants
 import xarray
+import collections
 
 import sympy
 from sympy.core.symbol import Symbol
@@ -167,6 +168,8 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False,
     """
     o = None
     intermediates = set()
+    if not isinstance(stop_at, collections.abc.Container):
+        stop_at = {stop_at}
     if isinstance(e, sympy.Symbol) and e in expressions:
         return recursive_substitution(expressions[e],
             stop_at=stop_at, return_intermediates=return_intermediates,
@@ -174,7 +177,7 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False,
     while o != e:
         o = e
         for sym in typhon.physics.metrology.recursive_args(e):
-            if sym != stop_at:
+            if sym not in stop_at:
                 # subs only works for simple values but is faster
                 # replace works for arbitrarily complex expressions but is
                 # slower and may yield false positives
@@ -273,12 +276,13 @@ names = {
 expression_Re_simplified = recursive_substitution(
     expressions[symbols["R_e"]],
     expressions=expressions,
-    stop_at=symbols["T_IWCT"]).subs(
+    stop_at={symbols["T_IWCT"], symbols["h"], symbols["c"], symbols["k_b"]}).subs(
         {symbols["R_selfIWCT"]: 0,
          symbols["O_RIWCT"]: 0,
          symbols["O_Re"]: 0,
          symbols["R_refl"]: 0,
-         symbols["R_selfs"]: 0,
+         symbols["R_selfs"]: 0})
+expression_Re_simplified_2 = expression_Re_simplified.subs({
          symbols["a_4"]: symbols["h_1"],
          symbols["a_3"]: symbols["h_3"],
          symbols["a_2"]: symbols["h_2"]})

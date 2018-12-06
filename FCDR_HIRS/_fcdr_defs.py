@@ -382,8 +382,27 @@ FCDR_data_vars_props = dict(
     solar_azimuth_angle = (
         "solar_azimuth_angle",
         ("scanline_earth", "scanpos"),
-        {"long_name": "Azimuth angle (from the north) of the Sun as seen from the ground"},
+        {"long_name": "Azimuth angle (from the north) of the Sun as seen from the ground",
+         "units": "degrees"},
         _ang_coding),
+    R_e_alt_meq_full = (
+        "R_e_alt_meq_full",
+        ("calibrated_channel", "scanline_earth", "scanpos"),
+        {"long_name": ("Earth radiance calculated directly with the full "
+                    "symbolic measurement equation and band "
+                    "coefficients, as opposed to in-code and SRF "
+                    "integration"),
+         "units": rad_u["si"]},
+        _coding),
+    R_e_alt_meq_simple = (
+        "R_e_alt_meq_simple",
+        ("calibrated_channel", "scanline_earth", "scanpos"),
+        {"long_name": ("Earth radiance calculated directly with the "
+                    "simplified symbolic measurement equation and band "
+                    "coefficients, as opposed to in-code and SRF "
+                    "integration"),
+         "units": rad_u["si"]},
+        _coding)
 )
 for allskips in itertools.product(
         (0, 1), repeat=4):

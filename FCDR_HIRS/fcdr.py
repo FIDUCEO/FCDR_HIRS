@@ -1566,10 +1566,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             self._tuck_effect_channel("f_eff", Δλ_eff.to(ureg.GHz, "sp"), ch)
             self._quantities[me.symbols["ε"]] = self._quantity_to_xarray(
                 self.ε, name=me.names[me.symbols["ε"]])
-            self._quantities[me.symbols["a_3"]] = self._quantity_to_xarray(
-                a_3, name=me.names[me.symbols["a_3"]])
-            self._quantities[me.symbols["a_4"]] = self._quantity_to_xarray(
-                a_4, name=me.names[me.symbols["a_4"]])
+            self._tuck_quantity_channel("a_3", a_3, calibrated_channel=ch)
+            self._tuck_quantity_channel("a_4", a_4, calibrated_channel=ch)
             if naive or self.no_harm:
                 self._tuck_effect_channel("a_3", 0, ch,
                     covariances={"a_2": 0, "a_4": 0})
@@ -1713,7 +1711,36 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             else:
                 bt_all.m.mask |= D["radiance_fid_naive"].mask
         return bt_all
-   
+
+    def get_L_cached_meq(self):
+        """Calculate radiance from cached quantities using measurement equation
+
+        After we have calculated L using regular calculate_radiance, we
+        can make another estimate using the measurement equation, mostly
+        to check consistency.  The regular L calculation is not currently
+        directly through the measurement equation as defined in the
+        measurement_equation module, but is a rather directly in code
+        implementation of the same.
+        """
+
+        L_meq = []
+        for e in (me.expressions[me.symbols["R_e"]],
+                  me.expression_Re_simplified):
+            fargs = typhon.physics.metrology.recursive_args(
+                e, stop_at=(sympy.Symbol, sympy.Indexed))
+            ta = tuple(fargs)
+            fe = sympy.lambdify(ta, e, numpy, dummify=True)
+            adict = {k:v for (k,v) in self._quantities.items() if k in fargs}
+            adict = self._make_adict_dims_consistent_if_needed(adict, me.symbols["R_e"])
+            L_meq.append(fe(*[typhon.math.common.promote_maximally(adict[x]).to_root_units()
+                              for x in ta]))
+        return (self._quantity_to_xarray(
+                    L_meq[0].to(rad_u["si"]),
+                    "R_e_alt_meq_full"),
+                self._quantity_to_xarray(
+                    L_meq[1].to(rad_u["si"]),
+                    "R_e_alt_meq_simple"))
+
     def estimate_noise(self, M, ch, typ="both"):
         """Calculate noise level at each calibration line.
 
@@ -2199,22 +2226,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         ta = tuple(args)
         # dummify=True because some args are not valid identifiers
         f = sympy.lambdify(ta, u_e, numpy, dummify=True)
-        # multiple dimensions with time coordinates:
-        # - calibration_cycle
-        # - scanline_earth
-        # Any dimension other than calibration_cycle needs to be
-        # interpolated to have dimension scanline_earth before further
-        # processing.
-        src_dims = set().union(itertools.chain.from_iterable(
-            x.dims for x in adict.values() if hasattr(x, 'dims')))
-        dest_dims = set(self._data_vars_props[me.names[sbase]][1])
-        if not dest_dims <= src_dims: # problem!
-            warnings.warn("Cannot correctly estimate uncertainty u({!s}). "
-                "Destination has dimensions {!s}, arguments (between them) "
-                "have {!s}!".format(sbase, dest_dims, src_dims or "none"),
-                FCDRWarning)
-        if not src_dims <= dest_dims: # needs reducing
-            adict = self._make_adict_dims_consistent(adict)
+        adict = self._make_adict_dims_consistent_if_needed(adict, sbase)
         # verify/convert dimensions
         u = f(*[typhon.math.common.promote_maximally(
                     adict[x]).to_root_units() for x in ta])
@@ -2281,6 +2293,26 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             return (u, sub_sensitivities, sub_components, cov_comps)
         else:
             return u
+    
+    def _make_adict_dims_consistent_if_needed(self, adict, var):
+
+        # multiple dimensions with time coordinates:
+        # - calibration_cycle
+        # - scanline_earth
+        # Any dimension other than calibration_cycle needs to be
+        # interpolated to have dimension scanline_earth before further
+        # processing.
+        src_dims = set().union(itertools.chain.from_iterable(
+            x.dims for x in adict.values() if hasattr(x, 'dims')))
+        dest_dims = set(self._data_vars_props[me.names[var]][1])
+        if not dest_dims <= src_dims: # problem!
+            warnings.warn("Cannot correctly estimate uncertainty u({!s}). "
+                "Destination has dimensions {!s}, arguments (between them) "
+                "have {!s}!".format(var, dest_dims, src_dims or "none"),
+                FCDRWarning)
+        if not src_dims <= dest_dims: # needs reducing
+            adict = self._make_adict_dims_consistent(adict)
+        return adict
 
     def _make_adict_dims_consistent(self, adict):
         """Ensure adict dims are consistent
