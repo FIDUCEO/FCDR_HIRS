@@ -64,8 +64,10 @@ The steps to generate a new version of the FCDR:
   generate_fcdr.  You must generate both the easy and the debug FCDR at
   this stage, because the harmonisation input file generator needs
   information from the debug FCDR.  You probably want to pass the
-  --abridged flag to generate_fcdr to save space.  If running on CEMS,
-  Gerrit has scripts in bitbucket that can help with the job submission.
+  --abridged flag to generate_fcdr to save space.  This will skip the
+  u_from and rad_wn debug fields, saving about 88% in size per FCDR file.
+  If running on CEMS, Gerrit has shell scripts that can help with the
+  job submission.
 
 - (devel) Switch to correct branch, rebase on master, and install
 
