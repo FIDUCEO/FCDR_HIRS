@@ -499,10 +499,9 @@ class FCDRGenerator:
                             S, lookup_table_BT, LUT_radiance,
                             flags_scanline, flags_channel,
                             flags_minorframe, flags_pixel,
-                            SRF_weights, SRF_frequencies,
-                            R_e_alt1, R_e_alt2]
+                            SRF_weights, SRF_frequencies]
         if not self.abridged:
-            stuff_to_merge.append(u_from)
+            stuff_to_merge.extend([u_from, R_e_alt1, R_e_alt2])
         ds = xarray.merge(
             [da.drop("scanline").rename(
                 {"lat": "lat_earth", "lon": "lon_earth"})
