@@ -488,7 +488,7 @@ class FCDRGenerator:
         # uncertainty scanline coordinate conflicts with subset scanline
         # coordinate, drop the former
         stuff_to_merge = [uc.rename({k: "u_"+k for k in uc.data_vars.keys()}),
-                            qc, qe,
+                            qc, 
                           subset.rename({k.name: "original_"+k.name
                                 for k in (sat_za, sat_aa, sun_za, sun_aa)
                                 if k.name in subset.data_vars.keys()}),
@@ -501,7 +501,7 @@ class FCDRGenerator:
                             flags_minorframe, flags_pixel,
                             SRF_weights, SRF_frequencies]
         if not self.abridged:
-            stuff_to_merge.extend([u_from, R_e_alt1, R_e_alt2])
+            stuff_to_merge.extend([u_from, R_e_alt1, R_e_alt2, qe])
         ds = xarray.merge(
             [da.drop("scanline").rename(
                 {"lat": "lat_earth", "lon": "lon_earth"})
