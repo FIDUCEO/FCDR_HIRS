@@ -164,8 +164,9 @@ def parse_cmdline():
     parser.add_argument("--abridged", action="store_true",
         default=False,
         help=("For debug version, write abridged version.  If true, skip "
-              "writing u_from_x for each variable in the measurement "
-              "equation.  This reduces the data volume by over 80%."))
+              "writing u_from_x, rad_wn_*, and R_e_alt_* for each variable "
+              "in the measurement equation.  This reduces the data volume by over 88% "
+              "compared to the unabridged version."))
 
     return parser.parse_args()
 
