@@ -161,6 +161,12 @@ def parse_cmdline():
         default=False,
         help='Run without harmonisation.  Will had "_noharm" to version.')
 
+    parser.add_argument("--abridged", action="store_true",
+        default=False,
+        help=("For debug version, write abridged version.  If true, skip "
+              "writing u_from_x for each variable in the measurement "
+              "equation.  This reduces the data volume by over 80%."))
+
     return parser.parse_args()
 
 class FCDRGenerator:
@@ -182,6 +188,7 @@ class FCDRGenerator:
     pseudo_fields = {
         "filename":
             lambda M, D, H, fn: numpy.full(M.shape[0], pathlib.Path(fn).stem)}
+    abridged = False
 
     # maximum number of correlation length to store in single FCDR debug
     # file.  For the easy, it's N//2 where N is length of orbit.
@@ -189,7 +196,8 @@ class FCDRGenerator:
 
     dd = None
     # FIXME: use filename convention through FCDRTools, 
-    def __init__(self, sat, start_date, end_date, modes, no_harm=False):
+    def __init__(self, sat, start_date, end_date, modes, no_harm=False,
+            abridged=False):
         logger.info("Preparing to generate FCDR for {sat:s} HIRS, "
             "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. "
             "Software:".format(
@@ -203,6 +211,7 @@ class FCDRGenerator:
         self.fcdr.my_pseudo_fields.clear() # suppress pseudo fields radiance_fid, bt_fid here
         self.start_date = start_date
         self.end_date = end_date
+        self.abridged = abridged
         if no_harm:
             self.data_version += "_no_harm"
 
@@ -490,8 +499,10 @@ class FCDRGenerator:
                             S, lookup_table_BT, LUT_radiance,
                             flags_scanline, flags_channel,
                             flags_minorframe, flags_pixel,
-                            u_from, SRF_weights, SRF_frequencies,
+                            SRF_weights, SRF_frequencies,
                             R_e_alt1, R_e_alt2]
+        if not self.abridged:
+            stuff_to_merge.append(u_from)
         ds = xarray.merge(
             [da.drop("scanline").rename(
                 {"lat": "lat_earth", "lon": "lon_earth"})
@@ -943,7 +954,8 @@ def main():
             datetime.datetime.strptime(p.from_date, p.datefmt),
             datetime.datetime.strptime(p.to_date, p.datefmt),
             p.modes,
-            no_harm=p.no_harm)
+            no_harm=p.no_harm,
+            abridged=p.abridged)
         fgen.process()
     else:
         dates = pandas.date_range(p.from_date, p.to_date, freq="MS")
