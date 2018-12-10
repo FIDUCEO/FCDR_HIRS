@@ -61,8 +61,11 @@ The steps to generate a new version of the FCDR:
   FCDRTools if applicable.
 
 - Generate an unharmonised FCDR by passing the --no-harm flag to
-  generate_fcdr.  Gerrit has scripts in bitbucket that can help with the
-  job submission.
+  generate_fcdr.  You must generate both the easy and the debug FCDR at
+  this stage, because the harmonisation input file generator needs
+  information from the debug FCDR.  You probably want to pass the
+  --abridged flag to generate_fcdr to save space.  If running on CEMS,
+  Gerrit has scripts in bitbucket that can help with the job submission.
 
 - (devel) Switch to correct branch, rebase on master, and install
 
@@ -72,8 +75,9 @@ The steps to generate a new version of the FCDR:
 
 - From the unharmonised FCDR, create an unfiltered harmonisation database,
   by calling combine_hirs_hirs_matchups with the --without-filters flag.
+  This step needs the debug FCDR.
 
-- Combine the small harmonisatin files into single big ones per pair and
+- Combine the small harmonisation files into single big ones per pair and
   channel, using merge_hirs_harmonisation
 
 - (devel) Switch to correct branch, rebase on master, and install
