@@ -72,6 +72,10 @@ def get_parser():
         nargs="+",
         help="List of files (one per channel) containing output from "
              "RQs harmonisation process")
+    parser.add_argument("--params-included", action="store", type=int,
+        nargs="+", default=[0, 1, 2],
+        help=("Numbers of harmonisation parameters included, set rest to 0. "
+              "For example, without emissivity, pass 1 3"))
 
     return parser
 def parse_cmdline():
@@ -82,7 +86,7 @@ def parse_cmdline():
 #scaling = numpy.array([1e-15, 1e-21, 1e-3])
 scaling = numpy.array([1, 1, 1]) # RQ e-mail 2018-10-11, scaling already applied
 
-def get_harm_dict(chans, files):
+def get_harm_dict(chans, files, params_included=[0, 1, 2]):
     """Convert all.
 
     Returns (harms, u_harms)
@@ -91,9 +95,10 @@ def get_harm_dict(chans, files):
     all_sats = {typhon.datasets.tovs.norm_tovs_name(sat) for sat in
                 fcdr.list_all_satellites()}
     D = {}
-    harms = {sat: {ch: {} for ch in chans} for sat in all_sats}
+    harms = {sat: {ch: numpy.zeros(3) for ch in chans} for sat in all_sats}
     u_harms = copy.deepcopy(harms)
-    s_harms = copy.deepcopy(harms)
+    s_harms = {sat: {ch: numpy.zeros((3,3)) for ch in chans} for sat in all_sats}
+    ni = len(params_included)
     sats_found = set()
     for (ch, fn) in zip(chans, files):
         with xarray.open_dataset(fn) as ds:
@@ -102,23 +107,17 @@ def get_harm_dict(chans, files):
                 sat = typhon.datasets.tovs.norm_tovs_name(sat)
                 sats_found.add(sat)
                 if not sat in D.keys():
-                    D[sat] = {ch: itertools.count() for ch in chans}
+                    D[sat] = {ch: iter(params_included.copy()) for ch in chans}
                 c = next(D[sat][ch])
                 harms[sat][ch][c] = ds["parameter"][i].item() * scaling[c]
                 u_harms[sat][ch][c] = ds["parameter_uncertainty"][i].item() * scaling[c]
-                if c==0:
-                    s_harms[sat][ch] = (ds["parameter_covariance_matrix"][i:(i+3), i:(i+3)]
-                        * scaling[:, numpy.newaxis] * scaling[numpy.newaxis, :]).values
+                if c==params_included[0]:
+                    s_harms[sat][ch][
+                        numpy.ix_(params_included, params_included)] = (
+                        ds["parameter_covariance_matrix"][i:(i+ni), i:(i+ni)]
+                        * scaling[params_included, numpy.newaxis]
+                        * scaling[numpy.newaxis, params_included]).values
     
-    # set to zero for satellites not found
-    for sat in all_sats - sats_found:
-        for ch in chans:
-            for i in range(3):
-                harms[sat][ch][i] = 0
-                u_harms[sat][ch][i] = numpy.array(
-                    [u_harms[sat][ch][i] for sat in sats_found]
-                        ).mean()
-                s_harms[sat][ch] = numpy.zeros((3, 3))
     return (harms, u_harms, s_harms)
 
 def write_harm_dict(fp, harms, write_preamble=True):
@@ -137,4 +136,10 @@ def write_harm_dict(fp, harms, write_preamble=True):
 def main():
     p = parse_cmdline()
     with numpy.errstate(all="raise"):
-        write_harm_dict(sys.stdout, get_harm_dict(p.chans, p.files), True)
+        write_harm_dict(
+            sys.stdout,
+            get_harm_dict(
+                p.chans,
+                p.files,
+                params_included=p.params_included),
+            True)
