@@ -6,6 +6,7 @@ Should probably be sorted into smaller modules.
 import sys
 import logging
 import datetime
+import warnings
 import numpy
 import xarray
 from .fcdr import list_all_satellites
@@ -160,7 +161,8 @@ def set_logger(level, filename=None, root=True):
     global _root_logger_set
     if root:
         if _root_logger_set:
-            raise RuntimeError("Root logger configured twice!")
+            warnings.warn("Root logger already configured")
+            return
         logger = logging.getLogger()
         _root_logger_set = True
     else:
