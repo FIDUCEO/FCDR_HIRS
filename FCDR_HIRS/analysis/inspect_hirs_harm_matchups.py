@@ -67,7 +67,7 @@ def parse_cmdline():
     return get_parser().parse_args()
 
 def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
-        write=False):
+        write=False, max_ratcorr=0.01, rge_fact=0.2, max_tries=10):
     """Plot histogram with fitted normal and stats and write filters
 
     This plots:
@@ -113,32 +113,62 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
     write : bool, optional
         If True, write the ratio to a file in the ``harmfilterparams``
         directory in the ``main`` section of configuration.
+    max_ratcorr : float
+        The maximum tolerable corrected ratio between the fitted normal
+        distribution and the q9.  If, at the beginning or
+        the end of the range, the ratio is larger than this value
+    rge_fact : float
+        Factor at which to increase range iteratively
+    max_tries : int
+        Maximum number of tries to increase range at
     """
+    med = y.median()
+    mad = abs(y-med).median()
+    p67ad = scipy.stats.scoreatpercentile(abs(y-med), 68.3)
+    # also plot fitted normal distribution
+    # NB: how about outliers or non-normal dists?
+    # "robust standard deviation"
+    # extend the range until we cover sufficient
+    rge = numpy.asarray(rge)
+    for i in range(max_tries):
+        (dens, bins) = numpy.histogram(
+            y,
+            bins=100,
+            range=rge,
+            density=True)
+        peak = dens.max()
+        σ_fitting_peak = 1/(peak*math.sqrt(2*math.pi))
+        midbins = (bins[1:]+bins[:-1])/2
+        x = numpy.linspace(*rge, 500)
+        norm_fitting_peak = scipy.stats.norm.pdf(x, med, σ_fitting_peak)
+        rat = scipy.stats.norm.pdf(midbins, med, σ_fitting_peak) / dens
+        ratcorr = numpy.where(rat<=1, rat, 1)
+        if ratcorr[0] > max_ratcorr and dens[0]>0:
+            logger.debug(f"Extending lower range for {write:s} as"
+                f"{ratcorr[0]:.5f}>{max_ratcorr:.3f} at {rge[0]:.5f}")
+            rge[0] -= rge.ptp()*rge_fact
+        elif ratcorr[-1] > max_ratcorr and dens[-1]>0:
+            logger.debug(f"Extending upper range for {write:s} as"
+                f"{ratcorr[-1]:.5f}>{max_ratcorr:.3f} at {rge[-1]:.5f}")
+            rge[-1] += rge.ptp()*rge_fact
+        else:
+            break
+    else:
+        raise ValueError("Histogram falls of faster-than-exponential, "
+            f"cannot derive acceptance ratio after {i:d} tries!")
+    for i in range(-9, 10, 3):
+        a.plot([med+i*mad]*2, [0, dens.max()], color="red")
+        a.text(med+i*mad, .8*dens.max(), str(i))
+
     (dens, bins, patches) = a.hist(
         y,
         histtype="step",
         bins=100,
         range=rge,
         density=True)
-    med = y.median()
-    mad = abs(y-med).median()
-    for i in range(-9, 10, 3):
-        a.plot([med+i*mad]*2, [0, dens.max()], color="red")
-        a.text(med+i*mad, .8*dens.max(), str(i))
-    # also plot fitted normal distribution
-    # NB: how about outliers or non-normal dists?
-    # "robust standard deviation"
-    p67ad = scipy.stats.scoreatpercentile(abs(y-med), 68.3)
-    peak = dens.max()
-    σ_fitting_peak = 1/(peak*math.sqrt(2*math.pi))
-    x = numpy.linspace(*rge, 500)
-    norm_fitting_peak = scipy.stats.norm.pdf(x, med, σ_fitting_peak)
-    #a.plot(x, scipy.stats.norm.pdf(x, med, p67ad), color="black", label="fitted 1")
+
     a.plot(x, norm_fitting_peak, color="black", label="fitted 1")
     a2 = a.twinx()
-    midbins = (bins[1:]+bins[:-1])/2
-    rat = scipy.stats.norm.pdf(midbins, med, σ_fitting_peak) / dens
-    ratcorr = numpy.where(rat<=1, rat, 1)
     a2.plot(midbins, ratcorr, 'k--')
     a2.set_ylabel("filter: P(keep)")
     a2.set_ylim([0, 1])
