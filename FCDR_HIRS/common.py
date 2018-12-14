@@ -161,6 +161,7 @@ def set_logger(level, filename=None, loggers=None):
     global _root_logger_set
     if loggers is None:
         loggers = {logging.getLogger(__name__).parent}
+    loggers = {logging.getLogger(s) if isinstance(s, str) else s}
     if filename:
         handler = logging.FileHandler(filename, mode="a", encoding="utf-8")
     else:
