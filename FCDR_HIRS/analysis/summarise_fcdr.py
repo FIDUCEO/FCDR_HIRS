@@ -479,7 +479,8 @@ def summarise():
     p = parse_cmdline()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
-        filename=p.log)
+        filename=p.log,
+        loggers={"FCDR_HIRS", "typhon"})
 #    if p.mode != "summarise":
 #        raise NotImplementedError("Only summarising implemented yet")
     summary = FCDRSummary(satname=p.satname, data_version=p.version)

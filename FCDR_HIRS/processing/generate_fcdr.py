@@ -947,7 +947,8 @@ def main():
 
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
-        p.log)
+        p.log,
+        loggers={"FCDR_HIRS", "typhon"})
 
     if p.days == 0:
         fgen = FCDRGenerator(p.satname,
