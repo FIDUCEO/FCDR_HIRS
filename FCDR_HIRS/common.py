@@ -139,8 +139,8 @@ def sample_flags(da, period="1H", dim="time"):
     return (perc, da.flag_meanings.split())
 
 
-_root_logger_set = False
-def set_logger(level, filename=None, root=True):
+_loggers_set = set()
+def set_logger(level, filename=None, loggers=None):
     """Set propertios of FIDUCEO root logger
 
     Arguments:
@@ -153,25 +153,23 @@ def set_logger(level, filename=None, root=True):
 
             What file to log to.  None for sys.stderr.
 
-        root
+        loggers
 
-            Use root logger (True), so that it applies to modules outside
-            FCDR_HIRS, or only apply it to FCDR_HIRS logging (False)
+            What loggers to set.  Default only sets the "FCDR_HIRS"
+            logger, but you may want to set others like "typhon".
     """
     global _root_logger_set
-    if root:
-        if _root_logger_set:
-            warnings.warn("Root logger already configured")
-            return
-        logger = logging.getLogger()
-        _root_logger_set = True
-    else:
-        logger = logging.getLogger(__name__).parent # should be FCDR_HIRS
+    if loggers is None:
+        loggers = {logging.getLogger(__name__).parent}
     if filename:
         handler = logging.FileHandler(filename, mode="a", encoding="utf-8")
     else:
         handler = logging.StreamHandler(sys.stderr)
-    logger.setLevel(level)
     handler.setFormatter(
         logging.Formatter("%(levelname)-8s %(name)s %(asctime)s %(module)s.%(funcName)s:%(lineno)s: %(message)s"))
-    logger.addHandler(handler)
+    for logger in loggers:
+        if logger in loggers_set:
+            warnings.warn(f"Logger {logger!s} already configured")
+            continue
+        logger.setLevel(level)
+        logger.addHandler(handler)

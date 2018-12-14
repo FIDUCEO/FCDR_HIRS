@@ -274,7 +274,8 @@ def main():
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)
     common.set_logger(
         logging.DEBUG if p.verbose else logging.info,
-        p.log)
+        p.log,
+        loggers={"FCDR_HIRS", "typhon"})
     read_and_plot_calibcount_stats(p.satname, from_date, to_date,
         p.channels, p.plot_distributions, p.plot_examples,
         p.random_seed, 
