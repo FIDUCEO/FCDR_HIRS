@@ -16,6 +16,13 @@
 # import sys
 # sys.path.insert(0, '/home/gerrit/miniconda3/envs/standaard/lib/python3.7/site-packages/FCDR_HIRS')
 
+from recommonmark.parser import CommonMarkParser
+
+source_parsers = {
+    ".md": CommonMarkParser
+}
+
+source_suffix = [".rst", ".md"]
 
 # -- Project information -----------------------------------------------------
 
