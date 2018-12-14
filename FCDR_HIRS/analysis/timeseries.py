@@ -26,7 +26,7 @@ import matplotlib
 #           #r'\usepackage{sansmath}',  # load up the sansmath so that math -> helvet
 #           #r'\sansmath',              # <- tricky! -- gotta actually tell tex to use!
 #           r'\DeclareSIUnit\count{count}'  # siunitx doesn't know this one
-    ]
+#    ]
 # this too must be before importing matplotlib.pyplot
 #pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 import matplotlib.pyplot
