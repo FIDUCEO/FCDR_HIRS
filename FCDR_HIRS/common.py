@@ -168,7 +168,7 @@ def set_logger(level, filename=None, loggers=None):
     handler.setFormatter(
         logging.Formatter("%(levelname)-8s %(name)s %(asctime)s %(module)s.%(funcName)s:%(lineno)s: %(message)s"))
     for logger in loggers:
-        if logger in loggers_set:
+        if logger in _loggers_set:
             warnings.warn(f"Logger {logger!s} already configured")
             continue
         logger.setLevel(level)
