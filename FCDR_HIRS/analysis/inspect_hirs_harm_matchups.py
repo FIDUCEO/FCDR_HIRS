@@ -133,7 +133,7 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
     for i in range(max_tries):
         (dens, bins) = numpy.histogram(
             y,
-            bins=100,
+            bins="auto",
             range=rge,
             density=True)
         peak = dens.max()
@@ -143,11 +143,15 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
         norm_fitting_peak = scipy.stats.norm.pdf(x, med, σ_fitting_peak)
         rat = scipy.stats.norm.pdf(midbins, med, σ_fitting_peak) / dens
         ratcorr = numpy.where(rat<=1, rat, 1)
-        if ratcorr[0] > max_ratcorr and dens[0]>0:
+        # but for bins where histogram shows zero, I want ratcorr 0 not 1
+        ratcorr = numpy.where(dens==0, 0, ratcorr)
+        #if ratcorr[0] > max_ratcorr and dens[0]>0:
+        if dens[0]>0:
             logger.debug(f"Extending lower range for {write:s} as "
                 f"{ratcorr[0]:.5f}>{max_ratcorr:.3f} at {rge[0]:.5f}")
             rge[0] -= rge.ptp()*rge_fact
-        elif ratcorr[-1] > max_ratcorr and dens[-1]>0:
+        #elif ratcorr[-1] > max_ratcorr and dens[-1]>0:
+        elif dens[-1]>0:
             logger.debug(f"Extending upper range for {write:s} as "
                 f"{ratcorr[-1]:.5f}>{max_ratcorr:.3f} at {rge[-1]:.5f}")
             rge[-1] += rge.ptp()*rge_fact
@@ -163,7 +167,7 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
     (dens, bins, patches) = a.hist(
         y,
         histtype="step",
-        bins=100,
+        bins="auto",
         range=rge,
         density=True)
 
@@ -209,7 +213,9 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
     ----------
 
     ds : xarray.Dataset
-        Enhanced matchup harmonisation input dataset to be plotted.
+        Dataset from which to plot summaries.  This dataset must
+        correspond to the format as defined by Sam Hunt (W-matrix file)
+        and as written out by `FCDR_HIRS.processing.analysis.merge_all`.
     lab : str, optional
         Additional ``debug`` label to describe the matchup file.  This can
         be empty for a standard plot, or have a string such as
@@ -223,6 +229,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
         Will be passed on to
         :func:`plot_hist_with_medmad_and_fitted_normal`; if True, write
         out filter parameters.  Defaults to False.
+
     """
 
     if lab:
