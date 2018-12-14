@@ -11,9 +11,9 @@ import datetime
 import matplotlib.pyplot
 import mpl_toolkits.basemap
 
-import pyatmlab.graphics
 from .. import fcdr
 from .. import common
+from .. import graphics
 
 logger = logging.getLogger(__name__)
 def parse_cmdline():
@@ -58,13 +58,13 @@ def plot_field(lon, lat, fld, filename, tit, cblabel, **kwargs):
     (f, a) = matplotlib.pyplot.subplots(figsize=(14, 8))
     m = mpl_toolkits.basemap.Basemap(projection="moll", resolution="c",
         lon_0=0, ax=a)
-    c = pyatmlab.graphics.pcolor_on_map(
+    c = graphics.pcolor_on_map(
         m, lon, lat, fld, cmap="viridis", **kwargs)
     m.drawcoastlines()
     cb = m.colorbar(c)
     cb.set_label(cblabel)
     a.set_title(tit)
-    pyatmlab.graphics.print_or_show(
+    graphics.print_or_show(
         f, False, filename)
 
 def read_and_plot_field(satname, field, start_time, duration, channels=[],

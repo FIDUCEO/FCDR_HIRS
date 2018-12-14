@@ -25,7 +25,7 @@ from typhon.datasets.dataset import (DataFileError, HomemadeDataset)
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.datasets.tovs import norm_tovs_name
-import pyatmlab.graphics
+from .. import graphics
 from .. import fcdr
 
 logger = logging.getLogger(__name__)
@@ -405,7 +405,7 @@ class FCDRSummary(HomemadeDataset):
             del summary
         for channel in range(1, 20):
             (f, a_all) = figs[channel]
-            pyatmlab.graphics.print_or_show(f, None, 
+            graphics.print_or_show(f, None, 
                 self.plot_file.format(satname=satlabel, start=start,
                 end=end, channel=channel, data_version=self.data_version,
                 ptilestr=','.join(str(p) for p in ptiles)))
@@ -416,7 +416,7 @@ class FCDRSummary(HomemadeDataset):
                 lo = ranges.loc[{"channel": channel, "field": fld, "extremum": "lo"}].min()
                 hi = ranges.loc[{"channel": channel, "field": fld, "extremum": "hi"}].max()
                 a.set_ylim([lo, hi])
-            pyatmlab.graphics.print_or_show(f, None, 
+            graphics.print_or_show(f, None, 
                 self.plot_file.format(satname=satlabel, start=start,
                     end=end, channel=channel,
                     data_version=self.data_version,
@@ -471,7 +471,7 @@ class FCDRSummary(HomemadeDataset):
             a.set_xlabel("Brightness temperature uncertainty [K]")
             a.set_ylabel("Total number of pixels")
         f.suptitle(tit)
-        pyatmlab.graphics.print_or_show(f, None, 
+        graphics.print_or_show(f, None, 
             self.plot_hist_file.format(satname=self.satname, start=start,
             end=end, data_version=self.data_version))
 

@@ -15,8 +15,8 @@ import xarray
 import numpy
 import matplotlib.pyplot
 import typhon.datasets.tovs
-import pyatmlab.graphics
 import typhon.datasets.filters
+from .. import graphics
 
 logger = logging.getLogger(__name__)
 def parse_cmdline():
@@ -78,7 +78,7 @@ def plot(sat, start, end):
     a.grid(axis="x")
     #f.subplots_adjust(left=0.2)
 
-    pyatmlab.graphics.print_or_show(f, False,
+    graphics.print_or_show(f, False,
         "hirs_flags/{sat:s}_{start:%Y}/hirs_flags_set_{sat:s}_{start:%Y%m%d%H%M}-{end:%Y%m%d%H%M}.png".format(
             sat=sat, start=start, end=end))
 

@@ -39,7 +39,6 @@ import typhon.datasets.tovs
 import pyatmlab.io
 import typhon.config
 import pyatmlab.physics
-import pyatmlab.graphics
 import pyatmlab.db
 
 from typhon.constants import (micro, centi, tera, nano)
@@ -48,6 +47,7 @@ from typhon.physics.units import ureg, radiance_units as rad_u
 from .. import fcdr
 from .. import math as fhmath
 from .. import common
+from .. import graphics
 
 hirs_iasi_matchup = pathlib.Path("/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS")
 
@@ -484,7 +484,7 @@ class LUTAnalysis:
             a.set_ylim(*scipy.stats.scoreatpercentile(y, [0.3, 99.7]))
             box = a.get_position()
             a.set_position([box.x0, box.y0, box.width * 0.85, box.height])
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                     "BT_range_LUT_ch{:d}.".format(i+1))
             matplotlib.pyplot.close(f)
 
@@ -540,7 +540,7 @@ class LUTAnalysis:
         logger.info("Using LUT to find IASI for {:,} HIRS spectra".format(radiances.size))
         if self.dobar:
             bar = progressbar.ProgressBar(maxval=radiances.size,
-                    widgets=pyatmlab.tools.my_pb_widget)
+                    widgets=common.my_pb_widget)
             bar.start()
             bar.update(0)
         for (i, dat) in enumerate(radiances):
@@ -695,18 +695,18 @@ class LUTAnalysis:
             f.suptitle("LUT PCA performance, bins {:s}".format(
                 "-".join([str(b.size) for b in self.lut.bins])))
             f.tight_layout(rect=[0, 0, 0.83, 0.97])
-        pyatmlab.graphics.print_or_show(f_tothist, False,
+        graphics.print_or_show(f_tothist, False,
             "lut_{:s}_test_hists_{:s}.".format(sat, 
                 self.lut.compact_summary().replace(".", "_")))
-        pyatmlab.graphics.print_or_show(f_deltahistperbin, False,
+        graphics.print_or_show(f_deltahistperbin, False,
             "lut_{:s}_test_deltahistperbin_{:s}.".format(sat,
                 self.lut.compact_summary().replace(".", "_")))
-        pyatmlab.graphics.print_or_show(f_bthistperbin, False,
+        graphics.print_or_show(f_bthistperbin, False,
             "lut_{:s}_test_bthistperbin_{:s}.".format(sat,
                 self.lut.compact_summary().replace(".", "_")))
         for f in {f_tothist, f_errperbin, f_deltahistperbin, f_bthistperbin}:
             matplotlib.pyplot.close(f)
-#        pyatmlab.graphics.print_or_show(f_errperbin, False,
+#        graphics.print_or_show(f_errperbin, False,
 #            "lut_{:s}_test_errperbin_{:s}.".format(sat, self.lut.compact_summary()))
         return (biases, stds)
         
@@ -770,7 +770,7 @@ class LUTAnalysis:
             for (f, lb) in zip((f1, f2), ("ch1-7", "ch8-12")):
                 f.suptitle("Mean and s.d. of $\Delta K$ for different binnings")
                 f.tight_layout(rect=[0, 0, 0.85, 0.97])
-                pyatmlab.graphics.print_or_show(f, False,
+                graphics.print_or_show(f, False,
                     "lut_{:s}_{!s}_test_perf_all_{:s}.".format(sat, 
                         ",".join(str(x) for x in channels), lb))
                 matplotlib.pyplot.close(f)
@@ -1132,7 +1132,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
 #        a.bar(hirs_centres, Tb_chans[self.choice[0], self.choice[1], :], width=2e11, color="red", edgecolor="black",
 #              align="center")
 
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "iasi_with_hirs_srf_{:s}_{:s}_{:s}.".format(sat, x_quantity, y_unit))
 
     @staticmethod
@@ -1332,7 +1332,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             x_hi = freq_hi.to(self.x["unit"][x_quantity], "sp")
             a.set_xlim(min(x_lo, x_hi).m, max(x_lo, x_hi).m)
             a2.set_xlim(min(x_lo, x_hi).m, max(x_lo, x_hi).m)
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                     "iasi_with_hirs_srfs_ch{:d}_{:s}_{:s}.".format(
                         ch, x_quantity, y_unit))
 
@@ -1365,7 +1365,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         box = a.get_position()
         a.set_position([box.x0, box.y0, box.width * 0.7, box.height])
         a.legend(loc='center left', bbox_to_anchor=(1.01, 0.5))
-        pyatmlab.graphics.print_or_show(fig, False,
+        graphics.print_or_show(fig, False,
                 "BT_Te_corrections_{:s}.".format(sat))
 
     def plot_channel_BT_deviation(self, sat):
@@ -1395,7 +1395,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             ax.set_position([box.x0, box.y0, box.width * 0.7, box.height])
             ax.set_ylabel("Delta T [K]")
         fig.subplots_adjust(hspace=0)
-        pyatmlab.graphics.print_or_show(fig, False,
+        graphics.print_or_show(fig, False,
                 "BT_channel_approximation_{:s}.".format(sat))
 
 
@@ -1431,7 +1431,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         if self.dobar:
             bar = progressbar.ProgressBar(maxval=len(shift),
-                    widgets=pyatmlab.tools.my_pb_widget)
+                    widgets=common.my_pb_widget)
             bar.start()
 
         logger.info("Shifting {:,} spectra by {:d} values between "
@@ -1487,7 +1487,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         a.set_xlabel("BT [K]")
         a.set_ylabel(r"$\Delta$ BT [K]")
         a.grid(axis="both")
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "srf_shifted_dbt_hist_per_radiance_HIRS_{:s}-{:d}.".format(satellite, channel))
 
         (f, a) = matplotlib.pyplot.subplots()
@@ -1498,7 +1498,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         a.set_xlabel(r"shift [nm]")
         a.set_ylabel(r"$\Delta$ BT [K]")
         a.grid(axis="both")
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "srf_shifted_dbt_hist_per_shift_HIRS_{:s}-{:d}.".format(satellite, channel))
 
     def _prepare_map(self):
@@ -1567,7 +1567,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         a.set_title("{satname:s} hirs-{ch:d}, iasi-simulated or real\n"
                      "{dt1:%y-%m-%d %h:%m} -- {dt2:%H:%M}".format(
                         satname=satname, ch=c, dt1=dt1, dt2=dt2))
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "map_BTHIRS_real_simul_ch{:d}_{:%Y%m%d%H%M%S}.".format(c,dt1))
 
     def map_with_hirs_pca(self, h, satname, cmap="viridis"):
@@ -1598,7 +1598,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         cb = f.colorbar(c)
         cb.set_label("Weight")
         a.set_title("PCA weight matrix HIRS measured {:%Y-%m-%d %H:%M:%S}".format(dt1))
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "PCA_weight_HIRS_measured_{:%Y%m%d%H%M%S}.".format(dt1))
 
         (f, a) = matplotlib.pyplot.subplots(1)
@@ -1606,7 +1606,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         cb = f.colorbar(c)
         cb.set_label("Weight")
         a.set_title("PCA weight matrix IASI-simulated HIRS {:%Y-%m-%d %H:%M:%S}".format(dt1))
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "PCA_weight_HIRS_IASI_simul_{:%Y%m%d%H%M%S}.".format(dt1))
 
         (f, a) = matplotlib.pyplot.subplots(1)
@@ -1614,7 +1614,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         cb = f.colorbar(c)
         cb.set_label("Weight")
         a.set_title("PCA weight matrix IASI-meas-simulated HIRS {:%Y-%m-%d %H:%M:%S}".format(dt1))
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "PCA_weight_HIRS_IASI_delta_meas_simul_{:%Y%m%d%H%M%S}.".format(dt1))
         
         for i in range(12):
@@ -1638,7 +1638,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             a.set_title("{satname:s} HIRS PC {pc:d}, iasi-simulated or real PC scores\n"
                          "{dt1:%Y-%m-%d %H:%M} -- {dt2:%H:%M}".format(
                             satname=satname, pc=i, dt1=dt1, dt2=dt2))
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                 "map_BTHIRS_real_simul_pc{:d}_{:%Y%m%d%H%M%S}.".format(i+1,dt1))
 
     
@@ -1749,7 +1749,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         f.tight_layout()
         f.subplots_adjust(top=0.88, right=0.88)
 
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
                 "iasi_with_hirs_srfs_all_Tb_{sat_ref:s}_{sat_targ:s}_{ch:s}_{sh:s}.".format(
                     sat_ref=sat_ref, sat_targ=sat_targ,
                     ch=",".join([str(x) for x in chans]),
@@ -1773,7 +1773,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         self._plot_dtb_hist(dtb, ax_all)
         f.suptitle(r"Expected $\Delta$BT {:s} - {:s}".format(sat_targ, sat_ref))
         f.subplots_adjust(hspace=0.25)
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "expected_Tdiff_{:s}-{:s}.".format(sat_targ, sat_ref))
 
     def plot_hist_pls_perf(self, sat_ref, sat_targ, tb_ref, tb_targ):
@@ -1784,7 +1784,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         self._plot_dtb_hist(dtb, ax_all)
         f.suptitle(r"PLS performance $\Delta$BT, predicting {:s} from {:s}".format(sat_targ, sat_ref))
         f.subplots_adjust(hspace=0.25)
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "PLS_performance_Tdiff_{:s}-{:s}.".format(sat_targ, sat_ref))
 
     def plot_fragment_expected_Tdiff(self, sat_ref, sat_targ,
@@ -1825,10 +1825,10 @@ class IASI_HIRS_analyser(LUTAnalysis):
             a.set_xlabel("Channel no.")
             a.set_ylabel("Measurement no.")
 
-        pyatmlab.graphics.print_or_show(f_ref, False,
+        graphics.print_or_show(f_ref, False,
             "slice_TB_{:s}.".format(sat_ref))
 
-        pyatmlab.graphics.print_or_show(f_diff, False,
+        graphics.print_or_show(f_diff, False,
             "slice_TB_diff_{:s}_{:s}{:+.2f}.".format(sat_targ, sat_ref, 
                 srfshift.to(ureg.um, "sp").m))
 
@@ -2329,9 +2329,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 noise_quantity=noise_quantity,
                 noise_units=noise_units)
             
-        pyatmlab.graphics.print_or_show(f1, False,
+        graphics.print_or_show(f1, False,
             "srf_estimate_errdist_per_localmin_"+fn_lab)
-        pyatmlab.graphics.print_or_show(f2, False,
+        graphics.print_or_show(f2, False,
             "srf_misestimate_bt_propagation_"+fn_lab)
             
 
@@ -2413,7 +2413,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                    cost_mode, predict_quantity, noise_quantity,
                    noise_units))
         f.subplots_adjust(hspace=0.47, wspace=0.35)#, right=0.7)
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "SRF_prediction_cost_function_{sat:s}_{sat2:s}_{db:s}_{ref:s}_"
             "{regression_type.__name__:s}_{regrargs:s}_lim{limstr:s}_A{A:d}"
             "_B{B:d}_noise{noise_targ:d},{noise_lev:d}_cm{cm:s}_{cst:s}_"
@@ -2499,7 +2499,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         if self.dobar:
             bar = progressbar.ProgressBar(maxval=estimates.size,
-                    widgets=pyatmlab.tools.my_pb_widget)
+                    widgets=common.my_pb_widget)
             bar.start()
 
         for i in range(estimates.size):
@@ -2580,7 +2580,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         with tofile.with_suffix(".info").open("a", encoding="utf-8") as fp:
             fp.write(" ".join(sys.argv) + "\n")
-            fp.write(pyatmlab.tools.get_verbose_stack_description())
+            fp.write(common.get_verbose_stack_description())
 
         with tofile.with_suffix(".dat").open("a", encoding="ascii") as fp:
             fp.write(
@@ -2656,7 +2656,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
         a.set_xlabel("IASI-simulated HIRS [{:~}]".format(iasi_rad.u))
         a.set_ylabel("HIRS - IASI-simulated HIRS [{:~}]".format(iasi_rad.u))
         a.set_title("IASI-HIRS comparison {:s}".format(ds.RefStartTimeSec))
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "HIRS_IASI_comparison_{:s}.".format(ds.RefStartTimeSec))
 
 
@@ -2695,7 +2695,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
             a.legend(loc="upper left")
             cb = f.colorbar(c)
             cb.set_label("No. spectra")
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                 "HIRS_{:d}_exp_radrange_{:s}.".format(ch, lab))
 
 def main():

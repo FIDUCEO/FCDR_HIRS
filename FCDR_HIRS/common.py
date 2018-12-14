@@ -7,9 +7,19 @@ import sys
 import logging
 import datetime
 import warnings
+import traceback
+import io
+import pprint
+import inspect
 import numpy
 import xarray
+import progressbar
 from .fcdr import list_all_satellites
+
+my_pb_widget = [progressbar.Bar("=", "[", "]"), " ",
+                progressbar.Percentage(), " (",
+                progressbar.AdaptiveETA(), " -> ",
+                progressbar.AbsoluteETA(), ') ']
 
 def add_to_argparse(parser,
         include_period=True,
@@ -175,3 +185,45 @@ def set_logger(level, filename=None, loggers=None):
             continue
         logger.setLevel(level)
         logger.addHandler(handler)
+
+def get_verbose_stack_description(first=2, last=-1, include_source=True,
+                                    include_locals=True, include_globals=False):
+    f = io.StringIO()
+    f.write("".join(traceback.format_stack()))
+    for fminfo in inspect.stack()[first:last]:
+        frame = fminfo.frame
+        try:
+            f.write("-" * 60 + "\n")
+            if include_source:
+                try:
+                    f.write(inspect.getsource(frame) + "\n")
+                except OSError:
+                    f.write(str(inspect.getframeinfo(frame)) + 
+                         "\n(no source code)\n")
+            if include_locals:
+                f.write(pprint.pformat(frame.f_locals) + "\n")
+            if include_globals:
+                f.write(pprint.pformat(frame.f_globals) + "\n")
+        finally:
+            try:
+                frame.clear()
+            except RuntimeError:
+                pass
+    return f.getvalue()
+
+def savetxt_3d(fname, data, *args, **kwargs):
+    """Write 3D-array to file that pgfplots likes
+    """
+    with open(fname, 'wb') as outfile:
+        for data_slice in data:
+            numpy.savetxt(outfile, data_slice, *args, **kwargs)
+            outfile.write(b"\n")
+
+def plotdatadir():
+    """Returns todays plotdatadir
+
+    Configuration 'plotdatadir' must be set.  Value is expanded with
+    strftime.
+    """
+    return datetime.date.today().strftime(
+        config.conf["main"]["plotdatadir"])

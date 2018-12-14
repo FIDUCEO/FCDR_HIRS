@@ -21,11 +21,10 @@ import typhon.datasets.tovs
 from typhon.physics.units.common import radiance_units as rad_u, ureg
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA   
 
-import pyatmlab.graphics
-
 from ..processing.generate_fcdr import FCDRGenerator
 from ..common import (set_logger, add_to_argparse)
 from .. import metrology
+from .. import graphics
 
 def parse_cmdline():
     parser = argparse.ArgumentParser(
@@ -103,8 +102,9 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         robust=True, return_vectors=True, interpolate_lengths=True,
         sampling_l=1, sampling_e=1, return_locals=True)
 
-    del sensRe # this causes pyatmlabs get_verbose_stack_description to
-               # fail as pprint.pprint can't sort Relational objects
+    del sensRe # this causes get_verbose_stack_description to
+               # fail as pprint.pprint can't sort Relational objects,
+               # perhaps replacing pickle by dill will help
 
     # get centroid
     srf = fg.fcdr.srfs[channel-1]
@@ -120,7 +120,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     a.set_ylabel("mean correlation coefficient")
     a.set_title("Cross-element error correlation function "
                 + shared_tit + "\n" + period_tit)
-    pyatmlab.graphics.print_or_show(f, False,
+    graphics.print_or_show(f, False,
         "curuc/cross_element_error_correlation_function_"+shared_fn+".")
 
     # cross-line error correlation function
@@ -130,7 +130,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     a.set_ylabel("mean correlation coefficient")
     a.set_title("Cross-line error correlation function "
                 + shared_tit + "\n" + period_tit)
-    pyatmlab.graphics.print_or_show(f, False,
+    graphics.print_or_show(f, False,
         "curuc/cross_line_error_correlation_function_"+shared_fn+".")
 
     cmap = "magma_r"
@@ -156,7 +156,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
 #            + "\n"
 #            + scnlinlab)
         a.set_aspect("equal")
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "curuc/cross_element_S" + shared_fn +
             f"x{x:d}y{y:d}.")
 
@@ -177,7 +177,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
 #            + shared_tit
 #            + f"element {x:d}")
         a.set_aspect("equal")
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "curuc/cross_line_S" + shared_fn +
             f"_x{x:d}y{y:d}.")
 
@@ -203,7 +203,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_xticklabels([str(x.item()) for x in ds["channel"]])
         a.set_yticks(numpy.arange(ds.dims["channel"]))
         a.set_yticklabels([str(x.item()) for x in ds["channel"]])
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "curuc/cross_channel_S" + shared_fn +
             f"_x{x:d}y{y:d}.")
 
@@ -224,7 +224,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_xticklabels([str(x.item()) for x in ds["channel"]])
         a.set_yticks(numpy.arange(ds.dims["channel"]))
         a.set_yticklabels([str(x.item()) for x in ds["channel"]])
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "curuc/cross_channel_R_correlated_noise_" + shared_fn +
             f".")
 
@@ -244,7 +244,7 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
         a.set_xticklabels([str(x.item()) for x in ds["channel"]])
         a.set_yticks(numpy.arange(ds.dims["channel"]))
         a.set_yticklabels([str(x.item()) for x in ds["channel"]])
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "curuc/cross_channel_S_correlated_noise_" + shared_fn +
             f".")
 
@@ -265,7 +265,7 @@ def plot_compare_correlation_scanline(ds):
     a.set_ylabel("Mean correlation coefficient")
     a.set_title("Mean correlation as function of scanline interval, single orbit")
 
-    pyatmlab.graphics.print_or_show(f, False, "orbit_curuc_test.")
+    graphics.print_or_show(f, False, "orbit_curuc_test.")
 
 def main():
     p = parse_cmdline()

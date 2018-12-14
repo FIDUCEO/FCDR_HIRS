@@ -21,13 +21,12 @@ import netCDF4
 import scipy.stats
 
 import typhon.plots
-import pyatmlab.graphics
 import matplotlib.ticker
 
 from typhon.physics.units import radiance_units as rad_u
 from typhon.datasets.tovs import HIRSHIRS
 
-from .. import (fcdr, matchups, common)
+from .. import (fcdr, matchups, common, graphics)
 matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
 logger = logging.getLogger(__name__)
 
@@ -184,7 +183,7 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
             self.M["time"][0].astype(datetime.datetime),
             self.M["time"][-1].astype(datetime.datetime)))
 
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "hirshirs/hirshirs_{:s}_{:s}_{:%Y%m%d%H%M}_{:%Y%m%d%H%M}_ch{:d}.png".format(
                 prim, sec,
                 self.M["time"][0].astype(datetime.datetime),

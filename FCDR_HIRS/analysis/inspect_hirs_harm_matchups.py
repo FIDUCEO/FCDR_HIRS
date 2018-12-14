@@ -16,8 +16,6 @@ import matplotlib.pyplot
 import xarray
 import scipy.stats
 
-import pyatmlab.graphics
-
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.physics.units.common import radiance_units as rad_u
 import typhon.physics.units.em
@@ -26,6 +24,7 @@ import typhon.config
 from .. import matchups
 from .. import fcdr
 from .. import common
+from .. import graphics
 
 logger = logging.getLogger(__name__)
 def parse_cmdline():
@@ -394,7 +393,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
         ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_prediction"])))
     f.subplots_adjust(hspace=0.35, wspace=0.3)
 
-    pyatmlab.graphics.print_or_show(f, False,
+    graphics.print_or_show(f, False,
         "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}.".format(
             channel=ds["channel"].item(), lab=lab, **ds.attrs))
     
@@ -421,7 +420,7 @@ def plot_harm_input_stats(ds):
             a.set_ylabel("Count")
     f.suptitle("harm input stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}, with med+N*mad away".format(**ds.attrs)
         + ", channel " + str(ds["channel"].item()))
-    pyatmlab.graphics.print_or_show(f, False,
+    graphics.print_or_show(f, False,
         "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_input_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_.".format(
             channel=ds["channel"].item(), **ds.attrs))
 
