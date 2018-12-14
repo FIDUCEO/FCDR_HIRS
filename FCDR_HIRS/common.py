@@ -13,6 +13,7 @@ import pprint
 import inspect
 import numpy
 import xarray
+import progressbar
 from .fcdr import list_all_satellites
 
 my_pb_widget = [progressbar.Bar("=", "[", "]"), " ",
