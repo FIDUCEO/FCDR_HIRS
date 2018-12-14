@@ -223,7 +223,8 @@ def convert_period(h, sat, start_date, end_date, **kwargs):
 
 def main():
     p = parse_cmdline()
-    common.set_logger(logging.INFO)
+    common.set_logger(logging.INFO,
+        loggers={"FCDR_HIRS", "typhon"})
     h = fcdr.which_hirs_fcdr(p.satname)
     convert_period(h, p.satname, 
             datetime.datetime.strptime(p.from_date, p.datefmt),

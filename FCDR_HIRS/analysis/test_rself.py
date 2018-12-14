@@ -148,7 +148,8 @@ def main():
     p = parse_cmdline()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
-        p.log)
+        p.log,
+        loggers={"FCDR_HIRS", "typhon"})
 #    warnings.filterwarnings("error")
 #    warnings.filterwarnings("always", category=DeprecationWarning)
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)

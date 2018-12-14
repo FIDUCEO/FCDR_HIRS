@@ -269,7 +269,8 @@ def plot_compare_correlation_scanline(ds):
 
 def main():
     p = parse_cmdline()
-    set_logger(logging.DEBUG if p.verbose else logging.INFO)
+    set_logger(logging.DEBUG if p.verbose else logging.INFO,
+        loggers={"FCDR_HIRS", "typhon"})
     plot_curuc_for_pixels(
         xarray.open_dataset(p.path),
         lines=p.lines,

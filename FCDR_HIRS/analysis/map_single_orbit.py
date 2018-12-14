@@ -382,7 +382,8 @@ def main():
     p = parse_cmdline()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
-        p.log)
+        p.log,
+        loggers={"FCDR_HIRS", "typhon"})
 
     op = OrbitPlotter(p.arg1, p.channels, range=p.range,
         plot_bitmasks=p.with_bitmasks,

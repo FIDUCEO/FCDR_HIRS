@@ -711,7 +711,8 @@ def combine_hirs():
     p = parse_cmdline_hirs()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
-        p.log)
+        p.log,
+        loggers={"FCDR_HIRS", "typhon"})
     warnings.filterwarnings("error",
         message="iteration over an xarray.Dataset will change",
         category=FutureWarning)
@@ -772,7 +773,8 @@ def combine_iasi():
     p = parse_cmdline_iasi()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
-        p.log)
+        p.log,
+        loggers={"FCDR_HIRS", "typhon"})
     warnings.filterwarnings("error",
         message="iteration over an xarray.Dataset will change",
         category=FutureWarning)
@@ -909,7 +911,8 @@ def merge_files():
     p = parse_cmdline_merge()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
-        p.log)
+        p.log,
+        loggers={"FCDR_HIRS", "typhon"})
     logger.info(f"Merging {len(p.files):d} files")
     new = merge_all(*p.files)
     logger.info(f"Writing to {p.out:s}")

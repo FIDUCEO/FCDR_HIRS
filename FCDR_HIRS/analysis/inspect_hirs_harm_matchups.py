@@ -468,6 +468,7 @@ def main():
 
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
-        p.log)
+        p.log,
+        loggers={"FCDR_HIRS", "typhon"})
         
     plot_file_summary_stats(pathlib.Path(p.file), write=p.write_filters)

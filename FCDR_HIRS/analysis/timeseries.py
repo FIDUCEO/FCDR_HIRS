@@ -1358,7 +1358,8 @@ def main():
     p = parse_cmdline()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO
-        filename=p.log)
+        filename=p.log,
+        loggers={"FCDR_HIRS", "typhon"})
         
     if p.plot_iwt_anomaly:
         write_timeseries_per_day_iwt_anomaly_period(
