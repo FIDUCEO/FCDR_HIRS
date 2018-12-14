@@ -18,13 +18,13 @@ import matplotlib.ticker
 import scipy.stats
 import datetime
 import typhon.plots
-import pyatmlab.graphics
 
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 
 from .. import models
 from .. import fcdr
 from .. import common
+from .. import graphics
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ def plot_rself_test(h, ds, temperatures, channels,
 
     f.suptitle(tit)
     f.subplots_adjust(hspace=0.3)
-    pyatmlab.graphics.print_or_show(f, False, fn)
+    graphics.print_or_show(f, False, fn)
 
 
 def read_and_plot_rself_test(sat, from_date, to_date, temperatures,

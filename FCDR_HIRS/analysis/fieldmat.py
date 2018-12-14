@@ -25,13 +25,13 @@ import matplotlib.ticker
 import matplotlib.gridspec
 import typhon.plots
 import typhon.plots.plots
-import pyatmlab.graphics
 
 from typhon.physics.units.common import ureg
 from .. import fcdr
 from typhon.datasets import tovs
 from typhon.datasets.dataset import DataFileError
 from .. import cached
+from .. import graphics
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ def plot_field_matrix(MM, ranges, title, filename, units):
                 matplotlib.ticker.MaxNLocator(nbins=4, prune="both"))
     f.suptitle(title)
     f.subplots_adjust(hspace=0.5, wspace=0.5)
-    pyatmlab.graphics.print_or_show(f, False, filename)
+    graphics.print_or_show(f, False, filename)
 
 #
 class _SatPlotHelper(metaclass=abc.ABCMeta):
@@ -211,13 +211,13 @@ class _SatPlotChCorrmat(_SatPlotHelper):
 
     def finalise(self, mp, f, gs, sat=None, solo=False):
         if solo:
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                 f"hirs_noise_correlations_sat{sat:s}_pos{self.calibpos:d}.")
         else:
             gs.update(wspace=0.10, hspace=0.4)
             f.suptitle("HIRS noise correlations for all HIRS, pos "
                       f"{self.calibpos:d} ", fontsize=40)
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                 f"hirs_noise_correlations_allsats_pos{self.calibpos:d}.")
 
 class _SatPlotFFT(_SatPlotHelper):
@@ -379,16 +379,16 @@ class _SatPlotFFT(_SatPlotHelper):
     def finalise(self, mp, f, gs, channel=None, sat=None, solo=False,
                  custom=False):
         if custom:
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                 f"hirs_crosstalk_fft_custom.")
         elif solo:
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                 f"hirs_crosstalk_fft_sat{sat:s}_ch{channel:d}.")
         else:
             gs.update(wspace=0.10, hspace=0.4)
             f.subplots_adjust(right=0.8, bottom=0.2, top=0.90)
             f.suptitle(f"Spectral analysis, channel {channel:d}")
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                 f"hirs_crosstalk_fft_ch{channel:d}.")
 
 class _SatPlotAll(_SatPlotChCorrmat, _SatPlotFFT):
@@ -575,7 +575,7 @@ class MatrixPlotter:
         f.suptitle("HIRS noise correlations, {:s}, {:s} pos {:d}\n"
             "({:d} cycles)".format(
             self.title_sat_date, noise_typ, calibpos, no))
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
                 "hirs_noise_correlations_channels_{:s}_ch_{:s}_{:s}{:d}.".format(
             self.filename_sat_date,
             ",".join(str(ch) for ch in channels),
@@ -683,7 +683,7 @@ class MatrixPlotter:
                     self.title_sat_date, noise_typ, ch, no))
             ax_all[2].set_visible(False)
             ax_all[5].set_visible(False)
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                 "hirs_noise_correlations_scanpos_{:s}_ch{:d}_{:s}.png".format(
                     self.filename_sat_date, ch, noise_typ))
 
@@ -714,7 +714,7 @@ class MatrixPlotter:
 
         f.subplots_adjust(left=0.3, bottom=0.3)
 
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             f"hirs_temperature_correlation_{self.filename_sat_date:s}.png")
 
 
@@ -900,7 +900,7 @@ class MatrixPlotter:
         gs.update(wspace=0.10, hspace=0.4)
         f.suptitle("HIRS noise correlations for all HIRS, pos "
                   f"{calibpos:d} ", fontsize=40)
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             f"hirs_noise_correlations_allsats_pos{calibpos:d}.")
 
     def plot_pos_corrmat_all_sats(self, noise_typ):
@@ -990,14 +990,14 @@ class MatrixPlotter:
         for (ch, f) in f_perch.items():
             f.suptitle(f"HIRS noise correlations for all HIRS, ch. {ch:d}",
                        fontsize=40)
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                 f"hirs_noise_correlations_allsats_{noise_typ:s}_ch{ch:d}.")
         for (sat, f) in f_persat.items():
 
             f.suptitle(f"HIRS noise correlations for {sat:s}, all chans, {noise_typ:s} views\n"
                        f"{period_pairs[sat][0][0]:%Y-%m} / {period_pairs[sat][1][0]:%Y-%m}",
                         fontsize=40)
-            pyatmlab.graphics.print_or_show(f, False,
+            graphics.print_or_show(f, False,
                 f"hirs_noise_correlations_allchan_{sat:s}.")
 #            im = self._plot_ch_corrmat(S_tot, ax, channels,
 #                add_x=r==3, add_y=c==0)

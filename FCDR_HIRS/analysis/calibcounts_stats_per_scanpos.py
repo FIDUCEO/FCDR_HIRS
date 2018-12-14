@@ -28,9 +28,9 @@ import matplotlib.ticker
 
 import typhon.plots
 matplotlib.pyplot.style.use(typhon.plots.styles("typhon"))
-import pyatmlab.graphics
 
 from .. import fcdr
+from .. import graphics
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ def plot_calibcount_stats(h, Mall, channels,
     f.suptitle(title, y=1.02)
     f.subplots_adjust(hspace=0.5, wspace=0.5,
         right=0.75 if nrow*ncol==len(channels) else 0.9)
-    pyatmlab.graphics.print_or_show(f, False, filename)
+    graphics.print_or_show(f, False, filename)
 
 def plot_calibcount_anomaly_examples(h, M, channels, N,
         mode="random", typ="space", anomaly=True):
@@ -234,7 +234,7 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
     f.suptitle("{:s} {:s} view calibration {:s}".format(
         h.satname, typ, "anomalies" if anomaly else "values"))
 
-    pyatmlab.graphics.print_or_show(f, False,
+    graphics.print_or_show(f, False,
         "{:s}_{:s}_calib_{:s}_{:s}-{:%Y%m%d%H%M%S}-{:%Y%m%d%H%M%S}_{:d}_{:s}_{:s}.".format(
             typ, mode, "anomalies" if anomaly else "values", h.satname,
             M["time"][idx[0]].astype(datetime.datetime),

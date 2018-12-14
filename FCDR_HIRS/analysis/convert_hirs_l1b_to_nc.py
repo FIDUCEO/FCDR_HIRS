@@ -24,11 +24,6 @@ import progressbar
 import typhon.datasets.dataset
 from typhon.datasets import filters
 
-import pyatmlab.stats
-import pyatmlab.config
-import pyatmlab.graphics
-import pyatmlab.tools
-
 from .. import common
 from .. import fcdr
 
@@ -50,7 +45,7 @@ def parse_cmdline():
     p = parser.parse_args()
     return p
 
-outdir = pathlib.Path(pyatmlab.config.conf["main"]["fiddatadir"],
+outdir = pathlib.Path(typhon.config.conf["main"]["fiddatadir"],
     "HIRS_L1C_NC", "{sat:s}", "{year:04d}", "{month:02d}", "{day:02d}")
 
 def convert_granule(h, satname, dt, gran, orbit_filters, overwrite=False):
@@ -203,7 +198,7 @@ def convert_period(h, sat, start_date, end_date, **kwargs):
         filters.HIRSFlagger(h, max_flagged=0.5),
             )
     bar = progressbar.ProgressBar(maxval=1,
-        widgets=pyatmlab.tools.my_pb_widget)
+        widgets=common.my_pb_widget)
     bar.start()
     bar.update(0)
     for of in orbit_filters:

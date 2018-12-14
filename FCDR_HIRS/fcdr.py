@@ -29,14 +29,13 @@ from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.datasets.tovs import (Radiometer, HIRS, HIRSPOD, HIRS2,
     HIRSKLM, HIRS3, HIRS4)
 
-from pyatmlab import tools
-
 from . import models
 from . import effects
 from . import measurement_equation as me
 from . import filters
 from . import _fcdr_defs
 from . import _harm_defs
+from . import common
 from .exceptions import (FCDRError, FCDRWarning) # used to be here
 
 logger = logging.getLogger(__name__)
@@ -1777,7 +1776,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
                 Channel to calibrate.
 
-            srf [pyatmlab.physics.SRF]
+            srf [typhon.physics.units.em.SRF]
 
                 SRF to use for calibrating the channel and converting
                 radiances to units of BT.  Optional; if None, use
@@ -1815,7 +1814,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             "{:,} radiances".format(realisations,
                rad_wn.size))
         bar = progressbar.ProgressBar(maxval=realisations,
-                widgets = tools.my_pb_widget)
+                widgets = common.my_pb_widget)
         bar.start()
         for i in range(realisations):
             with ureg.context("radiance"):

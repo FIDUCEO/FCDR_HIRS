@@ -54,7 +54,7 @@ def calc_y_for_srf_shift(Δλ, y_master, srf0, L_spectral_db, f_spectra, y_ref,
             data, and y_ref would be the same for training data.  In the
             real world, y_ref is still simulated, but y_master are actual
             measurements.
-        srf0 (`:func:pyatmlab.physics.SRF`): SRF relative to which
+        srf0 (`:func:typhon.physics.units.em.SRF`): SRF relative to which
             the shift is to be calculated.
         L_spectral_db (ndarray M×l): Database of spectra (such as from IASI)
             to use.  Should be in spectral radiance per frequency units [W
@@ -213,7 +213,7 @@ def calc_cost_for_srf_shift(Δλ, y_master, y_target, srf0,
             comes from either the testing data (calculated by shifting
             srf0 by an amount you haven't told me, but I mean to recover),
             or from actual measurements.
-        srf0 (`:func:pyatmlab.physics.SRF`): SRF corresponding to
+        srf0 (`:func:typhon.physics.units.em.SRF`): SRF corresponding to
             zero shift, relative to which the shift is estimated.
         L_spectral_db (ndarray N×p): Database of spectra (such as from IASI)
             to use.  Should be in SI spectral radiance per frequency units [W
@@ -285,7 +285,7 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
             Unit must be consistent with what you tell me in
             predict_quantity.
         y_target (ndarray): Radiances or BTs for other satellite
-        srf0 (`:func:pyatmlab.physics.SRF`): SRF for reference satellite
+        srf0 (`:func:typhon.physics.em.units.SRF`): SRF for reference satellite
         L_spectral_db (ndarray N×p): Database of spectra (such as from IASI)
             to use.  Should ALWAYS be in spectral radiance per frequency
             units, regardless of what predict_quantity is.

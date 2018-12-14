@@ -38,8 +38,7 @@ import typhon.plots.plots
 from .. import math as fcm
 from .. import common
 from . import inspect_orbit_curuc
-
-import pyatmlab.graphics
+from .. import graphics
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +125,7 @@ class OrbitPlotter:
             self.selections[ch] = self.plot_channel(
                 ch, ax_all[ch], cax_all[ch],
                 mark_pixels=mark_pixels)
-#        pyatmlab.graphics.print_or_show(
+#        graphics.print_or_show(
 #            f, False, filename)
 
     def prepare_figure_and_axes(self, channels):
@@ -371,7 +370,7 @@ class OrbitPlotter:
 
     def write(self):
         p = self.path.absolute()
-        pyatmlab.graphics.print_or_show(
+        graphics.print_or_show(
             self.fig, False,
             "orbitplots/"
             + str((p.relative_to(p.parents[3]).parent / p.stem))

@@ -55,14 +55,9 @@ import typhon.math.stats
 import typhon.datasets.dataset
 from typhon.physics.units.common import ureg
 
-import pyatmlab.stats
-#import pyatmlab.config
-import pyatmlab.graphics
-#import pyatmlab.datasets.tovs
-#from pyatmlab.units import ureg
-
 from .. import common
 from .. import fcdr
+from .. import graphics
 
 srcfile_temp_iwt = pathlib.Path(typhon.config.conf["main"]["myscratchdir"],
                        "hirs_{sat:s}_{year:d}_temp_iwt.npz")
@@ -245,7 +240,7 @@ def plot_timeseries_temp_iwt_anomaly(sat, nrow=4):
     ax_all[-1].set_xlabel("Date")
     f.suptitle("IWT PRT orbit-averaged anomalies, {:s}".format(sat))
     f.subplots_adjust(hspace=0.25)
-    pyatmlab.graphics.print_or_show(f, False,
+    graphics.print_or_show(f, False,
         "timeseries_{:s}_temp_iwp.".format(sat))
 
 def extract_timeseries_per_day_iwt_anomaly_period(sat, start_date, end_date):
@@ -263,7 +258,7 @@ def extract_timeseries_per_day_iwt_anomaly_period(sat, start_date, end_date):
 
     # Binning doesn't work with a time-axis.  Convert to float, but be
     # sure that float relates to the same time-format first
-    binned = pyatmlab.stats.bin(dts.astype("M8[s]").astype("f8"),
+    binned = typhon.math.stats.bin(dts.astype("M8[s]").astype("f8"),
                                 anomalies,
                                 bins.astype("M8[s]").astype("f8"))
 
@@ -466,7 +461,7 @@ class NoiseAnalyser:
         f.suptitle("Space counts Allan deviation {:s} HIRS {:%Y-%m-%d}--{:%Y-%m-%d}".format(
             self.satname, t[0], t[-1]))
         f.subplots_adjust(hspace=0.25)
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "hirs_{:s}_space_counts_adev_{:%Y%m%d}-{:%Y%m%d}.".format(
                 self.satname, t[0], t[-1])
                 + "" if self.writefig else "png")
@@ -512,12 +507,6 @@ class NoiseAnalyser:
 #        ch = self.ch
         start_date = self.start_date
         end_date = self.end_date
-        # need SRF for calculating gain
-#        hconf = pyatmlab.config.conf["hirs"]
-#        (centres, srfs) = pyatmlab.io.read_arts_srf(
-#            hconf["srf_backend_f"].format(sat=self.satname.upper().replace("NOAA0","NOAA")),
-#            hconf["srf_backend_response"].format(sat=self.satname.upper().replace("NOAA0","NOAA")))
-#        srf = pyatmlab.physics.SRF(*srfs[ch-1])
 
         # cycle manually as I plot many at once
         styles = list(matplotlib.pyplot.style.library["typhon"]["axes.prop_cycle"])
@@ -608,7 +597,7 @@ class NoiseAnalyser:
         # For some reason, sometimes it still fails to use the LaTeX
         # cache.  Make sure we create it /again/ ?!
         pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
-        pyatmlab.graphics.print_or_show(self.fig, False,
+        graphics.print_or_show(self.fig, False,
             "hirs_noise/{self.satname:s}_{tb:%Y}/ch{ch:d}/disect_{self.satname:s}_hrs_ch{ch:d}_{alltyp:s}_{alltemp:s}_{tb:%Y%m%d%H%M}-{te:%Y%m%d%H%M}{corrinfo:s}.".format(
                 self=self, ch=ch, alltyp='_'.join(all_tp),
                 alltemp='_'.join(temperatures), tb=t[0], te=t[-1],
@@ -1315,7 +1304,7 @@ class NoiseAnalyser:
                    "{:%Y-%m-%d}--{:%Y-%m-%d} pos {:d}".format(
                         self.satname, self.start_date, self.end_date,
                         calibpos))
-        pyatmlab.graphics.print_or_show(f, False,
+        graphics.print_or_show(f, False,
             "timeseries_channel_noise_correlation_"
             "HIRS_{:s}{:%Y%m%d%H%M}-{:%Y%m%d%H%M}_p{:d}.".format(
                 self.satname, self.start_date, self.end_date, scanpos)

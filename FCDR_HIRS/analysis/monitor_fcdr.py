@@ -19,10 +19,10 @@ import numpy
 
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
-import pyatmlab.graphics
 from .. import fcdr
 from .. import _fcdr_defs
 from .. import common
+from .. import graphics
 
 # NB: https://github.com/pydata/xarray/issues/1661#issuecomment-339525582
 from pandas.tseries import converter
@@ -224,7 +224,7 @@ class FCDRMonitor:
         fig.suptitle(self.figtit.format(tb=tb, te=te,
             self=self, ch=ch, sp=sp))
 
-        pyatmlab.graphics.print_or_show(fig, False,
+        graphics.print_or_show(fig, False,
             self.figname.format(tb=tb, te=te, self=self, ch=ch))
 
     def _plot_var_with_unc(self, da, da_rand, da_nonrand, a, a_h, a_u, a_u_h):

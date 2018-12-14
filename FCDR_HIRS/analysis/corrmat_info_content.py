@@ -28,7 +28,7 @@ import typhon.arts.xml
 import typhon.atmosphere
 import typhon.config
 
-import pyatmlab.graphics
+from .. import graphics
 
 hirs_simul_dir = pathlib.Path(typhon.config.conf["main"]["simuldir"]) / "hirs"
 jacob_dir = hirs_simul_dir / "Jacobians"
@@ -234,7 +234,7 @@ def plot_dofs_hists():
 
     f.suptitle("DOFS implication (MetOpA 2016-03-02)")
 
-    pyatmlab.graphics.print_or_show(f, False, "DOFS.")
+    graphics.print_or_show(f, False, "DOFS.")
 #    print("Actual:",
 #          "DOFS", dofs(S_a, K_all, S_ε),
 #          "DOFN", dofn(S_a, K_all, S_ε))
@@ -315,7 +315,7 @@ def plot_S_degradation():
 
     f.suptitle("What is the error covariance from use of the wrong "
                "observation error covariance?")
-    pyatmlab.graphics.print_or_show(f, False, "S_degr.")
+    graphics.print_or_show(f, False, "S_degr.")
 
 def main():
     plot_S_degradation()
