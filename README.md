@@ -1,4 +1,5 @@
-Development code for HIRS FCDR uncertainties.
+Development code for HIRS FCDR uncertainties
+============================================
 
 Upon installation with pip, all the Python-based dependencies should be
 installed automatically, except that in some cases you may need the latest
