@@ -51,13 +51,18 @@ outdir = pathlib.Path(typhon.config.conf["main"]["fiddatadir"],
 def convert_granule(h, satname, dt, gran, orbit_filters, overwrite=False):
     """Reads granule and writes NetCDF file with same contents
 
-    Arguments:
+    Parameters
+    ----------
 
-        h (typhon.datasets.tovs.HIRS): Relevant HIRS-object (HIRS2,
-            HIRS3, HIRS4)
-        satname (str): Name of satellite
-        dt (datetime.datetime): Corresponding datetime for granule
-        gran (pathlib.Path): Full path to granule
+    h : typhon.datasets.tovs.HIRS
+        Relevant HIRS-object (HIRS2, HIRS3, HIRS4)
+    satname : str
+        Name of satellite
+    dt : datetime.datetime
+        Corresponding datetime for granule
+    gran : pathlib.Path
+        Full path to granule
+
     """
 
     (lines, extra) = h.read(gran, 

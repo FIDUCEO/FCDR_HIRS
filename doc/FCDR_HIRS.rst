@@ -25,6 +25,7 @@ Submodules
    FCDR_HIRS.exceptions
    FCDR_HIRS.fcdr
    FCDR_HIRS.filters
+   FCDR_HIRS.graphics
    FCDR_HIRS.matchups
    FCDR_HIRS.math
    FCDR_HIRS.measurement_equation

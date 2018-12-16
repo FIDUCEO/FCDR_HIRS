@@ -182,7 +182,7 @@ class FCDRGenerator:
 
     The FCDRGenerator class contains high level methods for the generation
     of the HIRS FCDR.  Typical use to generate the FCDR for a particular
-    period is:
+    period is::
 
         fgen = FCDRGenerator("noaa15",
             datetime.datetime(2003, 1, 1),
@@ -197,55 +197,51 @@ class FCDRGenerator:
     where all of this ends up or how it is stored.  Some of those
     attributes are:
 
-        epoch [datetime.datetime]
+    Attributes
+    ----------
 
-            Times will be stored in seconds since this instant.  Defaults
-            to 1970-01-01, which is the Unix epoch.  Note that times are
-            stored with an add_offset corresponding to the beginning of
-            the orbit, so the actual numbers in the file are much smaller
-            and can easily fit in 32 bit (they could even fit in 16 bit).
+    epoch : datetime.datetime
+        Times will be stored in seconds since this instant.  Defaults
+        to 1970-01-01, which is the Unix epoch.  Note that times are
+        stored with an add_offset corresponding to the beginning of
+        the orbit, so the actual numbers in the file are much smaller
+        and can easily fit in 32 bit (they could even fit in 16 bit).
 
-        window_size [datetime.timedelta]
+    window_size : datetime.timedelta
+        L1B data is read in chunks of this size, which defaults to 24
+        hours.  This is a sliding window "context" which slides by
+        steps corresponding to step_size.  The context may be used by
+        various models such as the self-emission model or a model that
+        determines the calibration coefficients for the first lines of
+        the processed data.
 
-            L1B data is read in chunks of this size, which defaults to 24
-            hours.  This is a sliding window "context" which slides by
-            steps corresponding to step_size.  The context may be used by
-            various models such as the self-emission model or a model that
-            determines the calibration coefficients for the first lines of
-            the processed data.
+    segment_size : datetime.timedelta
+        Size of segments which are processed at once.  Defaults to 6
+        hours.
 
-        segment_size [datetime.timedelta]
+    step_size : datetime.timedelta
 
-            Size of segments which are processed at once.  Defaults to 6
-            hours.
+    skip_problem_step : datetime.timedelta
+        Not currently in use.  Formerly used to jump when I couldn't
+        resolve a problem at some point.
 
-        step_size [datetime.timedelta]
+    data_version : str
+        Data version.
 
-        skip_problem_step [datetime.timedelta]
+    rself_temperatures : List[str]
+        Temperatures to use in self-emission model.
 
-            Not currently in use.  Formerly used to jump when I couldn't
-            resolve a problem at some point.
+    rself_regr : tuple
+        Arguments to be used for self-emission model.
 
-        data_version [str]
+    orbit_filters : list
 
-            Data version.
+        Do not set.  This is set in __init__, and defines what filters
+        are applied to each orbit upon reading L1B data.
 
-        rself_temperatures List[str]
+    pseudo_fields : list
 
-            Temperatures to use in self-emission model.
-
-        rself_regr [tuple]
-
-            Arguments to be used for self-emission model.
-
-        orbit_filters
-
-            Do not set.  This is set in __init__, and defines what filters
-            are applied to each orbit upon reading L1B data.
-
-        pseudo_fields
-
-        max_debug_corr_length
+    max_debug_corr_length : int
 
     """
     # for now, step_size should be smaller than segment_size and I will
