@@ -126,9 +126,10 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
 
     As defined by §3.3.3 and §3.3.6.
 
-    Arguments:
+    Parameters
+    ----------
 
-        One of R_eΛls, R_lΛes, R_cΛpi, or R_cΛps: xarray.DataArray
+        R_eΛls, R_lΛes, R_cΛpi, or R_cΛps : xarray.DataArray
             with dimensions [n_c, n_s, n_e, n_l, n_l] or [n_c, n_s, n_l,
             n_e, n_e] or .
             For each channel (c) and each effect (k), either a collection
@@ -136,23 +137,24 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
             of cross-line error correlation matrices for each element.
             Defined by §3.2.3.
 
-        Diagonals of one of U_eΛls, U_lΛes, U_cΛpi, or U_cΛps: xarray.DataArray
+        Diagonals of one of U_eΛls, U_lΛes, U_cΛpi, or U_cΛps : xarray.DataArray
             Same dimensions as previous but minus the final dimension,
             because it only stores the diagonals.
             Considering §3.2.6, consider that the final dimension shows
             the diagonals of any U_eΛls, U_lΛes, U_cΛpi, or U_cΛps.
             Defined by §3.2.6.
 
-        One of C_eΛls, C_lΛes, C_cΛps, C_cΛpi: xarray.DataArray
-            Contains the sensitivity diagonals _per effect_.  Although
+        One of C_eΛls, C_lΛes, C_cΛps, C_cΛpi : xarray.DataArray
+            Contains the sensitivity diagonals *per effect*.  Although
             sensitivity is defined per term and not per effect, I need
             them per effect.  Most terms have exactly one effect defined
             anyway.  Dimensions therefore the same as U_eΛls and friends.
             Defined by §3.2.9.
 
-        Boolean "per_channel".  If not given, this will be inferred from
-        the presence of a dimension "n_c" within the leading ndim-1
-        dimensions of U.
+        per_channel : bool
+            Boolean "per_channel".  If not given, this will be inferred from
+            the presence of a dimension "n_c" within the leading ndim-1
+            dimensions of U.
 
     You probably want to vectorise this over an entire image.  Probable
     dimensions:
@@ -195,7 +197,9 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
 
     Returns:
 
-        S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp: numpy.ndarray, as described above
+        S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp: numpy.ndarray
+            as described above
+
     """
 
     if not C_xΛyt_diag.dims == U_xΛyt_diag.dims == R_xΛyt.dims[:-1]:
@@ -229,10 +233,9 @@ def calc_S_xt(S_xtΛy: List[numpy.ndarray],
     Calculate either of:
     
     - S_es, the average cross-element error covariance from the
-    structured effects per channel (Eq. 20)
+      structured effects per channel (Eq. 20)
     - S_ls, the average cross-line error covariance from the structured
       effects per channel (Eq. 24)
-    covariance from the structured effects per channel.
     - S_ci, the average cross-channel error covariance matrix from the
       spatially independent effects, per channel (Eq. 27)
     - S_cs, the average cross-channel error covariance matrix from the
@@ -240,22 +243,24 @@ def calc_S_xt(S_xtΛy: List[numpy.ndarray],
 
     Follows recipe with same document source as calc_S_from_CUR.
 
-    Arguments:
+    Parameters
+    ----------
 
-    S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp: List[numpy.ndarray]
-
+    S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp : List[numpy.ndarray]
         List of values of relevant matrix, or ndarray with outermost dimension
         being the scanline.  You can obtain those from calc_S_from_CUR
 
-    per_channel: bool
-
+    per_channel : bool
         Boolean "per_channel".  If not given, this will be inferred from
         the presence of a dimension "n_c" within the leading ndim-1
         dimensions of U.
 
-    Returns:
+    Returns
+    -------
 
-        S_es, S_el, S_ci, or S_cs: numpy.ndarray, as described.
+        S_es, S_el, S_ci, or S_cs : numpy.ndarray
+            as described above
+
     """
 
     if per_channel is None:

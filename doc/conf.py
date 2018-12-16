@@ -16,13 +16,6 @@
 # import sys
 # sys.path.insert(0, '/home/gerrit/miniconda3/envs/standaard/lib/python3.7/site-packages/FCDR_HIRS')
 
-from recommonmark.parser import CommonMarkParser
-
-source_parsers = {
-    ".md": CommonMarkParser
-}
-
-source_suffix = [".rst", ".md"]
 
 # -- Project information -----------------------------------------------------
 
@@ -51,6 +44,7 @@ extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.autodoc',
     'sphinx.ext.mathjax',
+    "sphinx.ext.napoleon"
 ]
 
 # Add any paths that contain templates here, relative to this directory.

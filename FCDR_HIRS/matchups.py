@@ -408,19 +408,19 @@ class KModel(metaclass=abc.ABCMeta):
     There is currently an ad-hoc implementation, estimating K based on BB
     assumption only on L→BT conversions.  There will later be an
     implementation based on BTs simulated with a forward model.  In
-    practice, those are calculated ``offline'' and looked up.
+    practice, those are calculated 'offline' and looked up.
 
     For definitions, see document
     20171205-FIDUCEO-SH-Harmonisation_Input_File_Format_Definition-v6.pdf
-    from Sam Hunt available on the FIDUCEO wiki:
+    from Sam Hunt available on the FIDUCEO wiki::
 
-    > Uncertainties are also required for the estimates of the match-up
-    > adjustment factor, K. It currently is assumed that all errors in K are
-    > independent, though are separated into two categories. Uncertainties
-    > due to the SRF differences should be also be stored in a vector K r
-    > and the uncertainties due to the match-up process should be stored
-    > in a vector K s .
-    
+        > Uncertainties are also required for the estimates of the match-up
+        > adjustment factor, K. It currently is assumed that all errors in K are
+        > independent, though are separated into two categories. Uncertainties
+        > due to the SRF differences should be also be stored in a vector K r
+        > and the uncertainties due to the match-up process should be stored
+        > in a vector K s .
+
     (Note that Kr and Ks are swapped in this guide.)
 
     """

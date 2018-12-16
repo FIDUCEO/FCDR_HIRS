@@ -1,16 +1,16 @@
 .. FCDR_HIRS documentation master file, created by
-   sphinx-quickstart on Fri Dec 14 19:24:32 2018.
+   sphinx-quickstart on Sun Dec 16 17:53:49 2018.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-.. include:: ../README.md
+Welcome to FCDR_HIRS's documentation!
+=====================================
 
 .. toctree::
    :maxdepth: 6
    :caption: Contents:
 
    FCDR_HIRS
-
 
 
 Indices and tables
