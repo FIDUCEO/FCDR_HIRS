@@ -20,8 +20,8 @@
 # -- Project information -----------------------------------------------------
 
 project = 'FCDR_HIRS'
-copyright = ("This code was developed for the EC project “Fidelity and "
-"Uncertainty in Climate Data Records from Earth Observations (FIDUCEO)”. "
+copyright = ('This code was developed for the EC project "Fidelity and '
+'Uncertainty in Climate Data Records from Earth Observations (FIDUCEO)". '
 "Grant Agreement: 638822")
 author = 'Gerrit Holl'
 
