@@ -3,13 +3,19 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to FCDR_HIRS's documentation!
-=====================================
+Documentation for HIRS FCDR analysis and generation software
+============================================================
+
+..include: ../README.rst
 
 .. toctree::
    :maxdepth: 6
    :caption: Contents:
 
+   installation
+   scripts
+   configuration
+   fcdrgeneration
    FCDR_HIRS
 
 
