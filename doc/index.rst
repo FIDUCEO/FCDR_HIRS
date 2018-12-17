@@ -6,7 +6,7 @@
 Documentation for HIRS FCDR analysis and generation software
 ============================================================
 
-..include: ../README.rst
+.. include: ../README.rst
 
 .. toctree::
    :maxdepth: 6

@@ -83,7 +83,7 @@ pygments_style = None
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'classic'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -191,3 +191,13 @@ todo_include_todos = True
 
 
 intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
+
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/reference', None),
+    'numpy': ('https://docs.scipy.org/doc/numpy', None),
+    'matplotlib': ('https://matplotlib.org', None),
+    'xarray': ('http://xarray.pydata.org/en/stable/', None),
+    "typhon": ("http://www.radiativetransfer.org/misc/typhon/doc/", None),
+}
+
