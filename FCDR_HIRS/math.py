@@ -39,12 +39,15 @@ def calc_y_for_srf_shift(Δλ, y_master, srf0, L_spectral_db, f_spectra, y_ref,
     This estimate considers one channel at a time.  It may be more optimal
     to estimate multiple channels at a time.  This is to be done.
 
-    Arguments:
+    Parameters
+    ----------
         
-        Δλ (Quantity or float): shift in SRF.  Will be converted to the
+        Δλ : Quantity or float
+            shift in SRF.  Will be converted to the
             unit (typically µm or nm) from the pint user registry (see
             later argument).  Scalar.
-        y_master (Quantity ndarray, N×k): Brightness temperatures [K] or
+        y_master : (N, k) Quantity ndarray
+            Brightness temperatures [K] or
             radiances [radiance units] for reference satellite.  N
             samples, k channels.  Quantity must be consistent with the one
             described by predict_quantity.  These are used in the actual
@@ -54,19 +57,22 @@ def calc_y_for_srf_shift(Δλ, y_master, srf0, L_spectral_db, f_spectra, y_ref,
             data, and y_ref would be the same for training data.  In the
             real world, y_ref is still simulated, but y_master are actual
             measurements.
-        srf0 (`:func:typhon.physics.units.em.SRF`): SRF relative to which
+        srf0 : typhon.physics.units.em.SRF
+            SRF relative to which
             the shift is to be calculated.
-        L_spectral_db (ndarray M×l): Database of spectra (such as from IASI)
+        L_spectral_db (M, l) ndarray
+            Database of spectra (such as from IASI)
             to use.  Should be in spectral radiance per frequency units [W
             / (m^2 sr Hz)].  M spectra with l radiances each.
-        f_spectra (Quantity ndarray l): frequencies corresponding to
-            L_spectral_db [Hz].  1-D with length l.
-        y_ref (Quantity ndarray M×k): Predictands used to train regressions,
+        f_spectra : (l, ) Quantity ndarray
+            frequencies corresponding to L_spectral_db [Hz].  1-D with length l.
+        y_ref : (M, k) Quantity ndarray :
+            Predictands used to train regressions,
             i.e. the training database.  This information follows directly from
             L_spectral_db and SRFs on the reference satellite, but it is
             an expensive calculation so should be pre-calculated.  If
             predicting from the same satellite, at least one channel will
-            correspond to srf0, such that
+            correspond to srf0, such that::
 
                 # in case of radiances
                 L = srf0.integrate_radiances(f_spectra, L_spectral_db)
@@ -75,23 +81,27 @@ def calc_y_for_srf_shift(Δλ, y_master, srf0, L_spectral_db, f_spectra, y_ref,
 
             but this is not the case if one satellite is predicted from
             another.
-        unit (Unit): unit from pint unit registry.  Defaults to ureg.um.
-        regression_type (scikit-learn regressor): Type of regression.
+        unit : Unit
+            unit from pint unit registry.  Defaults to ureg.um.
+        regression_type : scikit-learn regressor
+            Type of regression.
             Defaults to sklearn.linear_model.LinearRegression.  Other good
             option would be sklearn.cross_decomposition.PLSRegression.
-            As long as regression_type(**regression_args) behaves like
+            As long as regression_type(\*\*regression_args) behaves like
             those two (with .fit and .predict), it should be OK.
-        regression_args (dict): Keyword arguments to pass on to regressor.
+        regression_args : dict
+            Keyword arguments to pass on to regressor.
             For example, for sklearn.linear_model.LinearRegression you
             would want to at least pass `{"fit_intercept": True}`.  For
             sklearn.cross_decomposition.PLSRegression you might use
             `{"n_components": 9, "scale": False}`.  Please refer to
             scikit-learn documentation.
 
-
     Returns:
 
-        ndarray with estimates for shifted y_master or y_master values
+        y: ndarray
+            estimates for shifted y_master or y_master values
+
     """
     try:
         Δλ = Δλ.to(unit)
@@ -202,52 +212,68 @@ def calc_cost_for_srf_shift(Δλ, y_master, y_target, srf0,
 
         C₂ = \sum_{i=1}^N (y_est,i - y_ref,i - <y_est,i - y_ref,i>)^2
 
-    Arguments:
+    Parameters
+    ----------
         
-        Δλ (Quantity): shift in SRF.
-        y_master (ndarray): Radiances [radiance units] or BTs [K] for
+        Δλ : Quantity
+            shift in SRF.
+        y_master : ndarray
+            Radiances [radiance units] or BTs [K] for
             reference satellite.  This comes from either the testing data,
             or actual measurements.  Quantity must be consistent with what is
             contained in predict_quantity.
-        y_target (ndarray): Radiances or BTs for other satellite.  This
+        y_target : ndarray
+            Radiances or BTs for other satellite.  This
             comes from either the testing data (calculated by shifting
             srf0 by an amount you haven't told me, but I mean to recover),
             or from actual measurements.
-        srf0 (`:func:typhon.physics.units.em.SRF`): SRF corresponding to
+        srf0 : `:func:typhon.physics.units.em.SRF`)
+            SRF corresponding to
             zero shift, relative to which the shift is estimated.
-        L_spectral_db (ndarray N×p): Database of spectra (such as from IASI)
+        L_spectral_db : (N, p) ndarray N×p
+            Database of spectra (such as from IASI)
             to use.  Should be in SI spectral radiance per frequency units [W
             / (m^2 sr Hz)], regardless of predict_quantity.
-        f_spectra (ndarray N): frequencies corresponding to L_spectral_db [Hz]
-        y_ref: Radiances or brightness temperatures corresponding to 
+        f_spectra : (N, ) ndarray
+            frequencies corresponding to L_spectral_db [Hz]
+        y_ref : ndarray
+            Radiances or brightness temperatures corresponding to 
             L_spectral_db and f_spectra [K], for all channels to be used.
             This is essential the training database.  It comes from
             simulations regardless as to we are applying this as a test or
             in the real world.
-        unit (Unit): unit from pint unit registry.  Defaults to ureg.um.
-        regression_type (scikit-learn regressor): Type of regression.
+        unit : Unit
+            unit from pint unit registry.  Defaults to ureg.um.
+        regression_type : scikit-learn regressor
+            Type of regression.
             Defaults to sklearn.linear_model.LinearRegression.  Other good
             option would be sklearn.cross_decomposition.PLSRegression.
-            As long as regression_type(**regression_args) behaves like
+            As long as regression_type(\*\*regression_args) behaves like
             those two (with .fit and .predict), it should be OK.  Some
             other cases are also understood, most notably scipy.odr.ODR.
-        regression_args (dict): Keyword arguments to pass on to regressor.
+        regression_args : dict
+            Keyword arguments to pass on to regressor.
             For example, for sklearn.linear_model.LinearRegression you
             would want to at least pass `{"fit_intercept": True}`.  For
             sklearn.cross_decomposition.PLSRegression you might use
             `{"n_components": 9, "scale": False}`.  Please refer to
             scikit-learn documentation for details.
-        cost_mode (str): How to estimate the cost.  Can be "total"
+        cost_mode : str
+            How to estimate the cost.  Can be "total"
             (default), which calculates C₁, or "anomalies", which
             calculates C₂, according to their definitions above.
-        predict_quantity (str): "bt" (default) or "radiance"
-        u_y_ref (ndarray): Uncertainties on y_ref.  Used by some
-            regression types.
-        u_y_target (ndarray): Uncertainties on y_target.
+        predict_quantity : str
+            "bt" (default) or "radiance"
+        u_y_ref : ndarray
+            Uncertainties on y_ref.  Used by some regression types.
+        u_y_target : ndarray
+            Uncertainties on y_target.
 
     Returns:
         
-        cost (float): Value of estimated cost function.  Unitless.
+        cost : float
+            Value of estimated cost function.  Unitless.
+
     """
     y_estimate = calc_y_for_srf_shift(Δλ, y_master, srf0,
             L_spectral_db, f_spectra, y_ref, unit,

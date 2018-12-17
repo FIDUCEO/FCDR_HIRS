@@ -20,11 +20,10 @@ from typhon.datasets.tovs import norm_tovs_name
 
 outdir = pathlib.Path("/group_workspaces/cems2/fiduceo/scratch/HIRS_SRF")
 
-satname = norm_tovs_name(sys.argv[1], mode="default")
-
 # NB: an earlier version of this script contained code for shifts based on
 # ARTS SRFs
 def main():
+    satname = norm_tovs_name(sys.argv[1], mode="default")
     (outdir / satname).mkdir(parents=True, exist_ok=True)
     for ch in range(1, 20):
         srf = SRF.fromRTTOV(norm_tovs_name(satname, mode="RTTOV"), "hirs", ch)

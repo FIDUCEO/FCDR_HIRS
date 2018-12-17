@@ -91,6 +91,7 @@ setup(
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
     install_requires=["numpy>=1.13",
+                      "numpydoc",
                       "scipy>=1.0",
                       "matplotlib>=2.0",
                       "numexpr>=2.6",

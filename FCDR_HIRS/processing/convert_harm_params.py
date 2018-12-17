@@ -3,7 +3,7 @@
 Need to pass files from which to read, in order of channel.  So, for
 example, one might call it as
 
-convert_hirs_harmonisation_parameters /group_workspaces/cems2/fiduceo/Users/rquast/processing/harmonisation/3.0-3cab9f5/*/*19.nc
+convert_hirs_harmonisation_parameters /group_workspaces/cems2/fiduceo/Users/rquast/processing/harmonisation/3.0-3cab9f5/\*/\*19.nc
 """
 
 import sys
@@ -74,7 +74,6 @@ def parse_cmdline():
              "RQs harmonisation process")
 
     return parser.parse_args()
-p = parse_cmdline()
 
 # from attachment from email RQ 2018-03-26, sent to SH, JM, EW, GH
 
@@ -134,5 +133,6 @@ def write_harm_dict(fp, harms, write_preamble=True):
             file=fp)
 
 def main():
+    p = parse_cmdline()
     with numpy.errstate(all="raise"):
         write_harm_dict(sys.stdout, get_harm_dict(p.chans, p.files), True)

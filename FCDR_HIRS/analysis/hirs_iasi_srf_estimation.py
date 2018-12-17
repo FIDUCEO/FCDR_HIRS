@@ -445,11 +445,13 @@ class LUTAnalysis:
         between radiances through the LUT and the input, i.e. the
         NOAAx-simulated-from-NOAA18 through the NOAA18 LUT.
 
-        Example plot:
+        Example plot::
+
           plot(cont[:, 10], delta[:, 10, :].T, 'o')
                 ... is ...
           x-axis: reference BT for channel 11
           y-axis: differences for all channels 11
+
         """
         N = 12
         logger.info("Simulating radiances using lookup-table...")

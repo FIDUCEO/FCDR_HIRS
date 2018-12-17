@@ -2645,12 +2645,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     def calc_sens_coef(self, typ, M, ch, srf): 
         """Calculate sensitivity coefficient.
+
+        DEPRECATED --- DO NOT USE!
+
         Actual work is delegated to calc_sens_coef_{name}
-        Arguments:
-            typ
-            M
-            SRF
-            ch
         """
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
 
@@ -2664,28 +2662,40 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     
     @typhon.math.common.calculate_precisely
     def calc_sens_coef_C_Earth(self, L_iwct, C_iwct, C_space, C_Earth):
+        """DEPRECATED --- DO NOT USE"""
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
         return L_iwct / (C_iwct - C_space)
 
     @typhon.math.common.calculate_precisely
     def calc_sens_coef_C_iwct(self, L_iwct, C_iwct, C_space, C_Earth):
+        """DEPRECATED --- DO NOT USE"""
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
         return - L_iwct * (C_Earth - C_space) / (C_iwct - C_space)**2
 
     @typhon.math.common.calculate_precisely
     def calc_sens_coef_C_iwct_slope(self, L_iwct, C_iwct, C_space):
         """Sensitivity coefficient for C_IWCT for slope (a₁) calculation
-        Arguments:
-            L_iwct [ndarray]
+
+        DEPRECATED --- DO NOT USE
+
+        Parameters
+        ----------
+
+            L_iwct : ndarray
                 Radiance for IWCT.  Can be obtained with
                 self.extract_calibcounts_and_temp.  Should
                 be 1-D [N].
-            C_iwct [ndarray]
+            C_iwct : ndarray
                 Counts for IWCTs.  Should be 2-D [N × 48]
-            C_space [ndarray]
+            C_space : ndarray
                 Counts for space views.  Same shape as C_iwct.
-        Returns:
-            Sensitivity coefficient.
+
+        Returns
+        -------
+
+            sens : ndarray
+                Sensitivity coefficient.
+
         """
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
         return L_iwct[:, numpy.newaxis] / (C_iwct - C_space)**2
@@ -2706,20 +2716,24 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     def calc_urad(self, typ, M, ch, *args, srf=None):
         """Calculate uncertainty
-        Arguments:
-            typ [str]
-            
+
+        DEPRECATED --- DO NOT USE
+
+        Parameters
+        ----------
+
+            typ : str
                 Sort of uncertainty.  Currently implemented: "noise" and
                 "calib".
-            M
-            ch
-            *args
+            M : ndarray
+            ch : int
+            *args : any
                 Depends on the sort of uncertainty, but should pass all
                 the "base" uncertainties needed for propagation.  For
                 example, for calib, must be u_C_iwct and u_C_space.
-            srf
-                
+            srf : SRF
                 Only if different from the nominal
+
         """
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
 
@@ -2802,12 +2816,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         For initial version of my own calibration implementation, where
         only one calibartion propagates into each uncertainty.
         FIXME: make this vectorisable
-        Arguments:
+
+        Parameters
+        ----------
             
-            u [ndarray]
+            u : numpy.ndarray
                 Vector of uncertainties.  Last dimension must be the
                 dimension to estimate covariance matrix for.
-            c_id [ndarray]
+            c_id : numpy.ndarray
                 Vector with identifier for what calibration cycle was used
                 in each.  Most commonly, the time.  Shape must match u.
         """

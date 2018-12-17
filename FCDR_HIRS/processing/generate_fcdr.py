@@ -1,7 +1,14 @@
-"""Generate FCDR for satellite and period
+"""Main module to generate FCDR for satellite and period
 
-Generate HIRS FCDR for a particular satellite and period.
+This module contains the high level classes and function to
+generate the HIRS FCDR for a particular satellite and period.
+When used as a commandline function, the full list of options
+is shown by calling
 
+generate_fcdr --help
+
+This module defines a single class that is designed to be used
+externally, FCDRGenerator.
 """
 
 DATA_CHANGELOG="""
@@ -171,6 +178,72 @@ def parse_cmdline():
     return parser.parse_args()
 
 class FCDRGenerator:
+    """Main class containing high-level functionality for FCDR generation
+
+    The FCDRGenerator class contains high level methods for the generation
+    of the HIRS FCDR.  Typical use to generate the FCDR for a particular
+    period is::
+
+        fgen = FCDRGenerator("noaa15",
+            datetime.datetime(2003, 1, 1),
+            datetime.datetime(2003, 2, 1),
+            ["easy", "debug"],
+            no_harm=True)
+        fgen.process()
+
+    The first line creates an FCDRGenerator object.  The second line then
+    processes the FCDR for the indicated period.  Attributes on the
+    FCDRGenerator object and its sub-objects describe the properties of
+    where all of this ends up or how it is stored.  Some of those
+    attributes are:
+
+    Attributes
+    ----------
+
+    epoch : datetime.datetime
+        Times will be stored in seconds since this instant.  Defaults
+        to 1970-01-01, which is the Unix epoch.  Note that times are
+        stored with an add_offset corresponding to the beginning of
+        the orbit, so the actual numbers in the file are much smaller
+        and can easily fit in 32 bit (they could even fit in 16 bit).
+
+    window_size : datetime.timedelta
+        L1B data is read in chunks of this size, which defaults to 24
+        hours.  This is a sliding window "context" which slides by
+        steps corresponding to step_size.  The context may be used by
+        various models such as the self-emission model or a model that
+        determines the calibration coefficients for the first lines of
+        the processed data.
+
+    segment_size : datetime.timedelta
+        Size of segments which are processed at once.  Defaults to 6
+        hours.
+
+    step_size : datetime.timedelta
+
+    skip_problem_step : datetime.timedelta
+        Not currently in use.  Formerly used to jump when I couldn't
+        resolve a problem at some point.
+
+    data_version : str
+        Data version.
+
+    rself_temperatures : List[str]
+        Temperatures to use in self-emission model.
+
+    rself_regr : tuple
+        Arguments to be used for self-emission model.
+
+    orbit_filters : list
+
+        Do not set.  This is set in __init__, and defines what filters
+        are applied to each orbit upon reading L1B data.
+
+    pseudo_fields : list
+
+    max_debug_corr_length : int
+
+    """
     # for now, step_size should be smaller than segment_size and I will
     # only store whole orbits within each segment
     epoch = datetime.datetime(1970, 1, 1, 0, 0, 0)
@@ -232,6 +305,11 @@ class FCDRGenerator:
 
     def process(self, start=None, end_time=None):
         """Generate FCDR for indicated period
+
+        For the indicated period, read L1B data, calculate the FCDR, and
+        write the result to files according to the location definitions
+        set as properties of self.fcdr.  If you want to have the FCDR in
+        memory returned by a function, use self.get_piece.
         """
         self.dd = typhon.datasets.dataset.DatasetDeque(
             self.fcdr, self.window_size, self.start_date,
@@ -269,6 +347,10 @@ class FCDRGenerator:
     
     def fragmentate(self, piece):
         """Yield fragments per orbit
+
+        For a piece of debug FCDR, split it into segments such that each
+        segment runs from equator to equator.  Then yield the segments one
+        by one.
         """
         ssp = piece["lat"].sel(scanpos=28)
         crossing = xarray.DataArray(
@@ -306,7 +388,8 @@ class FCDRGenerator:
         """Generate and store one “piece” of FCDR
 
         This generates one “piece” of FCDR, i.e. in a single block.  For
-        longer periods, use the higher level method `process`.
+        longer periods (too long to fit in memory), use the higher level
+        method `process`.
         """
 
         (piece, sensRe) = self.get_piece(from_, to, return_more=True)
@@ -314,13 +397,35 @@ class FCDRGenerator:
         for piece in self.fragmentate(piece):
             piece = self.add_orbit_info_to_piece(piece)
 
-
             self.store_piece(piece)
 
     def get_piece(self, from_, to, return_more=False, reset_context=False):
         """Get FCDR piece for period.
 
-        Returns a single xarray.Dataset
+        Returns a single xarray.Dataset for the full period requested,
+        containing the FCDR in 'debug' format.  To get the easyFCDR, pass
+        this to self.debug2easy afterward.
+
+        Arguments:
+
+            from_ [datetime.datetime]
+
+                Begin of period for which FCDR is wanted
+
+            to [datetime.datetime]
+
+                End of period
+
+            return_more [boolean]
+
+                Return additional information, rather than just the FCDR.
+                If true, return not only the FCDR dataset but also a
+                nested dictionary containing the sensitivities.
+
+        Returns:
+
+            - xarray.Dataset with the debug FCDR
+            - if requested, dictionary with sensitivities
         """
         if reset_context or self.dd is None:
             if self.dd is None:
