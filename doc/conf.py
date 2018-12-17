@@ -190,8 +190,6 @@ epub_exclude_files = ['search.html']
 todo_include_todos = True
 
 
-intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
-
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'scipy': ('https://docs.scipy.org/doc/scipy/reference', None),
@@ -200,4 +198,3 @@ intersphinx_mapping = {
     'xarray': ('http://xarray.pydata.org/en/stable/', None),
     "typhon": ("http://www.radiativetransfer.org/misc/typhon/doc/", None),
 }
-
