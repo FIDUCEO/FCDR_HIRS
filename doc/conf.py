@@ -20,11 +20,13 @@
 # -- Project information -----------------------------------------------------
 
 project = 'FCDR_HIRS'
-copyright = '2018, Author'
-author = 'Author'
+copyright = ("This code was developed for the EC project “Fidelity and "
+"Uncertainty in Climate Data Records from Earth Observations (FIDUCEO)”. "
+"Grant Agreement: 638822")
+author = 'Gerrit Holl'
 
 # The short X.Y version
-version = ''
+version = '0.1.15dev'
 # The full version, including alpha/beta/rc tags
 release = ''
 
@@ -44,7 +46,8 @@ extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.autodoc',
     'sphinx.ext.mathjax',
-    "sphinx.ext.napoleon"
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -185,3 +188,6 @@ epub_exclude_files = ['search.html']
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
+
+
+intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
