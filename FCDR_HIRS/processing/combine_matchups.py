@@ -33,8 +33,8 @@ See issue #22
         include_debug=True)
     
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--with_filters', action='store_true')
-    group.add_argument('--without_filters', action='store_false')
+    group.add_argument('--with-filters', action='store_true')
+    group.add_argument('--without-filters', action='store_false')
 
     parser.add_argument("--src-version", action="store", type=str,
         default="0.8pre2_no_harm",
