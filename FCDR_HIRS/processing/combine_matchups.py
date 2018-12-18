@@ -147,7 +147,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     # the GWS.  Experiment if this is any better writing to scratch2 (and
     # can then rsync those over later).  UPDATE: Well, it's not.  First
     # write to /dev/shm, then rsync to fiduceo GWS in same script.
-    basedir = config.conf["harmonisation_matchups"]
+    basedir = config.conf["main"]["harmonisation_matchups"]
     #basedir = "/work/scratch2/gholl/Harmonisation_matchups/HIRS/"
 
     # fallback for simplified only, because I don't store the
