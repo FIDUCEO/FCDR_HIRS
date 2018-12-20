@@ -1,4 +1,45 @@
 """Datasets for TOVS/ATOVS
+
+This is the main workhorse of the FCDR, in particular the `HIRSFCDR`
+class, which is nearly 3 KLOC by itself.  Although the implementation is
+essentially all in the `HIRSFCDR` class, you should not instantiate that
+one directly.  Rather, you should instantiate either `HIRS2FCDR`,
+`HIRS3FCDR`, or `HIRS4FCDR`, which contain both the functionality for
+`HIRSFCDR` (which is shared between different types of HIRS), and the
+functionality from the classes `typhon.datasets.dataset.HIRS2`,
+`typhon.datasets.dataset.HIRS3`, and `typhon.datasets.dataset.HIRS4`,
+which in turn inherit from `typhon.datasets.tovs.HIRS`.
+
+Classes defined here:
+
+`HIRSFCDR`
+    Contains the core functionality for calculating calibrated HIRS
+    radiances and their uncertainties.
+`HIRS2FCDR`, `HIRS3FCDR`, `HIRS4FCDR`
+    Specific classes to be instantiated.
+`HIRSPODFCDR`, `HIRSKLMFCDR`
+    Some limited specific functionality and definitions that is only
+    relevant for particular types of HIRS.
+
+Important functionality inherited from typhon:
+
+`typhon.datasets.tovs.HIRS`
+    Contains the bulk of the HIRS-specific L1B functionality, in
+    particular a reading routine, but also filtering that is part of a
+    reading routine even when not producing an FCDR (see also the module
+    `typhon.datasets.filters`).
+`typhon.datasets.tovs.HIRS2`, `typhon.datasets.tovs.HIRS3`, typhon.datasets.tovs.HIRS4`
+    Specific classes to be instantiated; the `HIRS2FCDR`, `HIRS3FCDR` and
+    `HIRS4FCDR` have those in their inheritance tree.
+`typhon.datasets.dataset.Dataset` and subclasses:
+    Generic functionality for reading and processing satellite data, such
+    as an abstraction on how to read longer periods of data in
+    `typhon.datasets.dataset.MultiFileDataset.read_period`.
+
+This module also defines a number of utility functions.  The most useful
+may be `which_hirs_fcdr`, which accepts a satellite name in any spelling
+variation and returns the instance of the correct `HIRS2FDCR`,
+`HIRS3FCDR`, or `HIRS4FCDR` class.
 """
 
 import logging

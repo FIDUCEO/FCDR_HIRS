@@ -8,6 +8,16 @@ currently an outdated version of it.  Each HIRS FCDR source of uncertainty
 is a specific instance of this `Effect` class, which are all included
 within this module.  The remaining classes and functions are essentially
 helper classes for the functionality within each effect.
+
+The existance of an `Effect` object in this module does not magically
+include it in the uncertainty budget.  The user/developer still needs to
+populate the ``.magnitude`` attribute as documented in the `Effect` class
+documentation.
+
+To get an impression of which ones are actually implemented, have a look
+at calls to `FCDR_HIRS.fcdr._tuck_effect_channel`, which are littered
+about here and there, which is currently being used to populate a
+dictionary in preparation for the uncertainty calculation and CURUC.
 """
 
 import math
@@ -37,11 +47,11 @@ WARNING = ("VERY EARLY TRIAL VERSION! "
             "This serves exclusively as a file format demonstration!")
 dst = docrep.DocstringProcessor()
 
-#: Form of tuple to describe correlation type on four scales.
+#: Form of tuple to describe correlation type on four scales, used in `Effect` class.
 CorrelationType = collections.namedtuple("CorrelationType",
     ["within_scanline", "between_scanlines", "between_orbits",
     "across_time"])
-#: Form of tuple to describe correlation scale on four scales.
+#: Form of tuple to describe correlation scale on four scales, used in `Effect` class.
 CorrelationScale = collections.namedtuple("CorrelationScale",
     CorrelationType._fields)
 
@@ -57,12 +67,13 @@ class Rmodel(metaclass=abc.ABCMeta):
     several `Rmodel`s.
     """
 
-    @dst.get_sectionsf("calcR")
+    @dst.get_full_descriptionf("R_eΛk")
+    @dst.get_sectionsf("R_eΛlk")
     @dst.with_indent(8)
     @abc.abstractmethod
     def calc_R_eΛlk(self, ds,
             sampling_l=1, sampling_e=1):
-        f"""Return R_eΛlk for single k
+        """Return R_eΛlk for single k
 
         Return the cross-element correlation matrix for a single effect,
         for all lines and for all channels.
@@ -90,14 +101,14 @@ class Rmodel(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def calc_R_lΛek(self, ds,
         sampling_l=1, sampling_e=1):
-        f"""Return R_lΛek for single k
+        """Return R_lΛek for single k
 
         Return the cross-line correlation matrix for a single effect, for
         all elements and for all channels.
 
         Parameters
         ----------
-        %(calcR.parameters)s
+        %(R_eΛk.parameters)s
 
         Returns
         -------
@@ -111,14 +122,14 @@ class Rmodel(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def calc_R_cΛpk(self, ds,
         sampling_l=1, sampling_e=1):
-        f"""Return R_cΛpk for single k
+        """Return R_cΛpk for single k
 
         Return the cross-channel correlation matrix for a single effect,
         for all elements and for all channels.
 
         Parameters
         ----------
-        %(calcR.parameters)s
+        %(R_eΛk.parameters)s
 
         Returns
         -------
@@ -130,7 +141,7 @@ class Rmodel(metaclass=abc.ABCMeta):
 
 @dst.with_indent(4)
 def _calc_R_eΛlk_allones(ds, sampling_l=1, sampling_e=1):
-    f"""Return R_eΛlk for single k with all ones
+    """Return R_eΛlk for single k with all ones
 
     Return the cross-element error correlation matrix ``R_eΛk`` for the
     situation where the correlation is total, i.e., a matrix of ones.
@@ -140,7 +151,7 @@ def _calc_R_eΛlk_allones(ds, sampling_l=1, sampling_e=1):
 
     Parameters
     ----------
-    %(calcR.parameters)s
+    %(R_eΛk.parameters)s
 
     Returns
     -------
@@ -423,44 +434,141 @@ class RModelRSelf(Rmodel):
 rmodel_rself = RModelRSelf()
 
 class Effect:
-    """For uncertainty effects.
+    """Class to represent an effect / source of uncertainty.
 
-    Needs to have (typically set on creation):
+    The `Effect` class is a representation of an effect that causes an
+    uncertainty.  It is an in-code representation of the effects tables
+    from FIDUCEO D4.2, although it is not entirely up to date with the
+    latest version.  The information contained in the `Effect` class and
+    the methods defined in it are used to populate the debug FCDR and
+    calculate inputs to the CURUC recipes, although the latter is in
+    practice often delegated to an `Rmodel` class, an instance of which
+    may be an attribute here.
+
+    The module defines a set of effects, but defining an `Effect` does not
+    automagically add it to the uncertainty budget.  A copy of the table with all
+    effects can be obtained using the `effects` function.  It is up to the
+    developer to populate the ``.magnitude`` attribute for all effects, and
+    then pass it on to functions requiring it, in particular the
+    all-important method `FCDR_HIRS.fcdr.HIRSFCDR.calc_u_for_variable`.
+
+    Attributes
+    ----------
     
-    - name: short name 
-    - description: description of effect
-    - parameter: what it relates to
-    - unit: pint unit
-    - pdf_shape: str, defaults to "Gaussian"
-    - channels_affected: str, defaults "all"
-    - correlation_type: what the form of the correlation is (4×)
-    - channel_correlations: channel correlation matrix
-    - dimensions: list of dimension names or None, which means same as
-      parameter it relates to.
+    These attributes are generally set upon definition:
 
-    Additionally needs to have (probably set only later):
+    name : str
+        Short name.  This will be used to, for example, refer to the
+        effect in a global dictionary with all effects.
+    description : str
+        Long name, human readable description of the effect.
+    parameter : `sympy.Symbol`
+        The `sympy.Symbol` within the `measurement_equation` that this
+        effect relates to.  Each effect must relate to exactly one
+        measurement equation parameter.
+    unit : `pint.unit._Unit`
+        The pint unit in which the magnitude of the effect is measured.
+        Must be compatible with the physical dimensions for the
+        measurement that the measurement equation parameter represents.
+    pdf_shape : str
+        Shape of the PDF corresponding to the uncertainty.  Defaults to "Gaussian".
+    channels_affected : str
+        What channels are affected.  Defaults to "all".
+    correlation_type : tuple[Str]
+        Property, 4-tuple of strings, or `CorrelationType` named tuple.
+        Each member of the tuple must be one of:
+            * "undefined"
+            * "random"
+            * "rectangular_absolute"
+            * "triangular_relative"
+            * "truncated_gaussian_relative"
+            * "repeated_rectangles"
+            * "repeated_truncated_gaussians"
+        The four tuple elements refer to (and, in case of the named tuple,
+        can be referred to as) ``within_scanline``, ``between_scanlines``,
+        ``between_orbits``, and ``across_time``.
+    channel_correlations : (n_c, n_c), numpy.ndarray
+        The correlation matrix between channels.  Sometimes this is
+        calculated on the fly.  See also the `Effect.calc_R_cΛpk` method.
+        Currently (2018-12-20), channel correlations is used to set an
+        attribute on the effect in the debug FCDR, but the result of
+        `Effect.calc_R_cΛpk` is used it the CURUC recipes.
+    dimensions : Tuple[str] or None
+        Normally, the data dimensions for an uncertainty quantity should
+        be the same as the dimensions for the quantity in the measurement
+        equation the uncertainty corresponds to.  The latter are defined
+        in the `FCDR_HIRS._fcdr_defs` module and as the
+        `FCDR_HIRS.fcdr.FCDR._data_vars_props` attribute.  In some cases,
+        the data dimensions for the uncertainty may differ from the
+        quantity.  For example, IWCT type B uncertainty is scalar, even
+        though it belongs to a quantity that is not.  This attribute can
+        be set to a sequence of strings describing the dimensions for the
+        uncertainty type.
+    rmodel : `Rmodel`
+        Instance of the `Rmodel` class, or rather one of its
+        implementation, which in turn describes the correlation
+        scructures.  This may appear to duplicate the `correlation_type`
+        and `correlation_scale` attributes, and perhaps it does, but the
+        attributes are stored in the debug FCDR whereas the `rmodel`
+        attribute is used to calculate the inputs to CURUC.
 
-    - magnitude
-    - correlation_scale
-    - covariances
+    There are some attributes that are set during FCDR calculation:
 
-    Sensitivity coefficients are calculated on-the-fly using the
-    measurement_equation module.
+    magnitude : `typhon.physics.units.tools.UnitsAwareDataArray`
+        This will be set to an instance of
+        `typhon.physics.units.tools.UnitsAwareDataArray`, which will
+        describe the magnitude and the units of the uncertainty.
+    correlation_scale : `CorrelationScale`
+        This is a `CorrelationScale` namedtuple that is supposed to
+        contain the magnitudes of the correlation along different types.
+        The types are as for ``correlation_type`` above, but are not
+        actually set by the CURUC recipes and this `correlation_scale` is
+        not really used.
+    covariances : None
+        Not currently (2018-12-20) used for anything.  Covariances and
+        correlations are calculated through the CURUC recipes, which call
+        the `calc_R_eΛlk`, `calc_R_lΛek`, and `calc_R_cΛpk` methods on
+        the `Effect` class which in turn delegates those calculations to
+        the `Rmodel` of choice.  This property is a placeholder for
+        covariances between different effects, but those are not currently
+        considered.
+
+    See also
+    --------
+
+    The `measurement_equation` module used to calculate sensitivity
+    coefficients.
     """
 
+    #: `measurement_equation.ExpressionDict` containing all effects defined so far
     _all_effects = meq.ExpressionDict()
+    #: name of the effect
     name = None
+    #: description of the effect
     description = None
+    #: parameter that the effect relates to
     parameter = None
+    #: unit of the quantity quantifying the effect
     unit = None
+    #: shape of the uncertainty PDF
     pdf_shape = "Gaussian"
+    #: describes what channels are affected
     channels_affected = "all"
+    #: describes channel correlations
     channel_correlations = None
+    #: describes data dimensions, if different from source
     dimensions = None
+    #: implementation of `Rmodel` for the calculation of correlations, inputs to CURUC
     rmodel = None
+    #: holds covariances but not currently used
     _covariances = None
 
     def __init__(self, **kwargs):
+        """Create new Effect
+
+        All keyword arguments are used to set attributes to the resulting
+        object.  Properties are defined last.
+        """
         later_pairs = []
         while len(kwargs) > 0:
             (k, v) = kwargs.popitem()
@@ -495,11 +603,11 @@ class Effect:
     def magnitude(self):
         """Magnitude of the uncertainty
 
-        This should be a DataArray with dimensions matching the dimensions
-        of the FCDR.  Assumed to be constant along any others.  Note that
-        this means the magnitude of the uncertainty is constant; it does
-        not mean anything about the error correlation, which is treated
-        separately.
+        This should be a DataArray with dimensions depending on the
+        effect.  Assumed to be constant along any dimensions not given.
+        Note that this means the magnitude of the uncertainty is constant;
+        it does not mean anything about the error correlation, which is
+        treated separately.
         """
         return self._magnitude
 
@@ -561,13 +669,15 @@ class Effect:
                                 "repeated_truncated_gaussians")
 
     def set_covariance(self, other, channel, da_ch, _set_other=True):
-        """Set covariance between this and other effect
+        """Set covariance between this and other effect.
 
-        Arguments:
+        Parameters
+        ----------
 
-            other [Effect]
-
-            da_ch [xarray.DataArray]
+        other : Effect
+            The other `Effect` that we have a coviarance with.
+        da_ch : `typhon.physics.units.tools.UnitsAwareDataArray`
+            The magnitude of the covariance.
         """
 
 
@@ -596,11 +706,31 @@ class Effect:
 
     @property
     def covariances(self):
+        """Holds covariances between different effects.
+
+        This property holds covariances between different effects.
+
+        It is not currently (2018-12-20) used.
+        """
+
         return self._covariances
 
     @property
     def correlation_type(self):
-        """Form of correlation
+        """Holds the type of correlation per scale.
+
+        Property, 4-tuple of strings, or `CorrelationType` named tuple.
+        Each member of the tuple must be one of:
+            * "undefined"
+            * "random"
+            * "rectangular_absolute"
+            * "triangular_relative"
+            * "truncated_gaussian_relative"
+            * "repeated_rectangles"
+            * "repeated_truncated_gaussians"
+        The four tuple elements refer to (and, in case of the named tuple,
+        can be referred to as) ``within_scanline``, ``between_scanlines``,
+        ``between_orbits``, and ``across_time``.
         """
         return self._corr_type
 
@@ -618,7 +748,13 @@ class Effect:
     _corr_scale = CorrelationScale(*[0]*4)
     @property
     def correlation_scale(self):
-        """Scale for correlation
+        """`CorrelationScale` namedtuple describing correlation scales
+
+        This is a `CorrelationScale` namedtuple that is supposed to
+        contain the magnitudes of the correlation along different types.
+        The types are as for ``correlation_type`` above, but are not
+        actually set by the CURUC recipes and this `correlation_scale` is
+        not really used.
         """
         return self._corr_scale
 
@@ -637,72 +773,100 @@ class Effect:
 
         Normally starting at R_e, but can provide other.
 
-        Returns sympy expression.
+        Parameters
+        ----------
+
+        s : str or `sympy.Symbol`
+            Parameter for which to calculate the sensitivity coefficients.
+            Defaults to `R_e`, i.e. the Earth radiance.
+
+        Returns
+        -------
+
+        sympy.Expr
+            The symbolic expression for the sensitivity coefficient.
         """
 
         return meq.calc_sensitivity_coefficient(s, self.parameter)
 
     def is_independent(self):
-        """True if this effect is independent
+        """True if this effect is independent.
+
+        An effect is independent if the correlation type is random for all
+        types.
         """
 
         return all(x=="random" for x in self.correlation_type)
 
     def is_common(self):
         """True if this effect is common
+
+        An effect is common if the correlation type is
+        rectangular_absolute for all scales and the magnitude is infinite
+        for all scales.
+
+        Note that common effects are not considered in CURUC.
         """
         return all(x=="rectangular_absolute" for x in
                 self.correlation_type) and all(numpy.isinf(i) for i in
                 self.correlation_scale)
 
     def is_structured(self):
-        """True if this effect is structured
+        """True if this effect is structured.
+
+        An effect is structured if it is neither independent nor common.
         """
 
         return not self.is_independent() and not self.is_common()
 
     def calc_R_eΛlk(self, ds,
             sampling_l=1, sampling_e=1):
-        """Return R_eΛlk for single k
-
-        Dimensions [n_c, n_l, n_e, n_e]
-        """
-
         return self.rmodel.calc_R_eΛlk(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
+    calc_R_eΛlk.__doc__ = Rmodel.calc_R_eΛk.__doc__
 
     def calc_R_lΛek(self, ds,
             sampling_l=1, sampling_e=1):
-        """Return R_lΛes or R_lΛei
-        """
         return self.rmodel.calc_R_lΛek(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
+    calc_R_lΛek.__doc__ = Rmodel.calc_R_lΛek.__doc__
 
     def calc_R_cΛpk(self, ds,
             sampling_l=1, sampling_e=1):
-        """Return R_cΛpk for this effect
-        """
         return self.rmodel.calc_R_cΛpk(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
+    calc_R_cΛpk.__doc__ = Rmodel.calc_R_cΛpk.__doc__
 
 def effects() -> Mapping[sympy.Symbol, Set[Effect]]:
-    """Initialise a new dictionary with all effects per symbol.
+    """Return a copy of the dictionary with all effects per symbol.
 
-    Returns: Mapping[symbol, Set[Effect]]
+    Returns
+    -------
+
+    Mapping[symbol, Set[Effect]]
+        Mapping containing keys which are symbols in the measurement
+        equation, and values with are a set of `Effect` instances.
     """
     return copy.deepcopy(Effect._all_effects)
 
+#: Identity matrix for all channels (for uncorrelated)
 _I = numpy.eye(19, dtype="f4")
+#: Matrix of ones for all channels (for fully correlated)
 _ones = numpy.ones(shape=(19, 19), dtype="f4")
+#: Tuple for correlation description of fully random effects
 _random = ("random",)*4
+#: Tuple for correlation description of effects due to calibration
 _calib = ("rectangular_absolute", "rectangular_absolute",
           "random", "triangular_relative")
+#: Tuple for correlation description of common effects
 _systematic = ("rectangular_absolute",)*4
+#: Tuple for correlation magnitude of common effects
 _inf = (numpy.inf,)*4
 
+#: Effect object describing Earth counts noise
 earth_counts_noise = Effect(name="C_Earth",
     description="noise on Earth counts",
     parameter=meq.symbols["C_E"],
@@ -713,6 +877,7 @@ earth_counts_noise = Effect(name="C_Earth",
     rmodel=rmodel_random,
     ) 
 
+#: Effect object describing space counts noise
 space_counts_noise = Effect(name="C_space",
     description="noise on Space counts",
     parameter=meq.symbols["C_s"],
@@ -722,6 +887,7 @@ space_counts_noise = Effect(name="C_space",
     dimensions=["calibration_cycle"],
     rmodel=rmodel_calib)
 
+#: Effect describing IWCT counts noise
 IWCT_counts_noise = Effect(name="C_IWCT",
     description="noise on IWCT counts",
     parameter=meq.symbols["C_IWCT"],
@@ -731,6 +897,7 @@ IWCT_counts_noise = Effect(name="C_IWCT",
     dimensions=["calibration_cycle"],
     rmodel=rmodel_calib)
 
+#: Effect describing SRF uncertainty
 SRF_calib = Effect(name="SRF_calib",
     description="Spectral response function calibration",
     parameter=meq.symbols["νstar"],
@@ -750,6 +917,7 @@ SRF_calib = Effect(name="SRF_calib",
 #    unit=ureg.nm,
 #    channel_correlations=_I)
 
+#: Effect describing PRT counts noise
 PRT_counts_noise = Effect(name="C_PRT",
     description="IWCT PRT counts noise",
     parameter=meq.symbols["C_PRT"],
@@ -759,6 +927,7 @@ PRT_counts_noise = Effect(name="C_PRT",
     channel_correlations=_ones,
     rmodel=rmodel_calib_prt)
 
+#: Effect describing PRT representation
 IWCT_PRT_representation = Effect(
     name="O_TIWCT",
     description="IWCT PRT representation",
@@ -770,6 +939,7 @@ IWCT_PRT_representation = Effect(
     channel_correlations=_ones,
     rmodel=rmodel_calib_prt)
 
+#: Effect describing uncertainty due to IWCT PRT calibration
 IWCT_PRT_counts_to_temp = Effect(
     name="d_PRT",
     description="IWCT PRT counts to temperature",
@@ -784,6 +954,7 @@ IWCT_PRT_counts_to_temp = Effect(
     channel_correlations=_ones,
     rmodel=rmodel_calib_prt)
 
+#: Effect describing uncertainty due to IWCT type b
 IWCT_type_b = Effect(
     name="O_TPRT",
     description="IWCT type B",
@@ -798,13 +969,16 @@ IWCT_type_b = Effect(
 # kwargs not preserved before Python 3.6)
 IWCT_type_b.magnitude=UADA(0.1, name="uncertainty", attrs={"units": "K"})
 
-blockmat = numpy.vstack((
+#: Helper for effects correlated within same detector
+_blockmat = numpy.vstack((
             numpy.hstack((
                 numpy.ones(shape=(12,12)),
                 numpy.zeros(shape=(12,9)))),
             numpy.hstack((
                 numpy.zeros(shape=(9,12)),
                 numpy.ones(shape=(9,9))))))
+
+#: Effect describing uncertainty due to non-linearity harmonsiation parameter
 nonlinearity = Effect(
     name="a_2",
     description="Nonlinearity",
@@ -813,9 +987,10 @@ nonlinearity = Effect(
     correlation_scale=_inf,
     unit=radiance_units["si"]/ureg.count**2,
     dimensions=(),
-    channel_correlations=blockmat,
+    channel_correlations=_blockmat,
     rmodel=rmodel_common)
 
+#: Effect describing uncertainty due to emissity correction harmonsiation parameter
 emissivitycorrection = Effect(
     name="a_3",
     description="Emissivity correction",
@@ -827,6 +1002,7 @@ emissivitycorrection = Effect(
     channel_correlations=_ones,
     rmodel=rmodel_common)
 
+#: Effect describing uncertainty due to self-emission bias harmonisation parameter
 selfemissionbias = Effect(
     name="a_4",
     description="Self-emission bias",
@@ -838,6 +1014,7 @@ selfemissionbias = Effect(
     channel_correlations=_ones,
     rmodel=rmodel_common)
 
+#: Effect describing uncertainty due to non-quadratic non-linearity
 nonnonlinearity = Effect(
     name="O_Re",
     description="Wrongness of nonlinearity",
@@ -849,17 +1026,19 @@ nonnonlinearity = Effect(
     channel_correlations=nonlinearity.channel_correlations,
     rmodel=rmodel_common)
 
+#: Effect describing uncertainty due to Earthshine model
 Earthshine = Effect(
     name="Earthshine",
     description="Earthshine",
     parameter=meq.symbols["R_refl"],
     correlation_type=("rectangular_absolute", "rectangular_absolute",
           "repeated_rectangles", "triangular_relative"),
-    channel_correlations=blockmat,
+    channel_correlations=_blockmat,
     dimensions=(),
     unit=radiance_units["ir"],
     rmodel=rmodel_calib)
 
+#: Effect describing uncertainty due to self-emission model
 Rself = Effect(
     name="Rself",
     dimensions=("rself_update_time",),
@@ -867,42 +1046,46 @@ Rself = Effect(
     parameter=meq.symbols["R_selfE"],
     correlation_type=("rectangular_absolute", "triangular_relative",
         "triangular_relative", "repeated_rectangles"),
-    channel_correlations=blockmat,
+    channel_correlations=_blockmat,
     unit=radiance_units["ir"],
     rmodel=rmodel_rself)
 
+#: Effect describing uncertainty due to self-emission model parameters
 Rselfparams = Effect(
     name="Rselfparams",
     description="self-emission parameters",
     parameter=Rself.parameter,
     correlation_type=Rself.correlation_type,
-    channel_correlations=blockmat,
+    channel_correlations=_blockmat,
     dimensions=(),
     unit=Rself.unit,
     rmodel=rmodel_rself)
 
+#: Effect describing uncertainty due to unknown electronics effect
 electronics = Effect(
     name="electronics",
     description="unknown electronics effects",
     parameter=meq.symbols["O_Re"],
     correlation_type=_systematic,
     correlation_scale=_inf,
-    channel_correlations=blockmat,
+    channel_correlations=_blockmat,
     dimensions=(),
     unit=radiance_units["ir"],
     rmodel=rmodel_common)
 
+#: Effect describing uncertainty due to "correlated noise"
 unknown_periodic = Effect(
     name="extraneous_periodic",
     description="extraneous periodic signal",
     parameter=meq.symbols["O_Re"],
     #correlation_type=_systematic,
     #correlation_scale=_inf,
-    #channel_correlations=blockmat,
+    #channel_correlations=_blockmat,
     dimensions=(),
     unit=radiance_units["ir"],
     rmodel=rmodel_periodicerror)
 
+#: Effect describing uncertainty in band correction factor α
 Δα = Effect(
     name="α",
     description="uncertainty in band correction factor α (ad-hoc)",
@@ -914,6 +1097,7 @@ unknown_periodic = Effect(
     unit="1",
     rmodel=rmodel_common)
 
+#: Effect describing uncertainty in band correction factor β
 Δβ = Effect(
     name="β",
     description="uncertainty in band correction factor β (ad-hoc)",
@@ -925,6 +1109,7 @@ unknown_periodic = Effect(
     unit="1/K",
     rmodel=rmodel_common),
 
+#: Effect describing uncertainty in effective channel frequency
 Δf_eff = Effect(
     name="f_eff",
     description="uncertainty in band correction centroid",
