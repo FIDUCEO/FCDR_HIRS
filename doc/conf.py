@@ -49,6 +49,7 @@ extensions = [
     'sphinx.ext.mathjax',
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
+    "sphinx_issues",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -78,6 +79,7 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = None
 
+default_role = "any"
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -190,6 +192,21 @@ epub_exclude_files = ['search.html']
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
 
+autosummary_generate = True
+
+napoleon_google_docstring = False
+napoleon_numpy_docstring = True
+napoleon_include_init_with_doc = True
+napoleon_include_private_with_doc = True
+napoleon_include_special_with_doc = True
+napoleon_use_admonition_for_examples = True
+napoleon_use_admonition_for_notes = True
+napoleon_use_admonition_for_references = True
+napoleon_use_ivar = False
+napoleon_use_param = True
+napoleon_use_rtype = True
+napoleon_use_keyword = True
+napoleon_custom_sections = None
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
@@ -199,3 +216,11 @@ intersphinx_mapping = {
     'xarray': ('http://xarray.pydata.org/en/stable/', None),
     "typhon": ("http://www.radiativetransfer.org/misc/typhon/doc/", None),
 }
+
+
+# Github repo
+issues_github_path = "FIDUCEO/FCDR_HIRS"
+
+# equivalent to
+issues_uri = "https://github.com/FIDUCEO/FCDR_HIRS/issues/{issue}"
+issues_pr_uri = "https://github.com/FIDUCEO/FCDR_HIRS/pull/{pr}"

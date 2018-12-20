@@ -19,6 +19,8 @@ Submodules
 
 .. toctree::
 
+   FCDR_HIRS._fcdr_defs
+   FCDR_HIRS._harm_defs
    FCDR_HIRS.cached
    FCDR_HIRS.common
    FCDR_HIRS.effects

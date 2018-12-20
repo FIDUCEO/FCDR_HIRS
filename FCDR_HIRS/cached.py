@@ -1,7 +1,8 @@
 """For utilities with disk-memoisation
 
-Many of those are rather hard-coded, and optimised for using with
-disk-memoisation through joblib
+This module contains a number of helper functions that employ disk
+memoisation using `joblib`.  All the functionality exists in other
+modules and classes, but memoisation on methods may be difficult.
 """
 
 import numpy
@@ -11,6 +12,7 @@ from typhon.datasets import tovs
 from typhon.datasets import filters
 from typhon import config
 
+#: `joblib.Memory` object used for disk cache for functions in this module
 memory = joblib.Memory(
     cachedir=config.conf["main"]["cachedir"],
     verbose=1,
@@ -18,6 +20,40 @@ memory = joblib.Memory(
 
 @memory.cache
 def read_tovs_hirs_period(satname, start_date, to_date, fields):
+    """Read L1B for HIRS satellite using standard orbit filters
+
+    Read HIRS L1B using a set of recommended defined orbit filters.
+
+    Parameters
+    ----------
+
+    satname : str
+        Name of the satellite for which to read HIRS data.
+    start_date : datetime.datetime
+        Starting datetime for which to read.
+    to_date : datetime.datetime
+        Ending date.
+    fields : List[str] or str
+        List of strings, fields of which to read.  The special case "all"
+        will result in all fields being read from the dataset.
+
+    Returns
+    -------
+
+    xarray.Dataset
+        Dataset containing the requested fields along with associated
+        coordinates for the entire period.
+
+    See Also
+    --------
+
+    This function calls
+    :meth:`typhon.datasets.dataset.Dataset.read_period` for
+    HIRS objects, for example
+    :meth:`typhon.datasets.tovs.HIRS4.read_period` in case of a HIRS4
+    satellite.
+
+    """
     h = tovs.which_hirs(satname)
     return h.read_period(
         start_date,

@@ -27,6 +27,14 @@ regression_types = {
     "LR": sklearn.linear_model.LinearRegression}
 
 class RSelf:
+    """Implementation of self emission model
+
+    See also
+    --------
+
+    `FCDR_HIRS.effects.RModelRSelf`
+        Implementation of self emission model uncertainty.
+    """
     # default set of temperatures: all that consistently exist across
     # series
     #
