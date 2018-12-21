@@ -582,7 +582,7 @@ class HIRSMatchupCombiner:
             self.prim_hirs = "iasi"
             self.hiasi = hi
         else:
-            if ("n15" in (prim_name.lower(), sec_name.lower()) or
+            if (("n15" in (prim_name.lower(), sec_name.lower()) and prim_name.lower() != "mb") or
                 prim_name.lower() == "n14" and sec_name.lower() == "n12"):
                 self.msd_field = f"hirs-{prim_name}_hirs-{sec_name}_matchup_spherical_distance"
             else:
