@@ -368,6 +368,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # WORKAROUND, REMOVE AFTER FIXING #281#
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_R_Earth_random"].sel(calibrated_channel=channel)).values
+        ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_C_Earth"].sel(calibrated_channel=channel)).values
         logger.debug(f"{ok.sum().item():d}/{ok.size:d} matchups left after removing non-finite uncertainties from secondary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
         #
         if self.prim_name != "iasi":
@@ -376,6 +377,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             # WORKAROUND, REMOVE AFTER FIXING #281#
             ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
             ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_R_Earth_random"].sel(calibrated_channel=channel)).values
+            ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_C_Earth"].sel(calibrated_channel=channel)).values
             logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after removing non-finite uncertainties from primary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
             #
             ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
