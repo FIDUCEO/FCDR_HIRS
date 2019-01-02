@@ -36,6 +36,7 @@ from . import filters
 from . import _fcdr_defs
 from . import _harm_defs
 from . import common
+from .common import list_all_satellites
 from .exceptions import (FCDRError, FCDRWarning) # used to be here
 
 logger = logging.getLogger(__name__)
@@ -2924,17 +2925,6 @@ def which_hirs_fcdr(satname, *args, **kwargs):
                 return h(*args, satname=k, **kwargs)
     else:
         raise ValueError("Unknown HIRS satellite: {:s}".format(satname))
-
-def list_all_satellites():
-    """Return a set with all possible satellite names of any kind
-
-    Includes duplicates!
-    """
-    S = set()
-    for h in {HIRS2FCDR, HIRS3FCDR, HIRS4FCDR}:
-        for sats in h.satellites.values():
-            S |= sats
-    return {x.lower() for x in S}
 
 def list_all_satellites_chronologically():
     return ["tirosn"] + [f"noaa{i:02d}" for i in range(6, 20) if i!=13] + [
