@@ -14,7 +14,6 @@ import inspect
 import numpy
 import xarray
 import progressbar
-from .fcdr import list_all_satellites
 
 my_pb_widget = [progressbar.Bar("=", "[", "]"), " ",
                 progressbar.Percentage(), " (",
@@ -227,3 +226,25 @@ def plotdatadir():
     """
     return datetime.date.today().strftime(
         config.conf["main"]["plotdatadir"])
+
+def list_all_satellites():
+    return {'ma', 'mb', 'metop_1', 'metop_2', 'metopa', 'metopb', 'n-05',
+            'n-06', 'n-07', 'n-08', 'n-09', 'n-10', 'n-11', 'n-12',
+            'n-13', 'n-14', 'n-15', 'n-16', 'n-17', 'n-18', 'n-19', 'n-5',
+            'n-6', 'n-7', 'n-8', 'n-9', 'n05', 'n06', 'n07', 'n08', 'n09',
+            'n10', 'n11', 'n12', 'n13', 'n14', 'n15', 'n16', 'n17', 'n18',
+            'n19', 'n5', 'n6', 'n7', 'n8', 'n9', 'n_05', 'n_06', 'n_07',
+            'n_08', 'n_09', 'n_10', 'n_11', 'n_12', 'n_13', 'n_14',
+            'n_15', 'n_16', 'n_17', 'n_18', 'n_19', 'n_5', 'n_6', 'n_7',
+            'n_8', 'n_9', 'noaa-05', 'noaa-06', 'noaa-07', 'noaa-08',
+            'noaa-09', 'noaa-10', 'noaa-11', 'noaa-12', 'noaa-13',
+            'noaa-14', 'noaa-15', 'noaa-16', 'noaa-17', 'noaa-18',
+            'noaa-19', 'noaa-5', 'noaa-6', 'noaa-7', 'noaa-8', 'noaa-9',
+            'noaa05', 'noaa06', 'noaa07', 'noaa08', 'noaa09', 'noaa10',
+            'noaa11', 'noaa12', 'noaa13', 'noaa14', 'noaa15', 'noaa16',
+            'noaa17', 'noaa18', 'noaa19', 'noaa5', 'noaa6', 'noaa7',
+            'noaa8', 'noaa9', 'noaa_05', 'noaa_06', 'noaa_07', 'noaa_08',
+            'noaa_09', 'noaa_10', 'noaa_11', 'noaa_12', 'noaa_13',
+            'noaa_14', 'noaa_15', 'noaa_16', 'noaa_17', 'noaa_18',
+            'noaa_19', 'noaa_5', 'noaa_6', 'noaa_7', 'noaa_8', 'noaa_9',
+            'tirosn', 'tn'}
