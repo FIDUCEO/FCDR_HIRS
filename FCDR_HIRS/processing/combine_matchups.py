@@ -777,7 +777,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         if not all(allfinite.values()):
             notfinite = [k for (k, v) in allfinite.items() if not v]
             raise ValueError("Changed my mind, found some invalid values "
-                "in fields" + " ".join(nonfinite))
+                "in fields" + " ".join(notfinite))
         for (k, v) in harm.data_vars.items():
             v.encoding["zlib"] = True
         #harm.to_netcdf(out, unlimited_dims=["M"])
