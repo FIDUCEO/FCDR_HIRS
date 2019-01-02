@@ -29,6 +29,15 @@ regression_types = {
 class RSelf:
     """Implementation of self emission model
 
+    One way to swap out the self-emission model would be to disable it
+    completely, and pass something else than a 0-order spline to
+    `FCDR_HIRS.fcdr.FCDRHIRS.interpolate_between_calibs`, but this would
+    then also not include any uncertainty model.
+
+    There are some scripts tesing self-emission stuff, but they are old
+    and rusty.  The script `plot_hirs_field_timeseries` includes a panel on
+    self-emission as well.
+
     See also
     --------
 

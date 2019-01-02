@@ -1,8 +1,9 @@
 """For utilities with disk-memoisation
 
 This module contains a number of helper functions that employ disk
-memoisation using `joblib`.  All the functionality exists in other
-modules and classes, but memoisation on methods may be difficult.
+memoisation using `joblib`.  Essentially, those functions are identical to
+counterparts elsewhere in the `FCDR_HIRS` package, but including disk
+memoisation.
 """
 
 import numpy

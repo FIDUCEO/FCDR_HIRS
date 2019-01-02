@@ -8,7 +8,9 @@ one directly.  Rather, you should instantiate either `HIRS2FCDR`,
 `HIRSFCDR` (which is shared between different types of HIRS), and the
 functionality from the classes `typhon.datasets.dataset.HIRS2`,
 `typhon.datasets.dataset.HIRS3`, and `typhon.datasets.dataset.HIRS4`,
-which in turn inherit from `typhon.datasets.tovs.HIRS`.
+which in turn inherit from `typhon.datasets.tovs.HIRS`.  To get an object
+from one of the classes in this module, you will want to call
+`which_hirs_fcdr`.
 
 Classes defined here:
 
@@ -83,29 +85,90 @@ from .exceptions import (FCDRError, FCDRWarning) # used to be here
 logger = logging.getLogger(__name__)
 
 class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
-    """Produce, write, study, and read HIRS FCDR.
+    """Generic methods related to HIRS FCDR
+    
+    This class contains the core functionality to produce, read, and write
+    the HIRS FCDR.  A higher level class building on top of the
+    functionality is in `FCDR_HIRS.processing.generate_fcdr.FCDRGenerator`.
+    There are three HIRS FCDR classes for the three generations of HIRS
+    covered by FIDUCEO, and the user should produce one instance per
+    specific instance of HIRS (per satellite).  Each instance covers all
+    channels.  To adapt how the actual radiances and uncertainties are
+    calculated, adapt methods in this class.  To adapt the more overall
+    processing and storage, and to actually process the FCDR, use methods
+    in `FCDR_HIRS.processing.generate_fcdr.FCDRGenerator`.
 
-    Some of the methods need context-information.  A class that helps in
-    passing in the requirement information is at
-    FCDR_HIRS.processing.generate_fcdr.FCDRGenerator.
+    The production of the HIRS FCDR works on segments that can be as short
+    as one scanline and as long as memory permits.  Along with the segment
+    for which the HIRS FCDR is being produced, context must be provided.
+    The context must contain at least the calibration cycle before and
+    after the beginning and ending of the segment to be processed, but 
+    may contain considerable more; for example, the default self-emission
+    model (see `models.RSelf`) requires a 24-hour context.
 
-    Mixin for kiddies HIRS?FCDR.  Not to be constructed directly.
+    Read in some HIRS data, including nominal calibration.
+    Estimate noise levels from space and IWCT views.
+    Use noise levels to propagate through calibration and BT conversion.
+
+    Objects of `HIRSFCDR` should not be constructed directly.  Users
+    should instead produce objects from `HIRS2FCDR`, `HIRS3FCDR`, and
+    `HIRS4FCDR`.  The utility function `which_hirs_fcdr` will return an
+    object of the correct class, depending on the satellite.
+
+    Attributes can either be set as keyword arguments when constructing an
+    object, or as part of the ``.typhonrc`` configuration file.
+
+    This class always produces L1C, but can be used to read either L1B or
+    L1C.  Pass the ``read`` keyword argument as ``"L1B"`` or ``"L1C"``.
+
+    Note that variable names in this class may not match the meaning in
+    the measurement equation in D2.2.
 
     Relevant papers:
-    - NOAA: cao07_improved_jaot.pdf
-    - PDF_TEN_990007-EPS-HIRS4-PGS.pdf
+    * Cao, Jarva, and Ciren, An Improved Algorithm for the Operational
+      Calibration of the High-Resolution Infrared Radiation Sounder,
+      JOURNAL OF ATMOSPHERIC AND OCEANIC TECHNOLOGY, 24, 2007, 
+      DOI: 10.1175/JTECH2037.1
+    * HIRS 4 Level 1 Product Generation Specification,
+      EUM.EPS.SYS.SPE.990007, v6, 17 September 2013
 
-    Construct with 'read' which can be "L1B" or "L1C".
+    
+    Some methods and attributes in this class are very old and not used in
+    actual FCDR production, but retained because some old analysis scripts
+    rely on them to work.  **DO NOT USE** those methods:
+
+    .. deprecated::
+
+        * `calc_sens_coef` **DO NOT USE**
+        * `calc_sens_coef_C_Earth` **DO NOT USE**
+        * `calc_sens_coef_C_iwct` **DO NOT USE**
+        * `calc_sens_coef_C_iwct_slope` **DO NOT USE**
+        * `calc_sens_coef_C_space` **DO NOT USE**
+        * `calc_sens_coef_C_space_slope` **DO NOT USE**
+        * `calc_urad` **DO NOT USE**
+        * `calc_urad_noise` **DO NOT USE**
+        * `calc_urad_calib` **DO NOT USE**
+        * `calc_uslope` **DO NOT USE**
+        * `calc_S_noise` **DO NOT USE**
+        * `calc_S_calib` **DO NOT USE**
     """
+
+    #: name and configuration section for FCDR HIRS
 
     name = section = "fcdr_hirs"
     # See spreadsheet attached to e-mail from Tom Block to fiduceo-project
     # mailing list, 2017-03-31
+
+    #: stored name according to TB format
     stored_name = ("FIDUCEO_FCDR_L1C_HIRS{version:d}_{satname:s}_"
                    "{year:04d}{month:02d}{day:02d}{hour:02d}{minute:02d}{second:02d}_"
                    "{year_end:04d}{month_end:02d}{day_end:02d}{hour_end:02d}{minute_end:02d}{second_end:02d}_"
                    "{fcdr_type:s}_v{data_version:s}_fv{format_version:s}.nc")
+
+    #: structure of the directory tree where FCDR files are stored
     write_subdir = "{fcdr_type:s}/{satname:s}/{year:04d}/{month:02d}/{day:02d}"
+    
+    #: regular expression to read stored L1C files
     stored_re = (r"FIDUCEO_FCDR_L1C_HIRS(?P<version>[2-4])_"
                  r"(?P<satname>.{6})_"
                  r"(?P<year>\d{4})(?P<month>\d{2})(?P<day>\d{2})"
@@ -116,7 +179,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                  r"v(?P<data_version>.+)_"
                  r"fv(?P<format_version>.+)\.nc")
     
-    # before data_version v0.5
+    #: regular expression to read stored L1C files before data_version v0.5
     old_stored_re = (
                  r'FCDR_HIRS_(?P<satname>.{6})_(?P<fcdr_version>.+)_'
                  r'(?P<fcdr_type>[a-zA-Z]*)_'
@@ -125,58 +188,90 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                  r'(?P<year_end>\d{4})(?P<month_end>\d{2})(?P<day_end>\d{2})'
                  r'(?P<hour_end>\d{2})(?P<minute_end>\d{2})\.nc')
 
-    # format changelog:
-    #
-    # v0.3: removed copied flags, added own flag fields
-    #
-    # v0.4: attribute with flag masks is now a numeric one
-    #
-    # v0.5: renamed random -> independent, non-random -> structured,
-    # changed e-mail address to fiduceo-coordinator
-    #
-    # v0.6: changed y-coordinate which now simply continues numerically
-    #
-    # v0.7: various changes, adapted to Tom Blocks format, now with SRFs,
-    # LUTs, correlation lengths and scales, new encodings, correct
-    # filenames (uppercase satellite names)
-    #
-    # --> jumped to 2.0.0 because I now follow the FCDRTools convention
     format_version=fiduceo.fcdr.writer.fcdr_writer.__version__
+    """Format version for stored FCDR data
 
+    Format changelog:
+    
+    v0.3
+        removed copied flags, added own flag fields
+    v0.4
+        attribute with flag masks is now a numeric one
+    v0.5
+        renamed random -> independent, non-random -> structured,
+        changed e-mail address to fiduceo-coordinator
+    v0.6
+        changed y-coordinate which now simply continues numerically
+    v0.7
+        various changes, adapted to Tom Blocks format, now with SRFs,
+        LUTs, correlation lengths and scales, new encodings, correct
+        filenames (uppercase satellite names)
+    v2.0.0
+    `   jumped to 2.0.0 because I now follow the FCDRTools convention
+`   """
+
+    #: Not used.
     realisations = 100
+
     srfs = None
+    """List of `typhon.physics.units.em.SRF` objects.
+
+    Set by `__init__`, after instantiation this attribute will contain a
+    list of SRFs, specifically of `typhon.physics.units.em.SRF` objects.
+    """
+
+    #: name of satellite to which this edition of the HIRS FCDR belongs
     satname = None
 
+    #: location of directory with band coefficient parameters
     band_dir = None
+    #: location of files with band coefficient parameters, within `band_dir`
     band_file = None
+    #: should reading methods read ``'L1B'`` or ``'L1C'``?
     read_mode = "L1B"
 
+    #: must always be set to ``"xarray"``
     read_returns = "xarray" # for NetCDFDataset in my inheritance tree
 
+    #: Set by `__init__` to the  `Dataset` used for reading, depending on `read_mode`
     l1b_base = None # set in child
 
-    # NB: first 8 views of space counts deemed always unusable, see
-    # NOAA or EUMETSAT calibration papers/documents.  I've personaly
-    # witnessed (on NOAA-18) that later positions are sometimes also
-    # systematically offset; see #12 and the class
-    # filters.CalibrationMirrorFilter
     start_space_calib = 8
+    """Index at which to start using space calibration
+
+    The first 8 views of space counts deemed always unusable, see
+    NOAA or EUMETSAT calibration papers/documents.  I've personaly
+    witnessed (on NOAA-18) that later positions are sometimes also
+    systematically offset; see :issue:`12` and the class
+    `filters.CalibrationMirrorFilter`.
+    """   
+
+    #: Index at which to start using IWCT calibration
     start_iwct_calib = 8
 
+    #: Filter to use for calibration counts based on IQR
     calibfilter = filters.IQRCalibFilter()
+
+    #: Filter to use for Earth counts
     filter_earthcounts = typhon.datasets.filters.MEDMAD(5)
+
+    #: Filter to weed out unlikely cold Earth scenes (colder than space)
     filter_coldearth = filters.ImSoColdFilter()
+
+    #: Filter to use for PRT counts
     filter_prtcounts = typhon.datasets.filters.MEDMAD(5)
+
+    #: Filter to use for calibration counts, based on MEDMAD
     filter_calibcounts = typhon.datasets.filters.MEDMAD(5)
 
-    ε = 0.98 # from Wang, Cao, and Ciren (2007, JAOT), who give so further
-             # source for this number
+    ε = 0.98
+    """Assumed reference emissivity for the IWCT
+    
+    Wang, Cao, and Ciren (2007, JAOT) use ε=0.98 who give no further
+    source for this number
+    """
 
-    no_harm = False # suppress harmonisation
-
-    # Read in some HIRS data, including nominal calibration
-    # Estimate noise levels from space and IWCT views
-    # Use noise levels to propagate through calibration and BT conversion
+    no_harm = False #: suppress harmonisation
 
     def __new__(cls, name=None, **kwargs):
         if name is None and "satname" in kwargs:
@@ -250,10 +345,38 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             raise RuntimeError("Messed up!  Totally bad!")
 
     def within_enough_context(self, ds, context, ch, n=1):
-        """Get an indexer for 'ds' that ensures enough context
+        """Get an indexer for ``ds`` that ensures enough context
 
-        Make sure that the number of calibration cycles in 'context'
-        before 'ds' starts, and after 'ds' ends, is at least 'n'.
+        In some cases, there is not enough context around a segment for
+        which we are calculating radiances.  This methods takes a segment
+        of L1B data in ``ds``, as well as a context segment ``context``.
+        It returns a dictionary that can be used to index the
+        `xarray.Dataset` that is ``ds``, such that the ``context``
+        contains at least ``n`` calibration cycles on both ends of ``ds``.
+        When all is working well, i.e. there is enough context already,
+        the indexing of ``ds`` with this dictionary will return exactly
+        ``ds`` again.
+
+        Parameters
+        ----------
+
+        ds : `xarray.Dataset`
+            `xarray.Dataset` object containing HIRS L1B data from which
+            the FCDR is to be calculated.
+        context : `xarray.Dataset` containing the context of HIRS L1B data
+        ch : int
+            Channel for which the index will be calculated.  The indexing
+            may be channel-dependent if flagging or filtering filters out
+            different calibration lines for different channels.
+        n : int, optional
+            How many calibration cycles before and after the core segment
+            are needed.  Defaults to 1.
+
+        Returns
+        -------
+
+        dict
+            Dictionary to be used to index ``ds``.
         """
 
         if n==0:
@@ -278,33 +401,47 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def interpolate_between_calibs(self, target_time, calib_time, *args, kind="nearest"):
         """Interpolate calibration parameters between calibration cycles
 
-        This method is just beginning and likely to improve considerably
-        in the upcoming time.
+        This method is designed to provide basic interpolation of the calibration
+        parameters slope and offset between calibration parameters.  If
+        you are using a self-emission model, you probably want to use
+        ``kind="zero"``, as to not double-count self-emission.
 
-        Doesn't even have to be between calibs, can be any times.
+        Although designed between calibration parameters, it is really
+        just a wrapper around `scipy.interpolate.interp1d` so it can be
+        used in other contexts as well.
 
-        Arguments:
+        Parameters
+        ----------
         
-            target_time [ndarray, dtype time]
+        target_time : ndarray, dtype time
             
-                Dataset with enough fields
+            Times for which the parameters should be returned.  This may
+            be an array with the time for every scanline.
 
-            calib_time [ndarray, dtype time]
+        calib_time : ndarray, dtype time
 
-                times corresponding to offset and slope, such as returned
-                by HIRS.calculate_offset_and_slope.  Will only be used for
-                arguments not carrying their own time.
+            Times for which a "measurement" is available.  This may be
+            offset and slope, such as returned by
+            `HIRS.calculate_offset_and_slope`.
 
-            *args
+        *args : List[ndarray]
                 
-                anything defined only at calib_time, such as slope,
-                offset, or noise_level.  Can be ndarrays or
-                xarray.DataArrays.  If the latter come with their own
-                time, this is used instead of calib_time.
-        
-        Returns:
+            List of arrays of anything defined only at ``calib_time``.
+            For example, that may be `slope` and `offset`.
 
-            list, corresponding to args, interpolated to all times in ds
+        kind : str, optional
+
+            Type of interpolation to use.  Options are as for
+            `scipy.interpolate.interp1d`, which is where the actual
+            interpolation is being done.  Defaults to ``"nearest"``.
+        
+        Returns
+        -------
+
+        List[typhon.physics.units.utils.UnitsAwareDataArray]
+            
+            Each of the arrays in ``args``, interpolated to all times in
+            ``target_time``.
         """
 
         if not numpy.issubdtype(target_time.dtype, numpy.datetime64):
@@ -359,10 +496,41 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         return out
 
     def custom_calibrate(self, counts, slope, offset, a2, Rself, a_4=0):
-        """Calibrate with my own slope and offset
+        """Apply core of measurement equation: calibrate with own slope and offset
 
-        All arguments should be xarray.DataArray or preferably
-        UnitsAwareDataArrays.
+        Apply the very core of the measurement equation, calculating Earth
+        radiance as a function of offset, slope, counts, non-linearity,
+        self-emission, and harmonisation offset.  This is the lowest level
+        method of FCDR radiance calculations.  The dimensions of the
+        parameters must be compatible, to avoid unwanted broadcasting.
+        That means that the slope and offset must already have been
+        interpolated to have the same dimensions as the counts.  Of
+        course, dimensions can be omitted, for example, ``a2`` and ``a_4``
+        can be scalar.
+
+        The arguments should be either `xarray.DataArray` or, preferably,
+        `typhon.physics.units.tools.UnitsAwareDataArray`.  I recommend the
+        latter so that unit compatibility is ensured.
+
+        Parameters
+        ----------
+
+        counts : `xarray.DataArray`
+            Earth counts.
+        slope : `xarray.DataArray`
+            Interpolated slope as obtained from `interpolate_between_calibs`.
+        a2 : `xarray.DataArray`
+            Harmonisation non-linearity coefficient.
+        Rself: `xarray.DataArray`
+            Self-emission estimate.
+        a_4: `xarray.DataArray
+            Harmonisation offset.
+
+        Returns
+        -------
+
+        `xarray.DataArray` or `typhon.physics.units.tools.UnitsAwareDataArray`
+            Calibrated Earth radiances
         """
         return offset + slope * counts + a2 * counts**2 - Rself + a_4
 #        return (offset[:, numpy.newaxis]
@@ -372,6 +540,34 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     def extract_calibcounts(self, ds, ch):
         """Extract calibration counts from data
+
+        Extract space counts and IWCT counts as `xarray.DataArray`.  This
+        is done by searching for lines that are space views, followed by
+        lines that are IWCT views, possibly with an ICCT view in-between,
+        in case of HIRS/2 (see the attribute `dist_space_iwct`).  The
+        space and IWCT views are then each assigned the time coordinates
+        corresponding to the space views, thus pretending they were
+        calculated at the same time.  The latter ensures coordinates are
+        aligned so we can do ``offset / slope`` or such, without `xarray`
+        inadvertently broadcasting based on different coordinates, or
+        returning and empty array because no coordinates for the same
+        dimension match.
+
+        Parameters
+        ----------
+
+        ds : `xarray.Dataset`
+            L1B HIRS data from which to extract the calibration counts.
+        ch : int
+            Channel for which to extract the calibration counts.
+
+        Returns
+        -------
+
+        `UnitsAwareDataArray`
+            Space counts
+        `UnitsAwareDataArray`
+            IWCT counts, but with space counts coordinates
         """
         # xarray.core.array.nputils.array_eq (and array_neq) use the
         # context manager 'warnings.catch_warnings'.  This causes the
@@ -428,67 +624,91 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def extract_calibcounts_and_temp(self, ds, ch, srf=None,
             return_u=False, return_ix=False, tuck=False,
             include_emissivity_correction=True):
-        """Calculate calibration counts and IWCT temperature
+        """Get IWCT radiance, calibration counts, and their uncertainties
 
-        In the IR, space view temperature can be safely estimated as 0
-        (radiance at 3K is around 10^200 times less than at 300K)
+        Extract calibration counts (space and IWCT), calculate IWCT
+        radiance, estimate uncertainties for IWCT and space counts.
 
-        Arguments:
+        Parameters
+        ----------
 
-            ds
+        ds : xarray.Dataset
 
-                ndarray such as returned by self.as_karray_dataset, corresponding to
-                scanlines.  Must have at least variables 'time',
-                'scantype', 'counts', and
-                'temperature_internal_warm_calibration_target'.
+            L1B data such as returned by `as_xarray_dataset`, for which
+            the radiances and counts are calculated and extracted.  Must
+            have at least the fields ``time``, ``scantype``, ``counts``,
+            and ``temperature_internal_warm_calibration_target``.
 
-            ch
+        ch : int
 
-                Channel for which counts shall be returned and IWCT
-                temperature shall be calculated.
+            Channel for which counts shall be returned and IWCT
+            temperature shall be calculated.
 
-            srf [typhon.physics.em.SRF]
+        srf : `typhon.physics.units.em.SRF`, optional
 
-                SRF object used to estimate IWCT.  Optional; if not given
-                or None, use the NOAA-reported SRF for channel.
+            SRF object used to estimate IWCT.  Optional; if not given
+            or None, use the standard SRF for the channel as given by
+            RTTOV.
 
-            return_u [bool]
+        return_u : bool, optional
 
-                Also return uncertainty estimates.  Defaults to False.
+            Also return uncertainty estimates.  Defaults to False.
 
-        Returns:
+        return_ix : bool, optional
+            
+            Also return indices to ds corresponding to the calibration
+            lines.  Defaults to False.
 
-            time
+        tuck : bool, optional
 
-                time corresponding to remaining arrays
+            Cache values and uncertainties.  This is needed if we
+            subsequently want to calculate the overall radiance
+            uncertainty.  Defaults to False.
 
-            L_iwct
+        include_emissivity_correction : bool, optional
 
-                radiance corresponding to IWCT views.  Calculated by
-                assuming ε from self.ε, an arithmetic mean of all
-                temperature sensors on the IWCT, and the SRF passed to the
-                method.  Earthshine / reflection through the blackbody is
-                not yet implemented (see #18)
+            Whether to consider tho harmonisation parameter correcting the
+            emissivity or not.  Normally this should be True, which is the
+            default, but in some cases the user may want to switch it off
+            for debugging purposes.
 
-            counts_iwct
+        Returns
+        -------
 
-                counts corresponding to IWCT views
+        time : `xarray.DataArray`
 
-            counts_space
+            Time corresponding to the other returned arrays.
 
-                counts corresponding to space views
+        L_iwct : `xarray.DataArray`
 
-            u_counts_iwct
+            radiance corresponding to IWCT views.  Calculated by
+            assuming ε from self.ε, an arithmetic mean of all
+            temperature sensors on the IWCT, and the SRF passed to the
+            method.  Earthshine / reflection through the blackbody is
+            not yet implemented (see #18)
 
-                (if return_u is True)
+        counts_iwct : `xarray.DataArray`
 
-            u_counts_space
+            counts corresponding to IWCT views
 
-                (if return_u is True)
+        counts_space : `xarray.DataArray`
 
-            ix
+            counts corresponding to space views
 
-                (if return_ix is True)
+        u_counts_iwct : `xarray.DataArray`
+
+            uncertainty on counts_iwct, only returned if input argument
+            ``return_u`` is True
+
+        u_counts_space : `xarray.DataArray`
+
+            uncertainties on counts_space, only returned if input argument
+            ``return_u`` is True
+
+        ix : `xarray.DataArray`
+
+            indices to selected calibration lines, only returned if input
+            argument ``return_ix`` is True
         """
 
         srf = srf or self.srfs[ch-1]
@@ -2688,7 +2908,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def calc_sens_coef(self, typ, M, ch, srf): 
         """Calculate sensitivity coefficient.
 
-        DEPRECATED --- DO NOT USE!
+        .. deprecated::
+            **DEPRECATED --- DO NOT USE!**
 
         Actual work is delegated to calc_sens_coef_{name}
         """
@@ -2704,13 +2925,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     
     @typhon.math.common.calculate_precisely
     def calc_sens_coef_C_Earth(self, L_iwct, C_iwct, C_space, C_Earth):
-        """DEPRECATED --- DO NOT USE"""
+        """**DEPRECATED --- DO NOT USE**"""
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
         return L_iwct / (C_iwct - C_space)
 
     @typhon.math.common.calculate_precisely
     def calc_sens_coef_C_iwct(self, L_iwct, C_iwct, C_space, C_Earth):
-        """DEPRECATED --- DO NOT USE"""
+        """**DEPRECATED --- DO NOT USE**"""
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
         return - L_iwct * (C_Earth - C_space) / (C_iwct - C_space)**2
 
@@ -2718,7 +2939,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def calc_sens_coef_C_iwct_slope(self, L_iwct, C_iwct, C_space):
         """Sensitivity coefficient for C_IWCT for slope (a₁) calculation
 
-        DEPRECATED --- DO NOT USE
+        .. deprecated::
+            **DEPRECATED --- DO NOT USE!**
 
         Parameters
         ----------
@@ -2744,6 +2966,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     @typhon.math.common.calculate_precisely
     def calc_sens_coef_C_space(self, L_iwct, C_iwct, C_space, C_Earth):
+        """**DEPRECATED --- DO NOT USE!**"""
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
         return L_iwct * (C_Earth - C_iwct) / (C_iwct - C_space)**2
 
@@ -2751,6 +2974,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def calc_sens_coef_C_space_slope(self, L_iwct, C_iwct, C_space):
         """Sensitivity coefficient for C_space for slope (a₁) calculation
         Input as for calc_sens_coef_C_iwct_slope
+
+        .. deprecated::
+            **DEPRECATED --- DO NOT USE!**
         """
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
         return -L_iwct[:, numpy.newaxis] / (C_iwct - C_space)**2
@@ -2759,7 +2985,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def calc_urad(self, typ, M, ch, *args, srf=None):
         """Calculate uncertainty
 
-        DEPRECATED --- DO NOT USE
+        .. deprecated::
+            **DEPRECATED --- DO NOT USE!**
 
         Parameters
         ----------
@@ -2789,6 +3016,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     def calc_urad_noise(self, L_iwct, C_iwct, C_space, C_Earth, u_C_Earth):
         """Calculate uncertainty due to random noise
+
+        .. deprecated::
+            **DEPRECATED --- DO NOT USE!**
         """
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
 
@@ -2798,6 +3028,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def calc_urad_calib(self, L_iwct, C_iwct, C_space, C_Earth,
                               u_C_iwct, u_C_space):
         """Calculate radiance uncertainty due to calibration
+
+        .. deprecated::
+            **DEPRECATED --- DO NOT USE!**
         """
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
         s_iwct = self.calc_sens_coef_C_iwct(
@@ -2810,6 +3043,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def calc_uslope(self, M, ch, srf=None):
         """Direct calculation of slope uncertainty
         Such as for purposes of visualising uncertainties in slope/gain
+
+        .. deprecated::
+            **DEPRECATED --- DO NOT USE!**
         """
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
         srf = srf or self.srfs[ch-1]
@@ -2837,6 +3073,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     def calc_S_noise(self, u):
         """Calculate covariance matrix between two uncertainty vectors
         Random noise component, so result is a diagonal
+
+        .. deprecated::
+            **DEPRECATED --- DO NOT USE!**
         """
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
 
@@ -2858,6 +3097,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         For initial version of my own calibration implementation, where
         only one calibartion propagates into each uncertainty.
         FIXME: make this vectorisable
+
+        .. deprecated::
+            **DEPRECATED --- DO NOT USE!**
 
         Parameters
         ----------

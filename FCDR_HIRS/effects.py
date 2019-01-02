@@ -12,7 +12,9 @@ helper classes for the functionality within each effect.
 The existance of an `Effect` object in this module does not magically
 include it in the uncertainty budget.  The user/developer still needs to
 populate the ``.magnitude`` attribute as documented in the `Effect` class
-documentation.
+documentation, then pass it to
+:meth:`FCDR_HIRS.fcdr.HIRSFCDR.calc_u_for_variables` inside the
+``all_effects`` argument.
 
 To get an impression of which ones are actually implemented, have a look
 at calls to `FCDR_HIRS.fcdr._tuck_effect_channel`, which are littered
