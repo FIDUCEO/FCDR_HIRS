@@ -771,10 +771,10 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     ))
         pathlib.Path(out).parent.mkdir(exist_ok=True, parents=True)
         logger.info("Writing {:s}".format(out))
-        allfinite = {k: numpy.isfinite(harm[k]).all()
+        allfinite = {k: numpy.isfinite(harm[k]).all().item()
                     for k in harm.data_vars.keys()
                     if not harm[k].dtype.kind.startswith("M")}
-        if not numpy.all(allfinite.values()):
+        if not all(allfinite.values()):
             notfinite = [k for (k, v) in allfinite.items() if not v]
             raise ValueError("Changed my mind, found some invalid values "
                 "in fields" + " ".join(nonfinite))
