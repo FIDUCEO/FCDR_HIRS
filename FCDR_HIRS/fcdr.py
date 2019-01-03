@@ -137,8 +137,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     actual FCDR production, but retained because some old analysis scripts
     rely on them to work.  **DO NOT USE** those methods:
 
-    .. deprecated::
+    .. deprecated:
 
+        * `recalibrate` **DO NOT USE**
+        * `estimate_noise` **DO NOT USE**
+        * `read_and_recalibrate_period` **DO NOT USE**
+        * `extract_and_interp_calibcounts_and_temp` **DO NOT USE**
+        * `estimate_Rself` **DO NOT USE**
         * `calc_sens_coef` **DO NOT USE**
         * `calc_sens_coef_C_Earth` **DO NOT USE**
         * `calc_sens_coef_C_iwct` **DO NOT USE**
@@ -553,6 +558,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         returning and empty array because no coordinates for the same
         dimension match.
 
+        Use the higher level method
+        `HIRSFCDR.extract_calibcounts_and_temp` if you additionally want
+        to obtain IWCT radiances and IWCT and space count uncertainty
+        estimates.
+
         Parameters
         ----------
 
@@ -626,8 +636,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             include_emissivity_correction=True):
         """Get IWCT radiance, calibration counts, and their uncertainties
 
-        Extract calibration counts (space and IWCT), calculate IWCT
-        radiance, estimate uncertainties for IWCT and space counts.
+        From L1B data in the form of an xarray dataset as returned by
+        `typhon.datasets.tovs.HIRS.as_xarray_dataset`, extract calibration
+        counts (space counts and IWCT counts), calculate the IWCT
+        radiance, and calculate uncertainties for IWCT and space counts.
+        Use the lower level method `HIRSFCDR.extract_calibcounts` if you
+        only want to obtain the IWCT and space counts, and see the
+        documentation for that method on more details on how the space and
+        IWCT counts are extracted.
 
         Parameters
         ----------
@@ -707,7 +723,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         ix : `xarray.DataArray`
 
-            indices to selected calibration lines, only returned if input
+            indices to lines containing space views, only returned if input
             argument ``return_ix`` is True
         """
 
@@ -849,11 +865,46 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     def _quantity_to_xarray(self, quantity, name, dropdims=(), dims=None,
             **coords):
-        """Convert quantity to xarray
+        """Convert quantity to UnitsAwareDataArray with correct attributes
+
+        Given a quantity representing the values for any 
+        parameter in the measurement equation, convert this to a
+        `typhon.physics.units.tools.UnitsAwareDataArray` (itself a
+        subclass of `xarray.DataArray`) and make sure the attributes,
+        encoding, and name are all set according to the format
+        specification for the debug FCDR.  In particular, the units will
+        be set such that the resulting `UnitsAwareDataArray` can be used
+        in calculations.
 
         Quantity can be masked and with unit, which will be converted.
         Can also pass either dropdims (dims subtracted from ones defined
         for the quantity) or dims (hard list of dims to include).
+
+        Parameters
+        ----------
+
+        quantity : array_like
+            Quantity that shall be converted to `UnitsAwareDataArray`.  It
+            must have the dimensions that are expected according to the
+            debug format specifications.
+        name : str
+            Name under which this quantity is stored in the debug format
+            specification in `_fcdr_defs`.
+        dropdims : tuple, optional
+            Dimensions to be removed from the `DataArray`.  Defaults to
+            ``()``.
+        dims : tuple, optional
+            Names of dimensions, can be used to override the ones defined
+            in `_data_vars_props_`.
+        **coords : Mapping
+            Coordinates to assign to the resulting `DataArray`. 
+
+        Returns
+        -------
+
+        da : `UnitsAwareDataArray`
+            A new `UnitsAwareDataArray` following the specifications of
+            the debug FCDR.
         """
         
         if isinstance(quantity, UADA):
@@ -902,10 +953,32 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             concat_coords=(), **coords):
         """Convert quantity to xarray and put into self._quantities
 
-        Or self._other_quantities if it's not in the measurement equation.
+        Convert a quantity to the correct `UnitsAwareDataArray` format
+        using `HIRSFCDR._quantity_to_xarray`, then cache it either in
+        ``self._quantities`` if it is in the measurement equation, or in
+        ``self._other_quantities`` if it is not.
 
-        TODO: need to assign time coordinates so that I can later
-        extrapolate calibration_cycle dimension to scanline dimension.
+        .. todo::
+
+            Need to assign time coordinates so that I can later
+            extrapolate calibration_cycle dimension to scanline dimension.
+        
+        Parameters
+        ----------
+
+        symbol_name : str
+            Name under which the symbol is stored in
+            `measurement_equation.symbols`.
+        quantity : array_like
+            Quantity to be converted and stored.
+        concat_coords : tuple, optional
+            I don't remember exactly what this is for, but it is certainly
+            used.  Defaults to ``()``.
+        **coords : Mapping
+            Remaining coordinates.
+
+        Returns
+        -------
 
         Returns quantity as stored.
         """
@@ -941,7 +1014,25 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     def _tuck_effect_channel(self, name, quantity, channel,
             covariances=None):
-        """Convert quantity to xarray and put into self._effects
+        """Convert uncertainty quantity to xarray and put into self._effects
+
+        Convert an uncertainty to the correct format for internal storage,
+        then cache it in the ``_effects`` attribute.
+
+        Parameters
+        ----------
+
+        name : str
+            Name of parameter in `measurement_equation`.
+        quantity : array_like
+        `   Magnitude of uncertainty.
+        channel : int
+            Channel for which this uncertainty applies.  This still needs
+            to be passed even if the uncertainty is not channel dependent.
+        covariances : Mapping[Effect, array_like], optional
+            If applicable, covariances with other effects.  Currently,
+            these are only used for covariances between fundamental
+            calibration parameters / harmonisation parameters.
         """
 
         # NB: uncertainty does NOT always have the same dimensions as quantity
@@ -1003,44 +1094,77 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             accept_nan_for_nan=False):
         """Calculate offset and slope.
 
-        Arguments:
+        From a segment of L1B data, calculate the offset and the slope for
+        a particular channel, for all calibration lines within this
+        segment.
 
-            ds [xarray.Dataset]
+        To get offset and slope for all scanlines, pass the result into
+        `HIRSFCDR.interpolate_between_calibs`.
 
-                xarray dataset with fields such as returned by
-                self.as_xarray_dataset.  Must
-                contain at least variables 'time', 'scantype', 'counts',
-                and 'temperature_internal_warm_calibration_target'.
+        Parameters
+        ----------
 
-            ch [int]
+        ds : xarray.Dataset
 
-                Channel that the SRF relates to.
+            xarray dataset with fields such as returned by
+            `as_xarray_dataset`.  Must
+            contain at least variables ``time``, ``scantype``, ``counts``,
+            and ``temperature_internal_warm_calibration_target``.
 
-            srf [typhon.physics.em.SRF]
+        ch : int
 
-                SRF used to estimate slope.  Needs to implement the
-                `blackbody_radiance` method such as `typhon.physics.em.SRF`
-                does.  Optional: if not provided, use standard one.
+            Channel that the SRF relates to.
 
-                If true, additionally return uncertainties on offset and
-                slope.
+        srf : `typhon.physics.units.em.SRF`, optional
 
-            tuck
+            SRF used to estimate slope.  Needs to implement the
+            `blackbody_radiance` method such as `typhon.physics.em.SRF`
+            does.  Optional: if not provided, use standard one.
 
-            naive
+        tuck : bool, optional
 
-            accept_nan_for_nan
+            Cache any calculated values where appropriate.  This is needed
+            if subsequently calculating uncertainties, which need the same
+            measurement equation parameters as calculating the
+            measurements themselves.  Defaults to False.
 
-        Returns:
+        naive : bool, optional
 
-            tuple (time, offset, slope) where:
+            Naive FCDR calculation: no self-emission or harmonisation, and
+            reducing checks.  Defaults to False.
 
-            time [ndarray] corresponding to offset and slope
+        include_emissivity_correction : bool, optional
 
-            offset [ndarray] offset calculated at each calibration cycle
+            Include the harmonisation parameter correcting the emissivity.
+            This should normally be True, but the user may set this to
+            False for debugging purposes.  Defaults to True.
 
-            slope [ndarray] slope calculated at each calibration cycle
+        include_nonlinearity : bool, optional
 
+            Include the harmonisation parameter for nonlinearity.
+            This should normally be True, but the user may set this to
+            False for debugging purposes.  Defaults to True.
+
+        accept_nan_for_nan : bool, optional
+
+            Accept nans in offset as long as same nans occur in slope and
+            vice versa.  Defaults to False, which means a ValueError will
+            be raised.
+
+        Returns
+        -------
+
+        time : ndarray
+
+            corresponding to offset and slope
+
+        offset : ndarrayo
+
+            offset calculated at each calibration cycle
+
+        slope : ndarray
+        
+            slope calculated at each calibration cycle
         """
 
         srf = srf or self.srfs[ch-1]
@@ -1176,65 +1300,87 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 Rself_model=None,
                 Rrefl_model=None, tuck=False, return_bt=False,
                 naive=False):
-        """Calculate FIDUCEO radiance for channel
+        """Calculate FIDUCEO HIRS FCDR radiance for channel
 
         Apply the measurement equation to calculate the calibrated FIDUCEO
-        radiance for a particular channel.
+        radiance for a particular channel.  To calculate all channels, use
+        `calculate_radiance_all`.
 
-        Stores:
+        When ``tuck`` is set to True, this method and the methods it calls
+        store the values for the following quantities in cache::
 
-        Rself, u_Rself, R_selfIWCT, R_selfs, R_self_start, R_self_end,
-        C_E, R_E, T_b, R_refl, α, Δα, β, Δβ, fstar, Δλ_eff, a_3, a_4
+            ``Rself``, ``u_Rself``, ``R_selfIWCT``, ``R_selfs``,
+            ``R_self_start``, ``R_self_end``, ``C_E``, ``R_E``, ``T_b``,
+            ``R_refl``, ``α``, ``Δα``, ``β``, ``Δβ``, ``fstar``,
+            ``Δλ_eff``, ``a_3``, ``a_4``
 
-        Arguments:
+        These cached values are required to calculate uncertainties using
+        `FCDRHIRS.calc_u_for_variable`.
+
+        In principle, it is possible to swap out the self-emission model
+        by passing a different ``Rself_model``.  In practice, there is
+        currently exactly one self-emission model implemented, and the
+        interface is designed for this single purpose.  Some recoding
+        would be needed to make the interface to the self-emission model
+        more generic.
+
+        Parameters
+        ----------
             
-            ds [xarray.Dataset]
+        ds : `xarray.Dataset`
 
-                xarray Dataset with at least variables 'time', 'scantype',
-                'temperature_internal_warm_calibration_target', and
-                'counts'.  Such is returned by self.as_xarray_dataset.
-                Those are values for which radiances will be calculated.
+            xarray Dataset with at least variables 'time', 'scantype',
+            'temperature_internal_warm_calibration_target', and
+            'counts'.  Such is returned by self.as_xarray_dataset.
+            Those are values for which radiances will be calculated.
 
-            ch [int]
+        ch : int
 
-                Channel to calculate radiance for.  If you want to
-                calculate the radiance for all channels, use
-                calculate_radiance_all.
+            Channel to calculate radiance for.  If you want to
+            calculate the radiance for all channels, use
+            `FCDRHIRS.calculate_radiance_all`.
 
-            srf [SRF]
+        srf : `typhon.physics.units.em.SRF`, optional
 
-                SRF to use.  If not passed, use default (as measured
-                before launch).
+            SRF to use.  If not passed, use default, as obtained from
+            RTTOV, which is a shift developed by Paul Menzel compared to
+            the SRFs measured before launch.
 
-            context [xarray.dataset]
+        context : `xarray.Dataset`, optional
 
-                Like ds, but used for context.  For example, calibration
-                information may have to be found outside the range of `ds`.
-                It is also needed for developing the Rself and Rrefl
-                models when not provided to the function already.
+            Like ``ds``, but used for context.  For example, calibration
+            information may have to be found outside the range of ``ds``.
+            The self-emission model may also need context.
 
-            Rself_model [RSelf]
+        Rself_model : RSelf, optional
 
-                Model to use for self-emission.  See models.RSelf.
+            Model to use for self-emission.  See `models.RSelf` for a
+            suitable class from which to create an object to pass here.
 
-            Rrefl_model [RRefl]
+        Rrefl_model : RRefl, optional
 
-                Model to use for Earthshine.  See models.RRefl.
+            Model to use for Earthshine.  See `models.RRefl`.  Not
+            currently used.
 
-            tuck [bool]
+        tuck : bool, optional
 
-                If true, store/cache intermediate values in
-                self._quantities and self._effects.
+            If true, store/cache intermediate values in
+            self._quantities and self._effects.  This is needed for
+            `FCDRHIRS.calc_u_for_variable` to work.  Defaults to False.
 
-            return_bt [bool]
+        return_bt : bool, optional
 
-                If true, return (radiance, bt).  If false, return only
-                radiance.
+            If true, return (radiance, bt).  If false, return only
+            radiance.
 
-        Returns:
+        Returns
+        -------
 
-            Euther (radiance, bt) or radiance depending on value of
-            return_bt.
+        radiance : `typhon.physics.units.tools.UnitsAwareDataArray`
+            Calculated radiances for all scanlines and pixels in ``ds``.
+        bt : `typhon.physics.units.tools.UnitsAwareDataArray`
+            Only returned if ``return_bt`` is True, calculated brightness
+            temperatures.
         """
 
         if not isinstance(ds, xarray.Dataset):
@@ -1901,7 +2047,46 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 naive=False):
         """Calculate radiances for all channels
 
-        See calculate_radiance for documentation on inputs.
+        Parameters
+        ----------
+            
+        ds : `xarray.Dataset`
+
+            xarray Dataset with at least variables 'time', 'scantype',
+            'temperature_internal_warm_calibration_target', and
+            'counts'.  Such is returned by self.as_xarray_dataset.
+            Those are values for which radiances will be calculated.
+
+        context : `xarray.Dataset`, optional
+
+            Like ``ds``, but used for context.  For example, calibration
+            information may have to be found outside the range of ``ds``.
+            The self-emission model may also need context.
+
+        Rself_model : RSelf, optional
+
+            Model to use for self-emission.  See `models.RSelf` for a
+            suitable class from which to create an object to pass here.
+
+        Rrefl_model : RRefl, optional
+
+            Model to use for Earthshine.  See `models.RRefl`.  Not
+            currently used.
+
+        return_ndarray : bool, optional
+
+            If true, return an `ndarray`.  Otherwise, return an
+            `xarray.DataArray`.
+
+        naive : bool, optional
+
+            Defaults to False
+
+        Returns
+        -------
+
+        ndarray or `xarray.DataArray`
+            Radiances for all channels.
         """
         if not isinstance(ds, xarray.Dataset):
             warnings.warn("Passing ndarray to calculate_radiance_all "
@@ -1952,6 +2137,30 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #            numpy.newaxis] for rad in all_rad], 2), all_rad[0].u)
 
     def calculate_bt_all(self, M, D, H=None, fn=None): 
+        """Naive BT for all channels --- DO NOT USE!
+
+        Perform a **naive** calculation of BT for all channels.  This is
+        also known as an incorrect calculation.  You should not use this
+        method.
+
+        This method has the signature of a `typhon.datasets.Dataset`
+        ``pseudo_field`` and is not intended to be used directly.
+
+        Parameters
+        ----------
+
+        M : not used
+        D : Mapping
+            contains earlier calculated pseudofields, must contain
+            ``radiance_fid_naive``
+        H : not used, optional
+        fn : not used, optional
+            
+        Returns
+        -------
+
+        masked_array
+        """
         if isinstance(D["radiance_fid_naive"], xarray.DataArray):
             bt_all = xarray.concat(
                 [D["radiance_fid_naive"].sel(channel=i).to(
@@ -1982,6 +2191,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         directly through the measurement equation as defined in the
         measurement_equation module, but is a rather directly in code
         implementation of the same.
+
+        Parameters
+        ----------
+
+        none
+
+        Returns
+        -------
+
+        `typhon.physics.units.tools.UnitsAwareDataArray`
+            Calculated radiance for all channels.
         """
 
         L_meq = []
@@ -2003,14 +2223,30 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     "R_e_alt_meq_simple"))
 
     def estimate_noise(self, M, ch, typ="both"):
-        """Calculate noise level at each calibration line.
+        """Calculate noise level at each calibration line. **DO NOT USE**
 
-        Currently implemented to return noise level for IWCT and space
-        views.
+        Old implementation to return noise level for IWCT and space
+        views.  **DO NOT USE**
+
+        Use `FCDRHIRS.extract_calibcounts_and_temp` with ``tuck=True``,
+        then obtain uncertainty in Earth counts in
+        ``self._effects_by_name["C_Earth"].magnitude``.
 
         Warning: this does not ensure that only space views followed by
         IWCT views are taken into account.  If you need such an assurance,
-        use extract_calibcounts_and_temp instead.
+        use ``HIRSFCDR.extract_calibcounts_and_temp`` instead.
+
+        Parameters
+        ----------
+
+        M : structured ndarray
+        ch : int
+        typ : str
+
+        Returns
+        -------
+
+        structured ndarray
         """
         if typ == "both":
             calib = M[self.scantype_fieldname] != self.typ_Earth
@@ -2024,27 +2260,36 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                     numpy.sqrt(calibcounts.shape[1]))
 
     def recalibrate(self, M, ch, srf=None, realisations=None):
-        """Recalibrate counts to radiances with uncertainties
+        """**DO NOT USE** Recalibrate counts to radiances with uncertainties
 
-        Arguments:
+        **DO NOT USE**
 
-            M [ndarray]
+        This implementation is old, incomplete, and incorrect.
 
-                Structured array such as returned by self.read.  Should
-                have at least fields "hrs_scntyp", "counts", "time", and
-                "temp_iwt".
+        Parameters
+        ----------
 
-            ch [int]
+        M : ndarray
 
-                Channel to calibrate.
+            Structured array such as returned by self.read.  Should
+            have at least fields "hrs_scntyp", "counts", "time", and
+            "temp_iwt".
 
-            srf [typhon.physics.units.em.SRF]
+        ch : int
 
-                SRF to use for calibrating the channel and converting
-                radiances to units of BT.  Optional; if None, use
-                “default" SRF for channel.
+            Channel to calibrate.
 
-        TODO: incorporate SRF-induced uncertainties --- how?
+        srf : `typhon.physics.units.em.SRF`
+
+            SRF to use for calibrating the channel and converting
+            radiances to units of BT.  Optional; if None, use
+            “default" SRF for channel.
+
+        Returns
+        -------
+
+        radiance : ndarray
+        bt : ndarray
         """
         warnings.warn("Deprecated, use calculate_radiance", DeprecationWarning)
         srf = self.srfs[ch-1]
@@ -2100,11 +2345,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         return (rad_wn, bt)
 
     def read_and_recalibrate_period(self, start_date, end_date):
+        """**DO NOT USE**"""
         M = self.read(start_date, end_date,
                 fields=["time", "counts", "bt", "calcof_sorted"])
         return self.recalibrate(M)
 
     def extract_and_interp_calibcounts_and_temp(self, M, ch, srf=None):
+        """**DO NOT USE**"""
         srf = srf or self.srfs[ch-1]
         (time, L_iwct, C_iwct, C_space) = self.extract_calibcounts_and_temp(M, ch, srf)
         views_Earth = M[self.scantype_fieldname] == self.typ_Earth
@@ -2123,27 +2370,36 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     rself_model = None
     def estimate_Rself(self, ds_core, ds_context):
-        """Estimate self-emission and associated uncertainty
+        """Estimate self-emission and associated uncertainty **DO NOT USE**
 
-        Arguments:
+        **DO NOT USE**
+
+        I think this was intended as a standalone evaluation of
+        self-emission but this is rather built into calculate_radiance
+
+        **DO NOT USE**
+
+        Parameters
+        ----------
             
-            ds_core [xarray.Dataset]
+        ds_core : xarray.Dataset
 
-                Data for which to estimate self-emission.  Should be an
-                xarray Dataset covering the period for which the
-                self-emission shall be evaluated.
+            Data for which to estimate self-emission.  Should be an
+            xarray Dataset covering the period for which the
+            self-emission shall be evaluated.
 
-            ds_context [xarray.Dataset]
+        ds_context : xarray.Dataset
 
-                Context data.  Should be an xarray Dataset containing a
-                longer period than ds_core, will be used to estimate the
-                self-emission model parameters and uncertainty.  Must
-                contain for calibration lines (space and IWCT views)
-                including temperatures and space/IWCT counts.
+            Context data.  Should be an xarray Dataset containing a
+            longer period than ds_core, will be used to estimate the
+            self-emission model parameters and uncertainty.  Must
+            contain for calibration lines (space and IWCT views)
+            including temperatures and space/IWCT counts.
 
-        Returns:
+        Returns
+        -------
 
-            xarray.DataArray?
+        nothing, will raise an exception before it gets anywhere
         """
         
         if self.rself_model is None:
@@ -2154,40 +2410,128 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     def calc_u_for_variable(self, var, quantities, all_effects,
                             cached_uncertainties, return_more=False):
-        """Calculate total uncertainty
+        """Calculate total uncertainty for variable
 
-        This just gathers previously calculated quantities; this should be
-        called after all effects have been populated and the measurement
-        equation has been evaluated.
+        Calculate the total uncertainty for a particular variable /
+        element of the measurement equation.  For example, to get the
+        total uncertainty in Earth radiance, use
+        ``fcdr.calc_u_for_variable("R_e", ...)``.
 
-        Arguments:
+        This method requires that the magnitude of the components of the
+        measurement equation has already been calculated.  To get those,
+        make sure you calculate the Earth radiance first, using
+        `HIRSFCDR.calculate_radiance`, while passing ``tuck=True``.  This
+        will store the required quantities in ``self._quantities``.
 
-            var [str] or [symbol]
+        Parameters
+        ----------
 
-                Variable for which to calculate uncertainty
+        var : str or `sympy.Symbol`
 
-            quantities
+            Variable for which to calculate uncertainty
 
-                Dictionary with numerical values for quantities
+        quantities : Mapping
 
-            all_effects
+            Dictionary with numerical values for quantities.  This can be
+            obtained from ``self._quantities`` if Earth radiance has
+            already been calculated using `calculate_radiance` while
+            setting ``tuck=True``.
 
-                Dictionary with sets of effects (effect.Effect objects)
-                with magnitudes filled in.
+        all_effects : Mapping
 
-            cached_uncertainties
+            Dictionary with sets of effects (`effect.Effect` objects)
+            with magnitudes filled in.  This can be obtained from
+            ``self._effects`` if Earth radiance has already been
+            calculated with ``tuck=True``.
 
-                Dictionary with cached uncertainties for quantities that
-                for which we do not directly estimate uncertainties, but
-                that are expressions of other quantities including
-                uncertainties and effects (i.e. R_IWCT uncertainty results
-                from uncertainties in T_IWCT, ε, φ, etc.).  Note that this
-                dictionary will be changed by this function!
+        cached_uncertainties : Mapping
 
-            return_components [bool]
+            Dictionary with cached uncertainties for quantities that
+            for which we do not directly estimate uncertainties, but
+            that are expressions of other quantities including
+            uncertainties and effects (i.e. ``R_IWCT`` uncertainty results
+            from uncertainties in ``T_IWCT``, ``ε``, ``φ``, etc.).  Note that this
+            dictionary will be changed by this function!  I recommend to
+            define an empty dictionary and pass that in.  The same object
+            will be passed on recursively as `calc_u_for_variable` calls
+            itself.
 
-                Optional.  If true, also return a xarray.Dataset with all
-                uncertainty components.
+        return_more : bool, optional
+
+            Optional.  If true, also return a xarray.Dataset with all
+            uncertainty components.
+
+        Returns
+        -------
+
+        u : `typhon.physics.units.tools.UnitsAwareDataArray`
+            Uncertainties for ``var``
+        sub_sensitivities : `measurement_equation.ExpressionDict`, if ``return_more`` is True
+            Nested dictionary containing recursively the values for the
+            sensitivity coefficients, with a form of::
+
+                Dict[Symbol,
+                     Tuple[ndarray,
+                           Dict[Symbol,
+                                Tuple[ndarray,
+                                      Dict[Symbol, Tuple[...]]]]]
+
+            where each level of the dictionary corresponds to a level
+            within the measurement equation, the keys correspond to
+            symbols occurring within the measurement equation.  The values
+            are 2-tuples, where the first element is the magnitude of the
+            sensitivity coefficient for this parameter, and the second
+            element is a - possibly empty - dictionary which describes the
+            evaluated sensitivities for the expression describing that
+            parameter; the dictionary is empty if there is none.  At each
+            level, the sensivitity coefficients are relative to the level
+            immediately above.
+
+            This nested dictionary is filled recursively within this
+            method, and used, among other places, in
+            `metrology.accum_sens_coef`, which calculates the _total_
+            sensitivity coefficient all the way from the Earth radiance to
+            arbitrarily deep within the measurement equation.  It is also
+            used by `HIRSFCDR.propagate_uncertainty_components`.
+        sub_components : `measurement_equation.ExpressionDict`, if ``return_more`` is True
+            Nested dictionary containing recursively the uncertainty for
+            each variable broken down in the parts due to each component
+            of the measurement equation, with a form similar to
+            ``sub_sensitivities``::
+
+                Dict[Symbol,
+                     Tuple[ndarray,
+                           Dict[Symbol,
+                                Tuple[ndarray,
+                                      Dict[Symbol, Tuple[...]]]]]]
+
+            where each level of the dictionary corresponds again to a
+            level within the measurement equation, the symbols to symbols
+            within the measurement equation.  Each tuple has as its first
+            element the magnitude of the uncertainty of the parent
+            quantity due to the child quantity, and as a second element
+            its own uncertainty broken down in its components.
+
+            This does not include covariant components.
+
+            You need to pass this mapping if you call
+            `HIRSFCDR.propagate_uncertainty_components`.
+        cov_comps : `measurement_equation.ExpressionDict`, if ``return_more`` is True
+            Mapping that describes the covariant components.
+
+        Example
+        -------
+
+        To get uncertainties::
+
+            cu = {}
+            (uRe, sensRe, compRe, covcomps) = fcdr.calc_u_for_variable(
+                "R_e", fcdr._quantities, fcdr.effects, cu,
+                return_more=True)
+
+        For a more detailed example, study the source code of
+        `FCDR_HIRS.processing.generate_fcdr.FCDRGenerator.get_piece`.
+            
         """
 
         # Traversing down the uncertainty expression for the measurement
@@ -2198,8 +2542,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         #
         # Here:
         #
-        #   1. C_E, a₂ are values that gets directly substituted,
-        #
+        #   1. C_E, a₂ are values that gets directly substituted, #
         #   2. u(a₂), u(C_E), u(O_Re), u(R_selfE) are uncertainties that
         #      get directly substituted,
         #
@@ -2556,6 +2899,39 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             return u
     
     def _make_adict_dims_consistent_if_needed(self, adict, var):
+        """Helper function for calc_u_for_variable
+
+        Internal helper function for `HIRSFCDR.calc_u_for_variable`.
+        Check whether making dimensions consistent is needed, and make it
+        so if it is.  This derives from the fact that some values, such as
+        space counts, are only occurring once per calibration cycle,
+        whereas others are once per scanline, so we do a zero-order spline
+        interpolation to allow elementwise processing.
+
+        The components of adict are the contents to calculate var.  Make
+        sure dimensions are consistent, through interpolation, averaging,
+        etc.  Requires that the desired dimensions of var occur in at
+        least one of the values for adict so that coordinates can be read
+        from it.
+        
+        See `make_debug_fcdr_dims_consistent` for details.
+
+        Parameters
+        ----------
+
+        adict : Mapping[Symbol, UnitsAwareDataArray]
+            adict is the dictionary of everything (uncertainties and
+            quantities) that needs to be substituted to evaluate the
+            magnitude of the uncertainty
+        var : `Symbol`
+            Variable for which it needs to be made consistent.
+
+        Returns
+        -------
+
+        adict : Mapping
+            New adict where all values have the same dimensions.
+        """
 
         # multiple dimensions with time coordinates:
         # - calibration_cycle
@@ -2576,7 +2952,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         return adict
 
     def _make_adict_dims_consistent(self, adict):
-        """Ensure adict dims are consistent
+        """Ensure adict dims are consistent with earth counts dimensions
+
+        Internal helper function for `HIRSFCDR.calc_u_for_variable`.
+        Check whether making dimensions consistent is needed, and make it
+        so if it is.  This derives from the fact that some values, such as
+        space counts, are only occurring once per calibration cycle,
+        whereas others are once per scanline, so we do a zero-order spline
+        interpolation to allow elementwise processing.
 
         The components of adict are the contents to calculate var.  Make
         sure dimensions are consistent, through interpolation, averaging,
@@ -2588,6 +2971,20 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             
             - calibration_cycle → interpolate → scanline_earth
             - calibration_position → average → ()
+
+        Parameters
+        ----------
+
+        adict : Mapping[Symbol, UnitsAwareDataArray]
+            adict is the dictionary of everything (uncertainties and
+            quantities) that needs to be substituted to evaluate the
+            magnitude of the uncertainty
+
+        Returns
+        -------
+
+        adict : Mapping
+            New adict where all values have the same dimensions.        
         """
         new_adict = {}
 
@@ -2599,15 +2996,52 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         return new_adict
 
     def _make_dims_consistent(self, dest, src):
+        """Helper to make dims consistent for single dest/src
+
+        See `make_adict_dims_consistent` and
+        `make_debug_fcdr_dims_consistent`.
+
+        Parameters
+        ----------
+
+        dest : `typhon.physics.units.tools.UnitsAwareDataArray`
+            Target data array
+        src : `typhon.physics.units.tools.UnitsAwareDataArray`
+            Source data array
+
+        Returns
+        -------
+
+        newsrc : `typhon.physics.units.tools.UnitsAwareDataArray`
+            Source data array, if needed expanded to have same dimensions
+            as dest data array.
+
+        """
         return make_debug_fcdr_dims_consistent(
             dest, src, impossible="warn", flags=self._flags)
 
     def numerically_propagate_ΔL(self, L, ΔL):
-        """Temporary method to numerically propagate L to Tb
+        """Temporary method to numerically propagate ΔL to ΔTb
 
         Until I find a proper solution for the exploding Tb uncertainties
         (see https://github.com/FIDUCEO/FCDR_HIRS/issues/78 ) approximate
-        these numerically
+        these numerically.
+
+        Uses the standard SRFs as stored in ``self.srfs``.
+
+        Parameters
+        ----------
+
+        L : xarray.DataArray
+            Radiances for all channels
+        ΔL : xarray.DataArray
+            Radiance uncertainties for all channels
+
+        Returns
+        -------
+
+        ΔTb : xarray.DataArray
+            Brightness temperature uncertainties for all channels
         """
         ΔTb = xarray.zeros_like(L).drop(("scanline", "lat", "lon"))
         ΔTb.encoding = _fcdr_defs._debug_bt_coding
@@ -2628,7 +3062,26 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Calculates correlation coefficients between space view anomalies
         accross channels.  
 
-        As per #87.  
+        As per :issue:`87`.  
+
+        Parameters
+        ----------
+
+        ds_context : xarray.Dataset
+            xarray.Dataset containing the context over which the channel
+            correlation matrix is to be calculated.
+        calpos : int, optional
+            Calibration position to use for the correlation calculations.
+            Defaults to 20.
+        type : str, optional
+            What type of correlation to use.  Can be "pearson" or
+            "spearman".  Defaults to "spearman".
+
+        Returns
+        -------
+
+        da : xarray.DataArray
+            Channel correlation matrix.
         """
         Cs = ds_context["counts"].isel(
             time=ds_context["scantype"].values == self.typ_space,
@@ -2679,10 +3132,16 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         return (lookup_table_BT, lookup_table_radiance)
 
     def _reset_flags(self, ds):
-        """Reset flags for scanline, channel, and minor frame.
+        """Reset cached flags for scanline, channel, and minor frame.
 
         Should be called at the beginning of each new set of radiance
         calculations.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            Dataset from which new radiances will be calculated.
         """
 
         views_Earth = xarray.DataArray(ds["scantype"].values == self.typ_Earth, coords=ds["scantype"].coords)
