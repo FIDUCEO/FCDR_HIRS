@@ -631,12 +631,19 @@ class HIRSMatchupCombiner:
         if self.mode == "reference":
             # There is no Mcp, for the primary (reference) is IASI
             Mcp = None
-            Mcs = hi.combine(ds,
-                self.sec_hirs,
-                trans={"mon_time": "time"},
-                timetol=numpy.timedelta64(4, 's'),
-                other_args=other_args_part).drop(
-                    ("lat_earth", "lon_earth"))
+            try:
+                Mcs = hi.combine(ds,
+                    self.sec_hirs,
+                    trans={"mon_time": "time"},
+                    timetol=numpy.timedelta64(4, 's'),
+                    other_args=other_args_part).drop(
+                        ("lat_earth", "lon_earth"))
+            except ValueError:
+                if "Primary covers" in e.args[0]:
+                    raise NoDataError("Secondary fails to cover primary, "
+                        f"cannot proceed. ({e.args[0]:s})")
+                else:
+                    raise
         elif self.mode == "hirs":
             try:
                 poa = other_args_part.copy()
@@ -652,6 +659,9 @@ class HIRSMatchupCombiner:
             except ValueError as e:
                 if e.args[0] == "array of sample points is empty":
                     raise NoDataError("Not enough matching data found, can't interpolate")
+                elif "Primary covers" in e.args[0]:
+                    raise NoDataError("Secondary fails to cover primary, "
+                        f"cannot proceed. ({e.args[0]:s})")
                 else:
                     raise
             else:
