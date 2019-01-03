@@ -638,7 +638,7 @@ class HIRSMatchupCombiner:
                     timetol=numpy.timedelta64(4, 's'),
                     other_args=other_args_part).drop(
                         ("lat_earth", "lon_earth"))
-            except ValueError:
+            except ValueError as e:
                 if "Primary covers" in e.args[0]:
                     raise NoDataError("Secondary fails to cover primary, "
                         f"cannot proceed. ({e.args[0]:s})")
