@@ -1060,6 +1060,12 @@ class KrModelLSD(KrModel):
                     .sum(f"hirs-{s:s}_nx").sum(f"hirs-{s:s}_ny")>25).values
                 for s in (self.prim_name, self.sec_name)),
             ok)
+        ok &= functools.reduce(
+            operator.and_,
+            ((self.ds_orig[f"hirs-{s:s}_bt_ch{channel:02d}"].min(f"hirs-{s:s}_nx").min(f"hirs-{s:s}_ny") > 100) &
+             (self.ds_orig[f"hirs-{s:s}_bt_ch{channel:02d}"].max(f"hirs-{s:s}_nx").max(f"hirs-{s:s}_ny") < 400)
+             for s in (self.prim_name, self.sec_name)),
+            ok)
         return ok
 
 class KrModelJointLSD(KrModelLSD):
