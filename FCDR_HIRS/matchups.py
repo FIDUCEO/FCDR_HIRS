@@ -409,7 +409,9 @@ class HIRSMatchupCombiner:
     built on top of the `HIRSMatchupCombiner` class defined here.
     """
 
+    #: information on the type of FCDR that will be read
     fcdr_info = {"data_version": "0.8pre", "fcdr_type": "debug"}
+    #: fields that will be read from each of the FCDR (primary, secondary)
     fields_from_each = [
          'B',
          'C_E',
@@ -515,12 +517,30 @@ class HIRSMatchupCombiner:
          'ε']
 
 
-    # TBs files contain either matchup_spherical_distance or
-    # hirs-n15_hirs-n14_matchup_spherical_distance
     msd_field = "matchup_spherical_distance" # default
+    """Name of the field containing the matchup spherical distance
 
+    TBs files contain either matchup_spherical_distance or
+    hirs-n15_hirs-n14_matchup_spherical_distance
+    """
+
+    #: attribute to hold the mode (reference or hirs)
     mode = None
     def __init__(self, start_date, end_date, prim_name, sec_name):
+        """Create HIRSMatchupCombiner object
+
+        Parameters
+        ----------
+
+        start_date : datetime.datetime
+            Beginning of period for which to combine matchups
+        end_date : datetime.datetime
+            End of period for which to combine matchups
+        prim_name : str
+            Name of primary
+        sec_name : str
+        `   Name of secondary
+        """
         #self.ds = netCDF4.Dataset(str(sf), "r")
         # acquire original brightness temperatures here for the purposes
         # of estimating Kr.  Of course this should come from my own
@@ -613,10 +633,11 @@ class HIRSMatchupCombiner:
 class KModel(metaclass=abc.ABCMeta):
     """Model to estimate K and Ks (Kr is seperate)
 
-    There is currently an ad-hoc implementation, estimating K based on BB
-    assumption only on L→BT conversions.  There will later be an
-    implementation based on BTs simulated with a forward model.  In
-    practice, those are calculated 'offline' and looked up.
+    There are currently several implementations, the most advanced one
+    that is currently being used is `KModelSRFIASIDB`.  There are also
+    simpler implementations, `KModelPlankc` which is based on ad-hoc BB
+    L→BT conversions.  There should also be an implementation based on BTs
+    simulated with a forward model, but this does not currently exist.
 
     For definitions, see document
     20171205-FIDUCEO-SH-Harmonisation_Input_File_Format_Definition-v6.pdf
@@ -633,17 +654,32 @@ class KModel(metaclass=abc.ABCMeta):
 
     """
 
+    #: xarray.Dataset with combined measurement obtained from FCDR files
     ds = None
+    #: like `ds`, but after applying the filters
     ds_filt = None
+    #: xarray.Dataset with original matchups as obtained from BC
     ds_orig = None
+    #: like `ds_orig`, but filtered
     ds_filt_orig = None
+    #: name of primary
     prim_name = None
+    #: `fcdr.HIRSFCDR` object for primary
     prim_hirs = None
+    #: name of secondary
     sec_name = None
+    #: `fcdr.HIRSFCDR` object for secondary
     sec_hirs = None
+    #: extra filters to be applied
     extra_filters = None
 
     def __init__(self, **kwargs):
+        """Initialise KModel
+        
+        All keyword arguments correspond to attributes being set upon
+        creation.
+        """
+
         self.extra_filters = []
         for (k, v) in kwargs.items():
             if hasattr(self, k):
@@ -653,19 +689,48 @@ class KModel(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def calc_K(self, channel):
-        """K is the expected value of the matchup difference:
+        """Calculate K.
+        
+        K is the expected value of the matchup difference.
 
-        K = E(L_2 - L_1)
+        .. math::
+
+            K = E(L_2 - L_1)
+
         """
         ...
 
     @abc.abstractmethod
     def calc_Ks(self, channel):
+        """Calculate Ks.
+
+        Ks is the structured uncertainty associated with K.
+
+        Note that Kr, the independent uncertainty associated with K, has
+        its own calculation method.
+        """
         ...
 
     filtered = False
     def limit(self, ok, mdim):
         """Reduce dataset to those values
+
+        Define `ds_filt` and `ds_filt_orig` based on the boolean array
+        ``ok`` associated with dimension ``mdim``.  In practice, ``ok`` is
+        obtained by filtering.
+
+        This method does not return anything, but after calling it,
+        ``self.ds_filt`` and ``self.ds_filt_orig`` will be defined.
+
+        Parameters
+        ----------
+
+        ok : ndarray
+            Boolean array as returned by filters, used to index the
+            datasets.
+        mdim : str
+            Name of dimension along which the filtering is applied, for
+            example, "matchup_spherical_distance".
         """
         self.ds_filt = self.ds[{mdim:ok}]
         self.ds_filt_orig = self.ds_orig[{mdim:ok}]
@@ -673,6 +738,25 @@ class KModel(metaclass=abc.ABCMeta):
 
     def filter(self, mdim, channel):
         """Extra filtering imposed by this model
+
+        Apart from the usual filtering going on, what filtering does this
+        model need to impose on the entire process in order to function?
+
+        Parameters
+        ----------
+
+        mdim : str
+            Name of dimension along which the filtering is applied, for
+            example, "matchup_spherical_distance".
+        channel : int
+            Channel along which the filtering is applied.
+
+        Returns
+        -------
+
+        ndarray
+            Boolean array, True for matchups to be keps, False for
+            matchups to be filtered out.
         """
         rv = numpy.ones(self.ds.dims[mdim], "?")
         for ef in self.extra_filters:
@@ -681,16 +765,60 @@ class KModel(metaclass=abc.ABCMeta):
 
     def extra(self, channel, ok):
         """Return Dataset with extra information
+
+        Some models may want to return additional information, that may be
+        included with the resulting harmonisation files for debugging
+        purposes.  Those models can do so by implemening this method.
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel for which the extras are obtained
+        ok : ndarray
+            Boolean array indicating valid matchups.
+
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Dataset containing extra information.  Possibly empty.
         """
 
         return xarray.Dataset()
 
 class KrModel(metaclass=abc.ABCMeta):
     """Implementations of models to estimate the matchup uncertainty
+
+    Abstract base class defining an interface for all models implementing
+    an estimate of independent matchup uncertainty (``Kr``).  There are
+    currently two implementations: `KrModelLSD` and `KrModelJointLSD`.
+    The latter is currently used for the estimation of ``Kr``.
     """
 
     def __init__(self, ds, ds_orig, prim_name, prim_hirs, sec_name,
                  sec_hirs, extra_filters=None):
+        """Initialise Kr model
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+        ds_orig : xarray.Dataset
+        prim_name : str
+            Name of primary
+        prim_hirs : `fcdr.HIRSFCDR`
+            HIRS FCDR object corresponding to the primary
+        sec_name : str
+            Name of secondary
+        sec_hirs : `FCDR.HIRSFCDR`
+            HIRS FCDR object corresponding to the secondary
+        extra_filters : List[`KRFilter`], optional
+            List of extra filters, which must all be instances of
+            subclasses of `KRFilter`, that this model imposes upon the
+            universe.
+        """
         self.ds = ds
         self.ds_filt = None
         self.ds_orig = ds_orig
@@ -706,29 +834,43 @@ class KrModel(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def calc_Kr(self, channel):
+        """Calculate Kr
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel for which Kr is being calculated
+
+        Returns
+        -------
+
+        xarray.DataArray
+            Estimate of Kr in radiance units
+        """
         ...
 
     filtered = False
     def limit(self, ok, mdim):
-        """Reduce dataset to those values
-        """
         self.ds_filt = self.ds[{mdim:ok}]
         self.ds_filt_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
+    limit.__doc__ = KModel.limit.__doc__
 
     def filter(self, mdim, channel):
-        """Extra filtering imposed by this model
-        """
         rv = numpy.ones(self.ds.dims[mdim], "?")
         for ef in self.extra_filters:
             rv &= ef.filter(mdim, channel)
         return rv
+    filter.__doc__ = KModel.filter.__doc__
 
 class KModelPlanck(KModel):
     """Simplified implementation.
 
     This is a temporary implementation for estimating values of K
     (expected difference in L).
+
+    This implemtation is incorrect and no longer in use.
     """
 
     def calc_K(self, channel):
@@ -796,6 +938,8 @@ class KModelPlanck(KModel):
 
 class KModelIASIRef(KModel):
     """Estimate K and Ks in case of IASI reference
+
+    In case of a IASI reference, the estimates for both K and Ks are zero.
     """
     def calc_K(self, channel):
         return numpy.zeros(shape=self.ds_filt.dims["line"])
@@ -804,12 +948,32 @@ class KModelIASIRef(KModel):
         return numpy.zeros(shape=self.ds_filt.dims["line"])
 
 class KrModelLSD(KrModel):
+    """Estimate Kr using the local standard deviation of the primary
+
+    This is an implementation of the KrModel using the local standard
+    deviation of the primary only.
+
+    For an implementation that uses the combined local standard deviation
+    between primary and secondary, use `KrModelJointLSD`.
+    """
     def calc_Kr_for(self, channel, which, ds_to_use=None):
-        """Calculate Kr for prim or sec
+        """Helper function to calculate Kr for primary or secondary
 
-        channel, which, ds_to_use
+        Parameters
+        ----------
 
-        ds_to_use should refer to self.ds_orig or self.ds_filt_orig
+        channel : int
+            Channel to use
+        which : str
+            Name of either primary or secondary
+        ds_to_use : xarray.Dataset
+            ds_to_use should refer to either self.ds_orig or self.ds_filt_orig
+
+        Returns
+        -------
+
+        xarray.DataArray
+            Kr estimated as LSD
         """
         if ds_to_use is None:
             ds_to_use = self.ds_filt_orig
@@ -846,6 +1010,12 @@ class KrModelLSD(KrModel):
         return ok
 
 class KrModelJointLSD(KrModelLSD):
+    """Estimate Kr using the joint local standard deviation
+
+    This is an implementation of the `KrModel` using the joint local
+    standard deviation between primary and secondary.  It builds on top of
+    `KrModelLSD` which uses the LSD for the primary only.
+    """
     def calc_Kr(self, channel, ds_to_use=None):
         lsd_prim = self.calc_Kr_for(channel, self.prim_name, ds_to_use=ds_to_use)
         lsd_sec = self.calc_Kr_for(channel, self.sec_name, ds_to_use=ds_to_use)
