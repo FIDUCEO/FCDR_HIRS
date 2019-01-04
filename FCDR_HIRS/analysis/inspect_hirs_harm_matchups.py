@@ -421,6 +421,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1) -
          UADA(ds["nominal_measurand1"]).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1)))
+    Kr_K[Kr_K==0] = 1e-4 # prevent zeroes
     Kr_K99 = min(scipy.stats.scoreatpercentile(Kr_K, 99),
                  10*Kr_K.median().item())
     (cnts, bins, p1) = a.hist(
