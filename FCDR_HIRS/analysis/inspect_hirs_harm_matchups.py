@@ -517,7 +517,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
     # ΔL/Kr, as suggested by Viju, see e-mail 2018-09-27
     a = next(g)
     plot_hist_with_medmad_and_fitted_normal(a, ΔL/Kr_K,
-        scipy.stats.scoreatpercentile(ΔL/Kr_K, [1, 99]),
+        scipy.stats.scoreatpercentile(ΔL/Kr_K, [plo, phi]),
         f"ΔL/Kr [1]",
         "Density",
         "ΔL/Kr",
@@ -532,7 +532,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
         histtype="step",
         bins=100,
         density=True,
-        range=scipy.stats.scoreatpercentile(ds["K"], [1, 99]))
+        range=scipy.stats.scoreatpercentile(ds["K"], [plo, phi]))
     a.set_xlabel("K [native units]")
     a.set_ylabel("density")
     a.set_title("Histogram of chosen K")
