@@ -270,7 +270,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
             y2 - y1,
             [1, 99])
         if all(max(abs(rng))/min(abs(rng))<100
-               for rng in (kxrange, kyrange, kΛrange,
+               for rng in (kxrange, kyrange, kΔrange,
                            Lxrange, Lyrange, LΔrange)):
             break
         else:
