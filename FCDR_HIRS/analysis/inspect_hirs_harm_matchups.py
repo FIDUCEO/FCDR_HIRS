@@ -259,16 +259,16 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
 
     plo, phi = 1, 99
     while True:
-        kxrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"], [1, 99])
-        kyrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}backward"], [1, 99])
-        kΔrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"]+ds[f"K_{lab:s}backward"], [1, 99])
-        Lxrange = scipy.stats.scoreatpercentile(y1, [1, 99])
-        Lyrange = scipy.stats.scoreatpercentile(y2, [1, 99])
+        kxrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"], [plo, phi])
+        kyrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}backward"], [plo, phi])
+        kΔrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"]+ds[f"K_{lab:s}backward"], [plo, phi])
+        Lxrange = scipy.stats.scoreatpercentile(y1, [plo, phi])
+        Lyrange = scipy.stats.scoreatpercentile(y2, [plo, phi])
         Lmax = max(Lxrange[1], Lyrange[1])
         Lmin = min(Lxrange[0], Lyrange[0])
         LΔrange = scipy.stats.scoreatpercentile(
             y2 - y1,
-            [1, 99])
+            [plo, phi])
         if all(max(abs(rng))/min(abs(rng))<100
                for rng in (kxrange, kyrange, kΔrange,
                            Lxrange, Lyrange, LΔrange)):
