@@ -257,16 +257,28 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2)
     yb = [y1, y2]
 
-    kxrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"], [1, 99])
-    kyrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}backward"], [1, 99])
-    kΔrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"]+ds[f"K_{lab:s}backward"], [1, 99])
-    Lxrange = scipy.stats.scoreatpercentile(y1, [1, 99])
-    Lyrange = scipy.stats.scoreatpercentile(y2, [1, 99])
-    Lmax = max(Lxrange[1], Lyrange[1])
-    Lmin = min(Lxrange[0], Lyrange[0])
-    LΔrange = scipy.stats.scoreatpercentile(
-        y2 - y1,
-        [1, 99])
+    plo, phi = 1, 99
+    while True:
+        kxrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"], [1, 99])
+        kyrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}backward"], [1, 99])
+        kΔrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"]+ds[f"K_{lab:s}backward"], [1, 99])
+        Lxrange = scipy.stats.scoreatpercentile(y1, [1, 99])
+        Lyrange = scipy.stats.scoreatpercentile(y2, [1, 99])
+        Lmax = max(Lxrange[1], Lyrange[1])
+        Lmin = min(Lxrange[0], Lyrange[0])
+        LΔrange = scipy.stats.scoreatpercentile(
+            y2 - y1,
+            [1, 99])
+        if all(max(abs(rng))/min(abs(rng))<100
+               for rng in (kxrange, kyrange, kΛrange,
+                           Lxrange, Lyrange, LΔrange)):
+            break
+        else:
+            plo += 4
+            phi -= 4
+        if not plo < phi:
+            raise ValueError("Can't retrieve a reasonable range, all outliers?!")
+        
 
     # radiance comparison
     a = next(g)
