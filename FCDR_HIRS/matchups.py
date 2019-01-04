@@ -1,4 +1,11 @@
-"""Any code related to processing or analysing matchups
+"""Module to collect code related to processing or analysing matchups
+
+This module defines base classes related to the processing of matchups, in
+particular in preparation for the creation of harmonisation input data.
+The `matchups` module, and in particular the `HIRSMatchupCombiner` class,
+serve as the basis for the `processing.combine_matchups` module and its
+`processing.HIRSMatchupCombiner` class, but is also used by scripts in the
+`analysis` package.
 """
 
 from __future__ import annotations
@@ -33,34 +40,146 @@ from typhon.physics.units.em import SRF
 unit_iasi = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
 
 class ODRFitError(Exception):
+    """Exception to raise if ODR fitting fails to converge
+    """
     pass
 
 class NoDataError(Exception):
+    """Exception to raise if not enough matchup data could be found
+    """
     pass
 
 class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
+    """HIRS-HIRS matchup filter
+
+    Filter on HIRS-HIRS matchups, selecting only matchups with a spherical
+    distance of less than 20 km and local zenith angles of less than 10°.
+
+    The methods on this class should not be used directly, rather objects
+    of this class should be passed to
+    `typhon.datasets.Dataset.read_period`.
+    """
     msd_field = None
     def __init__(self, prim, sec, msd_field="matchup_spherical_distance"):
+        """Initialise HIRS-HIRS matchup filter
+
+        Parameters
+        ----------
+
+        prim : str
+            Name of primary for matchups to which the filter is applied
+        sec : str
+            Name of secondary for matchups to which the filter is applied
+        msd_field : str, optional
+            Name of field containing the distance.  Default is
+            "matchup_spherical_distance" but for some pairs it's
+            different, for example,
+            "hirs-n15_hirs-n14_matchup_spherical_distance".
+        """
         self.prim = prim
         self.sec = sec
         self.msd_field = msd_field
 
     def filter(self, ds, **extra):
+        """Apply HIRS-HIRS matchup filter
+
+        This method is called by `typhon` after reading every file.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            xarray Dataset such as returned by the HIRSHIRS reader.
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Subset of ``ds`` containing only those matchups which meet the
+            criteria outlined in the class documentation.
+
+        """
         return ds[{"matchup_count":
             (ds[f"hirs-{self.prim:s}_lza"][:, 3, 3] < 10) &
             (ds[f"hirs-{self.sec:s}_lza"][:, 3, 3] < 10) &
             (ds[self.msd_field]<20)}]
-    
+
     def finalise(self, ds):
+        """Finalise HIRS-HIRS matchups
+
+        This method is called by typhon at the end, when all matchup files
+        have been read.  It sorts the matchups by primary time.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            xarray Dataset such as returned by the HIRSHIRS reader as
+            defined in `typhon.datasets.tovs.HIRSHIRS`.
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Subset of ``ds``, sorted.
+        """
         idx = numpy.argsort(ds[f"time_{self.prim:s}"])
         return ds[{"matchup_count": idx}]
 
 class HIMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
+    """HIRS-IASI matchup filter
+
+    Filter on HIRS-IASI matchups.  Currently, the only filter this applies
+    is that it rejects any IASI where any radiance is less than zero, and
+    it sorts the matchups by IASI time at the very end.
+
+    The methods on this class should not be used directly, rather objects
+    of this class should be passed to
+    `typhon.datasets.Dataset.read_period`.
+    """
+
     def filter(self, ds, **extra):
+        """Apply HIRS-IASI matchup filter
+
+        This method is called by `typhon` after reading every file.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            xarray Dataset such as returned by the HIRSIASI reader as
+            defined in `typhon.datasets.tovs.HIASI`.
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Subset of ``ds`` containing only those matchups which meet the
+            criteria outlined in the class documentation.
+
+        """
         bad = (ds["ref_radiance"]<=0).any("ch_ref")
         return ds[{"line": ~bad}]
-    
+
     def finalise(self, ds):
+        """Finalise HIRS-IASI matchups
+
+        This method is called by typhon at the end, when all matchup files
+        have been read.  It sorts the matchups by primary time.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            xarray Dataset such as returned by the HIASI reader as
+            defined in `typhon.datasets.tovs.HIASI`.
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Subset of ``ds``, sorted.
+        """
         # Another round of sorting, not sure why needed
         idx = numpy.argsort(ds["ref_time"])
         return ds[{"line": idx}]
@@ -71,6 +190,10 @@ class CalibrationCountDimensionReducer(typhon.datasets.filters.OrbitFilter):
     When we want to add calibraiton counts to matchup, we want to add only
     one (median) to each matchup, not the whole batch of 48, that becomes
     too large...
+
+    The methods on this class should not be used directly, rather objects
+    of this class should be passed to
+    `typhon.datasets.Dataset.read_period`.
     """
 
     def finalise(self, arr):
@@ -88,15 +211,37 @@ class KFilter:
     Through this we can access ds, ds_orig, etc.
     """
 
+    #: `Kmodel` or `KRModel` to which this filter applies
     model: (KModel, KRModel)
+    #: label/parameter associated with `KModel` or `KRModel` instance
     lab: str
 
     def filter(self, mdim, channel):
+        """Apply filter
+
+        Parameters
+        ----------
+
+        mdim : str
+            Name of the matchup dimension, such as "matchup_count"
+        channel : int
+            Channel number to consider
+
+        Returns
+        -------
+
+        ndarray
+            Boolean array, true for matchups that are kept, false for
+            matchups that need to be thrown out.
+        """
         return numpy.ones(self.model.ds.dims[mdim], "?")
 
 @dataclass
 class KrFilterHomogeneousScenes(KFilter):
     """Filter on homogeneous scenes
+
+    Select scenes where Kr is at most ``max_ratio`` times the joint
+    uncertainty.
     """
 
     max_ratio = 5
@@ -120,7 +265,34 @@ class KrFilterHomogeneousScenes(KFilter):
 
 @dataclass
 class KFilterFromFile(KFilter):
+    """Class for any KFilter or KRFilter using a file
+
+    Intermediate superclass for any `KFilter` or `KRFilter` that obtains
+    parameters from a file.
+    """
     def get_harm_filter_path(self, channel, which="K_min_dL"):
+        """Get path to harmonisation parameter file
+
+        This requires that the field ``harmfilterparams`` is defined in
+        the `typhon` configuration, in the ``main`` section.  The same
+        section is used when writing the filter, which happens in
+        `FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`.
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel number for channel of consideration
+        which : str, optional
+            Which filter we are considering.  Optional, defaults to
+            "K_min_dL".
+
+        Returns
+        -------
+
+        pathlib.Path
+            `Path` object pointing to the location of the filter
+        """
         p = pathlib.Path(typhon.config.conf["main"]["harmfilterparams"])
         p /= f"{self.model.prim_name:s}_{self.model.sec_name:s}"
         p /= f"ch{channel:d}" 
@@ -133,10 +305,31 @@ class KFilterFromFile(KFilter):
 class KrFilterΔLKr(KFilterFromFile):
     """Filter on ΔL/Kr ratio
 
-    See Vijus email 2018-09-27
+    Use filter parameters derived by
+    `FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`
+    to filter out values where ``ΔL/Kr`` is too large.
+
+    See Vijus email 2018-09-27.
     """
 
     def get_ΔL(self, channel):
+        """Extract ΔL from model
+
+        Extract ΔL from self.model (the `KRModel`).
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel of interest
+
+        Returns
+        -------
+
+        `typhon.physics.units.tools.UnitsAwareDataArray`
+            A `UnitsAwareDataArray` with the radiance differences
+            secondary - primary.
+        """
         # always in SI units
         y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(
             calibrated_channel=channel)
@@ -162,9 +355,12 @@ class KrFilterΔLKr(KFilterFromFile):
 @dataclass
 class KFilterKΔL(KFilterFromFile):
     """Filter on K-ΔL from file
+
+    Use filter parameters derived by
+    `FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`
+    to filter out values where ``K-ΔL`` is too large.
     """
     
-
     def get_ΔL(self, channel):
         y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(
             calibrated_channel=channel).to(
@@ -173,6 +369,7 @@ class KFilterKΔL(KFilterFromFile):
             calibrated_channel=channel).to(
             self.model.units, "radiance", srf=self.model.sec_hirs.srfs[channel-1])
         return y2 - y1
+    get_ΔL.__doc__ = KrFilterΔLKr.get_ΔL.__doc__
 
     def filter(self, mdim, channel):
         ok = super().filter(mdim, channel)
@@ -201,6 +398,17 @@ hh = typhon.datasets.tovs.HIRSHIRS(read_returns="xarray")
 hi = typhon.datasets.tovs.HIASI(read_returns="xarray") # metopa only
 
 class HIRSMatchupCombiner:
+    """Class to combine HIRS matchups with additional data
+
+    This is a small class to add measurements from the FIDUCEO FCDR, debug
+    version, to the matchups.  Most of the heavy work is being done within
+    `typhon.datasets.tovs.HIRSHIRS.combine` and its superclasses.  The
+    functionality in
+    `FCDR_HIRS.processing.combine_matchups.HIRSMatchupCombiner` and
+    `FCDR_HIRS.analysis.inspect_hirs_matchups.HIRSMatchupInspector` is
+    built on top of the `HIRSMatchupCombiner` class defined here.
+    """
+
     fcdr_info = {"data_version": "0.8pre", "fcdr_type": "debug"}
     fields_from_each = [
          'B',
