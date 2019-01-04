@@ -3109,6 +3109,22 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     def get_BT_to_L_LUT(self):
         """Returns LUT to translate BT to LUT
+
+        Create a lookup table for the translation between brightness
+        temperatures and radiances, for channels 1–19.
+
+        Parameters
+        ----------
+
+        none
+
+        Returns
+        -------
+
+        lookup_table_BT : xarray.DataArray
+            Brightness temperatures for lookup table
+        lookup_table_radiance
+            Radiances for lookup table
         """
 
         n = 100
@@ -3202,10 +3218,34 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         self._flags["pixel"] = flags_pixel
 
     def get_flags(self, ds, context, R_E):
-        """Get flags for FCDR
+        """Extract flags 
 
-        Only those for which I have the information I need are set, in
-        practice those that have been copied.
+        Extract flags, as available after the radiance calculations have
+        been completed.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            L1B data   
+        context : xarray.Dataset
+            Context around L1B data (not used)
+        R_E : xarray.DataArray
+            Calibrated FIDUCEO L1B radiances.  Used for coordinates to
+            extract Earth view scanlines.
+
+        Returns
+        -------
+
+        flags_scanline : xarray.DataArray
+            Scanline-specific flags.
+        flags_channel : xarray.DataArray
+            Channel-specific flags.
+        flags_minorframe : xarray.DataArray
+            Minor frame specific flags.
+        flags_pixel : xarray.DataArray
+            Pixel specific flags.
+            
         """
 
 #        flags_scanline = xarray.DataArray(
@@ -3266,18 +3306,46 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         it per sub-measurement-equation, then returns dictionaries with
         components and sensitivities.  Here, we propagate those and
         calculate the total magnitude for each uncertainty effect.
+        Note that this does not include any covariant components.
 
-        Arguments:
+        Returns a generator that yields the components one by one.
 
-            u
+        Parameters
+        ----------
 
-                only used to determine output dimensions
+        u : ndarray
 
-            sensRe
+            Total uncertainty, only used to determine output dimensions
 
-            compRe
+        sub_sensitivities : `measurement_equation.ExpressionDict`
 
-            sens_above
+            Nested dictionary containing sensitivities per sub-measurement
+            equation.  Obtained from `HIRSFCDR.calc_u_for_variable`, see
+            docstring there for details on the specification.
+
+        sub_components : `measurement_equation.ExpressionDict`, if ``return_more`` is True
+        
+            Nested dictionary containing components of sub-measurement.
+            Obtained from `HIRSFCDR.calc_u_for_variable`, see docstring
+            there for details on the specification.
+
+        sens_above : array_like
+
+            Used internally in the recursive algorithm, do not pass.  This
+            is the cumulative sensitivity from the top-level down to the
+            level of the current call.
+
+        Yields
+        ------
+
+        `sympy.Symbol`
+
+            Component of measurement equation
+
+        `UncertaintyAwareDataArray`
+
+            Magnitude of total uncertainty due to the aforementioned
+            symbol.
         """
         # FIXME: also consider covariances as inputs
         # FIXME: how to return covariances?  They fall outside the logic
@@ -3314,6 +3382,26 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         Calculate satellite zenith angle, satellite azimuth angle, solar
         zenith angle, solar azimuth angle.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+
+            Segment of L1B data
+
+        Returns
+        -------
+
+        sat_za : xarray.DataArray
+            Satellite zenith angle in degrees.
+        sat_aa : xarray.DataArray
+            Satellite azimuth angle in degrees, defined clockwise with the
+            north at 0°.
+        sol_za : xarray.DataArray
+            Solar zenith angle in degrees.
+        sol_aa : xarray.DataArray
+            Solar azimuth angle in degrees.
         """
 
         # satellite angles
@@ -3450,17 +3538,17 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Parameters
         ----------
 
-            typ : str
-                Sort of uncertainty.  Currently implemented: "noise" and
-                "calib".
-            M : ndarray
-            ch : int
-            *args : any
-                Depends on the sort of uncertainty, but should pass all
-                the "base" uncertainties needed for propagation.  For
-                example, for calib, must be u_C_iwct and u_C_space.
-            srf : SRF
-                Only if different from the nominal
+        typ : str
+            Sort of uncertainty.  Currently implemented: "noise" and
+            "calib".
+        M : ndarray
+        ch : int
+        *args : any
+            Depends on the sort of uncertainty, but should pass all
+            the "base" uncertainties needed for propagation.  For
+            example, for calib, must be u_C_iwct and u_C_space.
+        srf : SRF
+            Only if different from the nominal
 
         """
         warnings.warn("Deprecated, use self.calc_u_for_variable", DeprecationWarning)
@@ -3599,12 +3687,6 @@ class HIRSKLMFCDR:
     """Mixin for HIRS KLM FCDRs
     """
     def get_flags(self, ds, context, R_E):
-        """Get flags for FCDR
-
-        Only those for which I have the information I need are set, in
-        practice those that have been copied.
-        """
-
         (flags_scanline, flags_channel, flags_minorframe, flags_pixel) = super().get_flags(ds, context, R_E)
 
         da_qfb = ds["quality_flags_bitfield"].sel(
@@ -3650,16 +3732,51 @@ class HIRSKLMFCDR:
                 flags_pixel)
 
 class HIRS2FCDR(HIRSPODFCDR, HIRSFCDR, HIRS2):
+    """HIRS2 FCDR class
+
+    For documentation, see `HIRSFCDR`
+    """
+
     l1b_base = HIRS2
 
 class HIRS3FCDR(HIRSKLMFCDR, HIRSFCDR, HIRS3):
+    """HIRS3 FCDR class
+
+    For documentation, see `HIRSFCDR`
+    """
+
     l1b_base = HIRS3
 
 class HIRS4FCDR(HIRSKLMFCDR, HIRSFCDR, HIRS4):
+    """HIRS4 FCDR class
+
+    For documentation, see `HIRSFCDR`
+    """
+
     l1b_base = HIRS4
 
 def which_hirs_fcdr(satname, *args, **kwargs):
     """Given a satellite, return right HIRS object
+
+    From a satellite name, return an object from the correct HIRSFCDR
+    class.  This function support various different spellings of the same
+    satellite, such as "noaa15", "NOAA-15", or "N15".
+
+    Parameters
+    ----------
+
+    satname : str
+        Name of the satellite for which a `HIRSFCDR` object is desired.
+    *args, **kwargs
+        Remaining arguments passed on to the applicable `HIRSFCDR` class.
+        The satellite name `satname` is already passed on.
+
+    Returns
+    -------
+
+    `HIRSFCDR`
+        Object from the correct `HIRSFCDR` class with the correct
+        satellite name passed on to the constructor.
     """
     for h in {HIRS2FCDR, HIRS3FCDR, HIRS4FCDR}:
         for (k, v) in h.satellites.items():
@@ -3669,12 +3786,43 @@ def which_hirs_fcdr(satname, *args, **kwargs):
         raise ValueError("Unknown HIRS satellite: {:s}".format(satname))
 
 def list_all_satellites_chronologically():
+    """Return a list of all satellite names, sorted
+
+    List all satellites, starting with tirosn, followed by all the NOAA
+    satellites, then followed by the Metop satellites.
+
+    Returns
+    -------
+
+    List[str]
+        List of all satellite names.
+    """
     return ["tirosn"] + [f"noaa{i:02d}" for i in range(6, 20) if i!=13] + [
         "metopa", "metopb"]
 
 def _recursively_search_for(sub, var):
-    """Search if 'var' already exists in the tree for
-    sub_sensitivities or sub_components
+    """Internal helper with sub_sensitivities or sub_components
+    
+    Internal helper function to search if a variable is already defined in
+    the recursive tree that it sub_sensitivities or sub_components, and
+    return it if it is.
+
+
+    Parameters
+    ----------
+
+    sub : Dict
+        Either sub_sensitivities or sub_components.  For a detailed
+        definition, see the documentation for the
+        `HIRSFCDR,calc_u_for_variable` return values.
+    var : Symbol
+        Symbol to look up.
+
+    Returns
+    -------
+
+    xarray.DataArray
+        Sensitivity or uncertainty component for ``var``.
     """
 
     for (k, v) in sub.items():
@@ -3689,10 +3837,33 @@ def make_debug_fcdr_dims_consistent(dest, src, impossible="warn",
                                     flags=None):
     """From debug FCDR, expand and restrict (temporal) dimensions
 
-    Make the dimension in `src` equal to the dimension in `dest`, by
-    interpolating the dimensions 'calibration_cycle' and
-    'rself_update_time' and collapsing the dimension
-    'calibration_position'.
+    Make the dimension in ``src`` equal to the dimension in ``dest``, by
+    interpolating the dimensions ``calibration_cycle`` and
+    ``rself_update_time`` and collapsing the dimension
+    ``calibration_position``
+    
+    See `HIRSFCDR._make_adict_dims_consistent` and
+    `HIRSFCDR._make_adict_dims_consistent_if_needed`.
+
+    Parameters
+    ----------
+
+    dest : xarray.DataArray
+        Array to which the dimensions shall be matched.
+    src: xarray.DataArray
+        Array for which the dimensions shall be adapted.
+    impossible : str, optional
+        Flag on what to do if the task is impossible.  Should be either
+        "warn", which means issue a warning, or "error", which means raise
+        an exception (`ValueError`)
+    flags : Mapping, optional
+        Mapping on which to set flags if uncertainties were extrapolated
+
+    Returns
+    -------
+
+    xarray.DataArray
+        like src but with dimensions now matching dest
     """
 
     srcdims = getattr(src, "dims", ())

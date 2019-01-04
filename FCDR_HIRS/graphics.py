@@ -1,8 +1,7 @@
-#!/usr/bin/env python
-# coding: utf-8
+"""Helper functions to interact with matplotlib and others
 
-"""Interact with matplotlib and other plotters
-
+This module collects various small helper functions to assist with
+plotting.
 """
 
 import datetime
@@ -26,37 +25,48 @@ def plotdir():
     """Returns todays plotdir.
 
     Configuration 'plotdir' must be set.  Value is expanded with strftime.
+
+    Returns
+    -------
+
+    str
+        Path to a directory where plots shall be stored today.
     """
     return datetime.date.today().strftime(config.conf["main"]['plotdir'])
 
-def print_or_show(fig, show, outfile, in_plotdir=True, tikz=None,
-                  data=None, store_meta="", close=True,
+def print_or_show(fig, show, outfile, tikz=None,
+                  data=None, close=True,
                   dump_pickle=True):
     """Either print or save figure, or both, depending on arguments.
 
     Taking a figure, show and/or save figure in the default directory,
     obtained with :func:plotdir.  Creates plot directory if needed.
 
-    :param fig: Figure to store.  
-    :type fig: matplotlib.Figure object
-    :param show: Show figure or not
-    :type show: boolean
-    :param outfile: File to write figure to, or list of files.  If the
-        string ends in a '.', write to x.png and x.pdf.
-    :type outfile: string or list of strings
-    :param in_plotdir: If true, write to default plot directory.  If
-        false, write to currect directory or use absolute path.
-    :type in_plotdir: boolean
-    :param tikz: Try to write tikz code with matplotlib2tikz.  Requires
-        that the latter is installed.
-    :type tikz: boolean
-    :param data: Store associated data in .dat file (useful for pgfplots).
-        May be a list of ndarrays, which results in multiple numbered datafiles.
-    :type data: ndarray or list thereof
-    :param store_meta: I don't appear to be using this at all anymore.
-    :type store_meta: str.
-    :param close: If true, close figure.  Defaults to true.
-    :type close: bool.
+    Parameters
+    ----------
+
+    fig : matplotlib.Figure
+        Figure to store
+    show : bool
+        Show figure or not
+    outfile : str
+        Basename of file to write to.  If the string ends in a ``"."``, four
+        files will be written: figure files to ``"{outfile}.pdf"`` and
+        ``"{outfile}.png"``, a pickle object to ``"{outfile}.pkl.xz"``,
+        and an information file with verbose stack info to
+        ``"{outfile}.info"``.  The outfile is always written to the
+        directory returned by `plotdir`.
+    tikz : str, optional
+        If given, try to write tikz code to the indicated file (again
+        within ``plotdir``, using the ``matplotlib2tikz`` module.
+    data : array_like, optional
+        If given, write out data used to store the plot to the directory
+        given by `common.plotdatadir`.  May be a list of ndarrays, which
+        results in multiple numbered datafiles.
+    close : bool, optional
+        Close figure after showing and writing.
+    dump_pickle : bool, optional
+        Write figure to pickle object.
     """
 
     if outfile is not None:
@@ -137,7 +147,9 @@ def print_or_show(fig, show, outfile, in_plotdir=True, tikz=None,
 def pcolor_on_map(m, lon, lat, C, **kwargs):
     """Wrapper around pcolor on a map, in case we cross the IDL
 
-    preventing spurious lines
+    Preventing spurious lines.
+
+    This has a bad implementation.  **DO NOT USE**.
     """
 
     warnings.warn("Do not use this function, it is bad.",
