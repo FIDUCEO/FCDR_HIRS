@@ -67,7 +67,7 @@ def parse_cmdline():
     return get_parser().parse_args()
 
 def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
-        write=False, max_ratcorr=0.02, rge_fact=0.1, max_tries=30):
+        write=False, max_ratcorr=0.02, rge_fact=0.12, max_tries=50):
     """Plot histogram with fitted normal and stats and write filters
 
     This plots:
