@@ -248,11 +248,11 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False,
     
     chan = ds["channel"].item()
     # for unit conversions
-    srf1 = typhon.physics.units.em.SRF.fromArtsXML(
-            typhon.datasets.tovs.norm_tovs_name(ds.sensor_1_name).upper(),
+    srf1 = typhon.physics.units.em.SRF.fromRTTOV(
+            typhon.datasets.tovs.norm_tovs_name(ds.sensor_1_name, mode="RTTOV"),
             "hirs", ds["channel"].item())
-    srf2 = typhon.physics.units.em.SRF.fromArtsXML(
-            typhon.datasets.tovs.norm_tovs_name(ds.sensor_2_name).upper(),
+    srf2 = typhon.physics.units.em.SRF.fromRTTOV(
+            typhon.datasets.tovs.norm_tovs_name(ds.sensor_2_name, mode="RTTOV"),
             "hirs", ds["channel"].item())
 
     y1 = UADA(ds["nominal_measurand1"]).to(

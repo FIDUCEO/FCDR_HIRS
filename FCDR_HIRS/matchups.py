@@ -1049,8 +1049,8 @@ class KrModelLSD(KrModel):
                     z=("hirs-{:s}_ny".format(which),
                        "hirs-{:s}_nx".format(which)))
         btlocal = UADA(btlocal)
-        srf = SRF.fromArtsXML(
-            typhon.datasets.tovs.norm_tovs_name(which).upper(),
+        srf = SRF.fromRTTOV(
+            typhon.datasets.tovs.norm_tovs_name(which, mode="RTTOV"),
             "hirs", channel)
         radlocal = btlocal.to(rad_u["si"], "radiance", srf=srf)
         lsd = radlocal.std("z")
@@ -1107,8 +1107,8 @@ class KrModelIASIRef(KrModel):
         """
         if ds_to_use is None:
             ds_to_use = self.ds_filt
-        srf = SRF.fromArtsXML(
-            typhon.datasets.tovs.norm_tovs_name(self.sec_name).upper(),
+        srf = SRF.fromRTTOV(
+            typhon.datasets.tovs.norm_tovs_name(self.sec_name, mode="RTTOV"),
             "hirs", channel)
         return abs(
             ureg.Quantity(
@@ -1370,8 +1370,8 @@ class KModelSRFIASIDB(KModel):
         self.srfs = {}
         for sat in (self.prim_name, self.sec_name):
             self.srfs[sat] = [
-                typhon.physics.units.em.SRF.fromArtsXML(
-                    typhon.datasets.tovs.norm_tovs_name(sat).upper(),
+                typhon.physics.units.em.SRF.fromRTTOV(
+                    typhon.datasets.tovs.norm_tovs_name(sat, mode="RTTOV"),
                     "hirs", ch)
                 for ch in range(1, 20)]
         if self.debug:
