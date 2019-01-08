@@ -62,7 +62,10 @@ def convert_granule(h, satname, dt, gran, orbit_filters, overwrite=False):
         Corresponding datetime for granule
     gran : pathlib.Path
         Full path to granule
-
+    orbit_filters : List[OrbitFilter]
+        What orbit filters to apply
+    overwrite : bool, optional
+        Whether to overwrite existing files.  Defaults to False.
     """
 
     (lines, extra) = h.read(gran, 
@@ -193,6 +196,23 @@ def convert_granule(h, satname, dt, gran, orbit_filters, overwrite=False):
 
 
 def convert_period(h, sat, start_date, end_date, **kwargs):
+    """Convert entire period of granules for satellite
+
+    Parameters
+    ----------
+
+    h : HIRS
+        HIRS object for satellite
+    sat : str
+        Name of satellite
+    start_date : datetime.datetime
+        Datetime for starting point
+    end_date : datetime.datetime
+        Datetime for ending point
+    **kwargs
+        Remaining agruments passed to `convert_granule`
+    """
+
     logger.info("Converting NOAA to NetCDF, {:s} "
         "{:%Y-%m-%d %H:%M:%S}–{:%Y-%m-%d %H:%M:%S}".format(
             sat, start_date, end_date))
@@ -227,6 +247,10 @@ def convert_period(h, sat, start_date, end_date, **kwargs):
     bar.finish()
 
 def main():
+    """Main function
+
+    Expects commandline input.
+    """
     p = parse_cmdline()
     common.set_logger(logging.INFO,
         loggers={"FCDR_HIRS", "typhon"})

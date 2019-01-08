@@ -1,4 +1,7 @@
 """Various specialised mathematical routines
+
+This module defines various more or less specialised mathematical
+routines that are used by the FCDR code.
 """
 
 import logging
@@ -42,65 +45,66 @@ def calc_y_for_srf_shift(Δλ, y_master, srf0, L_spectral_db, f_spectra, y_ref,
     Parameters
     ----------
         
-        Δλ : Quantity or float
-            shift in SRF.  Will be converted to the
-            unit (typically µm or nm) from the pint user registry (see
-            later argument).  Scalar.
-        y_master : (N, k) Quantity ndarray
-            Brightness temperatures [K] or
-            radiances [radiance units] for reference satellite.  N
-            samples, k channels.  Quantity must be consistent with the one
-            described by predict_quantity.  These are used in the actual
-            prediction; the training is performed with y_ref.  For
-            example, if we are predicting NOAA18-8 from NOAA19-1-12 in a
-            test setting, y_master would correspond to NOAA19-1-12 test
-            data, and y_ref would be the same for training data.  In the
-            real world, y_ref is still simulated, but y_master are actual
-            measurements.
-        srf0 : typhon.physics.units.em.SRF
-            SRF relative to which
-            the shift is to be calculated.
-        L_spectral_db (M, l) ndarray
-            Database of spectra (such as from IASI)
-            to use.  Should be in spectral radiance per frequency units [W
-            / (m^2 sr Hz)].  M spectra with l radiances each.
-        f_spectra : (l, ) Quantity ndarray
-            frequencies corresponding to L_spectral_db [Hz].  1-D with length l.
-        y_ref : (M, k) Quantity ndarray :
-            Predictands used to train regressions,
-            i.e. the training database.  This information follows directly from
-            L_spectral_db and SRFs on the reference satellite, but it is
-            an expensive calculation so should be pre-calculated.  If
-            predicting from the same satellite, at least one channel will
-            correspond to srf0, such that::
+    Δλ : Quantity or float
+        shift in SRF.  Will be converted to the
+        unit (typically µm or nm) from the pint user registry (see
+        later argument).  Scalar.
+    y_master : (N, k) Quantity ndarray
+        Brightness temperatures [K] or
+        radiances [radiance units] for reference satellite.  N
+        samples, k channels.  Quantity must be consistent with the one
+        described by predict_quantity.  These are used in the actual
+        prediction; the training is performed with y_ref.  For
+        example, if we are predicting NOAA18-8 from NOAA19-1-12 in a
+        test setting, y_master would correspond to NOAA19-1-12 test
+        data, and y_ref would be the same for training data.  In the
+        real world, y_ref is still simulated, but y_master are actual
+        measurements.
+    srf0 : typhon.physics.units.em.SRF
+        SRF relative to which
+        the shift is to be calculated.
+    L_spectral_db (M, l) ndarray
+        Database of spectra (such as from IASI)
+        to use.  Should be in spectral radiance per frequency units [W
+        / (m^2 sr Hz)].  M spectra with l radiances each.
+    f_spectra : (l, ) Quantity ndarray
+        frequencies corresponding to L_spectral_db [Hz].  1-D with length l.
+    y_ref : (M, k) Quantity ndarray :
+        Predictands used to train regressions,
+        i.e. the training database.  This information follows directly from
+        L_spectral_db and SRFs on the reference satellite, but it is
+        an expensive calculation so should be pre-calculated.  If
+        predicting from the same satellite, at least one channel will
+        correspond to srf0, such that::
 
-                # in case of radiances
-                L = srf0.integrate_radiances(f_spectra, L_spectral_db)
-                # in case of BTs
-                bt = srf0.channel_radiance2bt(L)
+            # in case of radiances
+            L = srf0.integrate_radiances(f_spectra, L_spectral_db)
+            # in case of BTs
+            bt = srf0.channel_radiance2bt(L)
 
-            but this is not the case if one satellite is predicted from
-            another.
-        unit : Unit
-            unit from pint unit registry.  Defaults to ureg.um.
-        regression_type : scikit-learn regressor
-            Type of regression.
-            Defaults to sklearn.linear_model.LinearRegression.  Other good
-            option would be sklearn.cross_decomposition.PLSRegression.
-            As long as regression_type(\*\*regression_args) behaves like
-            those two (with .fit and .predict), it should be OK.
-        regression_args : dict
-            Keyword arguments to pass on to regressor.
-            For example, for sklearn.linear_model.LinearRegression you
-            would want to at least pass `{"fit_intercept": True}`.  For
-            sklearn.cross_decomposition.PLSRegression you might use
-            `{"n_components": 9, "scale": False}`.  Please refer to
-            scikit-learn documentation.
+        but this is not the case if one satellite is predicted from
+        another.
+    unit : Unit
+        unit from pint unit registry.  Defaults to ureg.um.
+    regression_type : scikit-learn regressor
+        Type of regression.
+        Defaults to sklearn.linear_model.LinearRegression.  Other good
+        option would be sklearn.cross_decomposition.PLSRegression.
+        As long as regression_type(\*\*regression_args) behaves like
+        those two (with .fit and .predict), it should be OK.
+    regression_args : dict
+        Keyword arguments to pass on to regressor.
+        For example, for sklearn.linear_model.LinearRegression you
+        would want to at least pass `{"fit_intercept": True}`.  For
+        sklearn.cross_decomposition.PLSRegression you might use
+        `{"n_components": 9, "scale": False}`.  Please refer to
+        scikit-learn documentation.
 
-    Returns:
+    Returns
+    -------
 
-        y: ndarray
-            estimates for shifted y_master or y_master values
+    y: ndarray
+        estimates for shifted y_master or y_master values
 
     """
     try:
@@ -206,11 +210,15 @@ def calc_cost_for_srf_shift(Δλ, y_master, y_target, srf0,
 
     The two alternative cost functions are:
 
-        C₁ = \sum_{i=1}^N (y_est,i - y_ref,i)^2
+    .. math::
+
+        C_1 = \sum_{i=1}^N (y_{est,i} - y_{ref,i})^2
 
     and
 
-        C₂ = \sum_{i=1}^N (y_est,i - y_ref,i - <y_est,i - y_ref,i>)^2
+    .. math::
+
+        C_2 = \sum_{i=1}^N (y_{est,i} - y_{ref,i} - <y_{est,i} - y_{ref,i}>)^2
 
     Parameters
     ----------
@@ -305,41 +313,55 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
     From pairs of brightness temperatures, estimate what SRF shifts
     minimises observed BT differences.
 
-    Arguments:
-        
-        y_master (ndarray): Radiances or BTs for reference satellite.
-            Unit must be consistent with what you tell me in
-            predict_quantity.
-        y_target (ndarray): Radiances or BTs for other satellite
-        srf0 (`:func:typhon.physics.em.units.SRF`): SRF for reference satellite
-        L_spectral_db (ndarray N×p): Database of spectra (such as from IASI)
-            to use.  Should ALWAYS be in spectral radiance per frequency
-            units, regardless of what predict_quantity is.
-        f_spectra (ndarray N): spectrum describing frequencies
-            corresponding to `L_spectral_db`.  In Hz.
-        y_ref: Reference BT or radiance
-        regression_type (scikit-learn regressor): As for
-            `:func:calc_cost_for_srf_shift`.
-        regression_args (scikit-learn regressor): As for
-            `:func:calc_cost_for_srf_shift`.
-        optimiser_func (function): Function implementing optimising.
-            Should take as a first argument a function to be optimised,
-            remaining arguments taken from optimiser_args.
-            Should return an instance of
-            `:func:scipy.optimize.optimize.OptimizeResult`.  You probably
-            want to select a function from `:module:scipy.optimize`, such
-            as `:func:scipy.optimize.basinhopping` when there may be
-            multiple minima, or `:func:scipy.optimize,minimize_scalar`
-            when you expect only one.
-        optimiser_args (dict): Keyword arguments to pass on to
-            `optimiser_func`.
-        cost_mode (str): As for `:func_calc_cost_for_srf_shift`.
-        predict_quantity (str): Whether to perform prediction in
-            "radiance" or in "bt".  y_master and y_target should be in
-            units corresponding to this quantity.
-        u_y_ref (ndarray):
-        u_y_target (ndarray):
-    Returns:
+    I'm not sure this works well at the moment.
+
+    Parameters
+    ----------
+    
+    y_master : ndarray
+        Radiances or BTs for reference satellite.
+        Unit must be consistent with what you tell me in
+        predict_quantity.
+    y_target : ndarray
+        Radiances or BTs for other satellite
+    srf0 : `typhon.physics.em.units.SRF`
+        SRF for reference satellite
+    L_spectral_db : (N, p) ndarray
+        Database of spectra (such as from IASI)
+        to use.  Should ALWAYS be in spectral radiance per frequency
+        units, regardless of what predict_quantity is.
+    f_spectra : (N,) ndarray
+        spectrum describing frequencies
+        corresponding to `L_spectral_db`.  In Hz.
+    y_ref : ndarray
+        Reference BT or radiance
+    regression_type : scikit-learn regressor
+        As for `calc_cost_for_srf_shift`.
+    regression_args : scikit-learn regressor
+        As for `calc_cost_for_srf_shift`.
+    optimiser_func : function
+        Function implementing optimising.
+        Should take as a first argument a function to be optimised,
+        remaining arguments taken from optimiser_args.
+        Should return an instance of
+        `scipy.optimize.optimize.OptimizeResult`.  You probably
+        want to select a function from `scipy.optimize`, such
+        as `scipy.optimize.basinhopping` when there may be
+        multiple minima, or :func:`scipy.optimize,minimize_scalar`
+        when you expect only one.
+    optimiser_args : dict
+        Keyword arguments to pass on to ``optimiser_func``.
+    cost_mode : str
+        As for :func:`calc_cost_for_srf_shift`.
+    predict_quantity : str
+        Whether to perform prediction in
+        "radiance" or in "bt".  y_master and y_target should be in
+        units corresponding to this quantity.
+    u_y_ref : ndarray
+    u_y_target : ndarray
+
+    Returns
+    -------
 
         float: shift in SRF
     """
@@ -384,9 +406,34 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
 
 def vlinspace(a, b, n):
     """Specialised vectorised linspace
+
+    For two arrays ``a``, ``b``, of equal size, perform a linear spacing
+    akin to `numpy.linspace` between ``a[i]`` and ``b[i]``, in ``n``
+    steps, for all elements of ``a`` and ``b``.  The spacing ``n`` is the
+    same for all elements.
+
+    Inspired by https://stackoverflow.com/a/42617889/974555 .
+
+    Parameters
+    ----------
+
+    a : ndarray
+        Array containing lower bounds for linear spacing.
+    b : ndarray
+        Array containing upper bounds for linear spacing.
+    n : int
+        Single integer describing the number of elements to fit
+        (inclusive) between the elements of ``a`` and those of ``b``.
+
+    Returns
+    -------
+
+    ndarray
+        Array one dimension larger than ``a`` or ``b``, where the first
+        and last of all but the last dimension are identical to ``a`` and
+        ``b``, and the last dimension is filled with ``n`` spaces.
     """
 
-    # inspired by https://stackoverflow.com/a/42617889/974555
 
     return a[..., numpy.newaxis] + (b-a)[..., numpy.newaxis]/(n+1) * numpy.arange(1, n+1)
 
@@ -405,24 +452,33 @@ def gap_fill(ds, dim="time", coor="time", Δt=None):
     coordinates are linearly interpolated between the two nearest values.
     There is not yet any provision to interpolate other values.
 
-    Arguments:
+    Note that this is currently not yet used in FCDR production.
 
-        ds [xarray.Dataset]
+    Parameters
+    ----------
 
-            Dataset to be gap-filled
+    ds : xarray.Dataset
 
-        dim [str]
+        Dataset to be gap-filled
 
-            Name of dimension to gap-fill.  Defaults to "time". 
+    dim : str, optional
 
-        coor [str]
+        Name of dimension to gap-fill.  Defaults to "time". 
 
-            Name of the coordinate.  Defaults to "time".
+    coor : str, optional
 
-        Δt [timedelta64]
+        Name of the coordinate.  Defaults to "time".
 
-            Overwrite automatic determination of timedelta for filling.
+    Δt : timedelta64, optional
 
+        Overwrite automatic determination of timedelta for filling.
+
+    Returns
+    -------
+
+    xarray.Dataset
+
+        Like ``ds``, but with gaps filled.
     """
 
     if Δt is None:

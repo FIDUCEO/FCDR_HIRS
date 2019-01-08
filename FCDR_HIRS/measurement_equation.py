@@ -1,4 +1,17 @@
 """Measurement equation and associated functionality
+
+This module contains (multiple) symbolic representations of the
+measurement equation.  They are used when calculating uncertainties using
+`fcdr.HIRSFCDR.calc_u_for_variable`, as well as in the alternative
+radiance calculation in `fcdr`HIRSFCDR.get_L_cached_meq`.  It relies
+heavily on the `sympy` module.  The measurement equation is contained in
+the `ExpressionDict` `expressions`, with a simplified verison in
+`expression_Re_simplified`, which is used for harmonisation purposes.  The
+simplified measurement equation is calculated as a truncation of the
+complete measurement equation.
+
+There is currently an unresolved problem preventing this module to work
+with sympy versions 1.2 and newer, see :issue:`303`.
 """
 
 import numbers
@@ -15,13 +28,16 @@ import typhon.physics.metrology
 from typhon.physics.units.common import ureg
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 
+#: Indication that we are still in the beta version.
 version = "β"
 
+#: String containing all names occurring in measurement equation.
 names = ("R_e a_0 a_1 a_2 C_s R_selfIWCT C_IWCT C_E R_selfE R_selfs ε λ Δλ "
          "a_3 R_refl d_PRT C_PRT a n m A N M h c k_b T_PRT T_IWCT B φn "
          "R_IWCT O_Re O_TIWCT O_TPRT α β Tstar λstar O_RIWCT f Δf fstar "
          "ν Δν νstar T_bstar T_b a_4 S h_0 h_1 h_2 h_3")
 
+#: Dictionary with all symbols in the measurement equation.
 symbols = sym = dict(zip(names.split(), sympy.symbols(names)))
 
 class ExpressionDict(dict):
@@ -31,6 +47,9 @@ class ExpressionDict(dict):
     even if the index is different.  For example, if the key is T_PRT[n]
     and we request T_PRT[0], it will return D[T_PRT[n]] substituting n by
     0.
+
+    There is currently a problem with this class in sympy 1.2 and newer,
+    see :issue:`303`.
     """
 
     def __getitem__(self, k):
@@ -80,6 +99,7 @@ class ExpressionDict(dict):
     def __setitem__(self, k, v):
         super().__setitem__(k, v) # here only so I can set breakpoint
 
+#: `ExpressionDict`: contains all components of the measurement equation
 expressions = ExpressionDict()
 expressions[sym["R_e"]] = (
     sym["a_0"] + sym["a_1"]*sym["C_E"] + sym["a_2"]*sym["C_E"]**2 -
@@ -148,12 +168,14 @@ expressions[sym["M"]] = sympy.Number(5)
 expressions[sym["N"]] = sympy.Number(5) # FIXME: actually depends on HIRS version...
 expressions[sym["A"]] = sympy.Number(6)
 
+#: Units for constants occurring in measurement equation
 units = {}
 units[sym["c"]] = ureg.c
 units[sym["h"]] = ureg.h
 units[sym["k_b"]] = ureg.k
 units[sym["N"]] = units[sym["M"]] = ureg.dimensionless
 
+#: Possible aliases in measurement equation (currently empty)
 aliases = {}
 #aliases[sym["T_PRT"]] = sympy.IndexedBase(sym["T_PRT"])[sym["n"]]
 #aliases[sym["C_PRT"]] = sympy.IndexedBase(sym["C_PRT"])[sym["n"]]
@@ -163,8 +185,38 @@ def recursive_substitution(e, stop_at=None, return_intermediates=False,
         expressions=expressions):
     """For expression 'e', substitute all the way down.
 
-    Using the dictionary `expressions`, repeatedly substitute all symbols
-    into the expression until there is nothing left to substitute.
+    Substitute sub-measurement equations into the parent, recursively,
+    stopping either when there is nothing left to substitute, or when a
+    symbol in ``stop_at`` is reached.
+
+    See also `substitute_until_explicit`.
+
+    Parameters
+    ----------
+
+    e : sympy.Expr
+        Base expression to be expanded.
+    stop_at : Set[sympy.Symbol], optional
+        Collection of symbols at which to stop.  For example, to
+        substitute only until reaching ``T_IWCT``, one can pass
+        ``stop_at={"T_IWCT"}``.
+    return_intermediates : bool, optional
+        If true, return all intermediate, partially substituted
+        expressions (each expression will contain the next one).  If false (the
+        default), only return the final, fully substituted expression.
+    expressions : ExpressionDict, optional
+        What `ExpressionDict` to use for the substitution.  Defaults to
+        the `expressions` defined in this module.
+
+    Returns
+    -------
+
+    sympy.Expr
+        Fully substituted expression.
+    Set[sympy.Expr]
+        Only returned if ``return_intermediates`` is True, a set of
+        partially substituted expressions (NB: why is this a set and not a
+        list?)
     """
     o = None
     intermediates = set()
@@ -216,6 +268,7 @@ for (s, e) in expressions.items():
         raise ValueError("Duplicate symbols found")
     all_args |= new_args
 
+#: dictionary containing all dependencies for all expressions
 dependencies = {}
 for s in symbols.values():
     (e, im) = recursive_substitution(
@@ -223,12 +276,14 @@ for s in symbols.values():
                 return_intermediates=True)
     dependencies[aliases.get(s, s)] = typhon.physics.metrology.recursive_args(e) | im
 
+#: dictionary describing each expression as a Function
 functions = {}
 for (sn, s) in symbols.items():
     if s in dependencies:
         if dependencies[s]:
             functions[s] = sympy.Function(sn)(*(aliases.get(sm, sm) for sm in dependencies[s]))
 
+#: dictionary with names of all symbols corresponding to debug FCDR
 names = {
     sym["R_selfE"]: "Rself",
     sym["R_selfIWCT"]: "RselfIWCT",
@@ -271,8 +326,7 @@ names = {
 }
 
 
-# version for simplified harmonisation
-
+#: measurement equation version for simplified harmonisation
 expression_Re_simplified = recursive_substitution(
     expressions[symbols["R_e"]],
     expressions=expressions,
@@ -288,6 +342,28 @@ expression_Re_simplified_2 = expression_Re_simplified.subs({
          symbols["a_2"]: symbols["h_2"]})
 
 def substitute_until_explicit(expr, s2):
+    """Repeatedly substitute expr until s2 is explicit
+
+    Within expression ``expr``, keep substituting sub-measurement
+    equations until ``s2`` shows up explicitly, or until these is nothing
+    left to substitute, whatever comes first.
+    
+    See also `recursive_substitution`.
+
+    Parameters
+    ----------
+
+    expr : sympy.Expr
+        Expression to be substituted
+    s2 : sympy.Symbol
+        Final symbol at which to stop substituting
+
+    Returns
+    -------
+
+    sympy.Expr
+        Expression in which ``s2`` occurs explicitly.
+    """
     oldexpr = None
     # expand expression until no more sub-expressions and s2 is explicit
     while expr != oldexpr:
@@ -302,10 +378,23 @@ def substitute_until_explicit(expr, s2):
 def calc_sensitivity_coefficient(s1, s2):
     """Calculate sensitivity coefficient ∂s1/∂s2
 
-    Arguments:
+    Essentially a thin shell around the `sympy.Expr.diff` method, but
+    ensuring that ``s2`` is explicitly represented in ``s1`` using
+    `substitute_until_explicit` before carrying out any differentiation.
 
-        s1: sympy.Expr
-        s2: sympy.Expr
+    Parameters
+    ----------
+
+    s1 : sympy.Expr
+        Main expression
+    s2 : sympy.Expr
+        Symbol to which to calculate sensitivity
+
+    Returns
+    -------
+
+    sympy.Expr
+        Differentiated expression, sensitivity coefficient
     """
 
     if not isinstance(s1, sympy.Expr):
@@ -323,15 +412,28 @@ def calc_sensitivity_coefficient(s1, s2):
 # NB: see also https://github.com/sympy/sympy/issues/12134
 def evaluate_quantity(v, quantities,
         stop_at=(numpy.ndarray, sympy.Number, numbers.Number)):
-    """Evaluate numerical value of `v` using `quantities`
+    """Evaluate numerical value of ``v`` using ``quantities``
 
-    Get the numerical value of variable `v`, using a dictionary of
-    quantities `quantities` containing the values of other variables.
+    Get the numerical value of variable ``v``, using a dictionary of
+    quantities ``quantities`` containing the values of other variables.
 
-    Arguments:
+    Parameters
+    ----------
 
-        v [Symbol]
-        quantities [Mapping[Symbol, Expr]]
+    v : sympy.Symbol
+        Symbol of quantity to evaluate.
+    quantities : Mapping[Symbol, Expr]
+        Dictionary of previously estimated quantities.
+    stop_at : Tuple[type], optional
+        Types at which to stop considering arguments.  Defaults at
+        ``(numpy.ndarray, sympy.Number, numbers.Number)``.  That means
+        that those are retained in the value.
+
+    Returns
+    -------
+
+    ndarray
+        Numeric value of ``v``.
     """
     e = expressions.get(v, v)
 

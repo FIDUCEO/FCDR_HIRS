@@ -6,6 +6,21 @@ The `matchups` module, and in particular the `HIRSMatchupCombiner` class,
 serve as the basis for the `processing.combine_matchups` module and its
 `processing.HIRSMatchupCombiner` class, but is also used by scripts in the
 `analysis` package.
+
+The estimation of K and Ks is done by implementations of the `KModel`
+class.  For HIRS-HIRS matchups, the currently applied implementation is
+described by the `KModelSRFIASIDB` class.  For HIRS-IASI matchups, the
+implementation is `KModelIASIRef`, but note that this estimate is always
+zero.  The estimate of Kr is performed by implementations of the `KrModel`
+class.  For HIRS-HIRS matchups, the implementation currently used is
+`KrModelJointLSD`.  For HIRS-IASI matchups, it's `KrModelIASIRef`.  All
+other classes in the `Kmodel` and `KrModel` hierarchy are either
+intermediate classes or classes that have been used before or
+experimentally but not currently.
+
+The module also defines a number of filters that go with `KModel` and
+`KrModel`, such as `KFilter` and its implementations.  Some of those
+filters are used when preparing harmoniation matchups.
 """
 
 from __future__ import annotations
@@ -1022,6 +1037,13 @@ class KrModelJointLSD(KrModelLSD):
         return numpy.sqrt(lsd_prim**2+lsd_sec**2)
 
 class KrModelIASIRef(KrModel):
+    """Estimate Kr for IASI-HIRS matchups
+    
+    I don't have a good model estimating Kr for IASI-HIRS matchups.  This
+    is currently the only implemetation.  It assumes a hardcoded 0.1 K
+    uncertainty converted back to radiance space.
+    """
+
     def calc_Kr(self, channel, ds_to_use=None):
         """Calculate Kr for channel
 
@@ -1045,27 +1067,113 @@ class KrModelIASIRef(KrModel):
 
 
 class KModelSRFIASIDB(KModel):
-    """Estimate K using IASI spectral database.
+    """Estimate K for HIRS-HIRS matchups, using a IASI spectral database.
 
-    Based on the SRF recovery method described in PD4.4
+    Based on the SRF recovery method described in PD4.4.  IASI training
+    data obtained from the period between `KModelSRFIASIDB.iasi_start` and
+    `KModelSRFIASIDB.iasi_end` are used to simulated HIRS using SRFs
+    shifted such as reported by Paul Menzel and included with RTTOV, such
+    that we get HIASI for all channels for the primary and the secondary,
+    based on the same IASI spectra, such that any differences are
+    exclusively due to reported SRF differences.  Using the HIASI database, I
+    develop a regression to predict channel n on the secondary from one
+    or more channels on the primary.  Applying this regression to the real
+    matchups, I the difference between the estimate for secondary channel
+    n and the real primary channel n is the estimate for K.
+
+    This estimate is performed bidirectionally.  The difference is as
+    entimate of Ks.
+    
+    There are a few ways in which this can be varied:
+
+    * What channels do I use as the predictor?  Only channel n, all
+      channels, or something in-between?  This can be configured with the
+      ``chan_pairs`` argument.
+
+    * What type of regression to use (``regression``)?  This can be
+      ``"LR"`` or ``"ODR"``.
+
+    * Should the regression predict the value for the secondary, or
+      should it predict the Δ between the secondary and the primary?  This
+      is configured with the ``mode`` argument.
+
+    * Should all of this happen in radiance space or brightness
+      temperature space?  See the ``units`` argument.
+
+    For details, see documentation on the attributes and on the
+    constructor.
     """
 
     iasi_start = datetime.datetime(2011, 1, 1)
+    """datetime.datetime: start period for IASI training database
+
+    Beginning date for which IASI data are read in order to produce IASI
+    training database used to simulate HIASI.  Note that due to data
+    volume limitations, I do not read the original IASI data but rather a
+    subset via the typhon `typhon.datasets.tovs.IASISub` class.
+    """
     iasi_end = datetime.datetime(2011, 2, 1)
+    """datetime.datetime: end period for IASI training database
+
+    End date for which IASI data are read, or rather,
+    `typhon.datasets.tovs.IASISub` data.
+    """
     iasi = typhon.datasets.tovs.IASISub(name="iasisub")
+    """typhon.datasets.tovs.IASISub: instance use do read IASI data
+
+    This attribute holds the `typhon.datasets.tovs.IASISub` object used to
+    read IASI data.  It is defined by default and there should normally be
+    no reason to redefine it.
+    """
+    #: ndarray: IASI data (internal use)
     M_iasi = None
+    #: ndarray: IASI training database (internal use)
     Ldb_iasi_full = None
+    #: ndarray: HIASI training database (internal use)
     Ldb_hirs_simul = None
+    #: List[SRF]: SRFs
     srfs = None
+    #: Mapping[str, Mapping[int, regression_model]]:  various fitters
     fitter = None
 
     regression = "LR"
+    """str: type of regression to use
+
+    String describing what type of regression to use.  Valid options are
+    ``"LR"``, which is the default, and ``"ODR"``, for orthogonal
+    distance regression.
+    """
     chan_pairs = None
+    """Mapping[int, array_like]: what primary channels predict what secondary
+
+    Dictionary that describes, for each channel on the secondary, what
+    channels from the primary are used to predict it. 
+    """
+    #: str: label describing the type of channel pairing
     chan_pairs_label = None
     mode = "standard"
+    """str: String describing whether regression should target BT or ΔBT
+
+    The mode can be either ``"standard"``, which means the regression will
+    target brightness temperatures, or ``"delta"``, which means the
+    regression will target the ΔBT between the primary and the secondary,
+    for the channel being targeted.
+    """
     units = rad_u["si"]
+    """pint Unit: what units to use
+
+    A pint Unit describing in what unit radiances or brightness
+    temperatures are predicted.  The module
+    `typhon.physics.units.common` defines a ``radiance_units`` dictionary
+    that contains units for radiance in SI or typical IR units, or one can
+    use kelvin.  It's also valid to pass a string that can be converted to
+    a unit.
+    """
+    #: bool: if True, generate all possible mode/unit/chan/regression combinations
     debug = False
+    #: Mapping: dictionary filled in case of debug mode (internal use)
     others = None
+    #: Mapping: dictionary to hold estimates for K in both directions
     K = None
     #regression = "ODR"
     # FIXME: Use ODR with uncertainties
@@ -1075,6 +1183,29 @@ class KModelSRFIASIDB(KModel):
 
 
     def __init__(self, chan_pairs="all", *args, **kwargs):
+        """Initialise KModelSRFIASIDB class
+
+        Parameters
+        ----------
+
+        chan_pairs : str
+            A string describing how the channel pairs are distributed.
+            Valid values are ``"all"``, which means all channels from the
+            primary are used to predict any channel from the secondary,
+            ``"single"``, which means only channel n on the primary is
+            used to predict channel n on the secondary, and
+            ``"neighbours"``, which uses channels ``[n-1, n, n+1]`` on the
+            primary to predict channel n on the secondary.  A further
+            case, ``"optimal"``, which has an optimal choice for each
+            channel, is not yet implemented
+        *args
+            Passed to superclass, which does not use it, do not pass.
+        **kwargs
+            Passed to superclass, which results in the setting of already
+            defined attributes.  See attribute documentation, in
+            particular for `regression`, `mode`, `units`, and `debug`.
+        """
+
         self.chan_pairs_label = chan_pairs
         # FIXME: add an "optimal", channel-specific mapping
         if chan_pairs == "all":
@@ -1119,6 +1250,16 @@ class KModelSRFIASIDB(KModel):
 
     def get_lab(self):
         """Return label for self settings
+
+        Get a label that describes the settings for this instance, a
+        string describing the channel pairing, the mode, the regression
+        type, and the unit.
+
+        Returns
+        -------
+
+        str
+            String describing the instance configuration.
         """
         unitlab = re.sub(r'/([A-Za-z]*)', r' \1^-1', "{:~P}".format(self.units)).replace("-1²", "-2")
         lab = unicodedata.normalize("NFKC", f"{self.chan_pairs_label:s}_{self.mode:s}_{self.regression:s}_{unitlab:s}")
@@ -1135,8 +1276,11 @@ class KModelSRFIASIDB(KModel):
     def read_iasi(self):
         """Read spectral database from IASI.
 
-        Details on what is read are stored in self attributes iasi_start,
-        iasi_end, passed on on object creation.
+        Details on what is read are stored in self attributes `iasi_start`,
+        `iasi_end`, passed on on object creation.  The result is stored in
+        the attribute `M_iasi`.  This method does not take any input
+        arguments nor does it return anything.  In debug mode, it also
+        sets the same object for the other instances held in `debug`.
         """
 
         # this is a structured array with fields
@@ -1151,6 +1295,11 @@ class KModelSRFIASIDB(KModel):
 
     def init_iasi(self):
         """Initialise IASI data in right format
+
+        Make sure IASI data have been read, calling `read_iasi` if
+        necessary, and construct the full IASI spectral database in SI
+        units, storing it in `Ldb_iasi_full`.  Do the same for other
+        instances if in debug mode.  No inputs or outputs.
         """
         if self.M_iasi is None:
             self.read_iasi()
@@ -1162,7 +1311,7 @@ class KModelSRFIASIDB(KModel):
                 v.Ldb_iasi_full = self.Ldb_iasi_full # always in freq
 
     def init_srfs(self):
-        """Initialise SRFs, reading from ArtsXML format
+        """Initialise SRFs, reading from RTTOV format
         """
         self.srfs = {}
         for sat in (self.prim_name, self.sec_name):
@@ -1178,7 +1327,13 @@ class KModelSRFIASIDB(KModel):
     def init_Ldb(self):
         """Calculate IASI-simulated HIRS
 
-        For all channels for either pair.
+        Calculate IASI-simulated HIRS for all channels for both
+        satellites in the matchup pair.  Ensure that IASI data and SRFs
+        are ready to read.  In debug mode, do the same for all pairs in
+        self.debug.
+        
+        Does not input or output anything but sets attributes needed
+        elsewhere.
         """
 
         if self.Ldb_iasi_full is None:
@@ -1203,6 +1358,12 @@ class KModelSRFIASIDB(KModel):
                 v.init_Ldb()
 
     def init_regression(self):
+        """Set up regression objects
+
+        Populate the self.fitter dictionary with regression objects in
+        both directions for all channels.  Initiates Ldb and reads IASI data
+        if necessary.
+        """
         if self.Ldb_hirs_simul is None:
             self.init_Ldb()
         # make one fitter for each target channel, in both directions
@@ -1247,8 +1408,34 @@ class KModelSRFIASIDB(KModel):
     _y_pred = None
     def calc_K(self, channel, ds_to_use=None, debug=None):
         """Calculate K for channel.
-        
-        Returns K always in SI units, but sets self.K in self.units units.
+
+        Calculates K in both directions: from primary to secondary, and
+        from secondary to primary.  In an ideal case, the two results
+        differ only by sign.  This method puts both in the self.K
+        dictionary in units of self.units (within ``self.K[channel]``,
+        and returns the average of -(secondary from primary) and (primary
+        from secondary) converted to units of kelvin.
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel number for which to estimate K
+        ds_to_use: xarray.Dataset, optional
+            Should be set either to ``self.ds`` or to ``self.ds_filt``.
+            The latter is default.  You'll want to put it to ``self.ds``
+            if calling this before the filtering has been performed, which
+            may be needed for filters that are a function of K.
+        debug : bool, optional  
+            Whether or not we are running in debug mode.  Overrides
+            self.debug.
+
+        Returns
+        -------
+
+        ndarray
+            Estimate for K
+
         """
         if self.fitter is None:
             self.init_regression()
@@ -1300,6 +1487,25 @@ class KModelSRFIASIDB(KModel):
         return K.m
 
     def calc_Ks(self, channel):
+        """Estimate Ks
+
+        Calculate Ks, after K has already been calculated.  This is
+        estimated by taking the absolute difference of the two different
+        ways of estimating K (forward and backward).  I don't think this
+        is a good estimate but it's what I've implemented at the moment.
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel number
+
+        Returns
+        -------
+
+        ndarray
+            Estimate for Ks
+        """
         # spread of db will inform us of uncertainty in predicted
         # radiance?  Or take double direction approach?
         if self.K[channel] is None:
@@ -1319,6 +1525,30 @@ class KModelSRFIASIDB(KModel):
         return Ks.m
 
     def extra(self, channel, ok):
+        """Get dictinoary with some extra information to add to matchups
+
+        Implementation of method that returns some extra information, that
+        will be added to the harmonisation matchups for debugging
+        purposes.  This method returns a dictionary with the fields
+        ``K_forward`` and ``K_backward``, which are the two
+        different estimates of ``K``, identicaly in a perfect world, not
+        so in reality.  If self.debug is set, it also defined a bunch of
+        ``"K_other_..."`` fields for all the debug versions.
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel for which to return extras
+        ok : indexer
+            Indexer for filtering
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Dataset with extra fields to be merged with matchups.
+        """
         ds = super().extra(channel, ok)
         ds["K_forward"] = (("M",), self.K[channel][0])
         ds["K_backward"] = (("M",), self.K[channel][1])
