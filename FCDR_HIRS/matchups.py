@@ -936,10 +936,10 @@ class KrModel(metaclass=abc.ABCMeta):
         self.filtered = True
     limit.__doc__ = KModel.limit.__doc__
 
-    def filter(self, mdim, channel):
-        rv = numpy.ones(self.ds.dims[mdim], "?")
+    def filter(self, mdim, channel, previous=None):
+        rv = previous if previous is not None else numpy.ones(self.ds.dims[mdim], "?")
         for ef in self.extra_filters:
-            rv &= ef.filter(mdim, channel)
+            rv &= ef.filter(mdim, channel, previous=previous)
         return rv
     filter.__doc__ = KModel.filter.__doc__
 
@@ -1078,8 +1078,8 @@ class KrModelLSD(KrModel):
     def calc_Kr(self, channel, ds_to_use=None):
         return self.calc_Kr_for(self.prim_name)
 
-    def filter(self, mdim, channel):
-        ok = super().filter(mdim, channel)
+    def filter(self, mdim, channel, previous=None):
+        ok = super().filter(mdim, channel, previous=previous)
         ok &= functools.reduce(
             operator.and_,
             ((self.ds_orig[f"hirs-{s:s}_bt_ch{channel:02d}"].notnull()
