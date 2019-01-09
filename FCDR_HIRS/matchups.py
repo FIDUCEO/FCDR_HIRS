@@ -395,6 +395,10 @@ class KFilterKDeltaL(KFilterFromFile):
 
     def filter(self, mdim, channel, previous=None):
         ok = super().filter(mdim, channel, previous=previous)
+        for p in (self.model.prim_name, self.model.sec_name):
+            ok &= self.model.ds[f"{p:s}_R_e"].sel(
+                    calibrated_channel=self.model.chan_pairs[channel]).all(
+                    "calibrated_channel").values
         if not ok.any():
             return ok
         ds = xarray.open_dataset(self.get_harm_filter_path(channel, "K_min_dL"))
