@@ -16,13 +16,6 @@ Documentation for HIRS FCDR analysis and generation software
    fcdrgeneration
    FCDR_HIRS
 
-.. autosummary::
-    :toctree: _autosummary
-
-    FCDR_HIRS
-    FCDR_HIRS.analysis
-    FCDR_HIRS.processing
-
 Indices and tables
 ==================
 

@@ -17,7 +17,7 @@ documentation, then pass it to
 ``all_effects`` argument.
 
 To get an impression of which ones are actually implemented, have a look
-at calls to `FCDR_HIRS.fcdr._tuck_effect_channel`, which are littered
+at calls to `fcdr.HIRSFCDR._tuck_effect_channel`, which are littered
 about here and there, which is currently being used to populate a
 dictionary in preparation for the uncertainty calculation and CURUC.
 """
@@ -38,7 +38,8 @@ import docrep
 from typing import (Tuple, Mapping, Set)
 
 from typhon.physics.units.common import (radiance_units, ureg)
-from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.physics.units.tools import UnitsAwareDataArray, UnitsAwareDataArray as UADA
+import typhon.physics.units.tools
 
 from . import measurement_equation as meq
 from . import _fcdr_defs
@@ -60,13 +61,13 @@ CorrelationScale = collections.namedtuple("CorrelationScale",
 class Rmodel(metaclass=abc.ABCMeta):
     """Abstract class describing the interface to calculate R
 
-    This class defines the interface for an Rmodel that each effect needs
+    This class defines the interface for an `Rmodel` that each effect needs
     to describe to calculate R for that effect, as an input to the CURUC
     recipes.  Rather than each effect implementing those from scratch, in
     practice, several Rmodels may be shared between different effects,
     such that `Effect.calc_R_eΛlk` just delegates to the
-    `Rmodel.calc_R_eΛlk` for the corresponding Rmodel.  The module defines
-    several `Rmodel`s.
+    `Rmodel.calc_R_eΛlk` for the corresponding `Rmodel`.  The module defines
+    several implementation of `Rmodel`.
     """
 
     #@dst.get_full_descriptionf("R_eΛk")
@@ -452,23 +453,21 @@ class Effect:
     effects can be obtained using the `effects` function.  It is up to the
     developer to populate the ``.magnitude`` attribute for all effects, and
     then pass it on to functions requiring it, in particular the
-    all-important method `FCDR_HIRS.fcdr.HIRSFCDR.calc_u_for_variable`.
+    all-important method `fcdr.HIRSFCDR.calc_u_for_variable`.
 
     Attributes
     ----------
     
-    These attributes are generally set upon definition:
-
     name : str
         Short name.  This will be used to, for example, refer to the
         effect in a global dictionary with all effects.
     description : str
         Long name, human readable description of the effect.
-    parameter : `sympy.Symbol`
-        The `sympy.Symbol` within the `measurement_equation` that this
+    parameter : Symbol
+        The `Symbol` within the `measurement_equation` that this
         effect relates to.  Each effect must relate to exactly one
         measurement equation parameter.
-    unit : `pint.unit._Unit`
+    unit : pint unit
         The pint unit in which the magnitude of the effect is measured.
         Must be compatible with the physical dimensions for the
         measurement that the measurement equation parameter represents.
@@ -499,8 +498,8 @@ class Effect:
         Normally, the data dimensions for an uncertainty quantity should
         be the same as the dimensions for the quantity in the measurement
         equation the uncertainty corresponds to.  The latter are defined
-        in the `FCDR_HIRS._fcdr_defs` module and as the
-        `FCDR_HIRS.fcdr.FCDR._data_vars_props` attribute.  In some cases,
+        in the `_fcdr_defs` module and as the
+        `fcdr.HIRSFCDR._data_vars_props` attribute.  In some cases,
         the data dimensions for the uncertainty may differ from the
         quantity.  For example, IWCT type B uncertainty is scalar, even
         though it belongs to a quantity that is not.  This attribute can
@@ -513,12 +512,9 @@ class Effect:
         and `correlation_scale` attributes, and perhaps it does, but the
         attributes are stored in the debug FCDR whereas the `rmodel`
         attribute is used to calculate the inputs to CURUC.
-
-    There are some attributes that are set during FCDR calculation:
-
-    magnitude : `typhon.physics.units.tools.UnitsAwareDataArray`
+    magnitude : typhon.physics.units.tools.UnitsAwareDataArray
         This will be set to an instance of
-        `typhon.physics.units.tools.UnitsAwareDataArray`, which will
+        `UnitsAwareDataArray`, which will
         describe the magnitude and the units of the uncertainty.
     correlation_scale : `CorrelationScale`
         This is a `CorrelationScale` namedtuple that is supposed to
@@ -678,7 +674,7 @@ class Effect:
 
         other : Effect
             The other `Effect` that we have a coviarance with.
-        da_ch : `typhon.physics.units.tools.UnitsAwareDataArray`
+        da_ch : `UnitsAwareDataArray`
             The magnitude of the covariance.
         """
 
@@ -723,13 +719,15 @@ class Effect:
 
         Property, 4-tuple of strings, or `CorrelationType` named tuple.
         Each member of the tuple must be one of:
-            * "undefined"
-            * "random"
-            * "rectangular_absolute"
-            * "triangular_relative"
-            * "truncated_gaussian_relative"
-            * "repeated_rectangles"
-            * "repeated_truncated_gaussians"
+
+            - "undefined"
+            - "random"
+            - "rectangular_absolute"
+            - "triangular_relative"
+            - "truncated_gaussian_relative"
+            - "repeated_rectangles"
+            - "repeated_truncated_gaussians"
+
         The four tuple elements refer to (and, in case of the named tuple,
         can be referred to as) ``within_scanline``, ``between_scanlines``,
         ``between_orbits``, and ``across_time``.
@@ -778,9 +776,9 @@ class Effect:
         Parameters
         ----------
 
-        s : str or `sympy.Symbol`
+        s : str or `Symbol`
             Parameter for which to calculate the sensitivity coefficients.
-            Defaults to `R_e`, i.e. the Earth radiance.
+            Defaults to R_e, i.e. the Earth radiance.
 
         Returns
         -------

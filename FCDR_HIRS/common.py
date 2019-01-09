@@ -47,28 +47,28 @@ def add_to_argparse(parser,
         The :class:`argparse.ArgumentParser` object to which the arguments
         shall be added.
     include_period : bool, optional
-        Include the mandatory arguments `from_date` and `to_date`, as well
-        as the optional argument `--datefmt`.  Use this for a script
+        Include the mandatory arguments ``from_date`` and ``to_date``, as well
+        as the optional argument ``--datefmt``.  Use this for a script
         operating over a certain time period, such as FCDR generation or
         plotting scripts.  Defaults to `True`.
     include_sat : {0, 1, 2}, optional
         Include 0, 1, or 2 satellite name arguments, which will be
         mandatory.  The valid options as satellite names will be taken
-        from :func:`fcdr.list_all_satellites`.  For a single satellite,
-        the option will be called `satname`.  If there are two, they
-        will be called `satname1` and `satname2`.  Defaults to 0.
+        from :func:`common.list_all_satellites`.  For a single satellite,
+        the option will be called ``satname``.  If there are two, they
+        will be called ``satname1`` and ``satname2``.  Defaults to 0.
     include_channels : bool, optional
-        Include an `--channels` flag, defaulting to a list of channels 1--19.
-        This flag will be optional, unless `include_temperatures` is also true, in
-        which case both `include_channels` and `include_temperatures` will
+        Include an ``--channels`` flag, defaulting to a list of channels 1--19.
+        This flag will be optional, unless ``include_temperatures`` is also true, in
+        which case both ``include_channels`` and ``include_temperatures`` will
         be mandatory.
         Defaults to `True`.
     include_temperatures : bool, optional
-        Include a `--include_temperatures` flag, that will accept a list
+        Include a ``--include_temperatures`` flag, that will accept a list
         of strings on what temperatures to be considered.  Defaults to
-        False.
+        `False`.
     include_debug : bool, optional
-        Include an optional `--debug` parameter taking a bool, that will
+        Include an optional ``--debug`` parameter taking a bool, that will
         default to `False`.  Defaults to `False`.
 
     Returns
@@ -153,8 +153,8 @@ def time_epoch_to(ds: xarray.Dataset,
                   epoch: datetime.datetime):
     """Convert all time variables/coordinates to count from epoch
 
-    For the :class:`xarray.Dataset` object `ds`, change the encoding for
-    all variables (data or coordinate variables) with a `datetime64` dtype
+    For the :class:`xarray.Dataset` object ``ds``, change the encoding for
+    all variables (data or coordinate variables) with a `numpy.datetime64` dtype
     to one that counds seconds since the `datetime` expressed by `epoch`.
     This function does not take care that this actually fits, so you may
     want to adapt ``ds.encoding["dtype"]`` and
@@ -201,9 +201,9 @@ def sample_flags(da, period="1H", dim="time"):
     ----------
 
     da : xarray.DataArray
-        `DataArray` which is a CF-compliant flag field with the `flag_masks`
-        and `flag_meanings`, for which the frequency of occurrence per
-        unit time is calculated.  The `DataArray` must have a time
+        DataArray which is a CF-compliant flag field with the ``flag_masks``
+        and ``flag_meanings``, for which the frequency of occurrence per
+        unit time is calculated.  The DataArray must have a time
         dimension.
     period : str, optional
         Temporal resolution over which the flags are resampled.  Valid
@@ -217,13 +217,13 @@ def sample_flags(da, period="1H", dim="time"):
     -------
 
     xarray.DataArray
-        'DataArray` with a dimensions of "flag" and time, where the time
-        dimension is a regular grid with an interval of `period`, which
+        DataArray with a dimensions of "flag" and time, where the time
+        dimension is a regular grid with an interval of ``period``, which
         indicates for each flag and time the percentage of this time
         period for which the flag is set.
     List[str]
         Meanings for each of the flags, taken directly from
-        `da.flag_meanings`.
+        ``da.flag_meanings``.
 
     Example
     -------
@@ -246,8 +246,8 @@ _loggers_set = set()
 def set_logger(level, filename=None, loggers=None):
     """Set properties of package-level loggers
 
-    Set handlers for the package-level loggers, such as for `FCDR_HIRS`,
-    `typhon`, or others.  Those handlers enable verbose or regular logging
+    Set handlers for the package-level loggers, such as for :py:mod:`FCDR_HIRS`,
+    typhon, or others.  Those handlers enable verbose or regular logging
     with a defined string including the level name, the name, time,
     module, function name, line number, and of course the logging message.
 
@@ -257,7 +257,8 @@ def set_logger(level, filename=None, loggers=None):
     level : int
         What loglevel to use.  Although these are numeric values, you will
         want to use the constants from the `logging` module, such as
-        `logging.DEBUG` or `logging.INFO`.
+        `logging.DEBUG <https://docs.python.org/3/library/logging.html#logging-levels>`_ 
+        or `logging.INFO`.
     filename : str or None, optional
         What file to log to.  `None` will log to `sys.stderr`.  Defaults to `None`.
     loggers : List[str] or List[logging.Logger]
@@ -363,7 +364,7 @@ def savetxt_3d(fname, data, *args, **kwargs):
     """Write 3D-array to file that pgfplots likes
 
     For a 3d ndarray, write text to a file separated by empty lines.  This
-    can be interpreted by `pgfplots <http://pgfplots.sourceforge.net/>_`
+    can be interpreted by `pgfplots <http://pgfplots.sourceforge.net/>`_
     for plotting directly in a LaTeX document.
 
     Parameters
@@ -375,7 +376,9 @@ def savetxt_3d(fname, data, *args, **kwargs):
     data : numpy.ndarray
         3-dimensional `numpy.ndarray` containing the data to be written to
         a file.
-    *args, **kwargs
+    *args
+        Remaining arguments passed to `numpy.savetxt`.
+    **kwargs
         Remaining arguments passed to `numpy.savetxt`.
 
     Example

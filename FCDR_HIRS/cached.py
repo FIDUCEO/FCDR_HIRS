@@ -2,7 +2,7 @@
 
 This module contains a number of helper functions that employ disk
 memoisation using `joblib`.  Essentially, those functions are identical to
-counterparts elsewhere in the `FCDR_HIRS` package, but including disk
+counterparts elsewhere in the :py:mod:`FCDR_HIRS` package, but including disk
 memoisation.
 """
 

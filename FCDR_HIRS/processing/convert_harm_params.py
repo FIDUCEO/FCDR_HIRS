@@ -22,18 +22,18 @@ preamble='''"""Harmonisation definitions.
 
 Definitions relating to the output of harmonisation.
 
-In particular, the `harmonisation_parameters` dictionary contains the
+In particular, the ``harmonisation_parameters`` dictionary contains the
 relevant parameters for each satellite and channel for which harmonisation
 has so far been applied in the form of:
 
-`Dict[str, Dict[int, Dict[int, float]]]`
+``Dict[str, Dict[int, Dict[int, float]]]``
 
 For example, to get a₀ for noaa18:
 
-`harmonisation_parameters["noaa18"][12][0]`
+``harmonisation_parameters["noaa18"][12][0]``
 
 Corresponding uncertainties are contained in
-`harmonisation_parameters_uncertainty`.  Covariance is not yet supported.
+``harmonisation_parameters_uncertainty``.  Covariance is not yet supported.
 Harmonisation parameters are derived using software developed by Ralf Quast.
 """
 

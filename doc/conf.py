@@ -214,7 +214,10 @@ intersphinx_mapping = {
     'numpy': ('https://docs.scipy.org/doc/numpy', None),
     'matplotlib': ('https://matplotlib.org', None),
     'xarray': ('http://xarray.pydata.org/en/stable/', None),
-    "typhon": ("http://www.radiativetransfer.org/misc/typhon/doc/", None),
+    "typhon": ("http://www.radiativetransfer.org/misc/typhon/doc-trunk/", None),
+    "joblib": ("https://joblib.readthedocs.io/en/latest/", None),
+    "sympy": ("https://docs.sympy.org/latest/", None),
+    "pint": ("https://pint.readthedocs.io/en/latest/", None),
 }
 
 
