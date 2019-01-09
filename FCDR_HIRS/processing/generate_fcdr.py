@@ -563,14 +563,14 @@ class FCDRGenerator:
             uTb_rand = uTb.copy()
             uRe_harm = uTb.copy()
         else:
-            uTb = self.fcdr.numerically_propagate_ΔL(R_E, uRe)
+            uTb = self.fcdr.numerically_propagate_DeltaL(R_E, uRe)
             u_from = xarray.Dataset(
-                {f"u_from_{k!s}": self.fcdr.numerically_propagate_ΔL(R_E, v)
+                {f"u_from_{k!s}": self.fcdr.numerically_propagate_DeltaL(R_E, v)
                     for (k, v) in unc_components.items()
                     if v.size>1})
-            uTb_syst = self.fcdr.numerically_propagate_ΔL(R_E, uRe_syst)
-            uTb_rand = self.fcdr.numerically_propagate_ΔL(R_E, uRe_rand)
-            uTb_harm = self.fcdr.numerically_propagate_ΔL(R_E, uRe_harm)
+            uTb_syst = self.fcdr.numerically_propagate_DeltaL(R_E, uRe_syst)
+            uTb_rand = self.fcdr.numerically_propagate_DeltaL(R_E, uRe_rand)
+            uTb_harm = self.fcdr.numerically_propagate_DeltaL(R_E, uRe_harm)
         uTb.name = "u_T_b"
 
         uRe_rand.encoding = uRe_syst.encoding = uRe_harm.encoding = uRe.encoding = R_E.encoding

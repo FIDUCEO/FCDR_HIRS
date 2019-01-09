@@ -13,9 +13,9 @@ corrmat_info_content
     dofs
     gain
     get_K
-    get_S_a_K_S_ε
+    get_S_a_K_S_eps
     get_S_a_from_Chevallier_ArtsXML
-    get_S_ε
+    get_S_eps
     get_all_dofs
     main
     plot_S_degradation

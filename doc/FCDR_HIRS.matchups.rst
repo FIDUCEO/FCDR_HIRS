@@ -14,13 +14,13 @@ matchups
     HIRSMatchupCombiner
     KFilter
     KFilterFromFile
-    KFilterKΔL
+    KFilterKDeltaL
     KModel
     KModelIASIRef
     KModelPlanck
     KModelSRFIASIDB
     KrFilterHomogeneousScenes
-    KrFilterΔLKr
+    KrFilterDeltaLKr
     KrModel
     KrModelIASIRef
     KrModelJointLSD

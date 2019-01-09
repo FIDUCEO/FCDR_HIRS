@@ -134,7 +134,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     units=ureg.Unit("K"))
                 if apply_filters:
                     kmodel.extra_filters.append(
-                        matchups.KFilterKΔL(model=kmodel,
+                        matchups.KFilterKDeltaL(model=kmodel,
                             lab=kmodel.get_lab()))
             else:
                 kmodel = matchups.KModelIASIRef(
@@ -157,7 +157,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     krmodel.extra_filters.extend([
 #                        matchups.KrFilterHomogeneousScenes(model=krmodel,
 #                            lab=kmodel.get_lab()),
-                        matchups.KrFilterΔLKr(model=krmodel,
+                        matchups.KrFilterDeltaLKr(model=krmodel,
                             lab=kmodel.get_lab()),
                         ])
             else:

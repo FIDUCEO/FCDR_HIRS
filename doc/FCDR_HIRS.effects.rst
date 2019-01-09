@@ -27,7 +27,7 @@ effects
     Rself
     Rselfparams
     SRF_calib
-    _calc_R_eΛlk_allones
+    _calc_R_eUlk_allones
     earth_counts_noise
     effects
     electronics

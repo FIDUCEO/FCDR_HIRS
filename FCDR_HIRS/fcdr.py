@@ -3025,7 +3025,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         return make_debug_fcdr_dims_consistent(
             dest, src, impossible="warn", flags=self._flags)
 
-    def numerically_propagate_ΔL(self, L, ΔL):
+    def numerically_propagate_DeltaL(self, L, ΔL):
         """Temporary method to numerically propagate ΔL to ΔTb
 
         Until I find a proper solution for the exploding Tb uncertainties

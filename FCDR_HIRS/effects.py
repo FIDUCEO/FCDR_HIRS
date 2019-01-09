@@ -65,8 +65,8 @@ class Rmodel(metaclass=abc.ABCMeta):
     to describe to calculate R for that effect, as an input to the CURUC
     recipes.  Rather than each effect implementing those from scratch, in
     practice, several Rmodels may be shared between different effects,
-    such that `Effect.calc_R_eΛlk` just delegates to the
-    `Rmodel.calc_R_eΛlk` for the corresponding `Rmodel`.  The module defines
+    such that `Effect.calc_R_eUlk` just delegates to the
+    `Rmodel.calc_R_eUlk` for the corresponding `Rmodel`.  The module defines
     several implementation of `Rmodel`.
     """
 
@@ -74,7 +74,7 @@ class Rmodel(metaclass=abc.ABCMeta):
     #@dst.get_sectionsf("R_eΛlk")
     #@dst.with_indent(8)
     @abc.abstractmethod
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
             sampling_l=1, sampling_e=1):
         """Return R_eΛlk for single k
 
@@ -102,7 +102,7 @@ class Rmodel(metaclass=abc.ABCMeta):
 
     #@dst.with_indent(8)
     @abc.abstractmethod
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
         sampling_l=1, sampling_e=1):
         """Return R_lΛek for single k
 
@@ -123,7 +123,7 @@ class Rmodel(metaclass=abc.ABCMeta):
 
     #@dst.with_indent(8)
     @abc.abstractmethod
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1, sampling_e=1):
         """Return R_cΛpk for single k
 
@@ -143,7 +143,7 @@ class Rmodel(metaclass=abc.ABCMeta):
         """
 
 #@dst.with_indent(4)
-def _calc_R_eΛlk_allones(ds, sampling_l=1, sampling_e=1):
+def _calc_R_eUlk_allones(ds, sampling_l=1, sampling_e=1):
     """Return R_eΛlk for single k with all ones
 
     Return the cross-element error correlation matrix ``R_eΛk`` for the
@@ -177,13 +177,13 @@ class RModelCalib(Rmodel): # docstring in parent
     """
 
     # docstring in parent
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
         sampling_l=1, sampling_e=1):
-        return _calc_R_eΛlk_allones(ds, sampling_l=sampling_l,
+        return _calc_R_eUlk_allones(ds, sampling_l=sampling_l,
             sampling_e=sampling_e)
 
     # docstring in parent
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
             sampling_l=1, sampling_e=1):
 
         # wherever scanline_earth shares a calibration_cycle the
@@ -197,7 +197,7 @@ class RModelCalib(Rmodel): # docstring in parent
             1, 1))
 
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1, sampling_e=1):
         # ERROR WARNING FIXME: This needs to be updated.  See #223
         warnings.warn("Inter-channel correlation not implemented "
@@ -220,7 +220,7 @@ class RModelCalibPRT(RModelCalib):
     calibration uncertainties, because those are shared between channels.
     """
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1, sampling_e=1):
         return numpy.ones(
             (math.ceil(ds.dims["scanline_earth"]/sampling_l),
@@ -243,7 +243,7 @@ class RModelRandom(Rmodel):
     """
 
     # docstring in parent
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
         sampling_l=1, sampling_e=1):
         return numpy.tile(
             numpy.eye(math.ceil(ds.dims["scanpos"]/sampling_e), dtype="f4"),
@@ -251,7 +251,7 @@ class RModelRandom(Rmodel):
              math.ceil(ds.dims["scanline_earth"]/sampling_l), 1, 1])
 
     # docstring in parent
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
             sampling_l=1, sampling_e=1):
         return numpy.tile(
             numpy.eye(math.ceil(ds.dims["scanline_earth"]/sampling_l), dtype="f4"),
@@ -259,7 +259,7 @@ class RModelRandom(Rmodel):
             math.ceil(ds.dims["scanpos"]/sampling_e), 1, 1])
 
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1, sampling_e=1):
         return numpy.tile(
             numpy.eye(ds.dims["calibrated_channel"], dtype="f4"),
@@ -279,14 +279,14 @@ class RModelCommon(Rmodel):
     """
 
     # docstring in parent
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
             sampling_l=1, sampling_e=1):
         raise ValueError(
             "We do not calculate error correlation matrices for common effects")
-    calc_R_lΛek = calc_R_eΛlk
+    calc_R_lUek = calc_R_eUlk
 
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1,
         sampling_e=1):
         raise NotImplementedError("Not implemented yet")
@@ -304,17 +304,17 @@ class RModelPeriodicError(Rmodel):
     """
 
     # docstring in parent
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
             sampling_l=1, sampling_e=1):
         raise NotImplementedError()
 
     # docstring in parent
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
             sampling_l=1, sampling_e=1):
         raise NotImplementedError()
 
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1,
         sampling_e=1):
         raise NotImplementedError("Not implemented yet")
@@ -383,12 +383,12 @@ class RModelRSelf(Rmodel):
     """
 
     # docstring in parent
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
             sampling_l=1, sampling_e=1):
-        return _calc_R_eΛlk_allones(ds, sampling_l=sampling_l,
+        return _calc_R_eUlk_allones(ds, sampling_l=sampling_l,
             sampling_e=sampling_e)
     # docstring in parent
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
             sampling_l=1, sampling_e=1):
         # same for all channels anyway
         # linearly decreasing from 1 (at t=0) to 0 (at t=25m).
@@ -417,7 +417,7 @@ class RModelRSelf(Rmodel):
         return R[::sampling_l, ::sampling_l]
 
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1, sampling_e=1):
 
         warnings.warn("Inter-channel correlation not implemented "
@@ -490,10 +490,10 @@ class Effect:
         ``between_orbits``, and ``across_time``.
     channel_correlations : (n_c, n_c), numpy.ndarray
         The correlation matrix between channels.  Sometimes this is
-        calculated on the fly.  See also the `Effect.calc_R_cΛpk` method.
+        calculated on the fly.  See also the `Effect.calc_R_cUpk` method.
         Currently (2018-12-20), channel correlations is used to set an
         attribute on the effect in the debug FCDR, but the result of
-        `Effect.calc_R_cΛpk` is used it the CURUC recipes.
+        `Effect.calc_R_cUpk` is used it the CURUC recipes.
     dimensions : Tuple[str] or None
         Normally, the data dimensions for an uncertainty quantity should
         be the same as the dimensions for the quantity in the measurement
@@ -525,7 +525,7 @@ class Effect:
     covariances : None
         Not currently (2018-12-20) used for anything.  Covariances and
         correlations are calculated through the CURUC recipes, which call
-        the `calc_R_eΛlk`, `calc_R_lΛek`, and `calc_R_cΛpk` methods on
+        the `calc_R_eUlk`, `calc_R_lUek`, and `calc_R_cUpk` methods on
         the `Effect` class which in turn delegates those calculations to
         the `Rmodel` of choice.  This property is a placeholder for
         covariances between different effects, but those are not currently
@@ -819,26 +819,26 @@ class Effect:
 
         return not self.is_independent() and not self.is_common()
 
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
             sampling_l=1, sampling_e=1):
-        return self.rmodel.calc_R_eΛlk(ds,
+        return self.rmodel.calc_R_eUlk(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
-    calc_R_eΛlk.__doc__ = Rmodel.calc_R_eΛlk.__doc__
+    calc_R_eUlk.__doc__ = Rmodel.calc_R_eUlk.__doc__
 
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
             sampling_l=1, sampling_e=1):
-        return self.rmodel.calc_R_lΛek(ds,
+        return self.rmodel.calc_R_lUek(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
-    calc_R_lΛek.__doc__ = Rmodel.calc_R_lΛek.__doc__
+    calc_R_lUek.__doc__ = Rmodel.calc_R_lUek.__doc__
 
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
             sampling_l=1, sampling_e=1):
-        return self.rmodel.calc_R_cΛpk(ds,
+        return self.rmodel.calc_R_cUpk(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
-    calc_R_cΛpk.__doc__ = Rmodel.calc_R_cΛpk.__doc__
+    calc_R_cUpk.__doc__ = Rmodel.calc_R_cUpk.__doc__
 
 def effects() -> Mapping[sympy.Symbol, Set[Effect]]:
     """Return a copy of the dictionary with all effects per symbol.

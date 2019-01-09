@@ -15,7 +15,7 @@ metrology
     calc_S_from_CUR
     calc_S_xt
     calc_corr_scale_channel
-    calc_Δ_x
+    calc_Delta_x
     evaluate_uncertainty
-    interpolate_Δ_x
+    interpolate_Delta_x
     prepare

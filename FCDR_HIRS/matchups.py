@@ -317,7 +317,7 @@ class KFilterFromFile(KFilter):
         return p
 
 @dataclass
-class KrFilterΔLKr(KFilterFromFile):
+class KrFilterDeltaLKr(KFilterFromFile):
     """Filter on ΔL/Kr ratio
 
     Use filter parameters derived by
@@ -327,7 +327,7 @@ class KrFilterΔLKr(KFilterFromFile):
     See Vijus email 2018-09-27.
     """
 
-    def get_ΔL(self, channel):
+    def get_DeltaL(self, channel):
         """Extract ΔL from model
 
         Extract ΔL from self.model (the `KRModel`).
@@ -359,7 +359,7 @@ class KrFilterΔLKr(KFilterFromFile):
         srf1 = self.model.prim_hirs.srfs[channel-1]
         y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(calibrated_channel=channel)
         # Kr is always in SI units
-        ΔL = self.get_ΔL(channel)
+        ΔL = self.get_DeltaL(channel)
         rat = ΔL/Kr
         fnc = scipy.interpolate.interp1d(ds["x"], ds["y"], kind="linear",
             fill_value=0, bounds_error=False)
@@ -368,7 +368,7 @@ class KrFilterΔLKr(KFilterFromFile):
         return ok
 
 @dataclass
-class KFilterKΔL(KFilterFromFile):
+class KFilterKDeltaL(KFilterFromFile):
     """Filter on K-ΔL from file
 
     Use filter parameters derived by
@@ -376,7 +376,7 @@ class KFilterKΔL(KFilterFromFile):
     to filter out values where ``K-ΔL`` is too large.
     """
     
-    def get_ΔL(self, channel):
+    def get_DeltaL(self, channel):
         y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(
             calibrated_channel=channel).to(
             self.model.units, "radiance", srf=self.model.prim_hirs.srfs[channel-1])
@@ -384,13 +384,13 @@ class KFilterKΔL(KFilterFromFile):
             calibrated_channel=channel).to(
             self.model.units, "radiance", srf=self.model.sec_hirs.srfs[channel-1])
         return y2 - y1
-    get_ΔL.__doc__ = KrFilterΔLKr.get_ΔL.__doc__
+    get_DeltaL.__doc__ = KrFilterDeltaLKr.get_DeltaL.__doc__
 
     def filter(self, mdim, channel):
         ok = super().filter(mdim, channel)
         ds = xarray.open_dataset(self.get_harm_filter_path(channel, "K_min_dL"))
         K = self.model.calc_K(channel, ds_to_use=self.model.ds, debug=False)
-        ΔL = self.get_ΔL(channel)
+        ΔL = self.get_DeltaL(channel)
         K = UADA(K, dims=(mdim,), attrs={"units": rad_u["si"]}, coords={mdim: ΔL[mdim]})
         srf1 = self.model.prim_hirs.srfs[channel-1]
         y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(calibrated_channel=channel)
