@@ -837,7 +837,7 @@ class KModel(metaclass=abc.ABCMeta):
             Boolean array, True for matchups to be keps, False for
             matchups to be filtered out.
         """
-        rv = previous if previous else numpy.ones(self.ds.dims[mdim], "?") 
+        rv = previous if previous is not None else numpy.ones(self.ds.dims[mdim], "?") 
         for ef in self.extra_filters:
             rv &= ef.filter(mdim, channel, previous=previous)
         return rv
