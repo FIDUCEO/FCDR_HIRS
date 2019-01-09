@@ -1,7 +1,11 @@
-FCDR\_HIRS.analysis.determine\_optimal\_uncertainty\_format module
-==================================================================
+determine_optimal_uncertainty_format
+====================================
 
 .. automodule:: FCDR_HIRS.analysis.determine_optimal_uncertainty_format
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.determine_optimal_uncertainty_format
+
+.. autosummary::
+    :toctree: generated
+    
+    main

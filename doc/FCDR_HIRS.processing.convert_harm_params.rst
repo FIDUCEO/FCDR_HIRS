@@ -1,7 +1,14 @@
-FCDR\_HIRS.processing.convert\_harm\_params module
-==================================================
+convert_harm_params
+===================
 
 .. automodule:: FCDR_HIRS.processing.convert_harm_params
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.processing.convert_harm_params
+
+.. autosummary::
+    :toctree: generated
+    
+    get_harm_dict
+    main
+    parse_cmdline
+    write_harm_dict

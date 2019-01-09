@@ -1,7 +1,11 @@
-FCDR\_HIRS.cached module
-========================
+cached
+======
 
 .. automodule:: FCDR_HIRS.cached
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.cached
+
+.. autosummary::
+    :toctree: generated
+    
+    read_tovs_hirs_period

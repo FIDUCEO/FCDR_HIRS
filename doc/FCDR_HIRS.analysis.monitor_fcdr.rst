@@ -1,7 +1,14 @@
-FCDR\_HIRS.analysis.monitor\_fcdr module
-========================================
+monitor_fcdr
+============
 
 .. automodule:: FCDR_HIRS.analysis.monitor_fcdr
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.monitor_fcdr
+
+.. autosummary::
+    :toctree: generated
+    
+    FCDRMonitor
+    main
+    parse_cmdline
+    plot

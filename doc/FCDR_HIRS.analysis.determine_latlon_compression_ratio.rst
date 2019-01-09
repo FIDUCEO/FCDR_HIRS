@@ -1,7 +1,11 @@
-FCDR\_HIRS.analysis.determine\_latlon\_compression\_ratio module
-================================================================
+determine_latlon_compression_ratio
+==================================
 
 .. automodule:: FCDR_HIRS.analysis.determine_latlon_compression_ratio
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.determine_latlon_compression_ratio
+
+.. autosummary::
+    :toctree: generated
+    
+    main

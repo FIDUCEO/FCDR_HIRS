@@ -1,7 +1,14 @@
-FCDR\_HIRS.analysis.convert\_hirs\_l1b\_to\_nc module
-=====================================================
+convert_hirs_l1b_to_nc
+======================
 
 .. automodule:: FCDR_HIRS.analysis.convert_hirs_l1b_to_nc
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.convert_hirs_l1b_to_nc
+
+.. autosummary::
+    :toctree: generated
+    
+    convert_granule
+    convert_period
+    main
+    parse_cmdline

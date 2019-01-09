@@ -1,7 +1,14 @@
-FCDR\_HIRS.analysis.map module
-==============================
+map
+===
 
 .. automodule:: FCDR_HIRS.analysis.map
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.map
+
+.. autosummary::
+    :toctree: generated
+    
+    main
+    parse_cmdline
+    plot_field
+    read_and_plot_field

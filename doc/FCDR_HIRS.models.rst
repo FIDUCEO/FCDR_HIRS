@@ -7,6 +7,6 @@ models
 
 .. autosummary::
     :toctree: generated
-
-    RSelf
+    
     RRefl
+    RSelf

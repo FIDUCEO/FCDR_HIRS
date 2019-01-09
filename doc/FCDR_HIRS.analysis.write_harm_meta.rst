@@ -1,7 +1,12 @@
-FCDR\_HIRS.analysis.write\_harm\_meta module
-============================================
+write_harm_meta
+===============
 
 .. automodule:: FCDR_HIRS.analysis.write_harm_meta
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.write_harm_meta
+
+.. autosummary::
+    :toctree: generated
+    
+    main
+    write_table_for_channel

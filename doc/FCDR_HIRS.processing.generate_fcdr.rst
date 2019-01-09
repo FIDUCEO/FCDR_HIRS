@@ -1,7 +1,13 @@
-FCDR\_HIRS.processing.generate\_fcdr module
-===========================================
+generate_fcdr
+=============
 
 .. automodule:: FCDR_HIRS.processing.generate_fcdr
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.processing.generate_fcdr
+
+.. autosummary::
+    :toctree: generated
+    
+    FCDRGenerator
+    main
+    parse_cmdline

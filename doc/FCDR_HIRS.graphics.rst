@@ -1,7 +1,13 @@
-FCDR\_HIRS.graphics module
-==========================
+graphics
+========
 
 .. automodule:: FCDR_HIRS.graphics
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.graphics
+
+.. autosummary::
+    :toctree: generated
+    
+    pcolor_on_map
+    plotdir
+    print_or_show

@@ -1,7 +1,12 @@
-FCDR\_HIRS.exceptions module
-============================
+exceptions
+==========
 
 .. automodule:: FCDR_HIRS.exceptions
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.exceptions
+
+.. autosummary::
+    :toctree: generated
+    
+    FCDRError
+    FCDRWarning

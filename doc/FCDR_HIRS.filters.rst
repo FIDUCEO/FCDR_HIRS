@@ -1,7 +1,13 @@
-FCDR\_HIRS.filters module
-=========================
+filters
+=======
 
 .. automodule:: FCDR_HIRS.filters
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.filters
+
+.. autosummary::
+    :toctree: generated
+    
+    CalibrationMirrorFilter
+    IQRCalibFilter
+    ImSoColdFilter

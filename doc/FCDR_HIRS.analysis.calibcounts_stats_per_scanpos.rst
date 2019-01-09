@@ -1,5 +1,5 @@
-analysis.calibcounts\_stats\_per\_scanpos module
-===========================================================
+calibcounts_stats_per_scanpos
+=============================
 
 .. automodule:: FCDR_HIRS.analysis.calibcounts_stats_per_scanpos
 
@@ -7,8 +7,9 @@ analysis.calibcounts\_stats\_per\_scanpos module
 
 .. autosummary::
     :toctree: generated
-
-    parse_cmdline
-    plot_calibcount_stats
-    plot_calibcount_anomaly_examples
+    
     main
+    parse_cmdline
+    plot_calibcount_anomaly_examples
+    plot_calibcount_stats
+    read_and_plot_calibcount_stats

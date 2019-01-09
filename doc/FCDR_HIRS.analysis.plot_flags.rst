@@ -1,7 +1,13 @@
-FCDR\_HIRS.analysis.plot\_flags module
-======================================
+plot_flags
+==========
 
 .. automodule:: FCDR_HIRS.analysis.plot_flags
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.plot_flags
+
+.. autosummary::
+    :toctree: generated
+    
+    main
+    parse_cmdline
+    plot

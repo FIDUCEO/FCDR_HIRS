@@ -1,7 +1,13 @@
-FCDR\_HIRS.analysis.map\_single\_orbit module
-=============================================
+map_single_orbit
+================
 
 .. automodule:: FCDR_HIRS.analysis.map_single_orbit
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.map_single_orbit
+
+.. autosummary::
+    :toctree: generated
+    
+    OrbitPlotter
+    main
+    parse_cmdline

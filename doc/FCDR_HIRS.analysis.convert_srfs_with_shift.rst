@@ -1,7 +1,11 @@
-FCDR\_HIRS.analysis.convert\_srfs\_with\_shift module
-=====================================================
+convert_srfs_with_shift
+=======================
 
 .. automodule:: FCDR_HIRS.analysis.convert_srfs_with_shift
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.convert_srfs_with_shift
+
+.. autosummary::
+    :toctree: generated
+    
+    main
