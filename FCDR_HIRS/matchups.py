@@ -231,7 +231,7 @@ class KFilter:
     #: label/parameter associated with `KModel` or `KRModel` instance
     lab: str
 
-    def filter(self, mdim, channel):
+    def filter(self, mdim, channel, previous=None):
         """Apply filter
 
         Parameters
@@ -241,6 +241,10 @@ class KFilter:
             Name of the matchup dimension, such as "matchup_count"
         channel : int
             Channel number to consider
+        previous : ndarray or None
+            Any previous filtering already applied, if applicable.  This
+            may be relevant if the filter itself cannot be evaluated for
+            invalid data.
 
         Returns
         -------
@@ -249,7 +253,10 @@ class KFilter:
             Boolean array, true for matchups that are kept, false for
             matchups that need to be thrown out.
         """
-        return numpy.ones(self.model.ds.dims[mdim], "?")
+        if previous is None:
+            return numpy.ones(self.model.ds.dims[mdim], "?")
+        else:
+            return previous
 
 @dataclass
 class KrFilterHomogeneousScenes(KFilter):
@@ -261,8 +268,8 @@ class KrFilterHomogeneousScenes(KFilter):
 
     max_ratio = 5
 
-    def filter(self, mdim, channel):
-        ok = super().filter(mdim, channel)
+    def filter(self, mdim, channel, previous=None):
+        ok = super().filter(mdim, channel, previous=previous)
         srf1 = self.model.prim_hirs.srfs[channel-1]
         srf2 = self.model.sec_hirs.srfs[channel-1]
         ds = self.model.ds.sel(calibrated_channel=channel)
@@ -352,8 +359,8 @@ class KrFilterDeltaLKr(KFilterFromFile):
             calibrated_channel=channel)
         return y2 - y1
 
-    def filter(self, mdim, channel):
-        ok = super().filter(mdim, channel)
+    def filter(self, mdim, channel, previous=None):
+        ok = super().filter(mdim, channel, previous=previous)
         ds = xarray.open_dataset(self.get_harm_filter_path(channel, "dL_over_Kr"))
         Kr = self.model.calc_Kr(channel, ds_to_use=self.model.ds_orig)
         srf1 = self.model.prim_hirs.srfs[channel-1]
@@ -386,10 +393,16 @@ class KFilterKDeltaL(KFilterFromFile):
         return y2 - y1
     get_DeltaL.__doc__ = KrFilterDeltaLKr.get_DeltaL.__doc__
 
-    def filter(self, mdim, channel):
-        ok = super().filter(mdim, channel)
+    def filter(self, mdim, channel, previous=None):
+        ok = super().filter(mdim, channel, previous=previous)
+        if not ok.any():
+            return ok
         ds = xarray.open_dataset(self.get_harm_filter_path(channel, "K_min_dL"))
-        K = self.model.calc_K(channel, ds_to_use=self.model.ds, debug=False)
+        K = numpy.full(self.model.ds.dims[mdim], numpy.nan)
+        K[ok] = self.model.calc_K(
+            channel,
+            ds_to_use=self.model.ds[{mdim:ok}],
+            debug=False)
         ΔL = self.get_DeltaL(channel)
         K = UADA(K, dims=(mdim,), attrs={"units": rad_u["si"]}, coords={mdim: ΔL[mdim]})
         srf1 = self.model.prim_hirs.srfs[channel-1]
@@ -799,7 +812,7 @@ class KModel(metaclass=abc.ABCMeta):
         self.ds_filt_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
 
-    def filter(self, mdim, channel):
+    def filter(self, mdim, channel, previous=None):
         """Extra filtering imposed by this model
 
         Apart from the usual filtering going on, what filtering does this
@@ -813,6 +826,9 @@ class KModel(metaclass=abc.ABCMeta):
             example, "matchup_spherical_distance".
         channel : int
             Channel along which the filtering is applied.
+        previous : ndarray or None
+            Any previous filtering already applied, or None if there isn't
+            any.
 
         Returns
         -------
@@ -821,9 +837,9 @@ class KModel(metaclass=abc.ABCMeta):
             Boolean array, True for matchups to be keps, False for
             matchups to be filtered out.
         """
-        rv = numpy.ones(self.ds.dims[mdim], "?")
+        rv = previous if previous else numpy.ones(self.ds.dims[mdim], "?") 
         for ef in self.extra_filters:
-            rv &= ef.filter(mdim, channel)
+            rv &= ef.filter(mdim, channel, previous=previous)
         return rv
 
     def extra(self, channel, ok):
