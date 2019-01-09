@@ -69,9 +69,9 @@ class Rmodel(metaclass=abc.ABCMeta):
     several `Rmodel`s.
     """
 
-    @dst.get_full_descriptionf("R_eΛk")
-    @dst.get_sectionsf("R_eΛlk")
-    @dst.with_indent(8)
+    #@dst.get_full_descriptionf("R_eΛk")
+    #@dst.get_sectionsf("R_eΛlk")
+    #@dst.with_indent(8)
     @abc.abstractmethod
     def calc_R_eΛlk(self, ds,
             sampling_l=1, sampling_e=1):
@@ -99,7 +99,7 @@ class Rmodel(metaclass=abc.ABCMeta):
             effect to which this `Rmodel` belongs.
         """
 
-    @dst.with_indent(8)
+    #@dst.with_indent(8)
     @abc.abstractmethod
     def calc_R_lΛek(self, ds,
         sampling_l=1, sampling_e=1):
@@ -120,7 +120,7 @@ class Rmodel(metaclass=abc.ABCMeta):
             effect to which this `Rmodel` belongs.
         """
 
-    @dst.with_indent(8)
+    #@dst.with_indent(8)
     @abc.abstractmethod
     def calc_R_cΛpk(self, ds,
         sampling_l=1, sampling_e=1):
@@ -141,7 +141,7 @@ class Rmodel(metaclass=abc.ABCMeta):
             effect to which this `Rmodel` belongs.
         """
 
-@dst.with_indent(4)
+#@dst.with_indent(4)
 def _calc_R_eΛlk_allones(ds, sampling_l=1, sampling_e=1):
     """Return R_eΛlk for single k with all ones
 
@@ -826,7 +826,7 @@ class Effect:
         return self.rmodel.calc_R_eΛlk(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
-    calc_R_eΛlk.__doc__ = Rmodel.calc_R_eΛk.__doc__
+    calc_R_eΛlk.__doc__ = Rmodel.calc_R_eΛlk.__doc__
 
     def calc_R_lΛek(self, ds,
             sampling_l=1, sampling_e=1):
