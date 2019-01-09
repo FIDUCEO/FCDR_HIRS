@@ -397,7 +397,7 @@ class KFilterKDeltaL(KFilterFromFile):
         ok = super().filter(mdim, channel, previous=previous)
         for p in (self.model.prim_name, self.model.sec_name):
             ok &= self.model.ds[f"{p:s}_R_e"].sel(
-                    calibrated_channel=self.model.chan_pairs[channel]).all(
+                    calibrated_channel=self.model.chan_pairs[channel]).notnull().all(
                     "calibrated_channel").values
         if not ok.any():
             return ok
