@@ -12,6 +12,13 @@ where:
 - S_a is the a priori covariance matrix, such as for water vapour.
   This can be obtained from reanalysis, or the Chevallier data, or
   NWP, or otherwise.
+
+This module is incomplete.  The results are incorrect.  The development is
+inconclusive.  **DO NOT USE**
+
+I said **DO NOT USE**.  What are you still doing here?
+
+Go away!
 """
 
 import itertools
@@ -140,11 +147,6 @@ def gain(S_a, K, S_ε):
 def S_degradation(S_a, K, S_ε):
     """What is the error covariance from use of the wrong observation error covarionce?
 
-    Arguments:
-        S_a
-        K
-        S_ε
-
     Chris Merchant, personal communication, 2017:
 
     S_{\hat{x}'-\hat{x}} = (G'-G)(y-F)(y-F)^T(G'-G)^T
@@ -156,6 +158,14 @@ def S_degradation(S_a, K, S_ε):
     G = (K^T S_ε^-1 K + S_a^-1)^-1 K^T S_ε^-1
 
     (y-F)(y-F)^T = S_y = K S_a K^T + S_ε
+
+    Parameters
+    ----------
+
+    - S_a
+    - K
+    - S_ε
+
     """
 
     S_ε_reg = S_ε

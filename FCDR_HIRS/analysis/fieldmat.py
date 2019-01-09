@@ -126,6 +126,25 @@ def parse_cmdline():
     return p
 
 def plot_field_matrix(MM, ranges, title, filename, units):
+    """Plot field matrix
+
+    Thin layer around `typhon.plots.plots.scatter_density_plot_matrix`.
+    See documentation there for details.
+
+    Parameters
+    ----------
+
+    MM : structured ndarray
+        Structured array, fields will be plotted against each other
+    ranges : Dict
+        For all fields, this is the range to limit the density plot to
+    title : str
+        Title for figure
+    filename : str
+        Filename for figure
+    units : Dict
+        Units for each field
+    """
     f = typhon.plots.plots.scatter_density_plot_matrix(
         MM,
         hist_kw={"bins": 20},

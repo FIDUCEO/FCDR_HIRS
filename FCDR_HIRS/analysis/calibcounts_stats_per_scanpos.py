@@ -91,6 +91,27 @@ def parse_cmdline():
 
 def plot_calibcount_stats(h, Mall, channels,
         title="", filename=""):
+    """Plot statistics on calibration counts
+
+    For all requested channels in the data passed, plot the distribution
+    of space counts per "scan position" as a set of percentiles, into a
+    figure with one subplot per channel.
+
+    Parameters
+    ----------
+
+    h : HIRS
+        HIRS object
+    Mall : ndarray
+        Array from which to extract data to plot
+    channels : List[int]
+        Channels to plot
+    title : str, optional
+        Set figure suptitle to this.
+    filename : str, optional
+        Write output to this filename (inside the plot directory) using
+        `graphics.print_or_show`
+    """
     N = len(channels)
 
     (nrow, ncol) = typhon.plots.common.get_subplot_arrangement(N)
@@ -152,33 +173,33 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
         mode="random", typ="space", anomaly=True):
     """Plot examples of calibcount anomalies
 
-    Arguments:
+    Plot calibration count anomalies, i.e. the calibration counts minus
+    the mean calibration count for that cycle.
 
-        h [HIRS]
-        
-            HIRS object
+    Parameters
+    ----------
 
-        M [ndarray]
-
-            structured array such as returned by h.read, must contain at
-            least coints and info on scantypes
-
-        channels [Array[int]]
-
-            channels to plot
-
-        N [int]
-
-            How many examples to choose
-
-        mode [str]
-
-            Can be "random", "lowcorr", or "highcorr"
-
-        typ [str]
-
-            Can be "space", "iwt", or (HIRS/2 only) "ict".
-
+    h : HIRS
+        HIRS object
+    M : ndarray
+        structured array such as returned by h.read, must contain at
+        least counts and info on scantypes
+    channels : List[int]
+        channels to plot
+    N : int
+        How many examples to choose, in as many subplots
+    mode : str, optional
+        How to select what calibrations counts to choose?  The default is
+        ``"random"``, which randomly selects calibration count lines.
+        Other alternatives are ``"lowcorr"``, which chooses cases where
+        the correlation is lowest (meaning possibly strongly negative),
+        and ``"highcorr"``, which selects the cases with the highest
+        correlation, 
+    typ : str, optional
+        Can be ``"space"``, ``"iwt"``, or (HIRS/2 and HIRS/2I only) "ict".
+    anomaly : bool, optional
+        If True, plot anomalies, the default.  Otherwise plot the real
+        count values.
     """
     Mv = M[M[h.scantype_fieldname] == getattr(h, "typ_{:s}".format(typ))]
     ccnt = Mv["counts"][:, h.start_space_calib:, :]
@@ -249,6 +270,43 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
         sample_mode="random",
         typ="iwt",
         anomaly=True):
+    """Read and plot calibration count statistics.
+
+    Read data for period, then pass it on to `plot_calibcount_stats` and
+    `plot_calibcount_anomaly_examples` for plotting statistics and
+    examples.
+
+    Note that if you don't pass either ``plot_stats`` or
+    ``plot_examples``, nothing will happen.
+
+    Parameters
+    ----------
+
+    sat : str
+        Name of satellite.
+    from_date : datetime.datetime
+        Starting datetime.
+    to_date : datetime.datetime
+        Ending datetime.
+    channels : List[int]
+        What channel or channels to plot.
+    plot_stats : bool, optional
+        Whether or not to plot statistics.  Defaults to false.
+    plot_examples : int, optional
+        How many examples to show.  Defaults to 0.
+    random_seed : Number, optional
+        Number to seed the random number generator with.  Can be useful if
+        you want to recover the same plot again.
+    sample_mode : str, optional
+        For plotting examples, whether to take ``"random"``, ``"highorr"``,
+        or ``"lowcorr"``.  See `plot_calibcount_anomaly_examples`.
+    type : str, optional
+        For plotting examples, this can be ``"iwt"``, ``"space"``, or
+        ``"ict"``.  See `plot_calibcount_anomaly_examples`.
+    anomaly : bool, optional
+        If true, plot anomalies.  If false, plot actual count values.
+        Defaults to True.
+    """
     h = fcdr.which_hirs_fcdr(sat)
     M = h.read_period(from_date, to_date,
             fields=["time", "counts", h.scantype_fieldname])
@@ -269,6 +327,10 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
             anomaly=anomaly)
 
 def main():
+    """Main function for module
+
+    Expect commandline input.
+    """
     p = parse_cmdline()
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)
     to_date = datetime.datetime.strptime(p.to_date, p.datefmt)

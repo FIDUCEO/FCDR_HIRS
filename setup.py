@@ -106,7 +106,9 @@ setup(
                       "fcdr-tools>=1.1.4",
                       "joblib>=0.11",
                       "pyorbital",
-                      "cartopy"],
+                      "cartopy",
+                      "docrep",
+                      "sphinx-issues"],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,

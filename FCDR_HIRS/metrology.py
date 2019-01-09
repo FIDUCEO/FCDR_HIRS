@@ -1,4 +1,11 @@
-"""For any metrology-related functions
+"""Module with metrology-related functions
+
+This module contains metrology-related functions.  Some of those are
+helpers often used in conjunction with the functions in the
+`measurement_equation` module or with `typhon.physics.metrology`, but this
+module also contains functions related to the ``CURUC`` recipes.  The
+highest-level functions a user will want to use are `allocate_curuc` and
+`apply_curuc`.
 """
 
 import math
@@ -31,9 +38,29 @@ logger = logging.getLogger(__name__)
 def evaluate_uncertainty(e, unset="raise"):
     """Evaluate uncertainty for expression.
 
+    This function does not work and should not be used.  Use
+    `fcdr.HIRSFCDR.calc_u_for_variable` instead.
+
     Requires effects tables to be populated including quantified
     uncertainties.  Any variable which does not have any effects
     associated with it is assumed to have uncertainty 0.
+
+    Parameters
+    ----------
+
+    e : sympy.Symbol
+        Symbol for which to calculate the uncertainty.
+    unset : str, optional
+        If set to "raise", which is the default, any effects with
+        undefined uncertainty will result in raising `ValueError`.
+
+    Returns
+    -------
+
+    dict
+        Dictionary with uncertainties
+    set
+        Effects without uncertainty quantified
     """
 
     e = me.recursive_substitution(e)
@@ -57,6 +84,10 @@ def evaluate_uncertainty(e, unset="raise"):
     return magnitudes, no_uncertainty
 
 def prepare():
+    """**DO NOT USE**
+
+    I don't know what this does and I don't think it works.
+    """
     
     # before proceeding, need to substitute N (no. PRTs) and K (no.
     # components in IWCT PRT polynomial) and expand sum, such that I can
@@ -96,9 +127,9 @@ def prepare():
 # for debugging purposes?
 #
 
-def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
-                    U_xΛyt_diag: numpy.ndarray,
-                    C_xΛyt_diag: numpy.ndarray,
+def calc_S_from_CUR(R_xΛyt: xarray.DataArray,
+                    U_xΛyt_diag: xarray.DataArray,
+                    C_xΛyt_diag: xarray.DataArray,
                     per_channel: bool=None):
     """Calculate S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp
 
@@ -129,77 +160,77 @@ def calc_S_from_CUR(R_xΛyt: numpy.ndarray,
     Parameters
     ----------
 
-        R_eΛls, R_lΛes, R_cΛpi, or R_cΛps : xarray.DataArray
-            with dimensions [n_c, n_s, n_e, n_l, n_l] or [n_c, n_s, n_l,
-            n_e, n_e] or .
-            For each channel (c) and each effect (k), either a collection
-            of cross-element error correlation matrices for each line, or
-            of cross-line error correlation matrices for each element.
-            Defined by §3.2.3.
+    R_eΛls, R_lΛes, R_cΛpi, or R_cΛps : xarray.DataArray
+        with dimensions [n_c, n_s, n_e, n_l, n_l] or [n_c, n_s, n_l,
+        n_e, n_e] or .
+        For each channel (c) and each effect (k), either a collection
+        of cross-element error correlation matrices for each line, or
+        of cross-line error correlation matrices for each element.
+        Defined by §3.2.3.
 
-        Diagonals of one of U_eΛls, U_lΛes, U_cΛpi, or U_cΛps : xarray.DataArray
-            Same dimensions as previous but minus the final dimension,
-            because it only stores the diagonals.
-            Considering §3.2.6, consider that the final dimension shows
-            the diagonals of any U_eΛls, U_lΛes, U_cΛpi, or U_cΛps.
-            Defined by §3.2.6.
+    Diagonals of one of U_eΛls, U_lΛes, U_cΛpi, or U_cΛps : xarray.DataArray
+        Same dimensions as previous but minus the final dimension,
+        because it only stores the diagonals.
+        Considering §3.2.6, consider that the final dimension shows
+        the diagonals of any U_eΛls, U_lΛes, U_cΛpi, or U_cΛps.
+        Defined by §3.2.6.
 
-        One of C_eΛls, C_lΛes, C_cΛps, C_cΛpi : xarray.DataArray
-            Contains the sensitivity diagonals *per effect*.  Although
-            sensitivity is defined per term and not per effect, I need
-            them per effect.  Most terms have exactly one effect defined
-            anyway.  Dimensions therefore the same as U_eΛls and friends.
-            Defined by §3.2.9.
+    One of C_eΛls, C_lΛes, C_cΛps, C_cΛpi : xarray.DataArray
+        Contains the sensitivity diagonals *per effect*.  Although
+        sensitivity is defined per term and not per effect, I need
+        them per effect.  Most terms have exactly one effect defined
+        anyway.  Dimensions therefore the same as U_eΛls and friends.
+        Defined by §3.2.9.
 
-        per_channel : bool
-            Boolean "per_channel".  If not given, this will be inferred from
-            the presence of a dimension "n_c" within the leading ndim-1
-            dimensions of U.
+    per_channel : bool, optional
+        Boolean "per_channel".  If not given, this will be inferred from
+        the presence of a dimension "n_c" within the leading ndim-1
+        dimensions of U.
 
     You probably want to vectorise this over an entire image.  Probable
     dimensions:
 
-        One per term:
+    One per term:
+    
+        * C_eΛls [n_c, n_s, n_l, n_e, n_e] (last 2 diagonal, not explicitly calculated)
+        * C_lΛes [n_c, n_s, n_e, n_l, n_l] (last 2 diagonal)
+        * C_cΛps [n_s, n_l, n_e, n_c, n_c] (last 2 diagonal)
+        * C_cΛpi [n_i, n_l, n_e, n_c, n_c] (last 2 diagonal)
         
-        C_eΛls [n_c, n_s, n_l, n_e, n_e] (last 2 diagonal, not explicitly calculated)
-        C_lΛes [n_c, n_s, n_e, n_l, n_l] (last 2 diagonal)
-        C_cΛps [n_s, n_l, n_e, n_c, n_c] (last 2 diagonal)
-        C_cΛpi [n_i, n_l, n_e, n_c, n_c] (last 2 diagonal)
+    One per effect:
         
-        One per effect:
+        * S_esΛl [n_c, n_l, n_e, n_e]
+        * S_lsΛe [n_c, n_e, n_l, n_l]
+        * S_ciΛp [n_l, n_e, n_c, n_c]
+        * S_csΛp [n_l, n_e, n_c, n_c]
         
-        S_esΛl [n_c, n_l, n_e, n_e]
-        S_lsΛe [n_c, n_e, n_l, n_l]
-        S_ciΛp [n_l, n_e, n_c, n_c]
-        S_csΛp [n_l, n_e, n_c, n_c]
+        * R_eΛls [n_c, n_l, n_s, n_e, n_e]
+        * R_lΛes [n_c, n_e, n_s, n_l, n_l]
+        * R_cΛpi [n_l, n_e, n_i, n_c, n_c]
+        * R_cΛps [n_l, n_e, n_s, n_c, n_c]
         
-        R_eΛls [n_c, n_l, n_s, n_e, n_e]
-        R_lΛes [n_c, n_e, n_s, n_l, n_l]
-        R_cΛpi [n_l, n_e, n_i, n_c, n_c]
-        R_cΛps [n_l, n_e, n_s, n_c, n_c]
-        
-        U_eΛls [n_c, n_l, n_s, n_e, n_e] (last 2 diagonal)
-        U_lΛes [n_c, n_e, n_s, n_l, n_l] (last 2 diagonal)
-        U_cΛpi [n_l, n_e, n_i|j, n_c, n_c] (last 2 diagonal)
-        U_cΛps [n_l, n_e, n_s|j, n_c, n_c] (last 2 diagonal)
+        * U_eΛls [n_c, n_l, n_s, n_e, n_e] (last 2 diagonal)
+        * U_lΛes [n_c, n_e, n_s, n_l, n_l] (last 2 diagonal)
+        * U_cΛpi [n_l, n_e, n_i|j, n_c, n_c] (last 2 diagonal)
+        * U_cΛps [n_l, n_e, n_s|j, n_c, n_c] (last 2 diagonal)
 
-        One total:
+    One total:
         
-        S_es [n_c, n_e, n_e]
-        S_ls [n_c, n_l, n_l]
-        S_ci [n_c, n_c]
-        S_cs [n_c, n_c]
+        * S_es [n_c, n_e, n_e]
+        * S_ls [n_c, n_l, n_l]
+        * S_ci [n_c, n_c]
+        * S_cs [n_c, n_c]
         
-        R_es [n_c, n_e, n_e]
-        R_ls [n_c, n_l, n_l]
-        R_ci [n_c, n_c]
-        R_cs [n_c, n_c]
+        * R_es [n_c, n_e, n_e]
+        * R_ls [n_c, n_l, n_l]
+        * R_ci [n_c, n_c]
+        * R_cs [n_c, n_c]
 
-    Returns:
+    Returns
+    -------
 
-        S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp: numpy.ndarray
-            as described above
-
+    S_esΛl, S_lsΛe, S_ciΛp, or S_csΛp: numpy.ndarray
+        as described above
     """
 
     if not C_xΛyt_diag.dims == U_xΛyt_diag.dims == R_xΛyt.dims[:-1]:
@@ -258,8 +289,8 @@ def calc_S_xt(S_xtΛy: List[numpy.ndarray],
     Returns
     -------
 
-        S_es, S_el, S_ci, or S_cs : numpy.ndarray
-            as described above
+    S_es, S_el, S_ci, or S_cs : numpy.ndarray
+        as described above
 
     """
 
@@ -281,16 +312,18 @@ def calc_R_xt(S_xt: numpy.ndarray):
 
     Follows recipe with same document source as calc_S_from_CUR.
 
-    Arguments:
+    Parameters
+    ----------
 
-        S_es or S_el: numpy.ndarray
+    S_es or S_el : numpy.ndarray
 
-            Average cross-element error covariance from the structured
-            effects per channel.  Can be obtained from calc_S_xt.
+        Average cross-element error covariance from the structured
+        effects per channel.  Can be obtained from calc_S_xt.
 
-    Returns:
+    Returns
+    -------
 
-        R_es or R_el: numpy.ndarray, as described. 
+    R_es or R_el : numpy.ndarray, as described. 
     """
 
     U_xt_diag = numpy.sqrt(numpy.diagonal(S_xt, axis1=-2, axis2=-1))
@@ -309,35 +342,37 @@ def calc_Δ_x(R_xt: xarray.DataArray,
 
     Recipe source as for calc_S_from_CUR, now §3.3.4.
 
-    Arguments:
+    Parameters
+    ----------
 
-        R_es or R_ls: xarray.DataArray
+    R_es or R_ls : xarray.DataArray
 
-            Either cross-element or cross-line radiance error correlation matrix, structured
-            effects, per channel.  Can be obtained from calc_R_xt.
+        Either cross-element or cross-line radiance error correlation matrix, structured
+        effects, per channel.  Can be obtained from calc_R_xt.
 
-        return_vector: bool
+    return_vector : bool
 
-            If true, return the full vector of average correlation length
-            scales per distance.
+        If true, return the full vector of average correlation length
+        scales per distance.
 
-    Returns:
+    Returns
+    -------
 
-        popt: xarray.DataArray
+    popt : xarray.DataArray
 
-            xarray.DataArray object containing in one column the optimal
-            correlation length scales, and in the other column the
-            corresponding covariances, `pcov`, such as returned by
-            `scipy.optimize.curve_fit`.  For each channel.
+        xarray.DataArray object containing in one column the optimal
+        correlation length scales, and in the other column the
+        corresponding covariances, `pcov`, such as returned by
+        `scipy.optimize.curve_fit`.  For each channel.
 
-        r_xΔ: xarray.DataArray
+    r_xΔ : xarray.DataArray
 
-            Only returned if return_vector is True.  xarray.DataArray
-            object that describes, for each element or line separation,
-            the average correlation length.  Note that this is still
-            subsampled by sampling_l and/or sampling_e.  For each channel.
-            Note that the dimension along pixel is always Δ_p, changed
-            from Δ_e or Δ_l.  That may change in the future.
+        Only returned if return_vector is True.  xarray.DataArray
+        object that describes, for each element or line separation,
+        the average correlation length.  Note that this is still
+        subsampled by sampling_l and/or sampling_e.  For each channel.
+        Note that the dimension along pixel is always Δ_p, changed
+        from Δ_e or Δ_l.  That may change in the future.
     """
 
     dim = R_xt.dims[-1]
@@ -377,64 +412,67 @@ def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
     necessary CURUC recipe inputs.  You will need to fill all resulting
     DataArrays.  The DataArrays are subsampled according to the desired
     sampling.
-    Arguments:
 
-        n_c [int]
+    Parameters
+    ----------
 
-            Number of channels.
+    n_c : int
 
-        n_l [int]
+        Number of channels.
 
-            Number of scanlines.
+    n_l : int
 
-        n_e [int]
+        Number of scanlines.
 
-            Number of elements in a scanline.
+    n_e : int
 
-        n_s [int]
+        Number of elements in a scanline.
 
-            Number of systematic effects.
+    n_s : int
 
-        n_i [int]
+        Number of systematic effects.
 
-            Number if independent effects.
+    n_i : int
 
-        sampling_l [int]
+        Number if independent effects.
 
-            Sampling rate per line.  Defaults to 1.
+    sampling_l : int
 
-        sampling_e [int]
+        Sampling rate per line.  Defaults to 1.
 
-            Sampling rate per element.  Defaults to 1.
+    sampling_e : int
 
-    Returns:
+        Sampling rate per element.  Defaults to 1.
+
+    Returns
+    -------
 
     Tuple with 13 elements:
 
-    - R_eΛls [n_c, n_s, n_l, n_e, n_e]
+    R_eΛls : (n_c, n_s, n_l, n_e, n_e) xarray.DataArray
 
         Cross-element correlation matrix for each line, structured effect,
         and channel.
 
-    - R_lΛes [n_c, n_s, n_e, n_l, n_l]
+    R_lΛes : (n_c, n_s, n_e, n_l, n_l) xarray.DataArray
 
         Cross-line correlation matrix for each element, structured effect,
         and channel.
 
-    - R_cΛpi [n_i, n_l, n_e, n_c, n_c]
+    R_cΛpi : (n_i, n_l, n_e, n_c, n_c) xarray.DataArray
 
         Cross-channel correlation matrix for each element, line, and
         independent effect.  To get the same data in the form [n_i, n_p,
         n_c, n_c], call `typhon.utils.stack_xarray_repdim(R_cΛpi,
         n_p=("n_l", "n_e"))`.
 
-    - R_cΛps [n_s, n_l, n_e, n_c, n_c]
+    R_cΛps : (n_s, n_l, n_e, n_c, n_c) xarray.DataArray
 
         Cross-channel correlation matrix for each element, line, and
         structured effect.  Get a view per pixel analogously to R_cΛpi
         above.
 
-    - U_eΛls_diag [n_c, n_s, n_l, n_e]
+    U_eΛls_diag : (n_c, n_s, n_l, n_e) xarray.DataArray
 
         Diagonals for the uncertainties corresponding to the cross-element
         correlation matrix for each line, structured effect, and channel.
@@ -442,7 +480,7 @@ def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
         U_lΛes_diag or U_cΛps_diag, so if you fill one the other ones will
         appear filled as well.
 
-    - U_lΛes_diag [n_c, n_s, n_e, n_l]
+    U_lΛes_diag : (n_c, n_s, n_e, n_l) xarray.DataArray
 
         Diagonals for the uncertainties corresponding to the cross-line
         correlation matrix for each element, structured effect, and
@@ -450,7 +488,7 @@ def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
         U_eΛls_diag or U_cΛps_diag, so if you fill one the other ones will
         be filled as well.
 
-    - U_cΛps_diag [n_l, n_e, n_s, n_c]
+    U_cΛps_diag : (n_l, n_e, n_s, n_c) xarray.DataArray
 
         Diagonals for the uncertainties corresponding to the cross-channel
         correlation matrix for each element, line, and structured effect.
@@ -458,40 +496,43 @@ def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
         U_lΛes_diag or U_eΛls_diag, so if you fill one the other ones will
         appear filled as well.
 
-    - U_cΛpi_diag [n_i, n_l, n_e, n_c]
+    U_cΛpi_diag : (n_i, n_l, n_e, n_c) xarray.DataArray
 
         Diagonals for the uncertainties corresponding to the cross-channel
         correlation matrix for each element, line, and independent effect.
 
-    - C_eΛls_diag [n_c, n_s, n_l, n_e]
+    C_eΛls_diag : (n_c, n_s, n_l, n_e) xarray.DataArray
 
         Diagonals for the sensitivities corresponding to the cross-element
         correlation matrix for each line, structured effect, and channel.
         Note that this DataArray is a view of the same memory as
         C_lΛes_diag and C_cΛps_diag.
 
-    - C_lΛes_diag [n_c, n_s, n_e, n_l]
+    C_lΛes_diag : (n_c, n_s, n_e, n_l) xarray.DataArray
 
         Diagonals for the sensitivities corresponding to the cross-line
         correlation matrix for each element, structured effect, and
         channel.  Note that this DataArray is a view of the same memory as
         C_eΛls_diag and C_cΛps_diag.
 
-    - C_cΛps_diag [n_s, n_l, n_e, n_c]
+    C_cΛps_diag : (n_s, n_l, n_e, n_c) xarray.DataArray
 
         Diagonals for the sensitivities corresponding to the cross-channel
         correlation matrix for each element, line, and structured effect.
         Note that this DataArray is a view of the same memory as
         C_eΛls_diag and C_lΛes_diag.
 
-    - C_cΛpi_diag [n_i, n_l, n_e, n_c]
+    - C_cΛpi_diag : (n_i, n_l, n_e, n_c) xarray.DataArray
 
         Diagonals for the sensitivities corresponding to the cross-channel
         correlation matrix for each element, line, and independent effect.
 
-    - all_coords [dict]
+    - all_coords : dict
 
-        Dictionary with coordinates for n_c, n_s, n_l, n_e, n_i.
+        Dictionary with coordinates for n_c, n_s, n_l, n_e, n_i.  In
+        principle redundant as all of those coordinates are also contained
+        in the different `xarray.DataArray` objects, but only here are
+        they all in one place.
     """
 
     ## Allocation ##
@@ -608,91 +649,95 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         return_locals=False):
     """Apply CURUC recipes.
 
-    Arguments correspond to the ones returned by allocate_curuc:
+    Arguments correspond to the ones returned by allocate_curuc.
 
-    - R_eΛls [n_c, n_s, n_l, n_e, n_e]
+
+    Parameters
+    ----------
+
+    R_eΛls : (n_c, n_s, n_l, n_e, n_e) xarray.DataArray
 
         Cross-element correlation matrix for each line, structured effect,
         and channel.
 
-    - R_lΛes [n_c, n_s, n_e, n_l, n_l]
+    R_lΛes : (n_c, n_s, n_e, n_l, n_l) xarray.DataArray
 
         Cross-line correlation matrix for each element, structured effect,
         and channel.
 
-    - R_cΛpi [n_i, n_l, n_e, n_c, n_c]
+    R_cΛpi : (n_i, n_l, n_e, n_c, n_c) xarray.DataArray
 
         Cross-channel correlation matrix for each element, line, and
         independent effect.
 
-    - R_cΛps [n_s, n_l, n_e, n_c, n_c]
+    R_cΛps : (n_s, n_l, n_e, n_c, n_c) xarray.DataArray
 
         Cross-channel correlation matrix for each element, line, and
         structured effect.
 
-    - U_eΛls_diag [n_c, n_s, n_l, n_e]
+    U_eΛls_diag : (n_c, n_s, n_l, n_e) xarray.DataArray
 
         Diagonals for the uncertainties corresponding to the cross-element
         correlation matrix for each line, structured effect, and channel.
 
-    - U_lΛes_diag [n_c, n_s, n_e, n_l]
+    U_lΛes_diag : (n_c, n_s, n_e, n_l) xarray.DataArray
 
         Diagonals for the uncertainties corresponding to the cross-line
         correlation matrix for each element, structured effect, and
         channel.
 
-    - U_cΛps_diag [n_l, n_e, n_s, n_c]
+    U_cΛps_diag : (n_l, n_e, n_s, n_c) xarray.DataArray
 
         Diagonals for the uncertainties corresponding to the cross-channel
         correlation matrix for each element, line, and structured effect.
 
-    - U_cΛpi_diag [n_i, n_l, n_e, n_c]
+    U_cΛpi_diag : (n_i, n_l, n_e, n_c) xarray.DataArray
 
         Diagonals for the uncertainties corresponding to the cross-channel
         correlation matrix for each element, line, and independent effect.
 
-    - C_eΛls_diag [n_c, n_s, n_l, n_e]
+    C_eΛls_diag : (n_c, n_s, n_l, n_e) xarray.DataArray
 
         Diagonals for the sensitivities corresponding to the cross-element
         correlation matrix for each line, structured effect, and channel.
 
-    - C_lΛes_diag [n_c, n_s, n_e, n_l]
+    C_lΛes_diag : (n_c, n_s, n_e, n_l) xarray.DataArray
 
         Diagonals for the sensitivities corresponding to the cross-line
         correlation matrix for each element, structured effect, and
         channel.
 
-    - C_cΛps_diag [n_l, n_e, n_s, n_c]
+    C_cΛps_diag : (n_l, n_e, n_s, n_c) xarray.DataArray
 
         Diagonals for the sensitivities corresponding to the cross-channel
         correlation matrix for each element, line, and structured effect.
 
-    - C_cΛpi_diag [n_i, n_l, n_e, n_c]
+    C_cΛpi_diag : (n_i, n_l, n_e, n_c) xarray.DataArray
 
         Diagonals for the sensitivities corresponding to the cross-channel
         correlation matrix for each element, line, and independent effect.
 
-    - all_coords [dict]
+    all_coords : dict
 
         Dictionary with coordinates for n_c, n_s, n_l, n_e, n_i.
 
-    - brokenchan [n_c]
+    brokenchan : (n_c,) xarray.DataArray
         
         xarray.DataArray, dtype bool, 1-D, dimension "n_c", True for
         channels that should be skipped.
 
-    - brokenline [n_l]
+    brokenline : (n_l,) xarray.DataArray
 
         xarray.DataArray, dtype bool, 1-D, dimension "n_l", True for
         lines that should be skipped.
 
-    - return_vectors [bool]
+    return_vectors : bool, optional
 
         Optional, defaults to False.  If True, in addition of returning
         optimal length scales, also return the full vectors with average
         correlation per separation length.
 
-    - interpolate_lengths [bool]
+    interpolate_lengths : bool, optional
 
         Only needed if return_vectors is True.  Interpolate skipped lines.
         If False, average correlation is only given for lengths according
@@ -701,7 +746,7 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         applied and average correlation length is returned at every
         separation.
 
-    - cutoff_l [int]
+    cutoff_l : int, conditionally optional
 
         Only needed if return_vectors is True.  Cutoff lengths for
         lengths.  Note that `apply_curuc` may not know that the total
@@ -710,44 +755,53 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         you must pass a value here.  I suggest you pass the same value you
         put in to n_l when calling `allocate_curuc`.
 
-    - cutoff_e [int]
+    cutoff_e : int, conditionally optional
 
         As cutoff_l, but for number of elements.
 
-    Returns:
+    return_locals : bool, optional
 
-        Tuple with:
+        If True, return full locals() dictionary.  This is very ugly.
+        Please don't be like Gerrit who actually used this for a plot.
 
-        Δ_l_all [n_c]
+    Returns
+    -------
 
-            Cross-line correlation length scale for each channel.
+    Δ_l_all : (n_c) xarray.DataArray
 
-        Δ_e_all [n_c]
+        Cross-line correlation length scale for each channel.
 
-            Cross-element correlation length scale for each channel.
+    Δ_e_all : (n_c) xarray.DataArray
 
-        R_ci [n_c, n_c]
+        Cross-element correlation length scale for each channel.
 
-            Cross-channel correlation matrix for independent effects.
+    R_ci : (n_c, n_c) xarray.DataArray
 
-        R_cs [n_c, n_c]
+        Cross-channel correlation matrix for independent effects.
 
-            Cross-channel correlation matrix for structured effects.
+    R_cs : (n_c, n_c) xarray.DataArray
 
-        Δ_l_all_full [n_c, n_l]
+        Cross-channel correlation matrix for structured effects.
 
-            Only returned if return_vectors input argument is True.
+    Δ_l_all_full : (n_c, n_l) xarray.DataArray
 
-            Average cross-line correlation length for each channel and
-            length.
+        Only returned if return_vectors input argument is True.
 
-        Δ_e_all_full [n_c, n_e]
+        Average cross-line correlation length for each channel and
+        length.
 
-            Only returned if return_vectors input argument is True.
+    Δ_e_all_full : (n_c, n_e) xarray.DataArray
 
-            Average cross-line correlation length for each channel and
-            element.
-            
+        Only returned if return_vectors input argument is True.
+
+        Average cross-line correlation length for each channel and
+        element.
+
+    locals() : Dict
+        
+        Only returned if ``return_locals`` is True.  Do not do this.
+        Please.  It's so ugly.
+        
     """
 
 
@@ -876,17 +930,25 @@ def interpolate_Δ_x(Δ_x, cutoff):
     n_l%sampling_l≠0).
     
     You usually don't need to call this function directly, as it is called
-    by apply_curuc if you pass interpolate_lengths=True.
+    by `apply_curuc` if you pass ``interpolate_lengths=True``.
 
-    Arguments:
+    Parameters
+    ----------
 
-        Δ_x [xarray.DataArray n_p × n_c]
+    Δ_x : (n_p, n_c) xarray.DataArray
 
-            As returned by calc_Δ_x if return_vector is True.
+        As returned by `calc_Δ_x` if `return_vectors` is True.
 
-        cutoff [int]
+    cutoff : int
 
-            Total desired lengths, usually equal to n_l or n_e.
+        Total desired lengths, at most equal to n_l or n_e.
+
+    Returns
+    -------
+
+    (cutoff, ) xarray.DataArray
+        
+        New Δ_x, now interpolated such as having lengths ``cutoff``.
     """
    
     rv = xarray.DataArray(
@@ -917,26 +979,34 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
 
     Given a dictionary of sensitivity coefficients (see function
     annotation) such as returned by calc_u_for_variable), accumulate
-    recursivey the sensitivity coefficients for symbol `sym`.
+    recursively the sensitivity coefficients for symbol `sym`.  The
+    sensitivity coefficient dictionary is a nested dictionary with a
+    structure documented in the return values of
+    `fcdr.HIRSFCDR.calc_u_for_variable`.
 
-    Arguments:
+    Parameters
+    ----------
 
-        sensdict (Dict[Symbol, Tuple[ndarray,
-                Dict[Symbol, Tuple[ndarray,
-                  Dict[Symbol, Tuple[...]]]]]])
+    sensdict : Dict[Symbol, Tuple[ndarray, Dict[Symbol, Tuple[ndarray, Dict[Symbol, Tuple[...]]]]]]
 
-            Collection of sensitivities.  Returned by
-            calc_u_for_variable.
+        Collection of sensitivities of the form returned by
+        `fcdr.HIRSFCDR.calc_u_for_variable`.
 
-        sym: sympy.Symbol
+    sym : sympy.Symbol
 
-            Symbol for which to calculate total sensitivity
-            coefficient
+        Symbol for which to calculate total sensitivity
+        coefficient
 
-        _d: Deque
+    _d: Deque
 
-            THOU SHALT NOT PASS!  Internal recursive use only.
+        **THOU SHALT NOT PASS**!  Internal recursive use only.
 
+
+    Returns
+    -------
+
+    ndarray or sympy.Expr
+        Total sensitivity down the chain
     """
 
     if _d is None:
@@ -962,71 +1032,73 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 
     Note that this function expects quite specific data structured
     corresponding to what happens to be the FCDR_HIRS implementation.
-    Consider if using the lower-level functions allocate_curuc and
-    apply_curuc may be easier.
+    Consider if using the lower-level functions `allocate_curuc` and
+    `apply_curuc` may be easier.
 
-    Arguments:
+    Parameters
+    ----------
 
-        effects: Mapping[symbol, Collection[effect]]
+    effects : Mapping[symbol, Collection[effect]]
 
-            Dictionary containing, for each term in the measurement
-            equation (sympy symbols), a collection (such a set) of all
-            effects (instances of the Effect class) for this particular
-            symbol.
+        Dictionary containing, for each term in the measurement
+        equation (sympy symbols), a collection (such a set) of all
+        effects (instances of the Effect class) for this particular
+        symbol.
 
-        sensRe: Dict[Symbol, Tuple[ndarray,
-                    Dict[Symbol, Tuple[ndarray,
-                        Dict[Symbol, Tuple[...]]]]]]
+    sensRe : Dict[Symbol, Tuple[ndarray,
+                Dict[Symbol, Tuple[ndarray,
+                    Dict[Symbol, Tuple[...]]]]]]
 
-            Collection of sensitivities such as returned by
-            the calc_u_for_variable method of the FCDR class.
+        Collection of sensitivities such as returned by
+        the `fcdr.FCDRHIRS.calc_u_for_variable` method.
 
-        ds: Dataset
+    ds : xarray.Dataset
 
-            xarray Dataset containing the debug version of the FCDR.
+        xarray Dataset containing the debug version of the FCDR.
 
-        sampling_l: int
+    sampling_l : int, optional
 
-            Sampling level between lines.  Defaults to 8.
+        Sampling level between lines.  Defaults to 8.
 
-        sampling_e: int
+    sampling_e : int, optional
 
-            Sampling level between elements.  Defaults to 1 (i.e. consider
-            all elements).
+        Sampling level between elements.  Defaults to 1 (i.e. consider
+        all elements).
 
-        flags: Mapping[str, DataArray]
+    flags : Mapping[str, DataArray], optional
 
-            Flags such as collected during FCDR generation.  This is used
-            to know what scanlines, elements, or channels to skip (missing
-            data).
+        Flags such as collected during FCDR generation.  This is used
+        to know what scanlines, elements, or channels to skip (missing
+        data).
 
-        robust: bool
+    robust : bool, optional
 
-            If True and nothing can be calculated, log a warning and
-            return objects full of fill values.  If False and nothing can
-            be calculated, raise an error.
+        If True and nothing can be calculated, log a warning and
+        return objects full of fill values.  If False and nothing can
+        be calculated, raise an error.
 
-        return_vectors: bool
+    return_vectors : bool, optional
 
-            Optional, defaults to False.  If True, in addition of returning
-            optimal length scales, also return the full vectors with average
-            correlation per separation length.
+        Optional, defaults to False.  If True, in addition of returning
+        optimal length scales, also return the full vectors with average
+        correlation per separation length.
 
-        interpolate_lengths [bool]
+    interpolate_lengths : bool, optional
 
-            Only needed if return_vectors is True.  Interpolate skipped lines.
-            If False, average correlation is only given for lengths according
-            to the sampling interval.  For example, with sampling_l=5, it's
-            only given every 5 lines.  If True, a spline interpolation is
-            applied and average correlation length is returned at every
-            separation.
+        Only needed if return_vectors is True.  Interpolate skipped lines.
+        If False, average correlation is only given for lengths according
+        to the sampling interval.  For example, with sampling_l=5, it's
+        only given every 5 lines.  If True, a spline interpolation is
+        applied and average correlation length is returned at every
+        separation.
 
-        return_locals: bool
+    return_locals : bool, optional
 
-            Return complete dictionary of locals.  When deep inspection is
-            a must.
+        Return complete dictionary of locals.  When deep inspection is
+        a must.
 
-    Returns:
+    Returns
+    -------
 
         As for `apply_curuc`.
     """

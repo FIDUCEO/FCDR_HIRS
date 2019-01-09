@@ -1,6 +1,16 @@
-"""Analysis and production for the FIDUCEO FCDR HIRS.
+"""Package for analysis and production for the FIDUCEO FCDR HIRS.
 
-See README.md in the main distribution directory.
+This package contains subpackages, modules, classes, and functions for the
+production of the FIDUCEO HIRS FCDR.  The main package contains modules
+with relatively generic functionality.  The `analysis` subpackage contains
+functionality for the analysis, either of L1B data in preparation for FCDR
+generation, or analysis of the FCDR itself.  Many of those are plotting
+scripts, that the end-user calls as a script (see the section on scripts).
+Within the `processing` subpackage are modules containing higher level
+functionality to produce the FCDR.  Again, those are available as scripts
+such as ``generate_fcdr``.
 
-See also http://www.fiduceo.eu/
+The documentation is currently short on examples, but all code is being
+used, so the source code itself will serve as an example on how to use the
+source code.
 """

@@ -1,4 +1,17 @@
 """Definitions related to HIRS FCDR
+
+This module contains various definitions related to the FCDR.  They extend
+definitinos in `typhon.datasets._tovs_defs`, which are more related to the
+reading routine.  Important definitions here:
+
+`FCDR_data_vars_props`
+    Defines how data are stored in the debug FCDR,
+`FCDR_uncertainty_encodings`
+    Defines encodings for uncertainties, which may differ from the
+    quantity the uncertainty belongs to.
+
+However, for the purposes of the easy FCDR, a lot of this module is
+superseded by Tom Blocks routines.
 """
 
 import itertools
@@ -36,6 +49,7 @@ del _str_coding["_FillValue"]
 # FIXME: uncertainty does NOT always have the same dimensions as quantity
 # it belongs to...
 
+#: Dictionary storing information for debug FCDR fields, as far as not inherited from typhon
 FCDR_data_vars_props = dict(
     T_IWCT_calib_mean = (
         "T_IWCT_calib_mean",
@@ -435,6 +449,7 @@ for (var, corr) in {("R_Earth", "O_Re"),
 # uncertainty on the last two significant digits...
 # For example, 12.345(12)
         
+#: Dictionary with encodings for uncertainties, where those diverge from quantities
 FCDR_uncertainty_encodings = {}
 
 FCDR_uncertainty_encodings["O_TPRT"] = _temp_coding
@@ -442,6 +457,7 @@ for (k, v) in FCDR_data_vars_props.items():
     if v[2].get("units") == "count":
         FCDR_uncertainty_encodings[k] = _u_count_coding
 
+#: Encodings for easy FCDR.  Should no longer be used, as this is in `FCDRTools`.
 FCDR_easy_encodings = dict(
     latitude = _latlon_coding,
     longitude = _latlon_coding,
@@ -479,9 +495,7 @@ for v in ("u_independent", "u_structured"):
     FCDR_easy_encodings[v]["dtype"] = "u4"
     FCDR_easy_encodings[v]["scale_factor"] = 0.001
 
-# attributes not defined elsewhere for whatever reason, such as only
-# being coordinates or only occurring temporarily or in easy or being
-# otherwise calculated later
+#: attributes not defined elsewhere for whatever reason, such as only being coordinates or only occurring temporarily or in easy or being otherwise calculated later
 FCDR_extra_attrs = dict(
     x = {"long_name": "scan position",
          "units": "dimensionless",
@@ -528,6 +542,8 @@ FCDR_extra_attrs = dict(
 
 @enum.unique
 class FlagsScanline(enum.IntFlag):
+    """Enumerator for scanline-based flags.
+    """
     DO_NOT_USE = enum.auto()
     SUSPECT_GEO = enum.auto()
     SUSPECT_TIME = enum.auto()
@@ -539,6 +555,8 @@ class FlagsScanline(enum.IntFlag):
 
 @enum.unique
 class FlagsChannel(enum.IntFlag):
+    """Enumerator for channel-based flags.
+    """
     DO_NOT_USE = enum.auto()
     UNCERTAINTY_SUSPICIOUS = enum.auto()
     SELF_EMISSION_FAILS = enum.auto()
@@ -546,10 +564,14 @@ class FlagsChannel(enum.IntFlag):
 
 @enum.unique
 class FlagsMinorFrame(enum.IntFlag):
+    """Enumerator for minorframe-based flags.
+    """
     SUSPECT_MIRROR = enum.auto()
 
 @enum.unique
 class FlagsPixel(enum.IntFlag):
+    """Enumerator for pixel-based flags.
+    """
     DO_NOT_USE = enum.auto()
     OUTLIER_NOS = enum.auto()
     UNCERTAINTY_TOO_LARGE = enum.auto()

@@ -1,4 +1,26 @@
-"""Any code related to processing or analysing matchups
+"""Module to collect code related to processing or analysing matchups
+
+This module defines base classes related to the processing of matchups, in
+particular in preparation for the creation of harmonisation input data.
+The `matchups` module, and in particular the `HIRSMatchupCombiner` class,
+serve as the basis for the `processing.combine_matchups` module and its
+`processing.HIRSMatchupCombiner` class, but is also used by scripts in the
+`analysis` package.
+
+The estimation of K and Ks is done by implementations of the `KModel`
+class.  For HIRS-HIRS matchups, the currently applied implementation is
+described by the `KModelSRFIASIDB` class.  For HIRS-IASI matchups, the
+implementation is `KModelIASIRef`, but note that this estimate is always
+zero.  The estimate of Kr is performed by implementations of the `KrModel`
+class.  For HIRS-HIRS matchups, the implementation currently used is
+`KrModelJointLSD`.  For HIRS-IASI matchups, it's `KrModelIASIRef`.  All
+other classes in the `Kmodel` and `KrModel` hierarchy are either
+intermediate classes or classes that have been used before or
+experimentally but not currently.
+
+The module also defines a number of filters that go with `KModel` and
+`KrModel`, such as `KFilter` and its implementations.  Some of those
+filters are used when preparing harmoniation matchups.
 """
 
 from __future__ import annotations
@@ -33,34 +55,146 @@ from typhon.physics.units.em import SRF
 unit_iasi = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
 
 class ODRFitError(Exception):
+    """Exception to raise if ODR fitting fails to converge
+    """
     pass
 
 class NoDataError(Exception):
+    """Exception to raise if not enough matchup data could be found
+    """
     pass
 
 class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
+    """HIRS-HIRS matchup filter
+
+    Filter on HIRS-HIRS matchups, selecting only matchups with a spherical
+    distance of less than 20 km and local zenith angles of less than 10°.
+
+    The methods on this class should not be used directly, rather objects
+    of this class should be passed to
+    `typhon.datasets.Dataset.read_period`.
+    """
     msd_field = None
     def __init__(self, prim, sec, msd_field="matchup_spherical_distance"):
+        """Initialise HIRS-HIRS matchup filter
+
+        Parameters
+        ----------
+
+        prim : str
+            Name of primary for matchups to which the filter is applied
+        sec : str
+            Name of secondary for matchups to which the filter is applied
+        msd_field : str, optional
+            Name of field containing the distance.  Default is
+            "matchup_spherical_distance" but for some pairs it's
+            different, for example,
+            "hirs-n15_hirs-n14_matchup_spherical_distance".
+        """
         self.prim = prim
         self.sec = sec
         self.msd_field = msd_field
 
     def filter(self, ds, **extra):
+        """Apply HIRS-HIRS matchup filter
+
+        This method is called by `typhon` after reading every file.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            xarray Dataset such as returned by the HIRSHIRS reader.
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Subset of ``ds`` containing only those matchups which meet the
+            criteria outlined in the class documentation.
+
+        """
         return ds[{"matchup_count":
             (ds[f"hirs-{self.prim:s}_lza"][:, 3, 3] < 10) &
             (ds[f"hirs-{self.sec:s}_lza"][:, 3, 3] < 10) &
             (ds[self.msd_field]<20)}]
-    
+
     def finalise(self, ds):
+        """Finalise HIRS-HIRS matchups
+
+        This method is called by typhon at the end, when all matchup files
+        have been read.  It sorts the matchups by primary time.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            xarray Dataset such as returned by the HIRSHIRS reader as
+            defined in `typhon.datasets.tovs.HIRSHIRS`.
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Subset of ``ds``, sorted.
+        """
         idx = numpy.argsort(ds[f"time_{self.prim:s}"])
         return ds[{"matchup_count": idx}]
 
 class HIMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
+    """HIRS-IASI matchup filter
+
+    Filter on HIRS-IASI matchups.  Currently, the only filter this applies
+    is that it rejects any IASI where any radiance is less than zero, and
+    it sorts the matchups by IASI time at the very end.
+
+    The methods on this class should not be used directly, rather objects
+    of this class should be passed to
+    `typhon.datasets.Dataset.read_period`.
+    """
+
     def filter(self, ds, **extra):
+        """Apply HIRS-IASI matchup filter
+
+        This method is called by `typhon` after reading every file.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            xarray Dataset such as returned by the HIRSIASI reader as
+            defined in `typhon.datasets.tovs.HIASI`.
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Subset of ``ds`` containing only those matchups which meet the
+            criteria outlined in the class documentation.
+
+        """
         bad = (ds["ref_radiance"]<=0).any("ch_ref")
         return ds[{"line": ~bad}]
-    
+
     def finalise(self, ds):
+        """Finalise HIRS-IASI matchups
+
+        This method is called by typhon at the end, when all matchup files
+        have been read.  It sorts the matchups by primary time.
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            xarray Dataset such as returned by the HIASI reader as
+            defined in `typhon.datasets.tovs.HIASI`.
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Subset of ``ds``, sorted.
+        """
         # Another round of sorting, not sure why needed
         idx = numpy.argsort(ds["ref_time"])
         return ds[{"line": idx}]
@@ -71,6 +205,10 @@ class CalibrationCountDimensionReducer(typhon.datasets.filters.OrbitFilter):
     When we want to add calibraiton counts to matchup, we want to add only
     one (median) to each matchup, not the whole batch of 48, that becomes
     too large...
+
+    The methods on this class should not be used directly, rather objects
+    of this class should be passed to
+    `typhon.datasets.Dataset.read_period`.
     """
 
     def finalise(self, arr):
@@ -88,15 +226,37 @@ class KFilter:
     Through this we can access ds, ds_orig, etc.
     """
 
+    #: `Kmodel` or `KRModel` to which this filter applies
     model: (KModel, KRModel)
+    #: label/parameter associated with `KModel` or `KRModel` instance
     lab: str
 
     def filter(self, mdim, channel):
+        """Apply filter
+
+        Parameters
+        ----------
+
+        mdim : str
+            Name of the matchup dimension, such as "matchup_count"
+        channel : int
+            Channel number to consider
+
+        Returns
+        -------
+
+        ndarray
+            Boolean array, true for matchups that are kept, false for
+            matchups that need to be thrown out.
+        """
         return numpy.ones(self.model.ds.dims[mdim], "?")
 
 @dataclass
 class KrFilterHomogeneousScenes(KFilter):
     """Filter on homogeneous scenes
+
+    Select scenes where Kr is at most ``max_ratio`` times the joint
+    uncertainty.
     """
 
     max_ratio = 5
@@ -120,7 +280,34 @@ class KrFilterHomogeneousScenes(KFilter):
 
 @dataclass
 class KFilterFromFile(KFilter):
+    """Class for any KFilter or KRFilter using a file
+
+    Intermediate superclass for any `KFilter` or `KRFilter` that obtains
+    parameters from a file.
+    """
     def get_harm_filter_path(self, channel, which="K_min_dL"):
+        """Get path to harmonisation parameter file
+
+        This requires that the field ``harmfilterparams`` is defined in
+        the `typhon` configuration, in the ``main`` section.  The same
+        section is used when writing the filter, which happens in
+        `FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`.
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel number for channel of consideration
+        which : str, optional
+            Which filter we are considering.  Optional, defaults to
+            "K_min_dL".
+
+        Returns
+        -------
+
+        pathlib.Path
+            `Path` object pointing to the location of the filter
+        """
         p = pathlib.Path(typhon.config.conf["main"]["harmfilterparams"])
         p /= f"{self.model.prim_name:s}_{self.model.sec_name:s}"
         p /= f"ch{channel:d}" 
@@ -133,10 +320,31 @@ class KFilterFromFile(KFilter):
 class KrFilterΔLKr(KFilterFromFile):
     """Filter on ΔL/Kr ratio
 
-    See Vijus email 2018-09-27
+    Use filter parameters derived by
+    `FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`
+    to filter out values where ``ΔL/Kr`` is too large.
+
+    See Vijus email 2018-09-27.
     """
 
     def get_ΔL(self, channel):
+        """Extract ΔL from model
+
+        Extract ΔL from self.model (the `KRModel`).
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel of interest
+
+        Returns
+        -------
+
+        `typhon.physics.units.tools.UnitsAwareDataArray`
+            A `UnitsAwareDataArray` with the radiance differences
+            secondary - primary.
+        """
         # always in SI units
         y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(
             calibrated_channel=channel)
@@ -162,9 +370,12 @@ class KrFilterΔLKr(KFilterFromFile):
 @dataclass
 class KFilterKΔL(KFilterFromFile):
     """Filter on K-ΔL from file
+
+    Use filter parameters derived by
+    `FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`
+    to filter out values where ``K-ΔL`` is too large.
     """
     
-
     def get_ΔL(self, channel):
         y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(
             calibrated_channel=channel).to(
@@ -173,6 +384,7 @@ class KFilterKΔL(KFilterFromFile):
             calibrated_channel=channel).to(
             self.model.units, "radiance", srf=self.model.sec_hirs.srfs[channel-1])
         return y2 - y1
+    get_ΔL.__doc__ = KrFilterΔLKr.get_ΔL.__doc__
 
     def filter(self, mdim, channel):
         ok = super().filter(mdim, channel)
@@ -201,7 +413,20 @@ hh = typhon.datasets.tovs.HIRSHIRS(read_returns="xarray")
 hi = typhon.datasets.tovs.HIASI(read_returns="xarray") # metopa only
 
 class HIRSMatchupCombiner:
+    """Class to combine HIRS matchups with additional data
+
+    This is a small class to add measurements from the FIDUCEO FCDR, debug
+    version, to the matchups.  Most of the heavy work is being done within
+    `typhon.datasets.tovs.HIRSHIRS.combine` and its superclasses.  The
+    functionality in
+    `FCDR_HIRS.processing.combine_matchups.HIRSMatchupCombiner` and
+    `FCDR_HIRS.analysis.inspect_hirs_matchups.HIRSMatchupInspector` is
+    built on top of the `HIRSMatchupCombiner` class defined here.
+    """
+
+    #: information on the type of FCDR that will be read
     fcdr_info = {"data_version": "0.8pre", "fcdr_type": "debug"}
+    #: fields that will be read from each of the FCDR (primary, secondary)
     fields_from_each = [
          'B',
          'C_E',
@@ -307,12 +532,30 @@ class HIRSMatchupCombiner:
          'ε']
 
 
-    # TBs files contain either matchup_spherical_distance or
-    # hirs-n15_hirs-n14_matchup_spherical_distance
     msd_field = "matchup_spherical_distance" # default
+    """Name of the field containing the matchup spherical distance
 
+    TBs files contain either matchup_spherical_distance or
+    hirs-n15_hirs-n14_matchup_spherical_distance
+    """
+
+    #: attribute to hold the mode (reference or hirs)
     mode = None
     def __init__(self, start_date, end_date, prim_name, sec_name):
+        """Create HIRSMatchupCombiner object
+
+        Parameters
+        ----------
+
+        start_date : datetime.datetime
+            Beginning of period for which to combine matchups
+        end_date : datetime.datetime
+            End of period for which to combine matchups
+        prim_name : str
+            Name of primary
+        sec_name : str
+        `   Name of secondary
+        """
         #self.ds = netCDF4.Dataset(str(sf), "r")
         # acquire original brightness temperatures here for the purposes
         # of estimating Kr.  Of course this should come from my own
@@ -405,10 +648,11 @@ class HIRSMatchupCombiner:
 class KModel(metaclass=abc.ABCMeta):
     """Model to estimate K and Ks (Kr is seperate)
 
-    There is currently an ad-hoc implementation, estimating K based on BB
-    assumption only on L→BT conversions.  There will later be an
-    implementation based on BTs simulated with a forward model.  In
-    practice, those are calculated 'offline' and looked up.
+    There are currently several implementations, the most advanced one
+    that is currently being used is `KModelSRFIASIDB`.  There are also
+    simpler implementations, `KModelPlankc` which is based on ad-hoc BB
+    L→BT conversions.  There should also be an implementation based on BTs
+    simulated with a forward model, but this does not currently exist.
 
     For definitions, see document
     20171205-FIDUCEO-SH-Harmonisation_Input_File_Format_Definition-v6.pdf
@@ -425,17 +669,32 @@ class KModel(metaclass=abc.ABCMeta):
 
     """
 
+    #: xarray.Dataset with combined measurement obtained from FCDR files
     ds = None
+    #: like `ds`, but after applying the filters
     ds_filt = None
+    #: xarray.Dataset with original matchups as obtained from BC
     ds_orig = None
+    #: like `ds_orig`, but filtered
     ds_filt_orig = None
+    #: name of primary
     prim_name = None
+    #: `fcdr.HIRSFCDR` object for primary
     prim_hirs = None
+    #: name of secondary
     sec_name = None
+    #: `fcdr.HIRSFCDR` object for secondary
     sec_hirs = None
+    #: extra filters to be applied
     extra_filters = None
 
     def __init__(self, **kwargs):
+        """Initialise KModel
+        
+        All keyword arguments correspond to attributes being set upon
+        creation.
+        """
+
         self.extra_filters = []
         for (k, v) in kwargs.items():
             if hasattr(self, k):
@@ -445,19 +704,48 @@ class KModel(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def calc_K(self, channel):
-        """K is the expected value of the matchup difference:
+        """Calculate K.
+        
+        K is the expected value of the matchup difference.
 
-        K = E(L_2 - L_1)
+        .. math::
+
+            K = E(L_2 - L_1)
+
         """
         ...
 
     @abc.abstractmethod
     def calc_Ks(self, channel):
+        """Calculate Ks.
+
+        Ks is the structured uncertainty associated with K.
+
+        Note that Kr, the independent uncertainty associated with K, has
+        its own calculation method.
+        """
         ...
 
     filtered = False
     def limit(self, ok, mdim):
         """Reduce dataset to those values
+
+        Define `ds_filt` and `ds_filt_orig` based on the boolean array
+        ``ok`` associated with dimension ``mdim``.  In practice, ``ok`` is
+        obtained by filtering.
+
+        This method does not return anything, but after calling it,
+        ``self.ds_filt`` and ``self.ds_filt_orig`` will be defined.
+
+        Parameters
+        ----------
+
+        ok : ndarray
+            Boolean array as returned by filters, used to index the
+            datasets.
+        mdim : str
+            Name of dimension along which the filtering is applied, for
+            example, "matchup_spherical_distance".
         """
         self.ds_filt = self.ds[{mdim:ok}]
         self.ds_filt_orig = self.ds_orig[{mdim:ok}]
@@ -465,6 +753,25 @@ class KModel(metaclass=abc.ABCMeta):
 
     def filter(self, mdim, channel):
         """Extra filtering imposed by this model
+
+        Apart from the usual filtering going on, what filtering does this
+        model need to impose on the entire process in order to function?
+
+        Parameters
+        ----------
+
+        mdim : str
+            Name of dimension along which the filtering is applied, for
+            example, "matchup_spherical_distance".
+        channel : int
+            Channel along which the filtering is applied.
+
+        Returns
+        -------
+
+        ndarray
+            Boolean array, True for matchups to be keps, False for
+            matchups to be filtered out.
         """
         rv = numpy.ones(self.ds.dims[mdim], "?")
         for ef in self.extra_filters:
@@ -473,16 +780,60 @@ class KModel(metaclass=abc.ABCMeta):
 
     def extra(self, channel, ok):
         """Return Dataset with extra information
+
+        Some models may want to return additional information, that may be
+        included with the resulting harmonisation files for debugging
+        purposes.  Those models can do so by implemening this method.
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel for which the extras are obtained
+        ok : ndarray
+            Boolean array indicating valid matchups.
+
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Dataset containing extra information.  Possibly empty.
         """
 
         return xarray.Dataset()
 
 class KrModel(metaclass=abc.ABCMeta):
     """Implementations of models to estimate the matchup uncertainty
+
+    Abstract base class defining an interface for all models implementing
+    an estimate of independent matchup uncertainty (``Kr``).  There are
+    currently two implementations: `KrModelLSD` and `KrModelJointLSD`.
+    The latter is currently used for the estimation of ``Kr``.
     """
 
     def __init__(self, ds, ds_orig, prim_name, prim_hirs, sec_name,
                  sec_hirs, extra_filters=None):
+        """Initialise Kr model
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+        ds_orig : xarray.Dataset
+        prim_name : str
+            Name of primary
+        prim_hirs : `fcdr.HIRSFCDR`
+            HIRS FCDR object corresponding to the primary
+        sec_name : str
+            Name of secondary
+        sec_hirs : `FCDR.HIRSFCDR`
+            HIRS FCDR object corresponding to the secondary
+        extra_filters : List[`KRFilter`], optional
+            List of extra filters, which must all be instances of
+            subclasses of `KRFilter`, that this model imposes upon the
+            universe.
+        """
         self.ds = ds
         self.ds_filt = None
         self.ds_orig = ds_orig
@@ -498,29 +849,43 @@ class KrModel(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def calc_Kr(self, channel):
+        """Calculate Kr
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel for which Kr is being calculated
+
+        Returns
+        -------
+
+        xarray.DataArray
+            Estimate of Kr in radiance units
+        """
         ...
 
     filtered = False
     def limit(self, ok, mdim):
-        """Reduce dataset to those values
-        """
         self.ds_filt = self.ds[{mdim:ok}]
         self.ds_filt_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
+    limit.__doc__ = KModel.limit.__doc__
 
     def filter(self, mdim, channel):
-        """Extra filtering imposed by this model
-        """
         rv = numpy.ones(self.ds.dims[mdim], "?")
         for ef in self.extra_filters:
             rv &= ef.filter(mdim, channel)
         return rv
+    filter.__doc__ = KModel.filter.__doc__
 
 class KModelPlanck(KModel):
     """Simplified implementation.
 
     This is a temporary implementation for estimating values of K
     (expected difference in L).
+
+    This implemtation is incorrect and no longer in use.
     """
 
     def calc_K(self, channel):
@@ -588,6 +953,8 @@ class KModelPlanck(KModel):
 
 class KModelIASIRef(KModel):
     """Estimate K and Ks in case of IASI reference
+
+    In case of a IASI reference, the estimates for both K and Ks are zero.
     """
     def calc_K(self, channel):
         return numpy.zeros(shape=self.ds_filt.dims["line"])
@@ -596,12 +963,32 @@ class KModelIASIRef(KModel):
         return numpy.zeros(shape=self.ds_filt.dims["line"])
 
 class KrModelLSD(KrModel):
+    """Estimate Kr using the local standard deviation of the primary
+
+    This is an implementation of the KrModel using the local standard
+    deviation of the primary only.
+
+    For an implementation that uses the combined local standard deviation
+    between primary and secondary, use `KrModelJointLSD`.
+    """
     def calc_Kr_for(self, channel, which, ds_to_use=None):
-        """Calculate Kr for prim or sec
+        """Helper function to calculate Kr for primary or secondary
 
-        channel, which, ds_to_use
+        Parameters
+        ----------
 
-        ds_to_use should refer to self.ds_orig or self.ds_filt_orig
+        channel : int
+            Channel to use
+        which : str
+            Name of either primary or secondary
+        ds_to_use : xarray.Dataset
+            ds_to_use should refer to either self.ds_orig or self.ds_filt_orig
+
+        Returns
+        -------
+
+        xarray.DataArray
+            Kr estimated as LSD
         """
         if ds_to_use is None:
             ds_to_use = self.ds_filt_orig
@@ -638,12 +1025,25 @@ class KrModelLSD(KrModel):
         return ok
 
 class KrModelJointLSD(KrModelLSD):
+    """Estimate Kr using the joint local standard deviation
+
+    This is an implementation of the `KrModel` using the joint local
+    standard deviation between primary and secondary.  It builds on top of
+    `KrModelLSD` which uses the LSD for the primary only.
+    """
     def calc_Kr(self, channel, ds_to_use=None):
         lsd_prim = self.calc_Kr_for(channel, self.prim_name, ds_to_use=ds_to_use)
         lsd_sec = self.calc_Kr_for(channel, self.sec_name, ds_to_use=ds_to_use)
         return numpy.sqrt(lsd_prim**2+lsd_sec**2)
 
 class KrModelIASIRef(KrModel):
+    """Estimate Kr for IASI-HIRS matchups
+    
+    I don't have a good model estimating Kr for IASI-HIRS matchups.  This
+    is currently the only implemetation.  It assumes a hardcoded 0.1 K
+    uncertainty converted back to radiance space.
+    """
+
     def calc_Kr(self, channel, ds_to_use=None):
         """Calculate Kr for channel
 
@@ -667,27 +1067,113 @@ class KrModelIASIRef(KrModel):
 
 
 class KModelSRFIASIDB(KModel):
-    """Estimate K using IASI spectral database.
+    """Estimate K for HIRS-HIRS matchups, using a IASI spectral database.
 
-    Based on the SRF recovery method described in PD4.4
+    Based on the SRF recovery method described in PD4.4.  IASI training
+    data obtained from the period between `KModelSRFIASIDB.iasi_start` and
+    `KModelSRFIASIDB.iasi_end` are used to simulated HIRS using SRFs
+    shifted such as reported by Paul Menzel and included with RTTOV, such
+    that we get HIASI for all channels for the primary and the secondary,
+    based on the same IASI spectra, such that any differences are
+    exclusively due to reported SRF differences.  Using the HIASI database, I
+    develop a regression to predict channel n on the secondary from one
+    or more channels on the primary.  Applying this regression to the real
+    matchups, I the difference between the estimate for secondary channel
+    n and the real primary channel n is the estimate for K.
+
+    This estimate is performed bidirectionally.  The difference is as
+    entimate of Ks.
+    
+    There are a few ways in which this can be varied:
+
+    * What channels do I use as the predictor?  Only channel n, all
+      channels, or something in-between?  This can be configured with the
+      ``chan_pairs`` argument.
+
+    * What type of regression to use (``regression``)?  This can be
+      ``"LR"`` or ``"ODR"``.
+
+    * Should the regression predict the value for the secondary, or
+      should it predict the Δ between the secondary and the primary?  This
+      is configured with the ``mode`` argument.
+
+    * Should all of this happen in radiance space or brightness
+      temperature space?  See the ``units`` argument.
+
+    For details, see documentation on the attributes and on the
+    constructor.
     """
 
     iasi_start = datetime.datetime(2011, 1, 1)
+    """datetime.datetime: start period for IASI training database
+
+    Beginning date for which IASI data are read in order to produce IASI
+    training database used to simulate HIASI.  Note that due to data
+    volume limitations, I do not read the original IASI data but rather a
+    subset via the typhon `typhon.datasets.tovs.IASISub` class.
+    """
     iasi_end = datetime.datetime(2011, 2, 1)
+    """datetime.datetime: end period for IASI training database
+
+    End date for which IASI data are read, or rather,
+    `typhon.datasets.tovs.IASISub` data.
+    """
     iasi = typhon.datasets.tovs.IASISub(name="iasisub")
+    """typhon.datasets.tovs.IASISub: instance use do read IASI data
+
+    This attribute holds the `typhon.datasets.tovs.IASISub` object used to
+    read IASI data.  It is defined by default and there should normally be
+    no reason to redefine it.
+    """
+    #: ndarray: IASI data (internal use)
     M_iasi = None
+    #: ndarray: IASI training database (internal use)
     Ldb_iasi_full = None
+    #: ndarray: HIASI training database (internal use)
     Ldb_hirs_simul = None
+    #: List[SRF]: SRFs
     srfs = None
+    #: Mapping[str, Mapping[int, regression_model]]:  various fitters
     fitter = None
 
     regression = "LR"
+    """str: type of regression to use
+
+    String describing what type of regression to use.  Valid options are
+    ``"LR"``, which is the default, and ``"ODR"``, for orthogonal
+    distance regression.
+    """
     chan_pairs = None
+    """Mapping[int, array_like]: what primary channels predict what secondary
+
+    Dictionary that describes, for each channel on the secondary, what
+    channels from the primary are used to predict it. 
+    """
+    #: str: label describing the type of channel pairing
     chan_pairs_label = None
     mode = "standard"
+    """str: String describing whether regression should target BT or ΔBT
+
+    The mode can be either ``"standard"``, which means the regression will
+    target brightness temperatures, or ``"delta"``, which means the
+    regression will target the ΔBT between the primary and the secondary,
+    for the channel being targeted.
+    """
     units = rad_u["si"]
+    """pint Unit: what units to use
+
+    A pint Unit describing in what unit radiances or brightness
+    temperatures are predicted.  The module
+    `typhon.physics.units.common` defines a ``radiance_units`` dictionary
+    that contains units for radiance in SI or typical IR units, or one can
+    use kelvin.  It's also valid to pass a string that can be converted to
+    a unit.
+    """
+    #: bool: if True, generate all possible mode/unit/chan/regression combinations
     debug = False
+    #: Mapping: dictionary filled in case of debug mode (internal use)
     others = None
+    #: Mapping: dictionary to hold estimates for K in both directions
     K = None
     #regression = "ODR"
     # FIXME: Use ODR with uncertainties
@@ -697,6 +1183,29 @@ class KModelSRFIASIDB(KModel):
 
 
     def __init__(self, chan_pairs="all", *args, **kwargs):
+        """Initialise KModelSRFIASIDB class
+
+        Parameters
+        ----------
+
+        chan_pairs : str
+            A string describing how the channel pairs are distributed.
+            Valid values are ``"all"``, which means all channels from the
+            primary are used to predict any channel from the secondary,
+            ``"single"``, which means only channel n on the primary is
+            used to predict channel n on the secondary, and
+            ``"neighbours"``, which uses channels ``[n-1, n, n+1]`` on the
+            primary to predict channel n on the secondary.  A further
+            case, ``"optimal"``, which has an optimal choice for each
+            channel, is not yet implemented
+        *args
+            Passed to superclass, which does not use it, do not pass.
+        **kwargs
+            Passed to superclass, which results in the setting of already
+            defined attributes.  See attribute documentation, in
+            particular for `regression`, `mode`, `units`, and `debug`.
+        """
+
         self.chan_pairs_label = chan_pairs
         # FIXME: add an "optimal", channel-specific mapping
         if chan_pairs == "all":
@@ -741,6 +1250,16 @@ class KModelSRFIASIDB(KModel):
 
     def get_lab(self):
         """Return label for self settings
+
+        Get a label that describes the settings for this instance, a
+        string describing the channel pairing, the mode, the regression
+        type, and the unit.
+
+        Returns
+        -------
+
+        str
+            String describing the instance configuration.
         """
         unitlab = re.sub(r'/([A-Za-z]*)', r' \1^-1', "{:~P}".format(self.units)).replace("-1²", "-2")
         lab = unicodedata.normalize("NFKC", f"{self.chan_pairs_label:s}_{self.mode:s}_{self.regression:s}_{unitlab:s}")
@@ -757,8 +1276,11 @@ class KModelSRFIASIDB(KModel):
     def read_iasi(self):
         """Read spectral database from IASI.
 
-        Details on what is read are stored in self attributes iasi_start,
-        iasi_end, passed on on object creation.
+        Details on what is read are stored in self attributes `iasi_start`,
+        `iasi_end`, passed on on object creation.  The result is stored in
+        the attribute `M_iasi`.  This method does not take any input
+        arguments nor does it return anything.  In debug mode, it also
+        sets the same object for the other instances held in `debug`.
         """
 
         # this is a structured array with fields
@@ -773,6 +1295,11 @@ class KModelSRFIASIDB(KModel):
 
     def init_iasi(self):
         """Initialise IASI data in right format
+
+        Make sure IASI data have been read, calling `read_iasi` if
+        necessary, and construct the full IASI spectral database in SI
+        units, storing it in `Ldb_iasi_full`.  Do the same for other
+        instances if in debug mode.  No inputs or outputs.
         """
         if self.M_iasi is None:
             self.read_iasi()
@@ -784,7 +1311,7 @@ class KModelSRFIASIDB(KModel):
                 v.Ldb_iasi_full = self.Ldb_iasi_full # always in freq
 
     def init_srfs(self):
-        """Initialise SRFs, reading from ArtsXML format
+        """Initialise SRFs, reading from RTTOV format
         """
         self.srfs = {}
         for sat in (self.prim_name, self.sec_name):
@@ -800,7 +1327,13 @@ class KModelSRFIASIDB(KModel):
     def init_Ldb(self):
         """Calculate IASI-simulated HIRS
 
-        For all channels for either pair.
+        Calculate IASI-simulated HIRS for all channels for both
+        satellites in the matchup pair.  Ensure that IASI data and SRFs
+        are ready to read.  In debug mode, do the same for all pairs in
+        self.debug.
+        
+        Does not input or output anything but sets attributes needed
+        elsewhere.
         """
 
         if self.Ldb_iasi_full is None:
@@ -825,6 +1358,12 @@ class KModelSRFIASIDB(KModel):
                 v.init_Ldb()
 
     def init_regression(self):
+        """Set up regression objects
+
+        Populate the self.fitter dictionary with regression objects in
+        both directions for all channels.  Initiates Ldb and reads IASI data
+        if necessary.
+        """
         if self.Ldb_hirs_simul is None:
             self.init_Ldb()
         # make one fitter for each target channel, in both directions
@@ -869,8 +1408,34 @@ class KModelSRFIASIDB(KModel):
     _y_pred = None
     def calc_K(self, channel, ds_to_use=None, debug=None):
         """Calculate K for channel.
-        
-        Returns K always in SI units, but sets self.K in self.units units.
+
+        Calculates K in both directions: from primary to secondary, and
+        from secondary to primary.  In an ideal case, the two results
+        differ only by sign.  This method puts both in the self.K
+        dictionary in units of self.units (within ``self.K[channel]``,
+        and returns the average of -(secondary from primary) and (primary
+        from secondary) converted to units of kelvin.
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel number for which to estimate K
+        ds_to_use: xarray.Dataset, optional
+            Should be set either to ``self.ds`` or to ``self.ds_filt``.
+            The latter is default.  You'll want to put it to ``self.ds``
+            if calling this before the filtering has been performed, which
+            may be needed for filters that are a function of K.
+        debug : bool, optional  
+            Whether or not we are running in debug mode.  Overrides
+            self.debug.
+
+        Returns
+        -------
+
+        ndarray
+            Estimate for K
+
         """
         if self.fitter is None:
             self.init_regression()
@@ -922,6 +1487,25 @@ class KModelSRFIASIDB(KModel):
         return K.m
 
     def calc_Ks(self, channel):
+        """Estimate Ks
+
+        Calculate Ks, after K has already been calculated.  This is
+        estimated by taking the absolute difference of the two different
+        ways of estimating K (forward and backward).  I don't think this
+        is a good estimate but it's what I've implemented at the moment.
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel number
+
+        Returns
+        -------
+
+        ndarray
+            Estimate for Ks
+        """
         # spread of db will inform us of uncertainty in predicted
         # radiance?  Or take double direction approach?
         if self.K[channel] is None:
@@ -941,6 +1525,30 @@ class KModelSRFIASIDB(KModel):
         return Ks.m
 
     def extra(self, channel, ok):
+        """Get dictinoary with some extra information to add to matchups
+
+        Implementation of method that returns some extra information, that
+        will be added to the harmonisation matchups for debugging
+        purposes.  This method returns a dictionary with the fields
+        ``K_forward`` and ``K_backward``, which are the two
+        different estimates of ``K``, identicaly in a perfect world, not
+        so in reality.  If self.debug is set, it also defined a bunch of
+        ``"K_other_..."`` fields for all the debug versions.
+
+        Parameters
+        ----------
+
+        channel : int
+            Channel for which to return extras
+        ok : indexer
+            Indexer for filtering
+
+        Returns
+        -------
+
+        xarray.Dataset
+            Dataset with extra fields to be merged with matchups.
+        """
         ds = super().extra(channel, ok)
         ds["K_forward"] = (("M",), self.K[channel][0])
         ds["K_backward"] = (("M",), self.K[channel][1])

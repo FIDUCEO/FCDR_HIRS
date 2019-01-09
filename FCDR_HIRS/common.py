@@ -1,6 +1,10 @@
 """Common utility functions between scripts
 
-Should probably be sorted into smaller modules.
+This module contains various small utility functions that are used in
+various other methods and scripts.
+
+Some of the functions in here may be sorted into their own modules in the
+future.
 """
 
 import sys
@@ -15,6 +19,7 @@ import numpy
 import xarray
 import progressbar
 
+#: progressbar widget used to display progress for various reading tasks
 my_pb_widget = [progressbar.Bar("=", "[", "]"), " ",
                 progressbar.Percentage(), " (",
                 progressbar.AdaptiveETA(), " -> ",
@@ -26,7 +31,51 @@ def add_to_argparse(parser,
         include_channels=True,
         include_temperatures=False,
         include_debug=False):
-    """Add commoners to argparse object
+    """Add commoners to argparse object.
+
+    Helper function to add flags to :class:`argparse.ArgumentParser`
+    objects, where the exact same flags are occurring in multiple scripts.
+    The flags ``--verbose`` (taking a `bool`) and ``--log`` are always added as optional
+    flags.  Other flags are only added if the corresponding parameter to
+    this function is `True`.  You should call this function at most once
+    for any one parser.
+
+    Parameters
+    ----------
+
+    parser : :class:`argparse.ArgumentParser` object
+        The :class:`argparse.ArgumentParser` object to which the arguments
+        shall be added.
+    include_period : bool, optional
+        Include the mandatory arguments `from_date` and `to_date`, as well
+        as the optional argument `--datefmt`.  Use this for a script
+        operating over a certain time period, such as FCDR generation or
+        plotting scripts.  Defaults to `True`.
+    include_sat : {0, 1, 2}, optional
+        Include 0, 1, or 2 satellite name arguments, which will be
+        mandatory.  The valid options as satellite names will be taken
+        from :func:`fcdr.list_all_satellites`.  For a single satellite,
+        the option will be called `satname`.  If there are two, they
+        will be called `satname1` and `satname2`.  Defaults to 0.
+    include_channels : bool, optional
+        Include an `--channels` flag, defaulting to a list of channels 1--19.
+        This flag will be optional, unless `include_temperatures` is also true, in
+        which case both `include_channels` and `include_temperatures` will
+        be mandatory.
+        Defaults to `True`.
+    include_temperatures : bool, optional
+        Include a `--include_temperatures` flag, that will accept a list
+        of strings on what temperatures to be considered.  Defaults to
+        False.
+    include_debug : bool, optional
+        Include an optional `--debug` parameter taking a bool, that will
+        default to `False`.  Defaults to `False`.
+
+    Returns
+    -------
+
+    argparse.ArgumentParser
+        The same parser that went in, but with arguments added.
     """
 
     if include_sat == 1:
@@ -100,8 +149,30 @@ def add_to_argparse(parser,
     return parser
 
 
-def time_epoch_to(ds, epoch):
+def time_epoch_to(ds: xarray.Dataset,
+                  epoch: datetime.datetime):
     """Convert all time variables/coordinates to count from epoch
+
+    For the :class:`xarray.Dataset` object `ds`, change the encoding for
+    all variables (data or coordinate variables) with a `datetime64` dtype
+    to one that counds seconds since the `datetime` expressed by `epoch`.
+    This function does not take care that this actually fits, so you may
+    want to adapt ``ds.encoding["dtype"]`` and
+    ``ds.encoding["scale_factor"]`` yourself.
+
+    Parameters
+    ----------
+
+    ds : xarray.Dataset
+        Dataset for which to adapt the time-based fields.
+    epoch : datetime.datetime
+        Datetime to set as the new epoch.
+
+    Returns
+    -------
+
+    xarray.Dataset
+        Dataset with zero or more time-based fields encodings adapted.
     """
 
     for k in [k for (k, v) in ds.variables.items() if v.dtype.kind.startswith("M")]:
@@ -116,27 +187,50 @@ def time_epoch_to(ds, epoch):
 
 
 def sample_flags(da, period="1H", dim="time"):
-    """Sample flags
+    """Calculate frequency of flags on/off per time period
 
-    For a flag field, estimate percentage during which flag is set each
-    period (default 1H)
+    For a data variable that is a CF-compliant
+    `flag field`_, calculate the frequency per unit time of its occurrence.
 
-    Must have .flag_masks and .flag_meanings following
-    http://cfconventions.org/Data/cf-conventions/cf-conventions-1.7/build/ch03s05.html
+    Must have .flag_masks and .flag_meanings following CF-compliant
+    `flag field`_.
 
-    Arguments:
+    .. _flag field: <http://cfconventions.org/Data/cf-conventions/cf-conventions-1.7/build/ch03s05.html>
 
-        da
+    Parameters
+    ----------
 
-            must have flag_masks and flag_meanings attributes
+    da : xarray.DataArray
+        `DataArray` which is a CF-compliant flag field with the `flag_masks`
+        and `flag_meanings`, for which the frequency of occurrence per
+        unit time is calculated.  The `DataArray` must have a time
+        dimension.
+    period : str, optional
+        Temporal resolution over which the flags are resampled.  Valid
+        strings are as for `pandas`_.  Defaults to "1H".
 
-        period
+        .. _pandas: http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
+    dim : str, optional
+        Name of the time dimension.  Defaults to "time".
 
-        dim
+    Returns
+    -------
 
-    Returns:
+    xarray.DataArray
+        'DataArray` with a dimensions of "flag" and time, where the time
+        dimension is a regular grid with an interval of `period`, which
+        indicates for each flag and time the percentage of this time
+        period for which the flag is set.
+    List[str]
+        Meanings for each of the flags, taken directly from
+        `da.flag_meanings`.
 
-        (percs, labels)
+    Example
+    -------
+
+    .. todo::
+
+        Write example section.
     """
 
     flags = da & xarray.DataArray(numpy.atleast_1d(da.flag_masks), dims=("flag",))
@@ -150,22 +244,35 @@ def sample_flags(da, period="1H", dim="time"):
 
 _loggers_set = set()
 def set_logger(level, filename=None, loggers=None):
-    """Set propertios of FIDUCEO root logger
+    """Set properties of package-level loggers
 
-    Arguments:
+    Set handlers for the package-level loggers, such as for `FCDR_HIRS`,
+    `typhon`, or others.  Those handlers enable verbose or regular logging
+    with a defined string including the level name, the name, time,
+    module, function name, line number, and of course the logging message.
 
-        level
+    Parameters
+    ----------
 
-            What loglevel to use.
+    level : int
+        What loglevel to use.  Although these are numeric values, you will
+        want to use the constants from the `logging` module, such as
+        `logging.DEBUG` or `logging.INFO`.
+    filename : str or None, optional
+        What file to log to.  `None` will log to `sys.stderr`.  Defaults to `None`.
+    loggers : List[str] or List[logging.Logger]
+        To what loggers shall the handlers be added?  By default, it only
+        adds the handler to the "FCDR_HIRS" logger, but if you want
+        debugging from other packages as well, you might want to set those
+        as well, for example,["FCDR_HIRS", "typhon"].
 
-        filename
+    Example
+    -------
 
-            What file to log to.  None for sys.stderr.
+    .. todo::
 
-        loggers
+        Write example.
 
-            What loggers to set.  Default only sets the "FCDR_HIRS"
-            logger, but you may want to set others like "typhon".
     """
     global _root_logger_set
     if loggers is None:
@@ -187,6 +294,48 @@ def set_logger(level, filename=None, loggers=None):
 
 def get_verbose_stack_description(first=2, last=-1, include_source=True,
                                     include_locals=True, include_globals=False):
+    """Provide a big description of the stack, for debugging purposes
+
+    Provide a big, verbose description of the stack, writing the source of
+    the calling function and all subsequent calling functions, along with
+    optionally all locals and all globals at each stack level.  Writing
+    this out may be useful for debugging purposes in case of a serious
+    crash, or perhaps whenever writing a plot so one can always retrieve
+    the parameters and some of the code used for plotting.
+
+    Parameters
+    ----------
+
+    first : int, optional
+        First stacklevel for which to report the source code.  Including
+        `inspect.stack` and `get_verbose_stack_description`, the number 2
+        corresponds to the function calling this function.  Defaults to 2.
+    last: int, optional
+        Last stacklevel for which to report the source code.  Defaults to
+        -1, which means it's turtles all the way down.
+    include_source: bool, optional
+        Include the source code for all functions/methods in the stack.
+        Defaults to True.
+    include_locals: bool, optional
+        Include the locals for all functions/methods in the stack.
+        Defaults to True.
+    include_globals: bool, optional
+        Include the globals for all functions/methods in the stack.
+        Defaults to False.
+
+    Returns
+    -------
+
+    str
+        Verbose description of the stack.
+
+    Example
+    -------
+
+    .. todo::
+
+        Write example.
+    """
     f = io.StringIO()
     f.write("".join(traceback.format_stack()))
     for fminfo in inspect.stack()[first:last]:
@@ -212,17 +361,53 @@ def get_verbose_stack_description(first=2, last=-1, include_source=True,
 
 def savetxt_3d(fname, data, *args, **kwargs):
     """Write 3D-array to file that pgfplots likes
+
+    For a 3d ndarray, write text to a file separated by empty lines.  This
+    can be interpreted by `pgfplots <http://pgfplots.sourceforge.net/>_`
+    for plotting directly in a LaTeX document.
+
+    Parameters
+    ----------
+
+    fname : str
+        Filename to write the plotdata to.  You might want to get this
+        from `plotdatadir`.
+    data : numpy.ndarray
+        3-dimensional `numpy.ndarray` containing the data to be written to
+        a file.
+    *args, **kwargs
+        Remaining arguments passed to `numpy.savetxt`.
+
+    Example
+    -------
+
+    .. todo::
+
+        Write example.
     """
     with open(fname, 'wb') as outfile:
         for data_slice in data:
             numpy.savetxt(outfile, data_slice, *args, **kwargs)
             outfile.write(b"\n")
 
-def plotdatadir():
-    """Returns todays plotdatadir
+def plotdatadir() -> str:
+    """Returns todays plotdatadir.
 
-    Configuration 'plotdatadir' must be set.  Value is expanded with
-    strftime.
+    Configuration ``plotdatadir`` in section ``main`` must be set.
+    The value is expanded with `datetime.datetime.strftime`.
+
+    Returns
+    -------
+
+    str
+        Plot data directory corresponding to today.
+
+    Example
+    -------
+
+    .. todo::
+
+        Write example.
     """
     return datetime.date.today().strftime(
         config.conf["main"]["plotdatadir"])

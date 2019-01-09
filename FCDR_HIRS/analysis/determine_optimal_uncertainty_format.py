@@ -1,6 +1,6 @@
 """Determine optimal uncertainty format.
 
-As per issue #88 and as discussed during the FCDR design review
+As per issue :issue:`88` and as discussed during the FCDR design review
 2017-04-27, we need to check whether uncertainties are stored more
 efficiently in brightness temperatures or as percentages, and then stick
 with that.  This script makes such a comparison.
