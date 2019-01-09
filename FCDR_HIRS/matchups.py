@@ -1666,9 +1666,9 @@ class KModelSRFIASIDB(KModel):
             )
         return ds
 
-    def filter(self, mdim, channel):
+    def filter(self, mdim, channel, previous=None):
         # go through self.ds_filt R_e values.
-        ok = super().filter(mdim, channel)
+        ok = super().filter(mdim, channel, previous=previous)
         for sat in self.prim_name, self.sec_name:
             ok &= self.ds[f"{sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).notnull().all("calibrated_channel").values
         return ok

@@ -361,9 +361,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # here check only sec; prim only checked if prim not iasi
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
         logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after secondary isfinite-filtering")
-        ok &= self.kmodel.filter(mdim, channel)
+        ok &= self.kmodel.filter(mdim, channel, previous=ok)
         logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after kmodel-filtering")
-        ok &= self.krmodel.filter(mdim, channel)
+        ok &= self.krmodel.filter(mdim, channel, previous=ok)
         logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after krmodel-filtering")
         # WORKAROUND, REMOVE AFTER FIXING #281#
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
