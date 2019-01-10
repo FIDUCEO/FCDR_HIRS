@@ -152,7 +152,7 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
             rge[0] -= rge.ptp()*rge_fact
         #elif ratcorr[-1] > max_ratcorr and dens[-1]>0:
         elif dens[-1]>0:
-            logger.debug(f"Extending upper range for {write:s} beyond "
+            logger.debug(f"Extending upper range for {write!s} beyond "
                 f"{ratcorr[-1]:10.3e} at {rge[-1]:.5f}")
             rge[-1] += rge.ptp()*rge_fact
         else:
