@@ -4,9 +4,9 @@ This module contains various definitions related to the FCDR.  They extend
 definitions in ``typhon.datasets._tovs_defs``, which are more related to the
 reading routine.  Important definitions here:
 
-`FCDR_data_vars_props`
+:attr:`FCDR_data_vars_props`
     Defines how data are stored in the debug FCDR,
-`FCDR_uncertainty_encodings`
+:attr:`FCDR_uncertainty_encodings`
     Defines encodings for uncertainties, which may differ from the
     quantity the uncertainty belongs to.
 

@@ -362,7 +362,7 @@ def calc_Delta_x(R_xt: xarray.DataArray,
 
         xarray.DataArray object containing in one column the optimal
         correlation length scales, and in the other column the
-        corresponding covariances, `pcov`, such as returned by
+        corresponding covariances, ``pcov``, such as returned by
         `scipy.optimize.curve_fit`.  For each channel.
 
     r_xΔ : xarray.DataArray
@@ -463,8 +463,8 @@ def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
 
         Cross-channel correlation matrix for each element, line, and
         independent effect.  To get the same data in the form [n_i, n_p,
-        n_c, n_c], call `typhon.utils.stack_xarray_repdim(R_cΛpi,
-        n_p=("n_l", "n_e"))`.
+        n_c, n_c], call
+        ``typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))``.
 
     R_cΛps : (n_s, n_l, n_e, n_c, n_c) xarray.DataArray
 
@@ -937,7 +937,7 @@ def interpolate_Delta_x(Δ_x, cutoff):
 
     Δ_x : (n_p, n_c) xarray.DataArray
 
-        As returned by `calc_Delta_x` if `return_vectors` is True.
+        As returned by `calc_Delta_x` if ``return_vectors`` is True.
 
     cutoff : int
 
@@ -979,7 +979,7 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
 
     Given a dictionary of sensitivity coefficients (see function
     annotation) such as returned by calc_u_for_variable), accumulate
-    recursively the sensitivity coefficients for symbol `sym`.  The
+    recursively the sensitivity coefficients for symbol ``sym``.  The
     sensitivity coefficient dictionary is a nested dictionary with a
     structure documented in the return values of
     `fcdr.HIRSFCDR.calc_u_for_variable`.
@@ -1050,7 +1050,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                     Dict[Symbol, Tuple[...]]]]]]
 
         Collection of sensitivities such as returned by
-        the `fcdr.FCDRHIRS.calc_u_for_variable` method.
+        the :meth:`fcdr.HIRSFCDR.calc_u_for_variable` method.
 
     ds : xarray.Dataset
 

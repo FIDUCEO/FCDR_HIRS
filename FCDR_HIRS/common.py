@@ -154,8 +154,9 @@ def time_epoch_to(ds: xarray.Dataset,
     """Convert all time variables/coordinates to count from epoch
 
     For the :class:`xarray.Dataset` object ``ds``, change the encoding for
-    all variables (data or coordinate variables) with a `numpy.datetime64` dtype
-    to one that counds seconds since the `datetime` expressed by `epoch`.
+    all variables (data or coordinate variables) with a
+    ``numpy.datetime64`` dtype to one that counds seconds since the
+    `datetime` expressed by `epoch`.
     This function does not take care that this actually fits, so you may
     want to adapt ``ds.encoding["dtype"]`` and
     ``ds.encoding["scale_factor"]`` yourself.
@@ -258,7 +259,7 @@ def set_logger(level, filename=None, loggers=None):
         What loglevel to use.  Although these are numeric values, you will
         want to use the constants from the `logging` module, such as
         `logging.DEBUG <https://docs.python.org/3/library/logging.html#logging-levels>`_ 
-        or `logging.INFO`.
+        or logging.INFO.
     filename : str or None, optional
         What file to log to.  `None` will log to `sys.stderr`.  Defaults to `None`.
     loggers : List[str] or List[logging.Logger]

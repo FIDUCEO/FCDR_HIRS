@@ -2,7 +2,7 @@ Command-line scripts
 ====================
 
 This is an overview of command-line utilities that are available when
-`FCDR_HIRS` has been successfully installed.
+:doc:`FCDR_HIRS package` has been successfully installed.
 This page describes a summary of the behaviour of each of the utilities,
 as well as an overview of mandatory and optional command-line flags.
 For each script, you will get the same interview by passing the
@@ -12,6 +12,8 @@ cluster using the load scheduler.
 
 FCDR generation
 ---------------
+
+.. _generate-fcdr:
 
 generate\_fcdr
 ^^^^^^^^^^^^^^
@@ -26,6 +28,8 @@ Implemented in :mod:`FCDR_HIRS.processing.generate_fcdr`.
 Matchup / harmonisation processing
 ----------------------------------
 
+.. _combine-hirs-hirs-matchups:
+
 combine_hirs_hirs_matchups
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -36,6 +40,8 @@ Implemented in :mod:`FCDR_HIRS.processing.combine_matchups`.
     :func: get_parser_hirs
     :prog: combine_hirs_hirs_matchups
 
+
+.. _combine-hirs-iasi-matchups:
 
 combine_hirs_iasi_matchups
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -78,6 +84,8 @@ Implemented in :mod:`FCDR_HIRS.processing.convert_harm_params`.
 
 L1B analysis
 ------------
+
+.. _plot-hirs-field-timeseries:
 
 plot_hirs_field_timeseries
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -223,6 +231,8 @@ Implemented in :mod:`FCDR_HIRS.analysis.inspect_hirs_harm_matchups`.
 
 Testing algorithms
 ------------------
+
+.. _plot-hirs-test-rself:
 
 plot_hirs_test_rself
 ^^^^^^^^^^^^^^^^^^^^

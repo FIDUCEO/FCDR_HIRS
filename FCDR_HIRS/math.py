@@ -32,9 +32,9 @@ def calc_y_for_srf_shift(Δλ, y_master, srf0, L_spectral_db, f_spectra, y_ref,
     then applies the regression to y_master.
 
     This function is designed to be called by
-    `:func:calc_cost_for_srf_shift`, which in turn is designed
+    :func:`calc_cost_for_srf_shift`, which in turn is designed
     to be called repeatedly within an optimisation framework (see
-    `:func:estimate_srf_shift`).  Therefore, as much as possible is
+    :func:`estimate_srf_shift`).  Therefore, as much as possible is
     precalculated before calling this.  Hence, you also need to pass
     bt_ref, which equals integrated brightness temperatures for
     the reference satellite, corresponding to f_spectra and L_spectral_db.
@@ -95,9 +95,9 @@ def calc_y_for_srf_shift(Δλ, y_master, srf0, L_spectral_db, f_spectra, y_ref,
     regression_args : dict
         Keyword arguments to pass on to regressor.
         For example, for sklearn.linear_model.LinearRegression you
-        would want to at least pass `{"fit_intercept": True}`.  For
+        would want to at least pass ``{"fit_intercept": True}``.  For
         sklearn.cross_decomposition.PLSRegression you might use
-        `{"n_components": 9, "scale": False}`.  Please refer to
+        ``{"n_components": 9, "scale": False}``.  Please refer to
         scikit-learn documentation.
 
     Returns
@@ -192,7 +192,7 @@ def calc_cost_for_srf_shift(Δλ, y_master, y_target, srf0,
     use a database described by L_spectral_db and f_spectra.
 
     This function is designed to be called repeatedly within an
-    optimisation framework (see `:func:estimate_srf_shift`).  Therefore,
+    optimisation framework (see :func:`estimate_srf_shift`).  Therefore,
     as much as possible is precalculated before calling this.  Hence, you
     also need to pass y_ref, which equals integrated radiances for the
     reference satellite, corresponding to f_spectra and L_spectral_db,
@@ -235,7 +235,7 @@ def calc_cost_for_srf_shift(Δλ, y_master, y_target, srf0,
             comes from either the testing data (calculated by shifting
             srf0 by an amount you haven't told me, but I mean to recover),
             or from actual measurements.
-        srf0 : `:func:typhon.physics.units.em.SRF`)
+        srf0 : :class:`typhon.physics.units.em.SRF`)
             SRF corresponding to
             zero shift, relative to which the shift is estimated.
         L_spectral_db : (N, p) ndarray N×p
@@ -262,9 +262,9 @@ def calc_cost_for_srf_shift(Δλ, y_master, y_target, srf0,
         regression_args : dict
             Keyword arguments to pass on to regressor.
             For example, for sklearn.linear_model.LinearRegression you
-            would want to at least pass `{"fit_intercept": True}`.  For
+            would want to at least pass ``{"fit_intercept": True}``.  For
             sklearn.cross_decomposition.PLSRegression you might use
-            `{"n_components": 9, "scale": False}`.  Please refer to
+            ``{"n_components": 9, "scale": False}``.  Please refer to
             scikit-learn documentation for details.
         cost_mode : str
             How to estimate the cost.  Can be "total"
@@ -332,7 +332,7 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
         units, regardless of what predict_quantity is.
     f_spectra : (N,) ndarray
         spectrum describing frequencies
-        corresponding to `L_spectral_db`.  In Hz.
+        corresponding to ``L_spectral_db``.  In Hz.
     y_ref : ndarray
         Reference BT or radiance
     regression_type : scikit-learn regressor
@@ -344,7 +344,7 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
         Should take as a first argument a function to be optimised,
         remaining arguments taken from optimiser_args.
         Should return an instance of
-        `scipy.optimize.optimize.OptimizeResult`.  You probably
+        :class:`scipy.optimize.optimize.OptimizeResult`.  You probably
         want to select a function from `scipy.optimize`, such
         as `scipy.optimize.basinhopping` when there may be
         multiple minima, or :func:`scipy.optimize,minimize_scalar`

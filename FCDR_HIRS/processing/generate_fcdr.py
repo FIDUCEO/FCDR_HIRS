@@ -410,7 +410,7 @@ class FCDRGenerator:
 
         Arguments:
 
-            from_ [datetime.datetime]
+            from\_ [datetime.datetime]
 
                 Begin of period for which FCDR is wanted
 

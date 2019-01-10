@@ -17,7 +17,7 @@ documentation, then pass it to
 ``all_effects`` argument.
 
 To get an impression of which ones are actually implemented, have a look
-at calls to `fcdr.HIRSFCDR._tuck_effect_channel`, which are littered
+at calls to :meth:`fcdr.HIRSFCDR._tuck_effect_channel`, which are littered
 about here and there, which is currently being used to populate a
 dictionary in preparation for the uncertainty calculation and CURUC.
 """
@@ -327,11 +327,11 @@ class RModelRSelf(Rmodel):
 
     This class implements the correlation model (`Rmodel`) for the
     uncertainty due to the self-emission model.  It was written to
-    correspond with the self-emission model in `FCDR_HIRS.models.RSelf`,
+    correspond with the self-emission model in :class:`FCDR_HIRS.models.RSelf`,
     but may also apply to other self-emission models.  It assumes:
 
     * Self emission is perfectly correlated between elements.  The
-      parameters as calculated by `FCDR_HIRS.models.RSelf` is a function
+      parameters as calculated by :class:`FCDR_HIRS.models.RSelf` is a function
       of temperature, which is only measured once per scanline.  Therefore,
       the self emission estimate is constant within a scanline, as is any
       error in the self emission estimate.
@@ -378,7 +378,7 @@ class RModelRSelf(Rmodel):
     See also
     --------
 
-    `FCDR_HIRS.models.RSelf`
+    :class:`FCDR_HIRS.models.RSelf`
         Implementation of self-emission model.
     """
 
@@ -464,7 +464,7 @@ class Effect:
     description : str
         Long name, human readable description of the effect.
     parameter : Symbol
-        The `Symbol` within the `measurement_equation` that this
+        The :class:`sympy.core.symbol.Symbol` within the `measurement_equation` that this
         effect relates to.  Each effect must relate to exactly one
         measurement equation parameter.
     unit : pint unit
@@ -478,13 +478,15 @@ class Effect:
     correlation_type : tuple[Str]
         Property, 4-tuple of strings, or `CorrelationType` named tuple.
         Each member of the tuple must be one of:
-            * "undefined"
-            * "random"
-            * "rectangular_absolute"
-            * "triangular_relative"
-            * "truncated_gaussian_relative"
-            * "repeated_rectangles"
-            * "repeated_truncated_gaussians"
+
+            - "undefined"
+            - "random"
+            - "rectangular_absolute"
+            - "triangular_relative"
+            - "truncated_gaussian_relative"
+            - "repeated_rectangles"
+            - "repeated_truncated_gaussians"
+
         The four tuple elements refer to (and, in case of the named tuple,
         can be referred to as) ``within_scanline``, ``between_scanlines``,
         ``between_orbits``, and ``across_time``.
@@ -498,13 +500,13 @@ class Effect:
         Normally, the data dimensions for an uncertainty quantity should
         be the same as the dimensions for the quantity in the measurement
         equation the uncertainty corresponds to.  The latter are defined
-        in the `_fcdr_defs` module and as the
-        `fcdr.HIRSFCDR._data_vars_props` attribute.  In some cases,
-        the data dimensions for the uncertainty may differ from the
-        quantity.  For example, IWCT type B uncertainty is scalar, even
-        though it belongs to a quantity that is not.  This attribute can
-        be set to a sequence of strings describing the dimensions for the
-        uncertainty type.
+        in the `_fcdr_defs` module and stored internally as the
+        ``_data_vars_props`` attribute in the :class:`fcdr.HIRSFCDR`
+        class.  In some cases, the data dimensions for the uncertainty may
+        differ from the quantity.  For example, IWCT type B uncertainty
+        is scalar, even though it belongs to a quantity that is not.
+        This attribute can be set to a sequence of strings describing
+        the dimensions for the uncertainty type.
     rmodel : `Rmodel`
         Instance of the `Rmodel` class, or rather one of its
         implementation, which in turn describes the correlation
@@ -776,7 +778,7 @@ class Effect:
         Parameters
         ----------
 
-        s : str or `Symbol`
+        s : str or :class:`sympy.core.symbol.Symbol`
             Parameter for which to calculate the sensitivity coefficients.
             Defaults to R_e, i.e. the Earth radiance.
 
