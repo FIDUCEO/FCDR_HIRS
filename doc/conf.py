@@ -20,7 +20,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'FCDR_HIRS'
-copyright = ('This code was developed for the EC project "Fidelity and '
+copyright = ('2015--2019 --- This code was developed for the EC project "Fidelity and '
 'Uncertainty in Climate Data Records from Earth Observations (FIDUCEO)". '
 "Grant Agreement: 638822")
 author = 'Gerrit Holl'
@@ -50,6 +50,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx_issues",
+    "sphinxarg.ext",
 ]
 
 # Add any paths that contain templates here, relative to this directory.

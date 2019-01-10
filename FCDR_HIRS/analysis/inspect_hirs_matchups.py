@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 hh = HIRSHIRS()
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description="Run some checks on BC matchups",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -65,8 +65,9 @@ def parse_cmdline():
     parser.add_argument("--verbose", action="store_true",
         default=False, help="Be verbose.")
 
-    p = parser.parse_args()
-    return p
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
     def plot_channel(self, ch):#, prim="n17", sec="n16"):

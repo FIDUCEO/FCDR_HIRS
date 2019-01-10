@@ -28,7 +28,7 @@ from .. import graphics
 
 logger = logging.getLogger(__name__)
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -48,8 +48,9 @@ def parse_cmdline():
         default={"n_components": 2, "scale": True},
         help="Arguments to pass to regression class (as json/Python dict)")
 
-    p = parser.parse_args()
-    return p
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 def plot_rself_test(h, ds, temperatures, channels,
         regr_type, regr_args, tit, fn):

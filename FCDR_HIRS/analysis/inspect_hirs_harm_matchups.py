@@ -27,7 +27,7 @@ from .. import common
 from .. import graphics
 
 logger = logging.getLogger(__name__)
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -47,7 +47,9 @@ def parse_cmdline():
         action="store_true",
         help="Write filters to files") 
 
-    return parser.parse_args()
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
         write=False):

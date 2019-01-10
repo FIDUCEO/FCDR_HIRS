@@ -63,7 +63,7 @@ period_pairs = {sat:
 #     (datetime.datetime(*end, 1, 0, 0), datetime.datetime(*end, 1, 12, 0)))
 #        for (sat, (start, end)) in month_pairs.items()}
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description="Plot field scatter density matrices (SDM)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -122,8 +122,9 @@ def parse_cmdline():
         help="Plot all channel correlations for beginning and end of "
              "satellite lifetime for all satellites")
 
-    p = parser.parse_args()
-    return p
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 def plot_field_matrix(MM, ranges, title, filename, units):
     """Plot field matrix

@@ -16,7 +16,7 @@ from .. import common
 from .. import graphics
 
 logger = logging.getLogger(__name__)
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description="Show field on map",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -51,8 +51,9 @@ def parse_cmdline():
 
     parser.add_argument("--verbose", action="store_true", default=False)
 
-    p = parser.parse_args()
-    return p
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 def plot_field(lon, lat, fld, filename, tit, cblabel, **kwargs):
     (f, a) = matplotlib.pyplot.subplots(figsize=(14, 8))

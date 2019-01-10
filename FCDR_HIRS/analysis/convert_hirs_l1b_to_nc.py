@@ -29,7 +29,7 @@ from .. import fcdr
 
 logger = logging.getLogger(__name__)
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__.strip(),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -42,8 +42,10 @@ def parse_cmdline():
     parser.add_argument("-o", "--overwrite", action="store_true",
                         help="Write destination file/s even when they exist",
                         default=False)
-    p = parser.parse_args()
-    return p
+    return parser
+
+def parse_cmdline():
+    return get_parser().parse_args()
 
 outdir = pathlib.Path(typhon.config.conf["main"]["fiddatadir"],
     "HIRS_L1C_NC", "{sat:s}", "{year:04d}", "{month:02d}", "{day:02d}")

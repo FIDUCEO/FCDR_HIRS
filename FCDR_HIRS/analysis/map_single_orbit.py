@@ -43,7 +43,7 @@ from .. import graphics
 logger = logging.getLogger(__name__)
 
 #from .. import fcdr
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -97,8 +97,9 @@ def parse_cmdline():
         help="Split each channel over two lines.  Only works if "
             "--without-bitmasks.")
 
-    p = parser.parse_args()
-    return p
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 class OrbitPlotter:
     def __init__(self, f, channels, range=(0, 100),

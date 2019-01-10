@@ -13,7 +13,7 @@ import operator
 class MatchupError(Exception):
     pass
 
-def parse_cmdline_hirs():
+def get_parser_hirs():
     parser = argparse.ArgumentParser(
         description="""
 Convert HIRS-HIRS matchups for harmonisation
@@ -36,9 +36,11 @@ See issue #22
     group.add_argument('--with_filters', action='store_true')
     group.add_argument('--without_filters', action='store_false')
 
-    return parser.parse_args()
+    return parser
+def parse_cmdline_hirs():
+    return get_parser_hirs().parse_args()
 
-def parse_cmdline_iasi():
+def get_parser_iasi():
     parser = argparse.ArgumentParser(
         description="""
 Convert HIRS-IASI matchups for harmonisation
@@ -51,9 +53,11 @@ Convert HIRS-IASI matchups for harmonisation
         include_channels=False,
         include_temperatures=False)
 
-    return parser.parse_args()
+    return parser
+def parse_cmdline_iasi():
+    return get_parser_iasi().parse_args()
 
-def parse_cmdline_merge():
+def get_parser_merge():
     parser = argparse.ArgumentParser(
         description="Merge multiple harmonisation files",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -65,7 +69,9 @@ def parse_cmdline_merge():
         default="out.nc",
         help="File to write output to")
 
-    return parser.parse_args()
+    return parser
+def parse_cmdline_merge():
+    return get_parser_merge().parse_args()
     
 # workaround for #174
 tl = dict(C_E="C_Earth",

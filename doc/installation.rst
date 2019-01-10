@@ -1,5 +1,5 @@
 Installation
-------------
+============
 
 To install FCDR\_HIRS, you need to install the dependencies first.
 Almost all dependencies are installable through pip or conda.  The only

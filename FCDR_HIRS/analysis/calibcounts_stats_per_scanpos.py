@@ -34,7 +34,7 @@ from .. import graphics
 
 logger = logging.getLogger(__name__)
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -86,8 +86,11 @@ def parse_cmdline():
         action="store_false",
         dest="anomalies")
 
-    p = parser.parse_args()
-    return p
+    return parser
+
+def parse_cmdline():
+    p = get_parser()
+    return parser.parse_args()
 
 def plot_calibcount_stats(h, Mall, channels,
         title="", filename=""):

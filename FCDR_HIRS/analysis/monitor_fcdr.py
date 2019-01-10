@@ -30,7 +30,7 @@ converter.register()
 
 logger = logging.getLogger(__name__)
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -41,8 +41,9 @@ def parse_cmdline():
         include_channels=True,
         include_temperatures=False)
 
-    p = parser.parse_args()
-    return p
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 class FCDRMonitor:
     figname = ("fcdr_perf/{self.satname:s}_{tb:%Y}/ch{ch:d}/"

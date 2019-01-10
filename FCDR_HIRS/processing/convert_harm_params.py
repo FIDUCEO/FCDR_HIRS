@@ -59,7 +59,7 @@ from numpy import (nan, array)
 
 '''
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -73,7 +73,9 @@ def parse_cmdline():
         help="List of files (one per channel) containing output from "
              "RQs harmonisation process")
 
-    return parser.parse_args()
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 # from attachment from email RQ 2018-03-26, sent to SH, JM, EW, GH
 

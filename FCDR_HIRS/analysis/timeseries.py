@@ -63,7 +63,7 @@ srcfile_temp_iwt = pathlib.Path(typhon.config.conf["main"]["myscratchdir"],
                        "hirs_{sat:s}_{year:d}_temp_iwt.npz")
 logger = logging.getLogger(__name__)
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description="Study noise and temperature over time",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -203,8 +203,9 @@ def parse_cmdline():
 
     parser.set_defaults(include_gain=True, include_rself=True)
     
-    p = parser.parse_args()
-    return p
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 def get_timeseries_temp_iwt_anomaly(sat, year_start=2005, year_end=2017):
     L = []

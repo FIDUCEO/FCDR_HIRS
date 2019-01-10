@@ -55,7 +55,7 @@ unit_specrad_wn = ureg.W / (ureg.m**2 * ureg.sr * (1/ureg.m))
 unit_specrad_freq = ureg.W / (ureg.m**2 * ureg.sr * ureg.Hz)
 logger = logging.getLogger(__name__)
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description="Experiment with HIRS SRF estimation",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -282,8 +282,9 @@ def parse_cmdline():
     parser.set_defaults(cache=True)
 
 
-    p = parser.parse_args()
-    return p
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 class HIM(typhon.datasets.dataset.MultiFileDataset):
     """For HIRS-IASI-Matchups
