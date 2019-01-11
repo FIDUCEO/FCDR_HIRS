@@ -647,7 +647,7 @@ def plot_file_summary_stats(path, write=False):
         sec_hirs=fcdr.which_hirs_fcdr(ds.attrs["sensor_2_name"], read="L1C"))
     kmodel.init_Ldb()
 
-    plot_harm_input_stats(ds)
+    plot_harm_input_stats(ds, filtered=filtered)
     others = [k.replace("K_other_", "").replace("_forward", "")
             for k in ds.data_vars.keys()
             if k.startswith("K_other_") and k.endswith("_forward")]
