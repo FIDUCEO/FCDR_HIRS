@@ -561,7 +561,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
         "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}.".format(
             channel=ds["channel"].item(), lab=lab, **ds.attrs))
     
-def plot_harm_input_stats(ds):
+def plot_harm_input_stats(ds, filtered):
     """Plot histograms and such of harmonisation inputs
 
     For all inputs to the harmonisation, plot histograms along with
@@ -578,6 +578,7 @@ def plot_harm_input_stats(ds):
     ds : xarray.dataset
         Harmonisation matchup dataset for which to generate plots.
     """
+    filterlab = "filtered" if filtered else "unfiltered"
     N = ds.dims["m1"]
     (f, ax_all) = matplotlib.pyplot.subplots(2, N, figsize=(5*N, 10))
     for i in range(N):
@@ -596,11 +597,16 @@ def plot_harm_input_stats(ds):
             a.set_title(ds.attrs[f"sensor_{j:d}_name"] + ", " + ds[dn][i].item())
             a.set_xlabel(ds[dn][i].item())
             a.set_ylabel("Count")
-    f.suptitle("harm input stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}, with med+N*mad away".format(**ds.attrs)
+    f.suptitle(("harm input stats for {filterlab:s} pair "
+                "{sensor_1_name:s}, {sensor_2_name:s}, "
+                "{time_coverage:s}, with med+N*mad away").format(
+                    filterlab=filterlab, **ds.attrs)
         + ", channel " + str(ds["channel"].item()))
     graphics.print_or_show(f, False,
-        "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_input_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_.".format(
-            channel=ds["channel"].item(), **ds.attrs))
+        ("harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/"
+         "harmonisation_input_stats_{sensor_1_name:s}-{sensor_2_name:s}"
+         "_ch{channel:d}_{time_coverage:s}_{filterlab:s}.").format(
+            channel=ds["channel"].item(), filterlab=filterlab, **ds.attrs))
 
 def plot_file_summary_stats(path, write=False):
     """Plot various summary statistics for harmonisation file
@@ -622,6 +628,12 @@ def plot_file_summary_stats(path, write=False):
     #   - get axes labels from data-array attributes
 
     ds = xarray.open_dataset(path)
+    if "filtered" in path.parts:
+        filtered = True
+    elif "unfiltered" in path.parts:
+        filtered = False
+    else:
+        raise ValueError(f"Cannot tell if filtered from {path!s}")
 
     # one subplot needs IASI simulations, which I will obtain from kmodel
     kmodel = matchups.KModelSRFIASIDB(
