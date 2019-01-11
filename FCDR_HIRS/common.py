@@ -43,8 +43,8 @@ def add_to_argparse(parser,
     Parameters
     ----------
 
-    parser : :class:`argparse.ArgumentParser` object
-        The :class:`argparse.ArgumentParser` object to which the arguments
+    parser : :class:`~argparse.ArgumentParser` object
+        The :class:`~argparse.ArgumentParser` object to which the arguments
         shall be added.
     include_period : bool, optional
         Include the mandatory arguments ``from_date`` and ``to_date``, as well
@@ -54,7 +54,7 @@ def add_to_argparse(parser,
     include_sat : {0, 1, 2}, optional
         Include 0, 1, or 2 satellite name arguments, which will be
         mandatory.  The valid options as satellite names will be taken
-        from :func:`common.list_all_satellites`.  For a single satellite,
+        from :func:`list_all_satellites`.  For a single satellite,
         the option will be called ``satname``.  If there are two, they
         will be called ``satname1`` and ``satname2``.  Defaults to 0.
     include_channels : bool, optional
@@ -74,7 +74,7 @@ def add_to_argparse(parser,
     Returns
     -------
 
-    argparse.ArgumentParser
+    ~argparse.ArgumentParser
         The same parser that went in, but with arguments added.
     """
 
@@ -166,7 +166,7 @@ def time_epoch_to(ds: xarray.Dataset,
 
     ds : xarray.Dataset
         Dataset for which to adapt the time-based fields.
-    epoch : datetime.datetime
+    epoch : ~datetime.datetime
         Datetime to set as the new epoch.
 
     Returns
@@ -201,7 +201,7 @@ def sample_flags(da, period="1H", dim="time"):
     Parameters
     ----------
 
-    da : xarray.DataArray
+    da : ~xarray.DataArray
         DataArray which is a CF-compliant flag field with the ``flag_masks``
         and ``flag_meanings``, for which the frequency of occurrence per
         unit time is calculated.  The DataArray must have a time
@@ -217,12 +217,12 @@ def sample_flags(da, period="1H", dim="time"):
     Returns
     -------
 
-    xarray.DataArray
+    ~xarray.DataArray
         DataArray with a dimensions of "flag" and time, where the time
         dimension is a regular grid with an interval of ``period``, which
         indicates for each flag and time the percentage of this time
         period for which the flag is set.
-    List[str]
+    List[`str`]
         Meanings for each of the flags, taken directly from
         ``da.flag_meanings``.
 
@@ -374,13 +374,13 @@ def savetxt_3d(fname, data, *args, **kwargs):
     fname : str
         Filename to write the plotdata to.  You might want to get this
         from `plotdatadir`.
-    data : numpy.ndarray
+    data : ~numpy.ndarray
         3-dimensional `numpy.ndarray` containing the data to be written to
         a file.
     *args
-        Remaining arguments passed to `numpy.savetxt`.
+        Remaining arguments passed to `~numpy.savetxt`.
     **kwargs
-        Remaining arguments passed to `numpy.savetxt`.
+        Remaining arguments passed to `~numpy.savetxt`.
 
     Example
     -------
@@ -416,7 +416,16 @@ def plotdatadir() -> str:
     return datetime.date.today().strftime(
         config.conf["main"]["plotdatadir"])
 
-def list_all_satellites():
+def list_all_satellites() -> set:
+    """Return a set of all satellites
+
+    Returns
+    -------
+
+    set
+        Set of all accepted variations of names of all satellites
+        considered in the FIDUCEO-FCDR.
+    """
     return {'ma', 'mb', 'metop_1', 'metop_2', 'metopa', 'metopb', 'n-05',
             'n-06', 'n-07', 'n-08', 'n-09', 'n-10', 'n-11', 'n-12',
             'n-13', 'n-14', 'n-15', 'n-16', 'n-17', 'n-18', 'n-19', 'n-5',

@@ -7,7 +7,7 @@ calculate band coefficients.
 
 Call as
 
-convert_hirs_srfs satname
+``convert_hirs_srfs satname``
 
 after installing the FCDR_HIRS package.
 """
@@ -23,6 +23,11 @@ outdir = pathlib.Path("/group_workspaces/cems2/fiduceo/scratch/HIRS_SRF")
 # NB: an earlier version of this script contained code for shifts based on
 # ARTS SRFs
 def main():
+    """Convert HIRS srfs from RTTOV to NetCDF
+
+    See module docstring.
+    """
+
     satname = norm_tovs_name(sys.argv[1], mode="default")
     (outdir / satname).mkdir(parents=True, exist_ok=True)
     for ch in range(1, 20):

@@ -30,9 +30,9 @@ def read_tovs_hirs_period(satname, start_date, to_date, fields):
 
     satname : str
         Name of the satellite for which to read HIRS data.
-    start_date : datetime.datetime
+    start_date : ~datetime.datetime
         Starting datetime for which to read.
-    to_date : datetime.datetime
+    to_date : ~datetime.datetime
         Ending date.
     fields : List[str] or str
         List of strings, fields of which to read.  The special case "all"
@@ -48,11 +48,7 @@ def read_tovs_hirs_period(satname, start_date, to_date, fields):
     See Also
     --------
 
-    This function calls
-    :meth:`typhon.datasets.dataset.Dataset.read_period` for
-    HIRS objects, for example
-    :meth:`typhon.datasets.tovs.HIRS4.read_period` in case of a HIRS4
-    satellite.
+    typhon.datasets.dataset.Dataset.read_period
 
     """
     h = tovs.which_hirs(satname)

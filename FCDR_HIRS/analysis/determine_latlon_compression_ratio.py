@@ -4,6 +4,9 @@ Read some HIRS FCDR data, take the latitude and longitude.  Store to disk
 only those using various combinations of parameters.  In particular,
 determine whether scaled int has significant gain over float including
 compression.
+
+Commandline script with no command-line arguments, no input files, and no
+output files.  See also :ref:`determine-hirs-latlon-compression-ratio`.
 """
 
 import datetime
@@ -29,6 +32,10 @@ codings.update(**{
         for n in range(7)})
 
 def main():
+    """Main function.
+
+    See module docstring: :mod:`determine_latlon_compression_ratio`.
+    """
     hirs = fcdr.which_hirs_fcdr("metopa", read="L1C")
     dsref = hirs.read_period(
         datetime.datetime(2010, 5, 1),

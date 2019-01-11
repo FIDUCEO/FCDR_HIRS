@@ -1,20 +1,23 @@
-"""Functionality related to correlation matrix information content
+r"""Functionality related to correlation matrix information content
 
+Corresponds to :ref:`hirs-info-content` script.
 Rodgers (2000), Equation (2.56)
 
-d_s = tr([K^T S_eps^⁻¹ K + S_a^⁻¹]^⁻¹ K^T S_eps^⁻¹ K
+.. math::
+
+    d_s = tr([K^T S_{\epsilon}^{-1} K + S_a^{-1}]^{-1} K^T S_{\epsilon}^{-1} K
 
 where:
 
-- K is the Jacobian matrix, obtained from ARTS
-- S_eps is the measurement error covariance matrix.  This is the one I
+- :math:`K` is the Jacobian matrix, obtained from ARTS
+- :math:`S_{\epsilon}` is the measurement error covariance matrix.  This is the one I
   change for different HIRSes
-- S_a is the a priori covariance matrix, such as for water vapour.
+- :math:`S_a` is the a priori covariance matrix, such as for water vapour.
   This can be obtained from reanalysis, or the Chevallier data, or
   NWP, or otherwise.
 
 This module is incomplete.  The results are incorrect.  The development is
-inconclusive.  **DO NOT USE**
+inconclusive.  **DO NOT USE THIS MODULE**!
 
 I said **DO NOT USE**.  What are you still doing here?
 
@@ -112,10 +115,13 @@ def get_S_eps(corrmat=None):
     return covmat
 
 def dofs(S_a, K, S_eps):
-    """
+    r"""calculate dofs
+
     Rodgers (2000), Equation (2.56)
 
-    d_s = tr([K^T S_eps^⁻¹ K + S_a^⁻¹]^⁻¹ K^T S_eps^⁻¹ K
+    .. math::
+
+        d_s = tr([K^T S_{\epsilon}^{-1} K + S_a^{-1}]^{-1} K^T S_{\epsilon}^{-1} K
 
     Can be broadcasted, last two dimensions will be matrix dimensions
     """
@@ -126,10 +132,13 @@ def dofs(S_a, K, S_eps):
     return DOFS
 
 def dofn(S_a, K, S_eps):
-    """
+    r"""calculate dofn
+
     Rodgers (2000), Equation (2.57)
 
-    d_n = tr(S_eps[K S_a K^T + S_eps]^⁻¹)
+    .. math::
+
+        d_n = tr(S_{\epsilon}[K S_a K^T + S_{\epsilon}]^{-1})
 
     Can be broadcasted, last two dimensions will be matrix dimensions
     """
@@ -145,26 +154,33 @@ def gain(S_a, K, S_eps):
     
 
 def S_degradation(S_a, K, S_eps):
-    """What is the error covariance from use of the wrong observation error covarionce?
+    r"""What is the error covariance from use of the wrong observation error covarionce?
 
     Chris Merchant, personal communication, 2017:
 
-    S_{\hat{x}'-\hat{x}} = (G'-G)(y-F)(y-F)^T(G'-G)^T
+    .. math::
+
+        S_{\hat{x}'-\hat{x}} = (G'-G)(y-F)(y-F)^T(G'-G)^T
 
     where
 
-    G' = (K^T S_eps'^-1 K + S_a^-1)^-1 K^T S_eps'^-1
+    .. math::
 
-    G = (K^T S_eps^-1 K + S_a^-1)^-1 K^T S_eps^-1
+        G' = (K^T S_{\epsilon}'^-1 K + S_a^-1)^-1 K^T S_{\epsilon}'^-1
 
-    (y-F)(y-F)^T = S_y = K S_a K^T + S_eps
+        G = (K^T S_{\epsilon}^-1 K + S_a^-1)^-1 K^T S_{\epsilon}^-1
+
+        (y-F)(y-F)^T = S_y = K S_a K^T + S_{\epsilon}
 
     Parameters
     ----------
 
-    - S_a
-    - K
-    - S_eps
+    S_a : ndarray
+        S_a
+    K : ndarray
+        K
+    S_eps : ndarray
+        :math:`S_{\epsilon}`
 
     """
 

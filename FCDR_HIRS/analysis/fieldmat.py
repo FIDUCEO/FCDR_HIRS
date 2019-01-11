@@ -1,5 +1,22 @@
 """Plot scatter field density plots for temperature or other
 
+This module contains functionality for scatter density plots and
+correlation matrices between temperatures, between HIRS noise levels, and
+between HIRS noise valuse.
+
+A scatter density matrix for a series of fields makes a scatter density
+plot of each pair of fields against each other, such that there will be
+N x N subplots for N fields.  This functionality is built around around
+:func:`typhon.plots.scatter_density_plot_matrix` and in this module
+implemented in :func:`~analysis.fieldmat.plot_field_matrix`.
+
+The module also contains functionality to calculate the FFT for space or
+IWCT anomalies (for want of a better place to put it).
+
+For the full documentation of the script, see :ref:`plot-hirs-field-matrix`.
+
+Otherwise this module contains the functionality to plot correlation
+matrices, such as between anomalies on HIRS channel calibration counts.
 """
 
 import argparse
@@ -65,7 +82,7 @@ period_pairs = {sat:
 
 def get_parser():
     parser = argparse.ArgumentParser(
-        description="Plot field scatter density matrices (SDM)",
+        description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parse = common.add_to_argparse(parser,
@@ -76,7 +93,7 @@ def get_parser():
 
     parser.add_argument("--plot_temperature_sdm", action="store_true",
         help="Include scatter density matrix (SDM) of Digital A telemetry"
-             " temperatares")
+             " temperatures")
 
     parser.add_argument("--plot_noise_level_sdm", action="store_true",
         help="Include SDM of noise levels between channels")
@@ -87,8 +104,8 @@ def get_parser():
 
     parser.add_argument("--npos", action="store", type=int,
         default=[6], nargs="+",
-        help="When plotting SDM of noise values between scan positions, "
-             "plot this number")
+        help="When plotting SDM of noise values or noise level between "
+             "scan positions, plot this scan position")
 
     parser.add_argument("--plot_noise_value_channel_sdm",
         action="store_true",
@@ -108,7 +125,7 @@ def get_parser():
 
     parser.add_argument("--calibpos", action="store", type=int,
         nargs="+", default=[20],
-        help="When plotting SDM of noise values between chanels, "
+        help="When plotting SDM of noise values or noise levels between chanels, "
              "plot this scan position")
 
     parser.add_argument("--noise_typ",
@@ -120,7 +137,9 @@ def get_parser():
 
     parser.add_argument("--plot_all_corr", action="store_true",
         help="Plot all channel correlations for beginning and end of "
-             "satellite lifetime for all satellites")
+             "satellite lifetime for all satellites, with lower triangle "
+             "for early in satellite life and upper triangle for late "
+             "in satellite life.")
 
     return parser
 def parse_cmdline():
@@ -129,7 +148,7 @@ def parse_cmdline():
 def plot_field_matrix(MM, ranges, title, filename, units):
     """Plot field matrix
 
-    Thin layer around `typhon.plots.plots.scatter_density_plot_matrix`.
+    Thin layer around :func:`typhon.plots.scatter_density_plot_matrix`.
     See documentation there for details.
 
     Parameters
@@ -163,33 +182,156 @@ def plot_field_matrix(MM, ranges, title, filename, units):
 
 #
 class _SatPlotHelper(metaclass=abc.ABCMeta):
-    """Helper for MatrixPlotter.plot_all_sats_early_late
+    """Helper for `MatrixPlotter.plot_all_sats_early_late`
+
+    The method `MatrixPlotter.plot_all_sats_early_late` is able to plot
+    various things for all satellites for an early and for a late month.
+    This class implements the interface that it uses to do so.  In order
+    for :meth:`~MatrixPlotter.plot_all_sats_early_late` to do its work, it will
+    get passed an instance of an implementation of the
+    :class:`_SatPlotHelper`, then calls, in order, the methods
+    :meth:`prepare_early`, :meth:`prepare_late`, :meth:`plot_both`, and
+    :meth:`finalise`.  This ensures that the surrounding loop logic of
+    reading the early and late periods for each channel is only
+    implemented once (in
+    :meth:`~MatrixPlotter.plot_all_sats_early_late`), yet can be used for
+    various purposes, one for each implementation of this class.
+
+    The developer is not supposed to use this class or its implementations
+    directly, but rather to subclass and implement it in case additional
+    plots want to be made for each early and late period, satellite, and
+    channel.  An instance of a subclass must be passed as the first
+    argument to :meth:`MatrixPlotter.plot_all_sats_early_late`.
+
+    """
+
+    multichannel = None
+    """bool : one plot per channel or one plot for all
+
+    If True, put all channels together in one plot, with each channel as
+    its own subplot.  If False, make one figure per channel.
     """
 
     @abc.abstractmethod
     def prepare_early(self, mp, **extra):
+        """Method called before the early period
+
+        Parameters
+        ----------
+
+        mp : MatrixPlotter
+            Instance of :class:`MatrixPlotter`.
+        **extra
+            Any extra keyword arguments that specific implementations may
+            desire.
+        """
         ...
 
     @abc.abstractmethod
     def prepare_late(self, mp, **extra):
+        """Method called before the late period
+
+        Parameters
+        ----------
+
+        mp : MatrixPlotter
+            Instance of :class:`MatrixPlotter`.
+        **extra
+            Any extra keyword arguments that specific implementations may
+            desire.
+        """
         ...
 
     @abc.abstractmethod
     def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, **extra):
+        """Plot both the early and lathe period to ax
+
+        Parameters
+        ----------
+
+        mp : MatrixPlotter
+            Instance of :class:`MatrixPlotter`.
+        ax : matplotlib.axes._subplots.AxesSubplot
+            Instance of `matplotlib.axes._subplots.AxesSubplot` in which
+            the plot will be placed
+        gs : matplotlib.gridspec.GridSpec
+            Instance of `matplotlib.gridspec.GridSpec`
+        sat : str
+            Name of satellite involved
+        r : int
+            Row number within axes of grids
+        c : int
+            Column number within axes of grids
+        ep : [datetime.datetime, datetime.datetime]
+            List with two elements containing the beginning and ending of
+            the early period
+        lp : [datetime.datetime, datetime.datetime]
+            List with two elements containing the beginning and ending of
+            the late period
+        **extra
+            Any extra keyword arguments that specific implementations may
+            desire.
+        """
         ...
 
     @abc.abstractmethod
     def finalise(self, mp, f, gs, **extra):
+        """Method called after everything else is done
+
+        An implementation will probably want to finalise the figure in
+        some way.
+
+        Parameters
+        ----------
+
+        mp : MatrixPlotter
+            Instance of :class:`MatrixPlotter`.
+        f : matplotlib.figure.Figure
+            Instance of `matplotlib.figure.Figure` that want finalisation
+        gs : matplotlib.gridspec.GridSpec
+            Instance of `matplotlib.gridspec.GridSpec`
+        **extra
+            Any extra keyword arguments that specific implementations may
+            desire.
+        """
         ...
 #
 class _SatPlotChCorrmat(_SatPlotHelper):
+    """Helper class for `MatrixPlotter.plot_all_sats_early_late`
+
+    This is a helper class for plotting a channel correlation matrix for
+    all early and late periods.  Do not use directly, but pass an object
+    of this class to :meth:`~MatrixPlotter.plot_all_sats_early_late`
+    or :meth:`~MatrixPlotter.plot_selection_sats_early_late`.
+    """
+
     multichannel = False
     def __init__(self, channels, noise_typ, calibpos):
+        """Initialise the channel correlation matrix helper
+
+        Parameters
+        ----------
+
+        channels : array_like
+            Channels to consider
+        noise_typ : str
+            Where to estimate noise from: "space", "iwt", or "ict"
+        calibpos : int
+            What calibration position to use for correlation calculations
+        """
+
         self.channels = numpy.asarray(channels)
         self.noise_typ = noise_typ
         self.calibpos = calibpos
     
     def _get_ch_corrmat(self, mp):
+        """Get channel correlation matrix
+
+        Parameters
+        ----------
+
+        mp : MatrixPlotter
+        """
         (S, ρ, cnt) = mp._get_ch_corrmat(
             self.channels,
             self.noise_typ,
@@ -241,7 +383,16 @@ class _SatPlotChCorrmat(_SatPlotHelper):
                 f"hirs_noise_correlations_allsats_pos{self.calibpos:d}.")
 
 class _SatPlotFFT(_SatPlotHelper):
-    """For plotting FFT stuff
+    """Helper class For plotting FFT stuff
+
+    Pass an object of this class to
+    :meth:`MatrixPlotter.plot_all_sats_early_late` to get a figure
+    with for each channel an FFT for anomalies for space, IWCT, and Earth
+    views.
+
+    This is a helper class for plotting a FFT for all early and late
+    periods.  Do not use directly, but pass an object
+    of this class to :meth:`MatrixPlotter.plot_all_sats_early_late`.
     """
     multichannel = True
 
@@ -259,6 +410,16 @@ class _SatPlotFFT(_SatPlotHelper):
         self.late_cnt = {}
 
     def _extract_counts(self, mp, channel):
+        """Extract space, IWCT, and Earth counts
+
+        Parameters
+        ----------
+
+        mp : MatrixPlotter
+            MatrixPlotter instance
+        channel : int
+            Channel for which we're extracting counts
+        """
         spc = mp._get_accnt("space")[:, :, channel-1]
         spc = spc[(~spc.mask).all(1), :]
         iwctc = mp._get_accnt("iwt")[:, :, channel-1]
@@ -412,6 +573,12 @@ class _SatPlotFFT(_SatPlotHelper):
                 f"hirs_crosstalk_fft_ch{channel:d}.")
 
 class _SatPlotAll(_SatPlotChCorrmat, _SatPlotFFT):
+    """Helper class for plotting both ch corrmats and fft
+
+    Just a wrapper to in one go plot both what is implemented in
+    `_SatPlotChCorrmat` and in `_SatPlotFFT` in one go, without the need
+    to read all the data twice.
+    """
     multichannel = True
     def __init__(self, *args, **kwargs):
         _SatPlotChCorrmat.__init__(*args, **kwargs)
@@ -436,13 +603,48 @@ class _SatPlotAll(_SatPlotChCorrmat, _SatPlotFFT):
 class MatrixPlotter:
     """Plot varous scatter density matrices and correlation matrices
 
+    This class gathers attributes and methods to plot various scatter
+    density matrices, correlation matrices, and FFTs.  The most
+    interesting are probably the methods describing the correlations
+    between count anomalies, the "correlated noise" problem.
+
+    The highest level method is :meth:`plot_all_sats_early_late`, which
+    makes one big figure with correlation matrices for all satellites and
+    all channels, early and late.
+
     """
 
+    #: List of all satellites
     all_sats = ["tirosn"] + [f"noaa{no:02d}" for no in range(6, 20) if no!=13] + ["metopa", "metopb"]
 #    def __init__(self, sat, from_date, to_date):
 #        self.reset(sat, from_date, to_date)
 
+    #: ndarray : Attribute that will hold data after calling :meth:`reset`
+    M = None
+
     def reset(self, sat, from_date, to_date):
+        """Reset matrix plotter to an initial state
+
+        This methods reads the data needed to subsequently make plots
+        related to ``sat`` between the period ``from_date`` and
+        ``to_date``.  Call this method before any of the plotting methods
+        as well as when you want to redo any of the plotting methods for a
+        different satellite and time period.
+
+        This method returns nothing, but after calling this method, the
+        data will be stored in the :attr:`M` attribute.
+        Parameters
+        ----------
+
+        sat : str
+            Name of satellite to read
+        from_date : datetime.datetime
+            The `~datetime.datetime` object representing the starting time
+            to read
+        to_date : datetime.datetime
+            Like ``from_date`` but describing the final time to read
+
+        """
         h = tovs.which_hirs(sat)
         self.hirs = h
         M = cached.read_tovs_hirs_period(sat, from_date, to_date, 
@@ -452,12 +654,29 @@ class MatrixPlotter:
         self.start_date = from_date
         self.end_date = to_date
 
-        self.title_sat_date = "{sat:s} {from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}".format(
-            **locals())
-        self.filename_sat_date = "{sat:s}_{from_date:%Y}/{sat:s}_{from_date:%Y%m%d%H%M}--{to_date:%Y%m%d%H%M}".format(
-            **locals())
+        self.title_sat_date = f"{sat:s} {from_date:%Y-%m-%d} -- {to_date:%Y-%m-%d}"
+        self.filename_sat_date = f"{sat:s}_{from_date:%Y}/{sat:s}_{from_date:%Y%m%d%H%M}--{to_date:%Y%m%d%H%M}"
 
     def _get_temps(self, temp_fields):
+        """Extract temperatures from data
+
+        After :attr:`M` has been set by :meth:`reset`, this method will
+        extract the desired temperature fields from it.  Possible
+        fieldnames are given by the ``temperature_fields`` attribute on
+        :class:`typhon.datasets.tovs.HIRS`.
+
+        Parameters
+        ----------
+
+        temp_fields : list[str]
+            List of temperature fieldnames.
+
+        Returns
+        -------
+
+        ndarray
+            Structured array containing only the temperatures.
+        """
         MM = numpy.ma.zeros(
             shape=self.M.shape,
             dtype=[(t, "f8") for t in temp_fields])
@@ -469,6 +688,30 @@ class MatrixPlotter:
         return MM
 
     def plot_temperature_sdm(self, temp_fields):
+        """Plot a scatter density matrix with temperatures
+
+        Make ``len(temp_fields)`` * ``len(temp_fields)`` subplots, with
+        each of those subplots a scatter density matrix between
+        ``temp_fields[i]`` vs. ``temp_fields[j]``.  This is a thin wrapper
+        around :func:`plot_field_matrix` using temperatures.  Valid
+        temperatures are given by the ``temperature_fields`` attribute on
+        :class:`typhon.datasets.tovs.HIRS`.
+
+        Parameters
+        ----------
+
+        temp_fields : list[str]
+            List of temperature fieldnames.
+
+
+        See also
+        --------
+
+        plot_noise_level_sdm
+            Similar SDM but for noise level
+        plot_field_matrix
+            Underlying function plotting a field matrix
+        """
         MM = self._get_temps(temp_fields)
         plot_field_matrix(MM,
             ranges=
@@ -481,6 +724,32 @@ class MatrixPlotter:
             units={fld: "K" for fld in temp_fields})
 
     def plot_noise_level_sdm(self, channels, noise_typ="iwt"):
+        """Plot a scatter density matrix with noise levels
+
+        Plot a scatter density matrix with ``len(channels)`` times
+        ``len(channels)`` subplots, with each subplot a scatter density
+        plot the noise levels between those channels.  Note that this is
+        between the noise level and not the actual deviation from the
+        mean, which would be in :meth:`plot_noise_value_scanpos_sdm``.
+
+        Parameters
+        ----------
+
+        channels : list[int]
+            List of channel numbers
+        noise_typ : str, optional
+            What type to plot the SDM for.  Can be "iwt", "ict", or "space".
+
+        See also
+        --------
+
+        plot_noise_value_scanpos_sdm
+            Plot SDM between noise values rather than noise levels.
+        plot_temperature_sdm
+            Similar SDM but between temperature fields
+        plot_field_matrix
+            Underlying function that plots the field matrix
+        """
         for (i, ch) in enumerate(channels):
             (t_x, x) = self.hirs.estimate_noise(self.M, ch, typ=noise_typ)
             if i == 0:
@@ -503,6 +772,19 @@ class MatrixPlotter:
             units={"ch{:d}".format(ch): x.u for ch in channels})
 
     def _get_accnt(self, noise_typ):
+        """Extract count anomalies for calibration type
+
+        Extract from the ndarray stored in :attr:`M` the count anomalies
+        (deviations from the mean per calibration cycle) for
+        ``noise_typ``.
+
+        Parameters
+        ----------
+
+        noise_typ : str
+            What calibration line to estimate the anomalies for: "iwt",
+            "ict", or "space".
+        """
         views = self.M[self.hirs.scantype_fieldname] == getattr(self.hirs, "typ_{:s}".format(noise_typ))
         ccnt = self.M["counts"][views, 8:, :]
         mccnt = ccnt.mean(1, keepdims=True)
@@ -512,6 +794,35 @@ class MatrixPlotter:
     def plot_noise_value_scanpos_sdm(self, channels,
             noise_typ="iwt",
             npos=6):
+        """Plot SDM between noise values / count anomalies for scanpos
+
+        For a particular "scan position", plot a scatter density matrix
+        for the correlated noise.  This is calculated by taking the
+        count anomalies per scanline using :meth:`_get_accnt`.
+
+        Parameters
+        ----------
+
+        channels : list[int]
+            Channels for which to make a scanpos-to-scanpos anomaly
+            scatter density matrix
+        noise_typ : str, optional
+            What calibration type to use to estimate the noise: can be
+            "iwt" (default), "space", or "ict" (HIRS/2 and HIRS/2I only)
+        npos : int, optional
+            How many scan positions to consider.  Defaults to 6, which
+            results in a 6×6=36 subplot figure.
+
+        See also
+        --------
+
+        plot_noise_level_sdm
+            Similar SDM but for noise level rather than noise value.
+        plot_noise_value_channel_sdm
+            Similar SDM but between channels rather than between scanpos.
+        plot_noise_value_scanpos_corr
+            Plot correlation matrices for the same
+        """
 
         accnt = self._get_accnt(noise_typ)
 
@@ -541,6 +852,32 @@ class MatrixPlotter:
     def plot_noise_value_channel_sdm(self, channels,
             noise_typ="iwt",
             calibpos=20):
+        """Plot SDM between noise values / count anomalies per channel
+
+        Plot a scatter density matrix for the count anomalies, so
+        essentially the actual error in space or IWCT or ICCT counts,
+        between diferent channels, for a constant calibration position.
+        The count anomalies are calculated with :meth:`_get_accnt`.
+
+        Parameters
+        ----------
+
+        channels: array_like
+            Channel numbers for which to plot the noise value SDM
+        noise_typ: str, optional
+            Where to estimate error correlations from: "space", "iwt", or
+            "ict".
+        calibpos : int, optional
+            Calibration position to use.  Defaults to 20.
+
+        See also
+        --------
+
+        plot_noise_value_scanpos_sdm
+            Similar SDM but between scanpos rather than channel
+        plot_noise_value_channel_corr
+            Plot correlation matrix for the same
+        """
         accnt = self._get_accnt(noise_typ)
         X = numpy.zeros(dtype=[("ch{:d}".format(ch), "f4") for ch in channels],
                         shape=accnt.shape[0])
@@ -567,10 +904,31 @@ class MatrixPlotter:
             calibpos=20):
         """Plot noise value channel correlation
 
-        For channels, noise_typ (iwt, ict, space), and calibration
-        position.
+        Plot two correlation matrices (Pearson and Spearman) for the
+        inter-channel correlated noise due to electronics or filter wheel
+        effects.  This is calculated by taking the anomaly (from
+        :meth:`_get_accnt`) and then correlating those to each other,
+        while keeping the calibration position fixed.
 
-        No return; writes file.
+        Parameters
+        ----------
+
+        channels: array_like
+            Channel numbers for which to plot the noise channel
+            correlation
+        noise_typ: str, optional
+            Where to estimate error correlations from: "space", "iwt", or
+            "ict".
+        calibpos : int, optional
+            Calibration position to use.  Defaults to 20.
+
+        See also
+        --------
+
+        plot_noise_value_channel_sdm
+            Plot scatter density matrix for the same
+        plot_noise_value_scanpos_corr
+            Correlation matrix but between scanpos for constant channel
         """
         (f, ax_all) = matplotlib.pyplot.subplots(1, 3, figsize=(16, 8),
             gridspec_kw={"width_ratios": (14, 14, 1)})
@@ -602,6 +960,34 @@ class MatrixPlotter:
             noise_typ, calibpos))
 
     def _get_ch_corrmat(self, channels, noise_typ, calibpos):
+        """Calculate inter-channel correlation matrix
+
+        Calculate the channel-to-channel correlation matrix, for both the
+        Pearson and Spearman correlations, using count anomalies
+        calculated with :meth:`_get_accnt`.
+
+        Parameters
+        ----------
+
+        channels: array_like
+            Channel numbers for which to plot the noise value SDM
+        noise_typ: str, optional
+            Where to estimate error correlations from: "space", "iwt", or
+            "ict".
+        calibpos : int, optional
+            Calibration position to use.  Defaults to 20.
+
+        Returns
+        -------
+
+        S : (n_ch, n_ch) ndarray
+            Channel correlation matrix, Pearson correlation
+        ρ : ndarray
+            Channel correlation matrix, Spearman correlation
+        unmasked : int
+            Number of lines with count anomalies from which this was
+            calculated
+        """
         # although there is a scipy.stats.mstats module,
         # scipy.stats.mstats.spearman can only calculate individual
         # covariances, not covariance matrices (it's not vectorised) and
@@ -614,7 +1000,40 @@ class MatrixPlotter:
 
     @staticmethod
     def _plot_ch_corrmat(S, a, channels, add_x=False, add_y=False, each=2):
-        """Helper for plot_noise_value_channel_corr
+        """Plot channel correlation matrix, helper for plot_noise_value_channel_corr
+
+        Small helper for :meth:`plot_noise_value_channel_corr`.  After the
+        channel correlation matrices have been calculated, this method
+        plots them into axes objects and sets the tick labels in the
+        correct place.
+
+        Parameters
+        ----------
+
+        S : ndarray
+            Channel correlation matrix to be plotted.
+        a : matplotlib.axes._subplots.AxesSubplot
+            Instance of `matplotlib.axes._subplots.AxesSubplot` in which
+            to plot the matrix.
+        channels : array_like
+            List or array of numbers representing the channels, this will
+            be used to label the xticks and yticks.
+        add_x : bool, optional
+            If true, add x-label and tickmarks even if the axes is not the
+            bottom row of the figure.
+        add_y : bool, optional
+            If true, add y-label and tickmarks even if the axes is not the
+            leftmost column of the figure.
+        each : int, optional
+            Interval of channels to label in ticks.  Defaults to 2, so
+            they will be labelled 2, 4, 6, ..., 18
+
+        Returns
+        -------
+
+        image : `~matplotlib.image.AxesImage`
+            Image as returned by
+            `~matplotlib.axes._subplots.AxesSubplot.imshow`.
         """
         im = a.imshow(S, cmap="PuOr_r", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
@@ -638,6 +1057,32 @@ class MatrixPlotter:
 
     @staticmethod
     def _plot_pos_corrmat(S, a, add_x=False, add_y=False):
+        """Plot position correlation matrix, helper for plot_noise_value_scanpos_corr
+
+        Small helper for :meth:`plot_noise_value_scanpos_corr`.  After the
+        scanpos correlation matrices have been calculated, this method
+        plots them into axes objects and sets the tick labels in the
+        correct place.
+
+        S : ndarray
+            Channel correlation matrix to be plotted.
+        a : matplotlib.axes._subplots.AxesSubplot
+            Instance of `matplotlib.axes._subplots.AxesSubplot` in which
+            to plot the matrix.
+        add_x : bool, optional
+            If true, add x-label and tickmarks even if the axes is not the
+            bottom row of the figure.
+        add_y : bool, optional
+            If true, add y-label and tickmarks even if the axes is not the
+            leftmost column of the figure.
+
+        Returns
+        -------
+
+        image : `~matplotlib.image.AxesImage`
+            Image as returned by
+            `~matplotlib.axes._subplots.AxesSubplot.imshow`.
+        """
         im = a.imshow(S, cmap="PuOr_r", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
         if add_x:
@@ -653,6 +1098,31 @@ class MatrixPlotter:
         return im
 
     def _get_pos_corrmat(self, ch, noise_typ):
+        """Get correlation matrix between scan positions
+
+        For a constant channel and a particular source of count anomalies,
+        get the correlation matrix between scan positions.
+
+        Parameters
+        ----------
+
+        ch : int
+            Channel for which to get correlation matrix.
+        noise_typ: str, optional
+            Where to estimate error correlations from: "space", "iwt", or
+            "ict".
+
+        Returns
+        -------
+
+        S : ndarray
+            Correlation matrix between positions
+        p : ndarray
+            p-value matrix corresponding to S
+        unmasked : int
+            Number of valid calibration lines over which the calibration
+            matrix was calculated
+       """
         accnt = self._get_accnt(noise_typ)
         unmasked = ~(accnt[:, :, ch-1].mask.any(1))
         (S, p) = typhon.math.stats.corrcoef(accnt[unmasked, :, ch-1].T)
@@ -660,6 +1130,32 @@ class MatrixPlotter:
 
     def plot_noise_value_scanpos_corr(self, channels,
             noise_typ="iwt"):
+        """Plot noise value scanpos correlation
+
+        PlotPearson  correlation matrix and p-value for the
+        inter-position correlated noise due to electronics or filter wheel
+        effects.  This is calculated by taking the anomaly (from
+        :meth:`_get_accnt`) and then correlating those to each other,
+        while keeping the channel fixed.
+
+        Parameters
+        ----------
+
+        channels: array_like
+            Channel numbers for which to plot the inter-position
+            correlation matrix, one per channel
+        noise_typ: str, optional
+            Where to estimate error correlations from: "space", "iwt", or
+            "ict".
+
+        See also
+        --------
+
+        plot_noise_value_scanpos_sdm
+            Plot scatter density matrix for the same
+        plot_noise_value_channel_corr
+            Correlation matrix but between channel for constant scanpos
+        """
 
         #accnt = self._get_accnt(noise_typ)
         channels = numpy.asarray(channels)
@@ -712,6 +1208,14 @@ class MatrixPlotter:
 
         NB, this is a correlation matrix for the actual temperatures — not
         for their noises.
+        
+        Parameters
+        ----------
+
+        temp_fields : list[str]
+            List of temperatures to use.  Valid temperatures are found as
+            the ``temperature_fields`` attribute on
+            the :class:`typhon.datasets.tovs.HIRS` class.
         """
         MM = self._get_temps(temp_fields)
         MMp = MM.view("<f8").reshape(MM.shape[0], -1).T
@@ -739,6 +1243,38 @@ class MatrixPlotter:
 
 
     def plot_all_sats_early_late(self, plotter, sats):
+        """For all satellites, make plot for first and last month
+
+        Using a :class:`_SatPlotHelper` implementation instance, repeat a
+        specific type of plot for the first and last month of each
+        satellite.
+
+        The :class:`_SatPlotHelper` subclasses interface back to the
+        present :class:`MatrixPlotter` class such that passing instances
+        of it here, allows to repeat many of the methods defined elsewhere
+        in this class to be repeated for the first and last month for each
+        satellite.  The most extensive implementation is
+        :class:`_SatPlotAll`.  Passing a :class:`_SatPlotAll` instance
+        here will result in plotting the FFT, inter-channel, and
+        inter-position correlations for all satellites, within various
+        subplots, for both the beginning and ending of the period that
+        this satellite was active, for all channels.
+
+        Parameters
+        ----------
+
+        plotter : _SatPlotHelper
+            Instance of implementation of :class:`_SatPlotHelper`
+        sats : list[str]
+            List of satellite names to include
+
+        See also
+        --------
+
+        plot_selection_sats_early_late
+            Sister method which plots this but only for a selection of 9
+            satellite-channel pairs rather than all possible combinations.
+        """
         if sats == "all":
             sats = self.all_sats
 
@@ -806,9 +1342,30 @@ class MatrixPlotter:
                 plotter.finalise(self, f_solo[sat], gs, sat=sat, solo=True)
 
     def plot_selection_sats_early_late(self, plotter, pairs):
-        """Plot for a selection of sats.
+        """Plot something a selection of sats.
 
-        Select 9.
+        For a manual selection of 9 satellite-channel pairs, plot the
+        implementation of a :class:`_SatPlotHelper`.
+
+        The method :meth:`plot_all_sats_early_late` plots everything in
+        many panels and figures, but this is overwhelming.  This method
+        allows the user to make a manual selection of 9 satellites and
+        channels, and plot only those.
+
+        Parameters
+        ----------
+
+        plotter : _SatPlotHelper
+            Implementation of `_SatPlotHelper`, such as `_SatPlotFFT`,
+            which to plot for those 9 pairs.
+        pairs : List[Tuple[str, int]]
+            List of tuples with (satname, channel_number).
+
+        See also
+        --------
+
+        plot_all_sats_early_late
+            Sister method that plots all channels for all sats.
         """
 
         if len(pairs) != 9:
@@ -849,6 +1406,14 @@ class MatrixPlotter:
         plotter.finalise(self, f, gs, custom=True)
 
     def plot_crosstalk_ffts_all_sats(self):
+        """Plot crosstalk FFT for all satellites
+
+        For a selection of 9 hardcoded pairs and then all satellites and
+        channels, plot FFTs for both early and late period.
+
+        Small interface to :meth:`plot_selection_sats_early_late` and
+        :meth:`plot_all_sats_early_late`.
+        """
         logging.info("Processing FFTs")
         self.plot_selection_sats_early_late(
             _SatPlotFFT(),
@@ -870,7 +1435,9 @@ class MatrixPlotter:
             sats="all")
 
     def plot_ch_corrmat_all_sats_b(self, channels, noise_typ, calibpos,
-        sats="all"):
+            sats="all"):
+        """**Deprecated**. Use :meth:`plot_all_sats_early_late`.
+        """
 
         logging.info("Processing channel correlation matrices")
         self.plot_all_sats_early_late(
@@ -879,10 +1446,23 @@ class MatrixPlotter:
 
     def plot_ch_corrmat_all_sats(self, channels, noise_typ, calibpos,
             sats="all"):
-        """Plot channel noise covariance matrix for all sats.
+        """Plot channel noise correlation matrix for all sats.
 
         Plots lower half for first full month, upper half for last full
-        month.
+        month.  Result written to file.
+
+        Parameters
+        ----------
+
+        channels : List[int]
+            Channels to consider
+        noise_typ : str
+            Source of error determination: "iwt", "ict", "space".
+        calibpos : int
+            Calibration location to use for inter-channel correlation
+            matrix.
+        sats : List[str] or str, optional
+            List of satellite names to use or (the default) "all".
         """
 
         channels = numpy.asarray(channels)
@@ -928,6 +1508,13 @@ class MatrixPlotter:
 
         One set with all satellites as subplots, figure for each channel
         One set with all channels as subplots, figure for each satellite
+
+        Parameters
+        ----------
+
+        noise_typ : str
+            Source of error determination: "iwt", "ict", "space".
+            
         """
         logging.info("Processing position correlation matrices")
         channels = numpy.arange(1, 21)
@@ -1024,6 +1611,19 @@ class MatrixPlotter:
 
  
 def read_and_plot_field_matrices(p):
+    """Read and plot field matrices
+
+    Read satellite data for the beginning and ending month of each
+    satellite, then make various plots for them.  See module docstring.
+
+    Parameters
+    ----------
+
+    p : argparse.ArgumentParser
+        Parsed `~argparse.ArgumentParser` instance.  The
+        commandline-arguments determine the behaviour, see
+        :ref:`plot-hirs-field-matrix`.
+    """
 #    h = fcdr.which_hirs_fcdr(sat)
         
     #temp_fields_full = ["temp_{:s}".format(t) for t in p.temp_fields]
@@ -1066,6 +1666,11 @@ def read_and_plot_field_matrices(p):
 
 
 def main():
+    """Main function
+
+    Intended to be called as script.  See module docstring and
+    :ref:`plot-hirs-field-matrix`.
+    """
     p = parse_cmdline()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,

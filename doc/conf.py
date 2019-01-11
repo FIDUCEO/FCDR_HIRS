@@ -45,7 +45,6 @@ extensions = [
     "sphinx.ext.autosummary",
     'sphinx.ext.viewcode',
     'sphinx.ext.todo',
-    'sphinx.ext.autodoc',
     'sphinx.ext.mathjax',
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
@@ -145,6 +144,9 @@ latex_documents = [
      'Author', 'manual'),
 ]
 
+latex_engine = "lualatex"
+latex_show_pagerefs = True
+latex_show_urls = "footnote"
 
 # -- Options for manual page output ------------------------------------------
 
@@ -192,6 +194,11 @@ epub_exclude_files = ['search.html']
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
+
+autodoc_member_order = "bysource"
+autodoc_mock_imports = ["fiduceo", "coda"]
+autodoc_default_options = {
+    "show-inheritance": None}
 
 autosummary_generate = True
 

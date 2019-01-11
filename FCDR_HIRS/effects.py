@@ -11,13 +11,13 @@ helper classes for the functionality within each effect.
 
 The existance of an `Effect` object in this module does not magically
 include it in the uncertainty budget.  The user/developer still needs to
-populate the ``.magnitude`` attribute as documented in the `Effect` class
+populate the :attr:`~Effect.magnitude` attribute as documented in the `Effect` class
 documentation, then pass it to
-:meth:`FCDR_HIRS.fcdr.HIRSFCDR.calc_u_for_variables` inside the
+:meth:`~FCDR_HIRS.fcdr.HIRSFCDR.calc_u_for_variable` inside the
 ``all_effects`` argument.
 
 To get an impression of which ones are actually implemented, have a look
-at calls to :meth:`fcdr.HIRSFCDR._tuck_effect_channel`, which are littered
+at calls to :meth:`~fcdr.HIRSFCDR._tuck_effect_channel`, which are littered
 about here and there, which is currently being used to populate a
 dictionary in preparation for the uncertainty calculation and CURUC.
 """
@@ -270,7 +270,7 @@ class RModelRandom(Rmodel):
 rmodel_random = RModelRandom()
 
 class RModelCommon(Rmodel):
-    """RModel for common case.  Unconditional error.
+    """R Model for common case --- **unconditional error**
 
     There is no `Rmodel` implementation for the fully common case, as the
     CURUC recipes only calculate this for random and systematic effects,
@@ -295,9 +295,9 @@ class RModelCommon(Rmodel):
 rmodel_common = RModelCommon()
 
 class RModelPeriodicError(Rmodel):
-    """RModel for "periodic noise"
+    """R Model for "periodic noise"
 
-    RModel implementation for "periodic error", "periodic noise", such as
+    :class:`Rmodel` implementation for "periodic error", "periodic noise", such as
     observed in HIRS, perhaps due to the filter wheel.
 
     This is currently not implemented, see :issue:`224`.
@@ -323,7 +323,7 @@ class RModelPeriodicError(Rmodel):
 rmodel_periodicerror = RModelPeriodicError()
 
 class RModelRSelf(Rmodel):
-    """Rmodel implementation for self-emission uncertainty
+    """R Model implementation for self-emission uncertainty
 
     This class implements the correlation model (`Rmodel`) for the
     uncertainty due to the self-emission model.  It was written to
@@ -464,7 +464,7 @@ class Effect:
     description : str
         Long name, human readable description of the effect.
     parameter : Symbol
-        The :class:`sympy.core.symbol.Symbol` within the `measurement_equation` that this
+        The :class:`~sympy.core.symbol.Symbol` within the `measurement_equation` that this
         effect relates to.  Each effect must relate to exactly one
         measurement equation parameter.
     unit : pint unit
@@ -542,9 +542,9 @@ class Effect:
 
     #: `measurement_equation.ExpressionDict` containing all effects defined so far
     _all_effects = meq.ExpressionDict()
-    #: name of the effect
+    #: str : name of the effect
     name = None
-    #: description of the effect
+    #: str : description of the effect
     description = None
     #: parameter that the effect relates to
     parameter = None
@@ -1016,7 +1016,7 @@ selfemissionbias = Effect(
     channel_correlations=_ones,
     rmodel=rmodel_common)
 
-#: Effect describing uncertainty due to non-quadratic non-linearity
+#: Effect describing uncertainty due to non-quadratic non-linearity (not implemented)
 nonnonlinearity = Effect(
     name="O_Re",
     description="Wrongness of nonlinearity",
@@ -1028,7 +1028,7 @@ nonnonlinearity = Effect(
     channel_correlations=nonlinearity.channel_correlations,
     rmodel=rmodel_common)
 
-#: Effect describing uncertainty due to Earthshine model
+#: Effect describing uncertainty due to Earthshine model (not used)
 Earthshine = Effect(
     name="Earthshine",
     description="Earthshine",
@@ -1052,7 +1052,7 @@ Rself = Effect(
     unit=radiance_units["ir"],
     rmodel=rmodel_rself)
 
-#: Effect describing uncertainty due to self-emission model parameters
+#: Effect describing uncertainty due to self-emission model parameters (not implemented)
 Rselfparams = Effect(
     name="Rselfparams",
     description="self-emission parameters",
@@ -1063,7 +1063,7 @@ Rselfparams = Effect(
     unit=Rself.unit,
     rmodel=rmodel_rself)
 
-#: Effect describing uncertainty due to unknown electronics effect
+#: Effect describing uncertainty due to unknown electronics effect (not implemented)
 electronics = Effect(
     name="electronics",
     description="unknown electronics effects",

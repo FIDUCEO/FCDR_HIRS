@@ -1,7 +1,8 @@
 #!/usr/bin/env python3.5
 
-"""Convert HIRS l1b to NetCDF-4, granule per granule
+"""Convert HIRS l1b to NetCDF-4, granule per granule.
 
+Designed to be used as a script, see `hirs-convert-l1b-to-l1c`.
 """
 
 import datetime
@@ -64,8 +65,9 @@ def convert_granule(h, satname, dt, gran, orbit_filters, overwrite=False):
         Corresponding datetime for granule
     gran : pathlib.Path
         Full path to granule
-    orbit_filters : List[OrbitFilter]
-        What orbit filters to apply
+    orbit_filters : List[typhon.datasets.filters.OrbitFilter]
+        List of what :class:`~typhon.datasets.filters.OrbitFilter`
+        implementations to apply, order is important.
     overwrite : bool, optional
         Whether to overwrite existing files.  Defaults to False.
     """
@@ -204,7 +206,7 @@ def convert_period(h, sat, start_date, end_date, **kwargs):
     ----------
 
     h : HIRS
-        HIRS object for satellite
+        :class:`~typhon.datasets.tovs.HIRS` object for satellite
     sat : str
         Name of satellite
     start_date : datetime.datetime
@@ -251,7 +253,7 @@ def convert_period(h, sat, start_date, end_date, **kwargs):
 def main():
     """Main function
 
-    Expects commandline input.
+    Expects commandline input, see script `hirs-convert-l1b-to-l1c`.
     """
     p = parse_cmdline()
     common.set_logger(logging.INFO,

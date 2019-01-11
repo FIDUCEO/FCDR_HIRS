@@ -72,6 +72,8 @@ Implemented in :mod:`FCDR_HIRS.processing.combine_matchups`.
     :func: get_parser_merge
     :prog: merge_hirs_harmonisation
 
+.. _convert-hirs-harmonisation-parameters:
+
 convert_hirs_harmonisation_parameters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -96,6 +98,8 @@ Implemented in :mod:`FCDR_HIRS.analysis.timeseries`.
     :module: FCDR_HIRS.analysis.timeseries
     :func: get_parser
     :prog: plot_hirs_field_timeseries
+
+.. _plot-hirs-field-matrix:
 
 plot_hirs_field_matrix
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -127,6 +131,8 @@ Implemented in :mod:`FCDR_HIRS.analysis.plot_flags`.
     :func: get_parser
     :prog: plot_hirs_flags
 
+.. _hirs-info-content:
+
 hirs_info_content
 ^^^^^^^^^^^^^^^^^
 
@@ -134,6 +140,8 @@ Basic script without command-line arguments.  Implemented in
 :mod:`FCDR_HIRS.analysis.corrmat_info_content`.
 
 .. automodule:: FCDR_HIRS.analysis.corrmat_info_content
+
+.. _hirs-convert-l1b-to-l1c:
 
 hirs_convert_l1b_to_l1c
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -267,6 +275,8 @@ Implemented in :mod:`FCDR_HIRS.analysis.sensitivities`.
     :func: get_parser
     :prog: calc_sensitivity_params
 
+.. _determine-hirs-latlon-compression-ratio:
+
 determine_hirs_latlon_compression_ratio
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -274,6 +284,8 @@ Basic script without commandline arguments.  Implemented in
 :mod:`FCDR_HIRS.analysis.determine_latlon_compression_ratio`.
 
 .. automodule:: FCDR_HIRS.analysis.determine_latlon_compression_ratio
+
+.. _determine-hirs-unc-storage:
 
 determine_hirs_unc_storage
 ^^^^^^^^^^^^^^^^^^^^^^^^^^

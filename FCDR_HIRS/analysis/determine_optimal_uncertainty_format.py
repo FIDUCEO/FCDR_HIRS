@@ -4,6 +4,8 @@ As per issue :issue:`88` and as discussed during the FCDR design review
 2017-04-27, we need to check whether uncertainties are stored more
 efficiently in brightness temperatures or as percentages, and then stick
 with that.  This script makes such a comparison.
+
+See also :ref:`determine-hirs-unc-storage`.
 """
 
 import datetime
@@ -28,6 +30,10 @@ codings = {
 }
 
 def main():
+    """Main function.
+
+    For information on how to call, see module docstring.
+    """
     hirs = fcdr.which_hirs_fcdr("noaa15", read="L1C")
     dsref = hirs.read_period(
         datetime.datetime(2004, 4, 1),
