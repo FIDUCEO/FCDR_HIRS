@@ -195,7 +195,8 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
         logger.info(f"Writing filter to {hfpfile!s}")
         da.to_netcdf(hfpfile)
 
-def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
+def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False,
+                          filtered=False):
     """Plot statistics for enhanced matchup harmonisation file
     
     This function plots statistics for enhanced matchup harmonisation
@@ -229,12 +230,15 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
         Will be passed on to
         :func:`plot_hist_with_medmad_and_fitted_normal`; if True, write
         out filter parameters.  Defaults to False.
+    filtered : bool, optional
+        filtered or not, used for labelling
 
     """
 
     if lab:
         # extra cruft added to string by combine_hirs_hirs_matchups
         lab = f"other_{lab:s}_"
+    filterlab = "filtered" if filtered else "unfiltered"
     
     (f, ax_all) = matplotlib.pyplot.subplots(3, 5, figsize=(30, 15))
 
@@ -558,7 +562,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
     lab = lab.replace("·", "") # in LSF some nodes have ascii filesystem encoding?!
 
     graphics.print_or_show(f, False,
-        "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}.".format(
+        "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}_{filterlab:s}.".format(
             channel=ds["channel"].item(), lab=lab, **ds.attrs))
     
 def plot_harm_input_stats(ds, filtered):
