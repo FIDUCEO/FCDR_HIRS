@@ -563,7 +563,7 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False,
 
     graphics.print_or_show(f, False,
         "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}_{filterlab:s}.".format(
-            channel=ds["channel"].item(), lab=lab, **ds.attrs))
+            channel=ds["channel"].item(), lab=lab, filterlab=filterlab, **ds.attrs))
     
 def plot_harm_input_stats(ds, filtered):
     """Plot histograms and such of harmonisation inputs
