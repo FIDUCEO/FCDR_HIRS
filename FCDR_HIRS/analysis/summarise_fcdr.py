@@ -182,11 +182,11 @@ class FCDRSummary(HomemadeDataset):
 
     fields = {
         "debug":
-            ["T_b", "u_T_b_random", "u_T_b_nonrandom",
+            ["T_b", "u_T_b_random", "u_T_b_nonrandom", 
             "R_e", "u_R_Earth_random", "u_R_Earth_nonrandom",
             "u_C_Earth"],
         "easy":
-            ["bt", "u_independent", "u_structured"]
+            ["bt", "u_independent", "u_structured", "u_common"]
           }
     
     # extra fields needed in analysis but not summarised
