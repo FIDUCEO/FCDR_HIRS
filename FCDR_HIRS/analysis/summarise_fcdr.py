@@ -437,11 +437,11 @@ class FCDRSummary(HomemadeDataset):
                 nrows=len(fields), ncols=1, squeeze=False)
                 
         ranges = xarray.DataArray(
-            numpy.full((len(sats), 19, len(fields), 2), numpy.nan, dtype="f4"),
+            numpy.full((len(sats), 19, len(fields), 4), numpy.nan, dtype="f4"),
             dims=("satname", "channel", "field", "extremum"),
             coords={"satname": sats, "channel": range(1, 20),
                 "field": fields,
-                "extremum": ["lo", "hi"]})
+                "extremum": ["lo", "midlo", "midhi", "hi"]})
 
         oldsatname = self.satname
         sc = itertools.count()
@@ -513,22 +513,33 @@ class FCDRSummary(HomemadeDataset):
                         a.legend(loc="upper left", bbox_to_anchor=(1, 1))
                     a.grid(True, axis="both")
                     a.set_xlim(start, end)
-                # prepare some info for later, with zoomed-in y-axes
+                # prepare some info for later, with zoomed-in y-axes or # regular
                 for (fld, a) in zip(fields, a_all.ravel()):
                     if not fld in summary.data_vars.keys():
                         continue
                     lo = scipy.stats.mstats.mquantiles(
                         numpy.ma.masked_invalid(
+                            summary[fld].sel(channel=channel).sel(ptile=5).values),
+                        prob=0.01,
+                        alphap=0, betap=0)
+                    midlo = scipy.stats.mstats.mquantiles(
+                        numpy.ma.masked_invalid(
                             summary[fld].sel(channel=channel).sel(ptile=25).values),
                         prob=0.05,
                         alphap=0, betap=0)
-                    hi = scipy.stats.mstats.mquantiles(
+                    midhi = scipy.stats.mstats.mquantiles(
                         numpy.ma.masked_invalid(
                             summary[fld].sel(channel=channel).sel(ptile=75).values),
                         prob=.95,
                         alphap=0, betap=0)
+                    hi = scipy.stats.mstats.mquantiles(
+                        numpy.ma.masked_invalid(
+                            summary[fld].sel(channel=channel).sel(ptile=95).values),
+                        prob=.99,
+                        alphap=0, betap=0)
                     ranges.loc[{"satname": sat, "channel": channel,
-                                "field": fld}].values[...] = [lo, hi]
+                                "field": fld}].values[...] = [
+                                    lo, midlo, midhi, hi]
                 if len(fields) > 1:
                     f.suptitle(total_title)
                 f.autofmt_xdate()
@@ -547,6 +558,15 @@ class FCDRSummary(HomemadeDataset):
 
         for channel in range(1, 20):
             (f, a_all) = figs[channel]
+
+            for (fld, a) in zip(fields, a_all.ravel()):
+                lo = ranges.loc[
+                    {"channel": channel, "field": fld,
+                     "extremum": "lo"}].min()
+                hi = ranges.loc[
+                    {"channel": channel, "field": fld,
+                     "extremum": "hi"}].max()
+                a.set_ylim([lo, hi])
             try:
                 graphics.print_or_show(f, False, 
                     form(channel=channel, fieldstr=fieldstr))
@@ -560,8 +580,12 @@ class FCDRSummary(HomemadeDataset):
         for channel in range(1, 20):
             (f, a_all) = figs[channel]
             for (fld, a) in zip(fields, a_all.ravel()):
-                lo = ranges.loc[{"channel": channel, "field": fld, "extremum": "lo"}].min()
-                hi = ranges.loc[{"channel": channel, "field": fld, "extremum": "hi"}].max()
+                lo = ranges.loc[
+                    {"channel": channel, "field": fld,
+                     "extremum": "midlo"}].min()
+                hi = ranges.loc[
+                    {"channel": channel, "field": fld,
+                     "extremum": "midhi"}].max()
                 a.set_ylim([lo, hi])
             try:
                 graphics.print_or_show(
