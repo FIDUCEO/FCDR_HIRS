@@ -408,6 +408,7 @@ class FCDRSummary(HomemadeDataset):
 #                "scale_factor": 0.001})
                 })
 
+        logger.info(f"Writing {of!s}")
         summary.to_netcdf(str(of))
 
     def plot_period_ptiles(self, start, end, fields,
