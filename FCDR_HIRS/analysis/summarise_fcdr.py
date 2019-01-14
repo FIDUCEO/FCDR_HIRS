@@ -1,4 +1,24 @@
 """Summarise FCDR for period, extracting statistics or plot from them
+
+When in plotting mode, can choose either one satellite or "all"
+satellites (within period), and make a plot of:
+
+- Total histogram of field values, split in subplots where each subplot shows
+  several channels, and the channels are sorted by the typical magnitude
+  of the quantity that the histogram belongs to.  For example, if several
+  channels have typical uncertainties of 0.1 K and others have typical
+  uncertainties of 2 K, those channels will be grouped in different panels
+  so that all histograms are more or less optimised to the dynamic range.
+  It's always 2×2 subplots arranged in a square.  One figure per channel.
+- Time series of percentiles per field, one subplot per field, all
+  subplots take the full width of the figure and are plotted below each
+  other, with the size of the figure adapted to the number of panels.
+  If all satellites are plotted, the colours are fixed per satellite, even
+  if plotting a different period in which a different subset of satellites
+  is active.  Two figures are written per channel: one with the y-axis
+  optimised for most of the range and another with the y-axes optimised
+  for the central part of the range.
+
 """
 
 import matplotlib
@@ -566,7 +586,7 @@ class FCDRSummary(HomemadeDataset):
                 hi = ranges.loc[
                     {"channel": channel, "field": fld,
                      "extremum": "hi"}].max()
-                a.set_ylim([lo, hi])
+                a.set_ylim([lo*.9, hi*1.1])
             try:
                 graphics.print_or_show(f, False, 
                     form(channel=channel, fieldstr=fieldstr))
@@ -586,7 +606,7 @@ class FCDRSummary(HomemadeDataset):
                 hi = ranges.loc[
                     {"channel": channel, "field": fld,
                      "extremum": "midhi"}].max()
-                a.set_ylim([lo, hi])
+                a.set_ylim([lo*.9, hi*1.1])
             try:
                 graphics.print_or_show(
                     f, False, 
