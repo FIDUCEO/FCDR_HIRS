@@ -75,6 +75,7 @@ import sklearn.cross_decomposition
 import sklearn.linear_model
 import numpy
 import xarray
+import abc
 
 from typhon.physics.units.common import ureg
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
