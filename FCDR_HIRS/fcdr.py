@@ -3149,8 +3149,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             dims=lookup_table_BT.dims,
             name="lookup_table_radiance")
         for ch in lookup_table_BT.calibrated_channel.values:
-            srf = typhon.physics.units.em.SRF.fromArtsXML(
-                self.satname.upper().replace("A0","A"), "hirs", ch)
+            srf = self.srfs[ch-1]
             lookup_table_radiance.loc[{"calibrated_channel": ch}] = (
                 srf.blackbody_radiance(lookup_table_BT.sel(calibrated_channel=ch)).to(
                     rad_u["ir"], "radiance"))
