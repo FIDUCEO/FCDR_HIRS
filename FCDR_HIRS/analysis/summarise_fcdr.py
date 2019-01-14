@@ -134,7 +134,6 @@ from typhon.datasets.dataset import (DataFileError, HomemadeDataset)
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.datasets.tovs import norm_tovs_name
-import pyatmlab.graphics
 from .. import fcdr
 
 labels = dict(
