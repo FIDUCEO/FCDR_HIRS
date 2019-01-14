@@ -765,8 +765,7 @@ class FCDRGenerator:
         piece_easy.attrs["url"] = "http://www.fiduceo.eu"
         piece_easy.attrs["author"] = "Gerrit Holl and the FIDUCEO team"
         piece_easy.attrs["contact"] = "fiduceo-coordinator@lists.reading.ac.uk"
-        piece_easy.attrs["comment"] = "Early version.  Please note warning."
-        piece_easy.attrs["typical_structured_correlation_scale"] = "40 scanlines"
+        piece_easy.attrs["comment"] = "Beta version.  Not intended for scientific use."
         try:
             fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.write(
                 piece_easy,
