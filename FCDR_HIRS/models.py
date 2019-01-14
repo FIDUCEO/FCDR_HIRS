@@ -103,7 +103,7 @@ class RSelf:
     def evaluate(self, lines, ch):
         ...
 
-class RSelfTemperature(Rself):
+class RSelfTemperature(RSelf):
     """Implementation of self emission model using temperatures
 
     This class models the HIRS self emission as a function of a set of
