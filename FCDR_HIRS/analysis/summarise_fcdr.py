@@ -259,6 +259,7 @@ class FCDRSummary(HomemadeDataset):
             freq="D")
         fields = fields if fields is not None else []
         fields.extend([f for f in self.fields[fcdr_type] if f not in fields])
+        logging.debug("Summarising fields: " + " ".join(fields))
         if field_ranges is None:
             field_ranges = {}
         chandim = "channel" if fcdr_type=="easy" else "calibrated_channel"
