@@ -304,6 +304,13 @@ class NoiseAnalyser:
                         "fwh", "fwm"}, writefig=False):
         self.hirs = fcdr.which_hirs_fcdr(satname)
         self.satname = satname
+        # include InvalidIndexError and KeyError with acceptable
+        # exceptions.  Those can result from invalid indexing in the
+        # pseudo_fields processing, which in turn results from duplicates,
+        # that are not removed until after the pseudo-fields are
+        # processed.  The alternative would be to do the pseudo-fields
+        # after the filtering, which would require substantial rewriting
+        # of fragile code.
         hrsargs=dict(
                 fields=["hrs_scnlin", self.hirs.scantype_fieldname, "time",
                         "counts", "calcof_sorted", "radiance",
@@ -319,7 +326,9 @@ class NoiseAnalyser:
                      typhon.datasets.filters.HIRSFlagger(self.hirs, max_flagged=0.9),
                      typhon.datasets.filters.HIRSCalibCountFilter(self.hirs, self.hirs.filter_calibcounts),
                      ],
-                excs=(typhon.datasets.dataset.DataFileError, typhon.datasets.filters.FilterError, InvalidIndexError))
+                excs=(typhon.datasets.dataset.DataFileError,
+                    typhon.datasets.filters.FilterError, InvalidIndexError,
+                    KeyError))
         # those need to be read before combining with HIASI, because
         # afterward, I lose the calibration rounds.  But doing it after
         # read a full month (or more) of data takes too much RAM as I will
@@ -465,7 +474,7 @@ class NoiseAnalyser:
         graphics.print_or_show(f, False,
             "hirs_{:s}_space_counts_adev_{:%Y%m%d}-{:%Y%m%d}.".format(
                 self.satname, t[0], t[-1])
-                + "" if self.writefig else "png")
+                + ("" if self.writefig else "png"))
 
     def get_gain(self, M, ch):
         (t_slope, _, slope, _) = self.hirs.calculate_offset_and_slope(M,
@@ -911,7 +920,7 @@ class NoiseAnalyser:
                         ptiles=self.ptiles,
                         linestyles=self.linestyles) 
                     #a.plot(xt, dL[:, ch-1], '.', label=tmpfld)
-                a.set_ylabel(r"$\Delta$ R HIRS-HIASI" +
+                a.set_ylabel(r"$\Delta$ L HIRS-HIASI" +
                     "\n[{:Lx}]".format(dL.u).replace(" ", ""))
                 a.set_xlabel("Temperature [K]")
                 a.set_title("HIASI-anomaly per temperature")
@@ -930,7 +939,7 @@ class NoiseAnalyser:
 
                 #a.set_xlabel("Time since calibration [s]")
                 a.set_xlabel("Scanlines since calibration")
-                a.set_ylabel(r"$\Delta$ R HIRS-HIASI"+
+                a.set_ylabel(r"$\Delta$ L HIRS-HIASI"+
                     "\n[{:Lx}]".format(dL.u).replace(" ", ""))
                 a.set_title("HIASI-anomaly per calibration position")
                 a.legend(loc="upper left", bbox_to_anchor=(1, 1))
@@ -970,7 +979,7 @@ class NoiseAnalyser:
                         linewidth=1.5)
                     a.set_title("Self-emis. evol. {:s}".format(lab))
                     if i==0:
-                        a.set_ylabel(r"$\Delta$ R HIRS-HIASI" +
+                        a.set_ylabel(r"$\Delta$ L HIRS-HIASI" +
                             "\n[{:Lx}]".format(dL.u))
                     else:
                         a.get_yaxis().set_ticklabels([])
@@ -1109,7 +1118,7 @@ class NoiseAnalyser:
                     ptiles=self.ptiles,
                     linestyles=self.linestyles)
                 if i == 0:
-                    ha.set_ylabel(r"$\Delta$ R HIRS-HIASI" +
+                    ha.set_ylabel(r"$\Delta$ L HIRS-HIASI" +
                         "\n[{:Lx}]".format(dL.u))
 
         # colorbar in remaining half-sized subplot
