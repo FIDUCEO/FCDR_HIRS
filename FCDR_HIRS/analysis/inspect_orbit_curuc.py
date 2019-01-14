@@ -26,7 +26,7 @@ from ..common import (set_logger, add_to_argparse)
 from .. import metrology
 from .. import graphics
 
-def parse_cmdline():
+def get_parser():    
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -58,7 +58,9 @@ def parse_cmdline():
         nargs=2,
         help="Range of lines to explore in detail")
 
-    return parser.parse_args()
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 def _S_radsi_to_K(S, u_radK):
     """Convert covariance matrix in radiance to one in BT

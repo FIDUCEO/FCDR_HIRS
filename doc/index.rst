@@ -3,8 +3,9 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+************************************************************
 Documentation for HIRS FCDR analysis and generation software
-============================================================
+************************************************************
 
 .. toctree::
    :maxdepth: 6
@@ -15,13 +16,6 @@ Documentation for HIRS FCDR analysis and generation software
    configuration
    fcdrgeneration
    FCDR_HIRS
-
-.. autosummary::
-    :toctree: _autosummary
-
-    FCDR_HIRS
-    FCDR_HIRS.analysis
-    FCDR_HIRS.processing
 
 Indices and tables
 ==================

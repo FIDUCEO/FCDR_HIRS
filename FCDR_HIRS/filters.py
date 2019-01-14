@@ -18,8 +18,7 @@ from typhon.math.stats import adev
 class CalibrationMirrorFilter(metaclass=abc.ABCMeta):
     """Filter for cases where first N space views do not really view space
 
-    Happens for IWCT too.  See `issue`:12 at
-    https://github.com/FIDUCEO/FCDR_HIRS/issues/12
+    Happens for IWCT too.  See :issue:`12` at.
     """
     
     @abc.abstractmethod

@@ -1,7 +1,12 @@
-FCDR\_HIRS.models module
-========================
+models
+======
 
 .. automodule:: FCDR_HIRS.models
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.models
+
+.. autosummary::
+    :toctree: generated
+    
+    RRefl
+    RSelf

@@ -1,12 +1,12 @@
 """Definitions related to HIRS FCDR
 
 This module contains various definitions related to the FCDR.  They extend
-definitinos in `typhon.datasets._tovs_defs`, which are more related to the
+definitions in ``typhon.datasets._tovs_defs``, which are more related to the
 reading routine.  Important definitions here:
 
-`FCDR_data_vars_props`
+:attr:`FCDR_data_vars_props`
     Defines how data are stored in the debug FCDR,
-`FCDR_uncertainty_encodings`
+:attr:`FCDR_uncertainty_encodings`
     Defines encodings for uncertainties, which may differ from the
     quantity the uncertainty belongs to.
 
@@ -457,7 +457,7 @@ for (k, v) in FCDR_data_vars_props.items():
     if v[2].get("units") == "count":
         FCDR_uncertainty_encodings[k] = _u_count_coding
 
-#: Encodings for easy FCDR.  Should no longer be used, as this is in `FCDRTools`.
+#: Encodings for easy FCDR.  Should no longer be used, as this is in ``FCDRTools``.
 FCDR_easy_encodings = dict(
     latitude = _latlon_coding,
     longitude = _latlon_coding,

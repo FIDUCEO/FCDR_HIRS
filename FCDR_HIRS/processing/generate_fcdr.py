@@ -142,7 +142,7 @@ import fiduceo.fcdr.writer.fcdr_writer
 
 logger = logging.getLogger(__name__)
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -172,10 +172,12 @@ def parse_cmdline():
         default=False,
         help=("For debug version, write abridged version.  If true, skip "
               "writing u_from_x, rad_wn_*, and R_e_alt_* for each variable "
-              "in the measurement equation.  This reduces the data volume by over 88% "
+              "in the measurement equation.  This reduces the data volume by over 88%% "
               "compared to the unabridged version."))
 
-    return parser.parse_args()
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 class FCDRGenerator:
     """Main class containing high-level functionality for FCDR generation
@@ -408,7 +410,7 @@ class FCDRGenerator:
 
         Arguments:
 
-            from_ [datetime.datetime]
+            from\_ [datetime.datetime]
 
                 Begin of period for which FCDR is wanted
 
@@ -563,14 +565,14 @@ class FCDRGenerator:
             uTb_rand = uTb.copy()
             uRe_harm = uTb.copy()
         else:
-            uTb = self.fcdr.numerically_propagate_ΔL(R_E, uRe)
+            uTb = self.fcdr.numerically_propagate_DeltaL(R_E, uRe)
             u_from = xarray.Dataset(
-                {f"u_from_{k!s}": self.fcdr.numerically_propagate_ΔL(R_E, v)
+                {f"u_from_{k!s}": self.fcdr.numerically_propagate_DeltaL(R_E, v)
                     for (k, v) in unc_components.items()
                     if v.size>1})
-            uTb_syst = self.fcdr.numerically_propagate_ΔL(R_E, uRe_syst)
-            uTb_rand = self.fcdr.numerically_propagate_ΔL(R_E, uRe_rand)
-            uTb_harm = self.fcdr.numerically_propagate_ΔL(R_E, uRe_harm)
+            uTb_syst = self.fcdr.numerically_propagate_DeltaL(R_E, uRe_syst)
+            uTb_rand = self.fcdr.numerically_propagate_DeltaL(R_E, uRe_rand)
+            uTb_harm = self.fcdr.numerically_propagate_DeltaL(R_E, uRe_harm)
         uTb.name = "u_T_b"
 
         uRe_rand.encoding = uRe_syst.encoding = uRe_harm.encoding = uRe.encoding = R_E.encoding

@@ -3,10 +3,10 @@
 This module contains (multiple) symbolic representations of the
 measurement equation.  They are used when calculating uncertainties using
 `fcdr.HIRSFCDR.calc_u_for_variable`, as well as in the alternative
-radiance calculation in `fcdr`HIRSFCDR.get_L_cached_meq`.  It relies
+radiance calculation in :meth:`fcdr.HIRSFCDR.get_L_cached_meq`.  It relies
 heavily on the `sympy` module.  The measurement equation is contained in
 the `ExpressionDict` `expressions`, with a simplified verison in
-`expression_Re_simplified`, which is used for harmonisation purposes.  The
+:attr:`expression_Re_simplified`, which is used for harmonisation purposes.  The
 simplified measurement equation is calculated as a truncation of the
 complete measurement equation.
 
@@ -378,9 +378,9 @@ def substitute_until_explicit(expr, s2):
 def calc_sensitivity_coefficient(s1, s2):
     """Calculate sensitivity coefficient ∂s1/∂s2
 
-    Essentially a thin shell around the `sympy.Expr.diff` method, but
+    Essentially a thin shell around the :func:`sympy.Expr.diff` method, but
     ensuring that ``s2`` is explicitly represented in ``s1`` using
-    `substitute_until_explicit` before carrying out any differentiation.
+    :func:`substitute_until_explicit` before carrying out any differentiation.
 
     Parameters
     ----------

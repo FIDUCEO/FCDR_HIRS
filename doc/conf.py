@@ -20,7 +20,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'FCDR_HIRS'
-copyright = ('This code was developed for the EC project "Fidelity and '
+copyright = ('2015--2019 --- This code was developed for the EC project "Fidelity and '
 'Uncertainty in Climate Data Records from Earth Observations (FIDUCEO)". '
 "Grant Agreement: 638822")
 author = 'Gerrit Holl'
@@ -45,11 +45,11 @@ extensions = [
     "sphinx.ext.autosummary",
     'sphinx.ext.viewcode',
     'sphinx.ext.todo',
-    'sphinx.ext.autodoc',
     'sphinx.ext.mathjax',
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx_issues",
+    "sphinxarg.ext",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -144,6 +144,9 @@ latex_documents = [
      'Author', 'manual'),
 ]
 
+latex_engine = "lualatex"
+latex_show_pagerefs = True
+latex_show_urls = "footnote"
 
 # -- Options for manual page output ------------------------------------------
 
@@ -192,6 +195,11 @@ epub_exclude_files = ['search.html']
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
 
+autodoc_member_order = "bysource"
+autodoc_mock_imports = ["fiduceo", "coda"]
+autodoc_default_options = {
+    "show-inheritance": None}
+
 autosummary_generate = True
 
 napoleon_google_docstring = False
@@ -214,7 +222,10 @@ intersphinx_mapping = {
     'numpy': ('https://docs.scipy.org/doc/numpy', None),
     'matplotlib': ('https://matplotlib.org', None),
     'xarray': ('http://xarray.pydata.org/en/stable/', None),
-    "typhon": ("http://www.radiativetransfer.org/misc/typhon/doc/", None),
+    "typhon": ("http://www.radiativetransfer.org/misc/typhon/doc-trunk/", None),
+    "joblib": ("https://joblib.readthedocs.io/en/latest/", None),
+    "sympy": ("https://docs.sympy.org/latest/", None),
+    "pint": ("https://pint.readthedocs.io/en/latest/", None),
 }
 
 

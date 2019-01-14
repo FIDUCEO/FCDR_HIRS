@@ -1,7 +1,13 @@
-FCDR\_HIRS.analysis.inspect\_hirs\_matchups module
-==================================================
+inspect_hirs_matchups
+=====================
 
 .. automodule:: FCDR_HIRS.analysis.inspect_hirs_matchups
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.inspect_hirs_matchups
+
+.. autosummary::
+    :toctree: generated
+    
+    HIRSMatchupInspector
+    main
+    parse_cmdline

@@ -1,7 +1,15 @@
-FCDR\_HIRS.analysis.hirs\_iasi\_srf\_estimation module
-======================================================
+hirs_iasi_srf_estimation
+========================
 
 .. automodule:: FCDR_HIRS.analysis.hirs_iasi_srf_estimation
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.hirs_iasi_srf_estimation
+
+.. autosummary::
+    :toctree: generated
+    
+    HIM
+    IASI_HIRS_analyser
+    LUTAnalysis
+    main
+    parse_cmdline

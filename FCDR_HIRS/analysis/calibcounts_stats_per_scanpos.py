@@ -34,7 +34,7 @@ from .. import graphics
 
 logger = logging.getLogger(__name__)
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -86,8 +86,11 @@ def parse_cmdline():
         action="store_false",
         dest="anomalies")
 
-    p = parser.parse_args()
-    return p
+    return parser
+
+def parse_cmdline():
+    p = get_parser()
+    return parser.parse_args()
 
 def plot_calibcount_stats(h, Mall, channels,
         title="", filename=""):
@@ -100,8 +103,8 @@ def plot_calibcount_stats(h, Mall, channels,
     Parameters
     ----------
 
-    h : HIRS
-        HIRS object
+    h : typhon.datasets.tovs.HIRS
+        :class:`~typhon.datasets.tovs.HIRS` object
     Mall : ndarray
         Array from which to extract data to plot
     channels : List[int]
@@ -180,8 +183,8 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
     ----------
 
     h : HIRS
-        HIRS object
-    M : ndarray
+        `~typhon.datasets.tovs.HIRS` object
+    M : numpy.ndarray
         structured array such as returned by h.read, must contain at
         least counts and info on scantypes
     channels : List[int]

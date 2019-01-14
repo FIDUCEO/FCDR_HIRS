@@ -42,7 +42,7 @@ titles = dict(
     u_independent = "Independent brightness temperature uncertainty [K]",
     u_structured = "Structured brightness temperature uncertainty [K]")
 
-def parse_cmdline():
+def get_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -79,8 +79,9 @@ def parse_cmdline():
         default=": -- - -- :",
         help="Style for percentiles.  Should be single string argument "
             "to prevent styles misinterpreted as flag hyphens.")
-    p = parser.parse_args()
-    return p
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
 
 class FCDRSummary(HomemadeDataset):
     name = section = "fcdr_hirs_summary"

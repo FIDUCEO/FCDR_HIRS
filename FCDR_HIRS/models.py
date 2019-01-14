@@ -24,7 +24,7 @@ contains two models:
      `processing.generate_fcdr.FCDRGenerator.__init__`.  If the interface
      is simliar enough, only the latter would need to be changed.
    - There is also the `analysis.test_rself`, which is an entire module
-     (associated with the script :ref:`plot_hirs_test_rself`), which you
+     (associated with the script :ref:`plot-hirs-test-rself`), which you
      would probably want to adapt to test and compare both self-emission
      models.
   
@@ -51,9 +51,9 @@ contains two models:
 
   Finally, there is the generation of the W-Matrix, which does not yet use
   the CURUC recipes which use `effects.RModelRSelf`.  Until it does, the
-  hardcoded W-Matrix in `FCDR_HIRS.processing.combine_matchups` (linked to
-  the scripts :ref:`combine_hirs_hirs_matchups` and
-  :ref:`combine_hirs_iasi_matchups`) would need to be adapted as well, but
+  hardcoded W-Matrix in :mod:`FCDR_HIRS.processing.combine_matchups` (linked to
+  the scripts :ref:`combine-hirs-hirs-matchups` and
+  :ref:`combine-hirs-iasi-matchups`) would need to be adapted as well, but
   ideally the generation of the W-Matrix needs to be integrated with the
   CURUC recipes.  See :issue:`224`.
 
@@ -123,13 +123,13 @@ class RSelf:
     class would define in case this class was restructured.
 
     There are some scripts tesing self-emission stuff, but they are old
-    and rusty.  The script `plot_hirs_field_timeseries` includes a panel on
+    and rusty.  The script :ref:`plot-hirs-field-timeseries` includes a panel on
     self-emission as well.
 
     See also
     --------
 
-    `FCDR_HIRS.effects.RModelRSelf`
+    :class:`FCDR_HIRS.effects.RModelRSelf`
         Implementation of self emission model error correlation.  This is
         not yet integrated into the present class, although the
         uncertainties themselves are derived from the `RSelf.test` method.
@@ -209,7 +209,7 @@ class RSelf:
         regr : Tuple[str, Mapping], optional
             Regression type to use.  Should be a 2-tuple with a string and
             a mapping.  The string can be either "LR" or "PLSR", according
-            to the module attribute `regression_types`.  The second
+            to the module attribute :attr:`regression_types`.  The second
             argument is a dictionary that will be passed on to the class
             on construction.
         """
@@ -246,7 +246,7 @@ class RSelf:
         ch : int
             Channel.  Not used.  I don't know why I have it here.  This
             does not depend on the channel.  I suppose I have it here in
-            order to be consistent with `get_predictant`, which does have
+            order to be consistent with `get_predictand`, which does have
             a channel dependency, and because other implementations might
             in principle have a channel dependency, except that this
             method is not externaly interfaced anyway so it doesn't matter
@@ -663,7 +663,7 @@ class RSelf:
         - applies the model to the same, getting predicted space counts
 
         This method does not deal with error correlations, those are
-        rather treated in the `metrology.RModelRSelf` class.
+        rather treated in the :class:`effects.RModelRSelf` class.
 
         Parameters
         ----------

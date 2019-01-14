@@ -1,20 +1,23 @@
-"""Functionality related to correlation matrix information content
+r"""Functionality related to correlation matrix information content
 
+Corresponds to :ref:`hirs-info-content` script.
 Rodgers (2000), Equation (2.56)
 
-d_s = tr([K^T S_ε^⁻¹ K + S_a^⁻¹]^⁻¹ K^T S_ε^⁻¹ K
+.. math::
+
+    d_s = tr([K^T S_{\epsilon}^{-1} K + S_a^{-1}]^{-1} K^T S_{\epsilon}^{-1} K
 
 where:
 
-- K is the Jacobian matrix, obtained from ARTS
-- S_ε is the measurement error covariance matrix.  This is the one I
+- :math:`K` is the Jacobian matrix, obtained from ARTS
+- :math:`S_{\epsilon}` is the measurement error covariance matrix.  This is the one I
   change for different HIRSes
-- S_a is the a priori covariance matrix, such as for water vapour.
+- :math:`S_a` is the a priori covariance matrix, such as for water vapour.
   This can be obtained from reanalysis, or the Chevallier data, or
   NWP, or otherwise.
 
 This module is incomplete.  The results are incorrect.  The development is
-inconclusive.  **DO NOT USE**
+inconclusive.  **DO NOT USE THIS MODULE**!
 
 I said **DO NOT USE**.  What are you still doing here?
 
@@ -104,81 +107,94 @@ def get_K():
 
     return da
 
-def get_S_ε(corrmat=None):
+def get_S_eps(corrmat=None):
     ds = xarray.open_dataset("/group_workspaces/cems2/fiduceo/Data/FCDR/HIRS/v0.7pre/debug/metopa/2016/03/02/FIDUCEO_FCDR_L1C_HIRS4_metopa_20160302010629_20160302024729_debug_v0.7pre_fv0.4.nc")
     u_R = ds["u_R_Earth_random"].mean("scanpos").mean("scanline_earth").sel(calibrated_channel=slice(12)).values
     corrmat = corrmat if corrmat is not None else ds["channel_correlation_matrix"].sel(channel=slice(12)).values
     covmat = corrmat * (u_R[:, numpy.newaxis] * u_R[numpy.newaxis, :])
     return covmat
 
-def dofs(S_a, K, S_ε):
-    """
+def dofs(S_a, K, S_eps):
+    r"""calculate dofs
+
     Rodgers (2000), Equation (2.56)
 
-    d_s = tr([K^T S_ε^⁻¹ K + S_a^⁻¹]^⁻¹ K^T S_ε^⁻¹ K
+    .. math::
+
+        d_s = tr([K^T S_{\epsilon}^{-1} K + S_a^{-1}]^{-1} K^T S_{\epsilon}^{-1} K
 
     Can be broadcasted, last two dimensions will be matrix dimensions
     """
 
-    DOFS = (inv(K.swapaxes(-1, -2) @ inv(S_ε) @ K
-                + inv(S_a)) @ K.swapaxes(-1, -2) @ inv(S_ε) @ K).trace(
+    DOFS = (inv(K.swapaxes(-1, -2) @ inv(S_eps) @ K
+                + inv(S_a)) @ K.swapaxes(-1, -2) @ inv(S_eps) @ K).trace(
                     axis1=-2, axis2=-1)
     return DOFS
 
-def dofn(S_a, K, S_ε):
-    """
+def dofn(S_a, K, S_eps):
+    r"""calculate dofn
+
     Rodgers (2000), Equation (2.57)
 
-    d_n = tr(S_ε[K S_a K^T + S_ε]^⁻¹)
+    .. math::
+
+        d_n = tr(S_{\epsilon}[K S_a K^T + S_{\epsilon}]^{-1})
 
     Can be broadcasted, last two dimensions will be matrix dimensions
     """
 
-    return (S_ε @ inv(K @ S_a @ K.swapaxes(-1, -2) + S_ε)).trace(
+    return (S_eps @ inv(K @ S_a @ K.swapaxes(-1, -2) + S_eps)).trace(
         axis1=-2, axis2=-1)
 
-def gain(S_a, K, S_ε):
+def gain(S_a, K, S_eps):
     """Gain matrix, broadcasting version
     """
-    return inv(K.swapaxes(-1, -2) @ inv(S_ε) @ K
-                  + inv(S_a)) @ K.swapaxes(-1, -2) @ inv(S_ε)
+    return inv(K.swapaxes(-1, -2) @ inv(S_eps) @ K
+                  + inv(S_a)) @ K.swapaxes(-1, -2) @ inv(S_eps)
     
 
-def S_degradation(S_a, K, S_ε):
-    """What is the error covariance from use of the wrong observation error covarionce?
+def S_degradation(S_a, K, S_eps):
+    r"""What is the error covariance from use of the wrong observation error covarionce?
 
     Chris Merchant, personal communication, 2017:
 
-    S_{\hat{x}'-\hat{x}} = (G'-G)(y-F)(y-F)^T(G'-G)^T
+    .. math::
+
+        S_{\hat{x}'-\hat{x}} = (G'-G)(y-F)(y-F)^T(G'-G)^T
 
     where
 
-    G' = (K^T S_ε'^-1 K + S_a^-1)^-1 K^T S_ε'^-1
+    .. math::
 
-    G = (K^T S_ε^-1 K + S_a^-1)^-1 K^T S_ε^-1
+        G' = (K^T S_{\epsilon}'^-1 K + S_a^-1)^-1 K^T S_{\epsilon}'^-1
 
-    (y-F)(y-F)^T = S_y = K S_a K^T + S_ε
+        G = (K^T S_{\epsilon}^-1 K + S_a^-1)^-1 K^T S_{\epsilon}^-1
+
+        (y-F)(y-F)^T = S_y = K S_a K^T + S_{\epsilon}
 
     Parameters
     ----------
 
-    - S_a
-    - K
-    - S_ε
+    S_a : ndarray
+        S_a
+    K : ndarray
+        K
+    S_eps : ndarray
+        :math:`S_{\epsilon}`
 
     """
 
-    S_ε_reg = S_ε
-    S_ε_diag = numpy.diag(numpy.diag(S_ε))
-    G_prime = gain(S_a, K, S_ε_diag)
-    G_reg = gain(S_a, K, S_ε_reg)
+    S_eps_reg = S_eps
+    S_eps_diag = numpy.diag(numpy.diag(S_eps))
+    G_prime = gain(S_a, K, S_eps_diag)
+    G_reg = gain(S_a, K, S_eps_reg)
     ΔG = G_prime - G_reg
 
-    S_y = K @ S_a @ K.swapaxes(-1, -2) + S_ε_reg
+    S_y = K @ S_a @ K.swapaxes(-1, -2) + S_eps_reg
 
     return ΔG @ S_y @ ΔG.swapaxes(-1, -2)
 
-def get_S_a_K_S_ε():
+def get_S_a_K_S_eps():
     try:
         S_a = xarray.open_dataset(S_a_loc)["S_a"].values
     except FileNotFoundError:
@@ -192,15 +208,15 @@ def get_S_a_K_S_ε():
     # not sure why needed with fill_value=0 in get_K()
     K_all[numpy.isnan(K_all)] = 0
 
-    S_ε = get_S_ε()
+    S_eps = get_S_eps()
 
-    return (S_a, K_all, S_ε)
+    return (S_a, K_all, S_eps)
 
 def get_all_dofs():
-    (S_a, K_all, S_ε) = get_S_a_K_S_ε()
+    (S_a, K_all, S_eps) = get_S_a_K_S_eps()
 
-    S_ε_diag = numpy.diag(numpy.diag(S_ε))
-    S_ε_extreme = get_S_ε(numpy.ones((12,12)))
+    S_eps_diag = numpy.diag(numpy.diag(S_eps))
+    S_eps_extreme = get_S_eps(numpy.ones((12,12)))
 
     # does this fix the negative DOFS bug?
     # no :(
@@ -209,9 +225,9 @@ def get_all_dofs():
     # does THIS? (yes)
     S_a = S_a[:10, :10]
     K_all = K_all[:, :, :10]
-    dofs_actual = dofs(S_a, K_all, S_ε)
-    dofs_diag = dofs(S_a, K_all, S_ε_diag)
-    dofs_full = dofs(S_a, K_all, S_ε_extreme)
+    dofs_actual = dofs(S_a, K_all, S_eps)
+    dofs_diag = dofs(S_a, K_all, S_eps_diag)
+    dofs_full = dofs(S_a, K_all, S_eps_extreme)
 
     numpy.savez(dofloc,
         dofs_actual=dofs_actual,
@@ -246,23 +262,23 @@ def plot_dofs_hists():
 
     graphics.print_or_show(f, False, "DOFS.")
 #    print("Actual:",
-#          "DOFS", dofs(S_a, K_all, S_ε),
-#          "DOFN", dofn(S_a, K_all, S_ε))
+#          "DOFS", dofs(S_a, K_all, S_eps),
+#          "DOFN", dofn(S_a, K_all, S_eps))
 #    print("Diagonal:",
-#          "DOFS", dofs(S_a, K_all, S_ε_diag),
-#          "DOFN", dofn(S_a, K_all, S_ε_diag))
+#          "DOFS", dofs(S_a, K_all, S_eps_diag),
+#          "DOFN", dofn(S_a, K_all, S_eps_diag))
 #    print("Extreme (100% correlation):",
-#          "DOFS", dofs(S_a, K_all, S_ε_extreme),
-#          "DOFN", dofn(S_a, K_all, S_ε_extreme))
+#          "DOFS", dofs(S_a, K_all, S_eps_extreme),
+#          "DOFN", dofn(S_a, K_all, S_eps_extreme))
 
 def plot_S_degradation():
     N = 15
-    (S_a, K_all, S_ε) = get_S_a_K_S_ε()
+    (S_a, K_all, S_eps) = get_S_a_K_S_eps()
     K_da = xarray.open_dataset(K_loc) # for pressures
     p = K_da["p"][1:N]
 
     OK = ~(K_all[:, 0, 1:] == 0).any(1)
-    S_degr = S_degradation(S_a[1:N, :][:, 1:N], K_all[:, :, 1:N][OK, :, :], S_ε)
+    S_degr = S_degradation(S_a[1:N, :][:, 1:N], K_all[:, :, 1:N][OK, :, :], S_eps)
     OK = numpy.isfinite(S_degr).all(1).all(1)
     S_degr = S_degr[OK, :, :]
 

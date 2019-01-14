@@ -11,13 +11,13 @@ helper classes for the functionality within each effect.
 
 The existance of an `Effect` object in this module does not magically
 include it in the uncertainty budget.  The user/developer still needs to
-populate the ``.magnitude`` attribute as documented in the `Effect` class
+populate the :attr:`~Effect.magnitude` attribute as documented in the `Effect` class
 documentation, then pass it to
-:meth:`FCDR_HIRS.fcdr.HIRSFCDR.calc_u_for_variables` inside the
+:meth:`~FCDR_HIRS.fcdr.HIRSFCDR.calc_u_for_variable` inside the
 ``all_effects`` argument.
 
 To get an impression of which ones are actually implemented, have a look
-at calls to `FCDR_HIRS.fcdr._tuck_effect_channel`, which are littered
+at calls to :meth:`~fcdr.HIRSFCDR._tuck_effect_channel`, which are littered
 about here and there, which is currently being used to populate a
 dictionary in preparation for the uncertainty calculation and CURUC.
 """
@@ -38,7 +38,8 @@ import docrep
 from typing import (Tuple, Mapping, Set)
 
 from typhon.physics.units.common import (radiance_units, ureg)
-from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from typhon.physics.units.tools import UnitsAwareDataArray, UnitsAwareDataArray as UADA
+import typhon.physics.units.tools
 
 from . import measurement_equation as meq
 from . import _fcdr_defs
@@ -60,20 +61,20 @@ CorrelationScale = collections.namedtuple("CorrelationScale",
 class Rmodel(metaclass=abc.ABCMeta):
     """Abstract class describing the interface to calculate R
 
-    This class defines the interface for an Rmodel that each effect needs
+    This class defines the interface for an `Rmodel` that each effect needs
     to describe to calculate R for that effect, as an input to the CURUC
     recipes.  Rather than each effect implementing those from scratch, in
     practice, several Rmodels may be shared between different effects,
-    such that `Effect.calc_R_eΛlk` just delegates to the
-    `Rmodel.calc_R_eΛlk` for the corresponding Rmodel.  The module defines
-    several `Rmodel`s.
+    such that `Effect.calc_R_eUlk` just delegates to the
+    `Rmodel.calc_R_eUlk` for the corresponding `Rmodel`.  The module defines
+    several implementation of `Rmodel`.
     """
 
     #@dst.get_full_descriptionf("R_eΛk")
     #@dst.get_sectionsf("R_eΛlk")
     #@dst.with_indent(8)
     @abc.abstractmethod
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
             sampling_l=1, sampling_e=1):
         """Return R_eΛlk for single k
 
@@ -101,7 +102,7 @@ class Rmodel(metaclass=abc.ABCMeta):
 
     #@dst.with_indent(8)
     @abc.abstractmethod
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
         sampling_l=1, sampling_e=1):
         """Return R_lΛek for single k
 
@@ -122,7 +123,7 @@ class Rmodel(metaclass=abc.ABCMeta):
 
     #@dst.with_indent(8)
     @abc.abstractmethod
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1, sampling_e=1):
         """Return R_cΛpk for single k
 
@@ -142,7 +143,7 @@ class Rmodel(metaclass=abc.ABCMeta):
         """
 
 #@dst.with_indent(4)
-def _calc_R_eΛlk_allones(ds, sampling_l=1, sampling_e=1):
+def _calc_R_eUlk_allones(ds, sampling_l=1, sampling_e=1):
     """Return R_eΛlk for single k with all ones
 
     Return the cross-element error correlation matrix ``R_eΛk`` for the
@@ -176,13 +177,13 @@ class RModelCalib(Rmodel): # docstring in parent
     """
 
     # docstring in parent
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
         sampling_l=1, sampling_e=1):
-        return _calc_R_eΛlk_allones(ds, sampling_l=sampling_l,
+        return _calc_R_eUlk_allones(ds, sampling_l=sampling_l,
             sampling_e=sampling_e)
 
     # docstring in parent
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
             sampling_l=1, sampling_e=1):
 
         # wherever scanline_earth shares a calibration_cycle the
@@ -196,7 +197,7 @@ class RModelCalib(Rmodel): # docstring in parent
             1, 1))
 
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1, sampling_e=1):
         # ERROR WARNING FIXME: This needs to be updated.  See #223
         warnings.warn("Inter-channel correlation not implemented "
@@ -219,7 +220,7 @@ class RModelCalibPRT(RModelCalib):
     calibration uncertainties, because those are shared between channels.
     """
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1, sampling_e=1):
         return numpy.ones(
             (math.ceil(ds.dims["scanline_earth"]/sampling_l),
@@ -242,7 +243,7 @@ class RModelRandom(Rmodel):
     """
 
     # docstring in parent
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
         sampling_l=1, sampling_e=1):
         return numpy.tile(
             numpy.eye(math.ceil(ds.dims["scanpos"]/sampling_e), dtype="f4"),
@@ -250,7 +251,7 @@ class RModelRandom(Rmodel):
              math.ceil(ds.dims["scanline_earth"]/sampling_l), 1, 1])
 
     # docstring in parent
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
             sampling_l=1, sampling_e=1):
         return numpy.tile(
             numpy.eye(math.ceil(ds.dims["scanline_earth"]/sampling_l), dtype="f4"),
@@ -258,7 +259,7 @@ class RModelRandom(Rmodel):
             math.ceil(ds.dims["scanpos"]/sampling_e), 1, 1])
 
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1, sampling_e=1):
         return numpy.tile(
             numpy.eye(ds.dims["calibrated_channel"], dtype="f4"),
@@ -269,7 +270,7 @@ class RModelRandom(Rmodel):
 rmodel_random = RModelRandom()
 
 class RModelCommon(Rmodel):
-    """RModel for common case.  Unconditional error.
+    """R Model for common case --- **unconditional error**
 
     There is no `Rmodel` implementation for the fully common case, as the
     CURUC recipes only calculate this for random and systematic effects,
@@ -278,14 +279,14 @@ class RModelCommon(Rmodel):
     """
 
     # docstring in parent
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
             sampling_l=1, sampling_e=1):
         raise ValueError(
             "We do not calculate error correlation matrices for common effects")
-    calc_R_lΛek = calc_R_eΛlk
+    calc_R_lUek = calc_R_eUlk
 
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1,
         sampling_e=1):
         raise NotImplementedError("Not implemented yet")
@@ -294,26 +295,26 @@ class RModelCommon(Rmodel):
 rmodel_common = RModelCommon()
 
 class RModelPeriodicError(Rmodel):
-    """RModel for "periodic noise"
+    """R Model for "periodic noise"
 
-    RModel implementation for "periodic error", "periodic noise", such as
+    :class:`Rmodel` implementation for "periodic error", "periodic noise", such as
     observed in HIRS, perhaps due to the filter wheel.
 
     This is currently not implemented, see :issue:`224`.
     """
 
     # docstring in parent
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
             sampling_l=1, sampling_e=1):
         raise NotImplementedError()
 
     # docstring in parent
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
             sampling_l=1, sampling_e=1):
         raise NotImplementedError()
 
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1,
         sampling_e=1):
         raise NotImplementedError("Not implemented yet")
@@ -322,15 +323,15 @@ class RModelPeriodicError(Rmodel):
 rmodel_periodicerror = RModelPeriodicError()
 
 class RModelRSelf(Rmodel):
-    """Rmodel implementation for self-emission uncertainty
+    """R Model implementation for self-emission uncertainty
 
     This class implements the correlation model (`Rmodel`) for the
     uncertainty due to the self-emission model.  It was written to
-    correspond with the self-emission model in `FCDR_HIRS.models.RSelf`,
+    correspond with the self-emission model in :class:`FCDR_HIRS.models.RSelf`,
     but may also apply to other self-emission models.  It assumes:
 
     * Self emission is perfectly correlated between elements.  The
-      parameters as calculated by `FCDR_HIRS.models.RSelf` is a function
+      parameters as calculated by :class:`FCDR_HIRS.models.RSelf` is a function
       of temperature, which is only measured once per scanline.  Therefore,
       the self emission estimate is constant within a scanline, as is any
       error in the self emission estimate.
@@ -377,17 +378,17 @@ class RModelRSelf(Rmodel):
     See also
     --------
 
-    `FCDR_HIRS.models.RSelf`
+    :class:`FCDR_HIRS.models.RSelf`
         Implementation of self-emission model.
     """
 
     # docstring in parent
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
             sampling_l=1, sampling_e=1):
-        return _calc_R_eΛlk_allones(ds, sampling_l=sampling_l,
+        return _calc_R_eUlk_allones(ds, sampling_l=sampling_l,
             sampling_e=sampling_e)
     # docstring in parent
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
             sampling_l=1, sampling_e=1):
         # same for all channels anyway
         # linearly decreasing from 1 (at t=0) to 0 (at t=25m).
@@ -416,7 +417,7 @@ class RModelRSelf(Rmodel):
         return R[::sampling_l, ::sampling_l]
 
     # docstring in parent
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
         sampling_l=1, sampling_e=1):
 
         warnings.warn("Inter-channel correlation not implemented "
@@ -452,23 +453,21 @@ class Effect:
     effects can be obtained using the `effects` function.  It is up to the
     developer to populate the ``.magnitude`` attribute for all effects, and
     then pass it on to functions requiring it, in particular the
-    all-important method `FCDR_HIRS.fcdr.HIRSFCDR.calc_u_for_variable`.
+    all-important method `fcdr.HIRSFCDR.calc_u_for_variable`.
 
     Attributes
     ----------
     
-    These attributes are generally set upon definition:
-
     name : str
         Short name.  This will be used to, for example, refer to the
         effect in a global dictionary with all effects.
     description : str
         Long name, human readable description of the effect.
-    parameter : `sympy.Symbol`
-        The `sympy.Symbol` within the `measurement_equation` that this
+    parameter : Symbol
+        The :class:`~sympy.core.symbol.Symbol` within the `measurement_equation` that this
         effect relates to.  Each effect must relate to exactly one
         measurement equation parameter.
-    unit : `pint.unit._Unit`
+    unit : pint unit
         The pint unit in which the magnitude of the effect is measured.
         Must be compatible with the physical dimensions for the
         measurement that the measurement equation parameter represents.
@@ -479,33 +478,35 @@ class Effect:
     correlation_type : tuple[Str]
         Property, 4-tuple of strings, or `CorrelationType` named tuple.
         Each member of the tuple must be one of:
-            * "undefined"
-            * "random"
-            * "rectangular_absolute"
-            * "triangular_relative"
-            * "truncated_gaussian_relative"
-            * "repeated_rectangles"
-            * "repeated_truncated_gaussians"
+
+            - "undefined"
+            - "random"
+            - "rectangular_absolute"
+            - "triangular_relative"
+            - "truncated_gaussian_relative"
+            - "repeated_rectangles"
+            - "repeated_truncated_gaussians"
+
         The four tuple elements refer to (and, in case of the named tuple,
         can be referred to as) ``within_scanline``, ``between_scanlines``,
         ``between_orbits``, and ``across_time``.
     channel_correlations : (n_c, n_c), numpy.ndarray
         The correlation matrix between channels.  Sometimes this is
-        calculated on the fly.  See also the `Effect.calc_R_cΛpk` method.
+        calculated on the fly.  See also the `Effect.calc_R_cUpk` method.
         Currently (2018-12-20), channel correlations is used to set an
         attribute on the effect in the debug FCDR, but the result of
-        `Effect.calc_R_cΛpk` is used it the CURUC recipes.
+        `Effect.calc_R_cUpk` is used it the CURUC recipes.
     dimensions : Tuple[str] or None
         Normally, the data dimensions for an uncertainty quantity should
         be the same as the dimensions for the quantity in the measurement
         equation the uncertainty corresponds to.  The latter are defined
-        in the `FCDR_HIRS._fcdr_defs` module and as the
-        `FCDR_HIRS.fcdr.FCDR._data_vars_props` attribute.  In some cases,
-        the data dimensions for the uncertainty may differ from the
-        quantity.  For example, IWCT type B uncertainty is scalar, even
-        though it belongs to a quantity that is not.  This attribute can
-        be set to a sequence of strings describing the dimensions for the
-        uncertainty type.
+        in the `_fcdr_defs` module and stored internally as the
+        ``_data_vars_props`` attribute in the :class:`fcdr.HIRSFCDR`
+        class.  In some cases, the data dimensions for the uncertainty may
+        differ from the quantity.  For example, IWCT type B uncertainty
+        is scalar, even though it belongs to a quantity that is not.
+        This attribute can be set to a sequence of strings describing
+        the dimensions for the uncertainty type.
     rmodel : `Rmodel`
         Instance of the `Rmodel` class, or rather one of its
         implementation, which in turn describes the correlation
@@ -513,12 +514,9 @@ class Effect:
         and `correlation_scale` attributes, and perhaps it does, but the
         attributes are stored in the debug FCDR whereas the `rmodel`
         attribute is used to calculate the inputs to CURUC.
-
-    There are some attributes that are set during FCDR calculation:
-
-    magnitude : `typhon.physics.units.tools.UnitsAwareDataArray`
+    magnitude : typhon.physics.units.tools.UnitsAwareDataArray
         This will be set to an instance of
-        `typhon.physics.units.tools.UnitsAwareDataArray`, which will
+        `UnitsAwareDataArray`, which will
         describe the magnitude and the units of the uncertainty.
     correlation_scale : `CorrelationScale`
         This is a `CorrelationScale` namedtuple that is supposed to
@@ -529,7 +527,7 @@ class Effect:
     covariances : None
         Not currently (2018-12-20) used for anything.  Covariances and
         correlations are calculated through the CURUC recipes, which call
-        the `calc_R_eΛlk`, `calc_R_lΛek`, and `calc_R_cΛpk` methods on
+        the `calc_R_eUlk`, `calc_R_lUek`, and `calc_R_cUpk` methods on
         the `Effect` class which in turn delegates those calculations to
         the `Rmodel` of choice.  This property is a placeholder for
         covariances between different effects, but those are not currently
@@ -544,9 +542,9 @@ class Effect:
 
     #: `measurement_equation.ExpressionDict` containing all effects defined so far
     _all_effects = meq.ExpressionDict()
-    #: name of the effect
+    #: str : name of the effect
     name = None
-    #: description of the effect
+    #: str : description of the effect
     description = None
     #: parameter that the effect relates to
     parameter = None
@@ -678,7 +676,7 @@ class Effect:
 
         other : Effect
             The other `Effect` that we have a coviarance with.
-        da_ch : `typhon.physics.units.tools.UnitsAwareDataArray`
+        da_ch : `UnitsAwareDataArray`
             The magnitude of the covariance.
         """
 
@@ -723,13 +721,15 @@ class Effect:
 
         Property, 4-tuple of strings, or `CorrelationType` named tuple.
         Each member of the tuple must be one of:
-            * "undefined"
-            * "random"
-            * "rectangular_absolute"
-            * "triangular_relative"
-            * "truncated_gaussian_relative"
-            * "repeated_rectangles"
-            * "repeated_truncated_gaussians"
+
+            - "undefined"
+            - "random"
+            - "rectangular_absolute"
+            - "triangular_relative"
+            - "truncated_gaussian_relative"
+            - "repeated_rectangles"
+            - "repeated_truncated_gaussians"
+
         The four tuple elements refer to (and, in case of the named tuple,
         can be referred to as) ``within_scanline``, ``between_scanlines``,
         ``between_orbits``, and ``across_time``.
@@ -778,9 +778,9 @@ class Effect:
         Parameters
         ----------
 
-        s : str or `sympy.Symbol`
+        s : str or :class:`sympy.core.symbol.Symbol`
             Parameter for which to calculate the sensitivity coefficients.
-            Defaults to `R_e`, i.e. the Earth radiance.
+            Defaults to R_e, i.e. the Earth radiance.
 
         Returns
         -------
@@ -821,26 +821,26 @@ class Effect:
 
         return not self.is_independent() and not self.is_common()
 
-    def calc_R_eΛlk(self, ds,
+    def calc_R_eUlk(self, ds,
             sampling_l=1, sampling_e=1):
-        return self.rmodel.calc_R_eΛlk(ds,
+        return self.rmodel.calc_R_eUlk(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
-    calc_R_eΛlk.__doc__ = Rmodel.calc_R_eΛlk.__doc__
+    calc_R_eUlk.__doc__ = Rmodel.calc_R_eUlk.__doc__
 
-    def calc_R_lΛek(self, ds,
+    def calc_R_lUek(self, ds,
             sampling_l=1, sampling_e=1):
-        return self.rmodel.calc_R_lΛek(ds,
+        return self.rmodel.calc_R_lUek(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
-    calc_R_lΛek.__doc__ = Rmodel.calc_R_lΛek.__doc__
+    calc_R_lUek.__doc__ = Rmodel.calc_R_lUek.__doc__
 
-    def calc_R_cΛpk(self, ds,
+    def calc_R_cUpk(self, ds,
             sampling_l=1, sampling_e=1):
-        return self.rmodel.calc_R_cΛpk(ds,
+        return self.rmodel.calc_R_cUpk(ds,
             sampling_l=sampling_l,
             sampling_e=sampling_e)
-    calc_R_cΛpk.__doc__ = Rmodel.calc_R_cΛpk.__doc__
+    calc_R_cUpk.__doc__ = Rmodel.calc_R_cUpk.__doc__
 
 def effects() -> Mapping[sympy.Symbol, Set[Effect]]:
     """Return a copy of the dictionary with all effects per symbol.
@@ -1016,7 +1016,7 @@ selfemissionbias = Effect(
     channel_correlations=_ones,
     rmodel=rmodel_common)
 
-#: Effect describing uncertainty due to non-quadratic non-linearity
+#: Effect describing uncertainty due to non-quadratic non-linearity (not implemented)
 nonnonlinearity = Effect(
     name="O_Re",
     description="Wrongness of nonlinearity",
@@ -1028,7 +1028,7 @@ nonnonlinearity = Effect(
     channel_correlations=nonlinearity.channel_correlations,
     rmodel=rmodel_common)
 
-#: Effect describing uncertainty due to Earthshine model
+#: Effect describing uncertainty due to Earthshine model (not used)
 Earthshine = Effect(
     name="Earthshine",
     description="Earthshine",
@@ -1052,7 +1052,7 @@ Rself = Effect(
     unit=radiance_units["ir"],
     rmodel=rmodel_rself)
 
-#: Effect describing uncertainty due to self-emission model parameters
+#: Effect describing uncertainty due to self-emission model parameters (not implemented)
 Rselfparams = Effect(
     name="Rselfparams",
     description="self-emission parameters",
@@ -1063,7 +1063,7 @@ Rselfparams = Effect(
     unit=Rself.unit,
     rmodel=rmodel_rself)
 
-#: Effect describing uncertainty due to unknown electronics effect
+#: Effect describing uncertainty due to unknown electronics effect (not implemented)
 electronics = Effect(
     name="electronics",
     description="unknown electronics effects",

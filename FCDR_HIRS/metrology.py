@@ -332,7 +332,7 @@ def calc_R_xt(S_xt: numpy.ndarray):
     R_xt = numexpr.evaluate("dUi * S_xt * dUiT") # equivalent to Ui@S@Ui.T when written fully
     return xarray.DataArray(R_xt, dims=S_xt.dims, coords=S_xt.coords)
 
-def calc_Δ_x(R_xt: xarray.DataArray,
+def calc_Delta_x(R_xt: xarray.DataArray,
              return_vector: bool):
     """Calculate optimum Δ_e or Δ_l
 
@@ -362,7 +362,7 @@ def calc_Δ_x(R_xt: xarray.DataArray,
 
         xarray.DataArray object containing in one column the optimal
         correlation length scales, and in the other column the
-        corresponding covariances, `pcov`, such as returned by
+        corresponding covariances, ``pcov``, such as returned by
         `scipy.optimize.curve_fit`.  For each channel.
 
     r_xΔ : xarray.DataArray
@@ -463,8 +463,8 @@ def allocate_curuc(n_c, n_l, n_e, n_s, n_i, sampling_l=1, sampling_e=1):
 
         Cross-channel correlation matrix for each element, line, and
         independent effect.  To get the same data in the form [n_i, n_p,
-        n_c, n_c], call `typhon.utils.stack_xarray_repdim(R_cΛpi,
-        n_p=("n_l", "n_e"))`.
+        n_c, n_c], call
+        ``typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))``.
 
     R_cΛps : (n_s, n_l, n_e, n_c, n_c) xarray.DataArray
 
@@ -825,7 +825,7 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
     # diagonal.
     R_ls_goodchans.values[:, brokenline.values, :] = numpy.nan
     R_ls_goodchans.values[:, :, brokenline.values] = numpy.nan
-    (Δ_l, Δ_l_full) = calc_Δ_x(R_ls_goodchans, return_vector=True)
+    (Δ_l, Δ_l_full) = calc_Delta_x(R_ls_goodchans, return_vector=True)
 
     # verify that bad data in result is due to known bad data in input.
     # We only need to check a single row or column in S_lsΛe because this
@@ -843,7 +843,7 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         dims=R_es.dims,
         coords={"n_c": all_coords["n_c"][~brokenchan.values],
                 "n_e": all_coords["n_e"]})
-    (Δ_e, Δ_e_full) = calc_Δ_x(R_es_goodchans, return_vector=True)
+    (Δ_e, Δ_e_full) = calc_Delta_x(R_es_goodchans, return_vector=True)
 
     R_cΛpi_stacked = typhon.utils.stack_xarray_repdim(R_cΛpi, n_p=("n_l", "n_e"))
     S_ciΛp = calc_S_from_CUR(
@@ -890,14 +890,14 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         if cutoff_l is None or cutoff_e is None:
             raise TypeError("If interpolate_lengths is True, you must pass "
                 "both cutoff_l and cutoff_e.")
-        Δ_l_full = interpolate_Δ_x(Δ_l_full, cutoff_l)
-        Δ_e_full = interpolate_Δ_x(Δ_e_full, cutoff_e)
+        Δ_l_full = interpolate_Delta_x(Δ_l_full, cutoff_l)
+        Δ_e_full = interpolate_Delta_x(Δ_e_full, cutoff_e)
 
         # those still don't contain all the channels; fill the other
         # channels with nans again
         #
         # it's also not at all pretty that those n_e and n_l are changed
-        # to n_p by calc_Δ_x
+        # to n_p by calc_Delta_x
 
         Δ_l_full_all = xarray.DataArray(
             numpy.zeros((cutoff_l, n_c)),
@@ -919,7 +919,7 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         (Δ_l_full_all, Δ_e_full_all) if return_vectors else ()) + (
         (locals(),) if return_locals else ())
 
-def interpolate_Δ_x(Δ_x, cutoff):
+def interpolate_Delta_x(Δ_x, cutoff):
     """Interpolate Δ_e or Δ_l vectors to fill sampling gaps
 
     When the full vectors for Δ_e or Δ_l are calculated, this is only done
@@ -937,7 +937,7 @@ def interpolate_Δ_x(Δ_x, cutoff):
 
     Δ_x : (n_p, n_c) xarray.DataArray
 
-        As returned by `calc_Δ_x` if `return_vectors` is True.
+        As returned by `calc_Delta_x` if ``return_vectors`` is True.
 
     cutoff : int
 
@@ -979,7 +979,7 @@ def accum_sens_coef(sensdict: Dict[sympy.Symbol, Tuple[numpy.ndarray, Dict[sympy
 
     Given a dictionary of sensitivity coefficients (see function
     annotation) such as returned by calc_u_for_variable), accumulate
-    recursively the sensitivity coefficients for symbol `sym`.  The
+    recursively the sensitivity coefficients for symbol ``sym``.  The
     sensitivity coefficient dictionary is a nested dictionary with a
     structure documented in the return values of
     `fcdr.HIRSFCDR.calc_u_for_variable`.
@@ -1050,7 +1050,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                     Dict[Symbol, Tuple[...]]]]]]
 
         Collection of sensitivities such as returned by
-        the `fcdr.FCDRHIRS.calc_u_for_variable` method.
+        the :meth:`fcdr.HIRSFCDR.calc_u_for_variable` method.
 
     ds : xarray.Dataset
 
@@ -1281,7 +1281,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                 # for independent, still need to consider
                 # inter-channel: R_cΛpi 
                 ci = next(cci)
-                R_cΛpi[{"n_i": ci}].values[...] = k.calc_R_cΛpk(ds,
+                R_cΛpi[{"n_i": ci}].values[...] = k.calc_R_cUpk(ds,
                     sampling_l=sampling_l,
                     sampling_e=sampling_e)
                 U_cΛpi_diag[{"n_i": ci}].values[...] = new_u.T.values[:, numpy.newaxis, :]
@@ -1289,9 +1289,9 @@ def calc_corr_scale_channel(effects, sensRe, ds,
                 continue
 
             try:
-                R_eΛlk = k.calc_R_eΛlk(ds,
+                R_eΛlk = k.calc_R_eUlk(ds,
                         sampling_l=sampling_l, sampling_e=sampling_e)
-                R_lΛek = k.calc_R_lΛek(ds,
+                R_lΛek = k.calc_R_lUek(ds,
                         sampling_l=sampling_l, sampling_e=sampling_e)
             except NotImplementedError:
                 logger.error("No method to estimate R_eΛlk or R_lΛek "
@@ -1316,7 +1316,7 @@ def calc_corr_scale_channel(effects, sensRe, ds,
 #                numpy.eye(math.ceil(n_l/sampling_l))[numpy.newaxis, numpy.newaxis, :, :])
             C_eΛls_diag[{"n_s": cs}].values[...] = CC
 
-            R_cΛps[{"n_s": cs}].values[...] = k.calc_R_cΛpk(ds,
+            R_cΛps[{"n_s": cs}].values[...] = k.calc_R_cUpk(ds,
                 sampling_l=sampling_l,
                 sampling_e=sampling_e)
 

@@ -4,8 +4,8 @@ This module defines base classes related to the processing of matchups, in
 particular in preparation for the creation of harmonisation input data.
 The `matchups` module, and in particular the `HIRSMatchupCombiner` class,
 serve as the basis for the `processing.combine_matchups` module and its
-`processing.HIRSMatchupCombiner` class, but is also used by scripts in the
-`analysis` package.
+:class:`processing.combine_matchups.HIRSMatchupCombiner` class, but is
+also used by scripts in the `analysis` package.
 
 The estimation of K and Ks is done by implementations of the `KModel`
 class.  For HIRS-HIRS matchups, the currently applied implementation is
@@ -14,7 +14,7 @@ implementation is `KModelIASIRef`, but note that this estimate is always
 zero.  The estimate of Kr is performed by implementations of the `KrModel`
 class.  For HIRS-HIRS matchups, the implementation currently used is
 `KrModelJointLSD`.  For HIRS-IASI matchups, it's `KrModelIASIRef`.  All
-other classes in the `Kmodel` and `KrModel` hierarchy are either
+other classes in the `KModel` and `KrModel` hierarchy are either
 intermediate classes or classes that have been used before or
 experimentally but not currently.
 
@@ -72,7 +72,7 @@ class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
 
     The methods on this class should not be used directly, rather objects
     of this class should be passed to
-    `typhon.datasets.Dataset.read_period`.
+    :meth:`typhon.datasets.Dataset.read_period`.
     """
     msd_field = None
     def __init__(self, prim, sec, msd_field="matchup_spherical_distance"):
@@ -98,7 +98,7 @@ class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
     def filter(self, ds, **extra):
         """Apply HIRS-HIRS matchup filter
 
-        This method is called by `typhon` after reading every file.
+        This method is called by typhon after reading every file.
 
         Parameters
         ----------
@@ -208,7 +208,7 @@ class CalibrationCountDimensionReducer(typhon.datasets.filters.OrbitFilter):
 
     The methods on this class should not be used directly, rather objects
     of this class should be passed to
-    `typhon.datasets.Dataset.read_period`.
+    :meth:`typhon.datasets.Dataset.read_period`.
     """
 
     def finalise(self, arr):
@@ -226,7 +226,7 @@ class KFilter:
     Through this we can access ds, ds_orig, etc.
     """
 
-    #: `Kmodel` or `KRModel` to which this filter applies
+    #: `KModel` or `KRModel` to which this filter applies
     model: (KModel, KRModel)
     #: label/parameter associated with `KModel` or `KRModel` instance
     lab: str
@@ -280,18 +280,18 @@ class KrFilterHomogeneousScenes(KFilter):
 
 @dataclass
 class KFilterFromFile(KFilter):
-    """Class for any KFilter or KRFilter using a file
+    """Class for any KFilter or KrFilter using a file
 
-    Intermediate superclass for any `KFilter` or `KRFilter` that obtains
+    Intermediate superclass for any `KFilter` (including KrFilter) that obtains
     parameters from a file.
     """
     def get_harm_filter_path(self, channel, which="K_min_dL"):
         """Get path to harmonisation parameter file
 
         This requires that the field ``harmfilterparams`` is defined in
-        the `typhon` configuration, in the ``main`` section.  The same
+        the typhon configuration, in the ``main`` section.  The same
         section is used when writing the filter, which happens in
-        `FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`.
+        :func:`FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`.
 
         Parameters
         ----------
@@ -306,7 +306,7 @@ class KFilterFromFile(KFilter):
         -------
 
         pathlib.Path
-            `Path` object pointing to the location of the filter
+            :class:`pathlib.Path` object pointing to the location of the filter
         """
         p = pathlib.Path(typhon.config.conf["main"]["harmfilterparams"])
         p /= f"{self.model.prim_name:s}_{self.model.sec_name:s}"
@@ -317,20 +317,20 @@ class KFilterFromFile(KFilter):
         return p
 
 @dataclass
-class KrFilterΔLKr(KFilterFromFile):
+class KrFilterDeltaLKr(KFilterFromFile):
     """Filter on ΔL/Kr ratio
 
     Use filter parameters derived by
-    `FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`
+    :func:`~FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`
     to filter out values where ``ΔL/Kr`` is too large.
 
     See Vijus email 2018-09-27.
     """
 
-    def get_ΔL(self, channel):
+    def get_DeltaL(self, channel):
         """Extract ΔL from model
 
-        Extract ΔL from self.model (the `KRModel`).
+        Extract ΔL from self.model (the `KrModel`).
 
         Parameters
         ----------
@@ -359,7 +359,7 @@ class KrFilterΔLKr(KFilterFromFile):
         srf1 = self.model.prim_hirs.srfs[channel-1]
         y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(calibrated_channel=channel)
         # Kr is always in SI units
-        ΔL = self.get_ΔL(channel)
+        ΔL = self.get_DeltaL(channel)
         rat = ΔL/Kr
         fnc = scipy.interpolate.interp1d(ds["x"], ds["y"], kind="linear",
             fill_value=0, bounds_error=False)
@@ -368,15 +368,15 @@ class KrFilterΔLKr(KFilterFromFile):
         return ok
 
 @dataclass
-class KFilterKΔL(KFilterFromFile):
+class KFilterKDeltaL(KFilterFromFile):
     """Filter on K-ΔL from file
 
     Use filter parameters derived by
-    `FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`
+    :func:`FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`
     to filter out values where ``K-ΔL`` is too large.
     """
     
-    def get_ΔL(self, channel):
+    def get_DeltaL(self, channel):
         y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(
             calibrated_channel=channel).to(
             self.model.units, "radiance", srf=self.model.prim_hirs.srfs[channel-1])
@@ -384,13 +384,13 @@ class KFilterKΔL(KFilterFromFile):
             calibrated_channel=channel).to(
             self.model.units, "radiance", srf=self.model.sec_hirs.srfs[channel-1])
         return y2 - y1
-    get_ΔL.__doc__ = KrFilterΔLKr.get_ΔL.__doc__
+    get_DeltaL.__doc__ = KrFilterDeltaLKr.get_DeltaL.__doc__
 
     def filter(self, mdim, channel):
         ok = super().filter(mdim, channel)
         ds = xarray.open_dataset(self.get_harm_filter_path(channel, "K_min_dL"))
         K = self.model.calc_K(channel, ds_to_use=self.model.ds, debug=False)
-        ΔL = self.get_ΔL(channel)
+        ΔL = self.get_DeltaL(channel)
         K = UADA(K, dims=(mdim,), attrs={"units": rad_u["si"]}, coords={mdim: ΔL[mdim]})
         srf1 = self.model.prim_hirs.srfs[channel-1]
         y1 = UADA(self.model.ds[f"{self.model.prim_name}_R_e"]).sel(calibrated_channel=channel)
@@ -419,8 +419,8 @@ class HIRSMatchupCombiner:
     version, to the matchups.  Most of the heavy work is being done within
     `typhon.datasets.tovs.HIRSHIRS.combine` and its superclasses.  The
     functionality in
-    `FCDR_HIRS.processing.combine_matchups.HIRSMatchupCombiner` and
-    `FCDR_HIRS.analysis.inspect_hirs_matchups.HIRSMatchupInspector` is
+    :class:`FCDR_HIRS.processing.combine_matchups.HIRSMatchupCombiner` and
+    :class:`FCDR_HIRS.analysis.inspect_hirs_matchups.HIRSMatchupInspector` is
     built on top of the `HIRSMatchupCombiner` class defined here.
     """
 
@@ -650,7 +650,7 @@ class KModel(metaclass=abc.ABCMeta):
 
     There are currently several implementations, the most advanced one
     that is currently being used is `KModelSRFIASIDB`.  There are also
-    simpler implementations, `KModelPlankc` which is based on ad-hoc BB
+    simpler implementations, `KModelPlanck` which is based on ad-hoc BB
     L→BT conversions.  There should also be an implementation based on BTs
     simulated with a forward model, but this does not currently exist.
 
@@ -730,7 +730,7 @@ class KModel(metaclass=abc.ABCMeta):
     def limit(self, ok, mdim):
         """Reduce dataset to those values
 
-        Define `ds_filt` and `ds_filt_orig` based on the boolean array
+        Define :attr:`ds_filt` and :attr:`ds_filt_orig` based on the boolean array
         ``ok`` associated with dimension ``mdim``.  In practice, ``ok`` is
         obtained by filtering.
 
@@ -823,15 +823,15 @@ class KrModel(metaclass=abc.ABCMeta):
         ds_orig : xarray.Dataset
         prim_name : str
             Name of primary
-        prim_hirs : `fcdr.HIRSFCDR`
+        prim_hirs : fcdr.HIRSFCDR
             HIRS FCDR object corresponding to the primary
         sec_name : str
             Name of secondary
-        sec_hirs : `FCDR.HIRSFCDR`
+        sec_hirs : fcdr.HIRSFCDR
             HIRS FCDR object corresponding to the secondary
-        extra_filters : List[`KRFilter`], optional
+        extra_filters : List[`KFilter`], optional
             List of extra filters, which must all be instances of
-            subclasses of `KRFilter`, that this model imposes upon the
+            subclasses of `KFilter`, that this model imposes upon the
             universe.
         """
         self.ds = ds

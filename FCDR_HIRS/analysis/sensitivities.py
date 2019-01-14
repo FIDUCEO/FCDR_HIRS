@@ -31,7 +31,7 @@ $${latex:s}$$
 </html>
 """
 
-def parse_args():
+def get_parser():
     parser = argparse.ArgumentParser(
         description="Write sensitivity coefficients")
 
@@ -56,7 +56,9 @@ def parse_args():
         default=30,
         help="Maximum time in seconds to try .doit() per factor")
 
-    return parser.parse_args()
+    return parser
+def parse_args():
+    return get_parser().parse_args()
 
 class TimeOut(Exception):
     pass

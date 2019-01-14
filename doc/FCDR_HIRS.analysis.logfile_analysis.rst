@@ -1,7 +1,11 @@
-FCDR\_HIRS.analysis.logfile\_analysis module
-============================================
+logfile_analysis
+================
 
 .. automodule:: FCDR_HIRS.analysis.logfile_analysis
-    :members:
-    :undoc-members:
-    :show-inheritance:
+
+.. currentmodule:: FCDR_HIRS.analysis.logfile_analysis
+
+.. autosummary::
+    :toctree: generated
+    
+    main

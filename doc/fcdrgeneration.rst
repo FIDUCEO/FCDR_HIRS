@@ -19,10 +19,10 @@ the code is under active development.
    --abridged flag to ``generate_fcdr`` to save space. This will skip the
    ``u_from`` and ``rad_wn`` debug fields, saving about 88% in size per FCDR
    file. If running on Jasmin/CEMS, the shell script
-    ``submit_all_generate_fcdr.sh`` can be used to submit jobs for all
-    satellites and months to LOTUS.  The script is available from Gerrit,
-    on CEMS, or on bitbucket.  You will need to edit it first to update
-    paths and such.  It may be added to the FCDR\_HIRS distribution later.
+   ``submit_all_generate_fcdr.sh`` can be used to submit jobs for all
+   satellites and months to LOTUS.  The script is available from Gerrit,
+   on CEMS, or on bitbucket.  You will need to edit it first to update
+   paths and such.  It may be added to the FCDR\_HIRS distribution later.
 
 -  (devel) Switch to correct branch, rebase on master, and install.
 

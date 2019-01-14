@@ -6,8 +6,8 @@ essentially all in the `HIRSFCDR` class, you should not instantiate that
 one directly.  Rather, you should instantiate either `HIRS2FCDR`,
 `HIRS3FCDR`, or `HIRS4FCDR`, which contain both the functionality for
 `HIRSFCDR` (which is shared between different types of HIRS), and the
-functionality from the classes `typhon.datasets.dataset.HIRS2`,
-`typhon.datasets.dataset.HIRS3`, and `typhon.datasets.dataset.HIRS4`,
+functionality from the classes `typhon.datasets.tovs.HIRS2`,
+`typhon.datasets.tovs.HIRS3`, and `typhon.datasets.tovs.HIRS4`,
 which in turn inherit from `typhon.datasets.tovs.HIRS`.  To get an object
 from one of the classes in this module, you will want to call
 `which_hirs_fcdr`.
@@ -29,10 +29,10 @@ Important functionality inherited from typhon:
     Contains the bulk of the HIRS-specific L1B functionality, in
     particular a reading routine, but also filtering that is part of a
     reading routine even when not producing an FCDR (see also the module
-    `typhon.datasets.filters`).
+    :mod:`typhon.datasets.filters`).
 `typhon.datasets.tovs.HIRS2`, `typhon.datasets.tovs.HIRS3`, typhon.datasets.tovs.HIRS4`
-    Specific classes to be instantiated; the `HIRS2FCDR`, `HIRS3FCDR` and
-    `HIRS4FCDR` have those in their inheritance tree.
+    Specific classes to be instantiated; the :class:`HIRS2FCDR`, :class:`HIRS3FCDR` and
+    :class:`HIRS4FCDR` have those in their inheritance tree.
 `typhon.datasets.dataset.Dataset` and subclasses:
     Generic functionality for reading and processing satellite data, such
     as an abstraction on how to read longer periods of data in
@@ -40,8 +40,8 @@ Important functionality inherited from typhon:
 
 This module also defines a number of utility functions.  The most useful
 may be `which_hirs_fcdr`, which accepts a satellite name in any spelling
-variation and returns the instance of the correct `HIRS2FDCR`,
-`HIRS3FCDR`, or `HIRS4FCDR` class.
+variation and returns the instance of the correct :class:`HIRS2FDCR`,
+:class:`HIRS3FCDR`, or :class:`HIRS4FCDR` class.
 """
 
 import logging
@@ -63,7 +63,9 @@ import pyorbital.orbital
 import pyorbital.astronomy
 import fiduceo.fcdr.writer.fcdr_writer
 
-from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+import typhon.physics.units.tools
+import typhon.physics.units.em
+from typhon.physics.units.tools import UnitsAwareDataArray, UnitsAwareDataArray as UADA
 from typhon.utils import get_time_dimensions
     
 import typhon.datasets.dataset
@@ -89,7 +91,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     
     This class contains the core functionality to produce, read, and write
     the HIRS FCDR.  A higher level class building on top of the
-    functionality is in `FCDR_HIRS.processing.generate_fcdr.FCDRGenerator`.
+    functionality is in :class:`FCDR_HIRS.processing.generate_fcdr.FCDRGenerator`.
     There are three HIRS FCDR classes for the three generations of HIRS
     covered by FIDUCEO, and the user should produce one instance per
     specific instance of HIRS (per satellite).  Each instance covers all
@@ -125,12 +127,13 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     the measurement equation in D2.2.
 
     Relevant papers:
-    * Cao, Jarva, and Ciren, An Improved Algorithm for the Operational
-      Calibration of the High-Resolution Infrared Radiation Sounder,
-      JOURNAL OF ATMOSPHERIC AND OCEANIC TECHNOLOGY, 24, 2007, 
-      DOI: 10.1175/JTECH2037.1
-    * HIRS 4 Level 1 Product Generation Specification,
-      EUM.EPS.SYS.SPE.990007, v6, 17 September 2013
+
+        - Cao, Jarva, and Ciren, An Improved Algorithm for the Operational
+          Calibration of the High-Resolution Infrared Radiation Sounder,
+          JOURNAL OF ATMOSPHERIC AND OCEANIC TECHNOLOGY, 24, 2007, 
+          DOI: 10.1175/JTECH2037.1
+        - HIRS 4 Level 1 Product Generation Specification,
+          EUM.EPS.SYS.SPE.990007, v6, 17 September 2013
 
     
     Some methods and attributes in this class are very old and not used in
@@ -139,23 +142,24 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
     .. deprecated:
 
-        * `recalibrate` **DO NOT USE**
-        * `estimate_noise` **DO NOT USE**
-        * `read_and_recalibrate_period` **DO NOT USE**
-        * `extract_and_interp_calibcounts_and_temp` **DO NOT USE**
-        * `estimate_Rself` **DO NOT USE**
-        * `calc_sens_coef` **DO NOT USE**
-        * `calc_sens_coef_C_Earth` **DO NOT USE**
-        * `calc_sens_coef_C_iwct` **DO NOT USE**
-        * `calc_sens_coef_C_iwct_slope` **DO NOT USE**
-        * `calc_sens_coef_C_space` **DO NOT USE**
-        * `calc_sens_coef_C_space_slope` **DO NOT USE**
-        * `calc_urad` **DO NOT USE**
-        * `calc_urad_noise` **DO NOT USE**
-        * `calc_urad_calib` **DO NOT USE**
-        * `calc_uslope` **DO NOT USE**
-        * `calc_S_noise` **DO NOT USE**
-        * `calc_S_calib` **DO NOT USE**
+        - `recalibrate` **DO NOT USE**
+        - `estimate_noise` **DO NOT USE**
+        - `read_and_recalibrate_period` **DO NOT USE**
+        - `extract_and_interp_calibcounts_and_temp` **DO NOT USE**
+        - `estimate_Rself` **DO NOT USE**
+        - `calc_sens_coef` **DO NOT USE**
+        - `calc_sens_coef_C_Earth` **DO NOT USE**
+        - `calc_sens_coef_C_iwct` **DO NOT USE**
+        - `calc_sens_coef_C_iwct_slope` **DO NOT USE**
+        - `calc_sens_coef_C_space` **DO NOT USE**
+        - `calc_sens_coef_C_space_slope` **DO NOT USE**
+        - `calc_urad` **DO NOT USE**
+        - `calc_urad_noise` **DO NOT USE**
+        - `calc_urad_calib` **DO NOT USE**
+        - `calc_uslope` **DO NOT USE**
+        - `calc_S_noise` **DO NOT USE**
+        - `calc_S_calib` **DO NOT USE**
+
     """
 
     #: name and configuration section for FCDR HIRS
@@ -213,7 +217,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         filenames (uppercase satellite names)
     v2.0.0
     `   jumped to 2.0.0 because I now follow the FCDRTools convention
-`   """
+
+    """
 
     #: Not used.
     realisations = 100
@@ -238,8 +243,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     #: must always be set to ``"xarray"``
     read_returns = "xarray" # for NetCDFDataset in my inheritance tree
 
-    #: Set by `__init__` to the  `Dataset` used for reading, depending on `read_mode`
-    l1b_base = None # set in child
+    l1b_base = None
+    """`typhon.dataset.Dataset` : Which dataset is used for reading.
+
+    Value is set by :meth:`__init__` depending an :attr:`read_mode`.
+    """
 
     start_space_calib = 8
     """Index at which to start using space calibration
@@ -427,12 +435,12 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
             Times for which a "measurement" is available.  This may be
             offset and slope, such as returned by
-            `HIRS.calculate_offset_and_slope`.
+            :meth:`calculate_offset_and_slope`.
 
         *args : List[ndarray]
                 
             List of arrays of anything defined only at ``calib_time``.
-            For example, that may be `slope` and `offset`.
+            For example, that may be ``slope`` and ``offset``.
 
         kind : str, optional
 
@@ -520,15 +528,15 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Parameters
         ----------
 
-        counts : `xarray.DataArray`
+        counts : xarray.DataArray
             Earth counts.
-        slope : `xarray.DataArray`
+        slope : xarray.DataArray
             Interpolated slope as obtained from `interpolate_between_calibs`.
-        a2 : `xarray.DataArray`
+        a2 : xarray.DataArray
             Harmonisation non-linearity coefficient.
-        Rself: `xarray.DataArray`
+        Rself: xarray.DataArray
             Self-emission estimate.
-        a_4: `xarray.DataArray
+        a_4: xarray.DataArray
             Harmonisation offset.
 
         Returns
@@ -553,7 +561,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         space and IWCT views are then each assigned the time coordinates
         corresponding to the space views, thus pretending they were
         calculated at the same time.  The latter ensures coordinates are
-        aligned so we can do ``offset / slope`` or such, without `xarray`
+        aligned so we can do ``offset / slope`` or such, without xarray
         inadvertently broadcasting based on different coordinates, or
         returning and empty array because no coordinates for the same
         dimension match.
@@ -1118,7 +1126,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         srf : `typhon.physics.units.em.SRF`, optional
 
             SRF used to estimate slope.  Needs to implement the
-            `blackbody_radiance` method such as `typhon.physics.em.SRF`
+            :meth:`typhon.physics.units.em.SRF.blackbody_radiance` method
+            such as :class:`typhon.physics.units.em.SRF`
             does.  Optional: if not provided, use standard one.
 
         tuck : bool, optional
@@ -1315,7 +1324,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             ``Δλ_eff``, ``a_3``, ``a_4``
 
         These cached values are required to calculate uncertainties using
-        `FCDRHIRS.calc_u_for_variable`.
+        `HIRSFCDR.calc_u_for_variable`.
 
         In principle, it is possible to swap out the self-emission model
         by passing a different ``Rself_model``.  In practice, there is
@@ -1338,7 +1347,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
             Channel to calculate radiance for.  If you want to
             calculate the radiance for all channels, use
-            `FCDRHIRS.calculate_radiance_all`.
+            `HIRSFCDR.calculate_radiance_all`.
 
         srf : `typhon.physics.units.em.SRF`, optional
 
@@ -1366,7 +1375,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
             If true, store/cache intermediate values in
             self._quantities and self._effects.  This is needed for
-            `FCDRHIRS.calc_u_for_variable` to work.  Defaults to False.
+            `HIRSFCDR.calc_u_for_variable` to work.  Defaults to False.
 
         return_bt : bool, optional
 
@@ -2143,7 +2152,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         also known as an incorrect calculation.  You should not use this
         method.
 
-        This method has the signature of a `typhon.datasets.Dataset`
+        This method has the signature of a :class:`typhon.datasets.Dataset`
         ``pseudo_field`` and is not intended to be used directly.
 
         Parameters
@@ -2228,7 +2237,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Old implementation to return noise level for IWCT and space
         views.  **DO NOT USE**
 
-        Use `FCDRHIRS.extract_calibcounts_and_temp` with ``tuck=True``,
+        Use `HIRSFCDR.extract_calibcounts_and_temp` with ``tuck=True``,
         then obtain uncertainty in Earth counts in
         ``self._effects_by_name["C_Earth"].magnitude``.
 
@@ -2426,7 +2435,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Parameters
         ----------
 
-        var : str or `sympy.Symbol`
+        var : str or :class:`sympy.core.symbol.Symbol`
 
             Variable for which to calculate uncertainty
 
@@ -2439,7 +2448,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         all_effects : Mapping
 
-            Dictionary with sets of effects (`effect.Effect` objects)
+            Dictionary with sets of effects (:class:`effects.Effect` objects)
             with magnitudes filled in.  This can be obtained from
             ``self._effects`` if Earth radiance has already been
             calculated with ``tuck=True``.
@@ -2530,7 +2539,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 return_more=True)
 
         For a more detailed example, study the source code of
-        `FCDR_HIRS.processing.generate_fcdr.FCDRGenerator.get_piece`.
+        :meth:`FCDR_HIRS.processing.generate_fcdr.FCDRGenerator.get_piece`.
             
         """
 
@@ -3020,7 +3029,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         return make_debug_fcdr_dims_consistent(
             dest, src, impossible="warn", flags=self._flags)
 
-    def numerically_propagate_ΔL(self, L, ΔL):
+    def numerically_propagate_DeltaL(self, L, ΔL):
         """Temporary method to numerically propagate ΔL to ΔTb
 
         Until I find a proper solution for the exploding Tb uncertainties
@@ -3338,7 +3347,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Yields
         ------
 
-        `sympy.Symbol`
+        :class:`sympy.core.symbol.Symbol`
 
             Component of measurement equation
 
@@ -3767,9 +3776,12 @@ def which_hirs_fcdr(satname, *args, **kwargs):
 
     satname : str
         Name of the satellite for which a `HIRSFCDR` object is desired.
-    *args, **kwargs
+    *args
         Remaining arguments passed on to the applicable `HIRSFCDR` class.
-        The satellite name `satname` is already passed on.
+        The satellite name ``satname`` is already passed on.
+    **kwargs
+        Remaining arguments passed on to the applicable `HIRSFCDR` class.
+        The satellite name ``satname`` is already passed on.
 
     Returns
     -------
@@ -3814,7 +3826,7 @@ def _recursively_search_for(sub, var):
     sub : Dict
         Either sub_sensitivities or sub_components.  For a detailed
         definition, see the documentation for the
-        `HIRSFCDR,calc_u_for_variable` return values.
+        :meth:`HIRSFCDR.calc_u_for_variable` return values.
     var : Symbol
         Symbol to look up.
 
@@ -3842,8 +3854,8 @@ def make_debug_fcdr_dims_consistent(dest, src, impossible="warn",
     ``rself_update_time`` and collapsing the dimension
     ``calibration_position``
     
-    See `HIRSFCDR._make_adict_dims_consistent` and
-    `HIRSFCDR._make_adict_dims_consistent_if_needed`.
+    See :meth:`HIRSFCDR._make_adict_dims_consistent` and
+    :meth:`HIRSFCDR._make_adict_dims_consistent_if_needed`.
 
     Parameters
     ----------
