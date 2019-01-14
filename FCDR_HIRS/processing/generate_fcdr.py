@@ -127,6 +127,7 @@ import datetime
 import numpy
 import pandas
 import xarray
+import isodate
 import typhon.datasets.dataset
 import typhon.datasets.filters
 from typhon.physics.units.common import radiance_units as rad_u
@@ -695,8 +696,8 @@ class FCDRGenerator:
         """
         #pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
         ds.attrs.update(
-            author="Gerrit Holl and the FIDUCEO team",
-            email="fiduceo-coordinator@lists.reading.ac.uk",
+            creator_name="Gerrit Holl and the FIDUCEO team",
+            creator_email="fiduceo-coordinator@lists.reading.ac.uk",
             title="HIRS FCDR",
             satellite=self.satname,
             url="http://www.fiduceo.eu/",
@@ -705,6 +706,8 @@ class FCDRGenerator:
             institution="University of Reading",
             data_version=self.data_version,
             WARNING=effects.WARNING,
+            comment="Beta version.  Not intended for scientific use.",
+            references="Holl et al. (to be submitted)",
             history = "Produced from L1B on {:%Y-%m-%dT%H:%M:%SZ}".format(
                 datetime.datetime.utcnow())
             )
@@ -720,12 +723,21 @@ class FCDRGenerator:
             piece["time"][0].values.astype("M8[s]").astype(datetime.datetime)).stem
         at_end = self.fcdr.find_most_recent_granule_before(
             piece["time"][-1].values.astype("M8[s]").astype(datetime.datetime)).stem
+        start = piece["time"][0].values.astype("M8[ms]").astype(datetime.datetime)
+        end = piece["time"][-1].values.astype("M8[ms]").astype(datetime.datetime)
+        duration = end - start
         piece.attrs.update(
-            orbit_start_time=piece["time"][0].values.astype("M8[ms]").astype(datetime.datetime).isoformat(),
-            orbit_end_time=piece["time"][-1].values.astype("M8[ms]").astype(datetime.datetime).isoformat(),
-            orbit_start_granule=at_start,
-            orbit_end_granule=at_end,
-        )
+            time_coverage_start=start.isoformat(),
+            time_coverage_end=end.isoformat(),
+            time_coverage_duration=isodate.duration_isoformat(duration))
+
+        # add orig_l1b
+        t_earth = piece["scanline_earth"]
+        src_filenames = pandas.unique(piece["filename"].sel(time=t_earth))
+        # call .item() to avoid https://bugs.python.org/issue29672
+        piece["scanline_map_to_origl1bfile"] = [src_filenames.tolist().index(fn.item()) for fn in piece["filename"].sel(time=t_earth)]
+        piece.attrs["source"] = ", ".join(src_filenames)
+
         return piece
 
     def store_piece(self, piece):
@@ -750,11 +762,10 @@ class FCDRGenerator:
         piece_easy.attrs["history"] = "Produced on {:%Y-%m-%dT%H:%M:%SZ}.".format(
             datetime.datetime.utcnow()) + "\n" + VERSION_HISTORY_EASY
         piece_easy.attrs["references"] = "In preparation"
-        piece_easy.attrs["url"] = "http://www.fiduceo.eu"
-        piece_easy.attrs["author"] = "Gerrit Holl and the FIDUCEO team"
-        piece_easy.attrs["contact"] = "fiduceo-coordinator@lists.reading.ac.uk"
-        piece_easy.attrs["comment"] = "Early version.  Please note warning."
-        piece_easy.attrs["typical_structured_correlation_scale"] = "40 scanlines"
+        piece_easy.attrs["creator_url"] = "http://www.fiduceo.eu"
+        piece_easy.attrs["creator_name"] = "Gerrit Holl and the FIDUCEO team"
+        piece_easy.attrs["creator_email"] = "fiduceo-coordinator@lists.reading.ac.uk"
+        piece_easy.attrs["comment"] = "Beta version.  Not intended for scientific use."
         try:
             fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.write(
                 piece_easy,
@@ -876,13 +887,13 @@ class FCDRGenerator:
                 else:
                     raise
         self.debug2easy_flags(easy, piece)
-        easy["time"].encoding["add_offset"] = piece["time"].encoding["add_offset"]
+        self.debug2easy_attrs(easy, piece)
         
-        # add orig_l1b
-        src_filenames = pandas.unique(piece["filename"].sel(time=t_earth))
-        # call .item() to avoid https://bugs.python.org/issue29672
-        easy["scanline_map_to_origl1bfile"][:] = [src_filenames.tolist().index(fn.item()) for fn in piece["filename"].sel(time=t_earth)]
-        easy.attrs["source"] = ", ".join(src_filenames)
+        easy = easy.assign_coords(
+            x=numpy.arange(1, 57),
+            #y=easy["scanline"],
+            y=numpy.arange(easy.dims["y"]),
+            channel=numpy.arange(1, 20))
 
         for k in easy.variables.keys():
             # see
@@ -906,7 +917,6 @@ class FCDRGenerator:
         easy["SRF_wavelengths"][...] = UADA(
             piece["SRF_frequencies"].sel(channel=range(1, 20), n_frequencies=range(easy.dims["n_wavelengths"]))).to(
                 "um", "sp")
-        easy.attrs.update(piece.attrs)
 
         for (k, v) in _fcdr_defs.FCDR_extra_attrs.items():
             easy[k].attrs.update(v)
@@ -1006,6 +1016,12 @@ class FCDRGenerator:
 #            _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
         
 #        raise NotImplementedError("Not implemented yet!")
+
+    def debug2easy_attrs(self, easy, piece):
+        """Copy appropriate flags from debug to easy
+        """
+        easy.attrs.update(
+            {k:v for (k,v) in piece.attrs.items() if k in easy.attrs.keys()})
 
     _i = 0
     def get_filename_for_piece(self, piece, fcdr_type):
