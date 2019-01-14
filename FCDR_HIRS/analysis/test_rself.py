@@ -55,7 +55,7 @@ def parse_cmdline():
 def plot_rself_test(h, ds, temperatures, channels,
         regr_type, regr_args, tit, fn):
     
-    model = models.RSelf(h, temperatures,
+    model = models.RSelfTemperature(h, temperatures,
         (regr_type, regr_args))
 
     #view_space = M[h.scantype_fieldname] == h.typ_space
