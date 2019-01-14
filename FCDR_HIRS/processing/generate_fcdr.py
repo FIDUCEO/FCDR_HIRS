@@ -762,9 +762,9 @@ class FCDRGenerator:
         piece_easy.attrs["history"] = "Produced on {:%Y-%m-%dT%H:%M:%SZ}.".format(
             datetime.datetime.utcnow()) + "\n" + VERSION_HISTORY_EASY
         piece_easy.attrs["references"] = "In preparation"
-        piece_easy.attrs["url"] = "http://www.fiduceo.eu"
-        piece_easy.attrs["author"] = "Gerrit Holl and the FIDUCEO team"
-        piece_easy.attrs["contact"] = "fiduceo-coordinator@lists.reading.ac.uk"
+        piece_easy.attrs["creator_url"] = "http://www.fiduceo.eu"
+        piece_easy.attrs["creator_name"] = "Gerrit Holl and the FIDUCEO team"
+        piece_easy.attrs["creator_email"] = "fiduceo-coordinator@lists.reading.ac.uk"
         piece_easy.attrs["comment"] = "Beta version.  Not intended for scientific use."
         try:
             fiduceo.fcdr.writer.fcdr_writer.FCDRWriter.write(
