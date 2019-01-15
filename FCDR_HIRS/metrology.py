@@ -890,8 +890,15 @@ def apply_curuc(R_eΛls, R_lΛes, R_cΛpi, R_cΛps,
         if cutoff_l is None or cutoff_e is None:
             raise TypeError("If interpolate_lengths is True, you must pass "
                 "both cutoff_l and cutoff_e.")
-        Δ_l_full = interpolate_Delta_x(Δ_l_full, cutoff_l)
-        Δ_e_full = interpolate_Delta_x(Δ_e_full, cutoff_e)
+        try:
+            Δ_l_full = interpolate_Delta_x(Δ_l_full, cutoff_l)
+            Δ_e_full = interpolate_Delta_x(Δ_e_full, cutoff_e)
+        except ValueError as e:
+            if e.args[0] == "x and y arrays must have at least 2 entries":
+                raise FCDRError("Too few valid lines to interpolate "
+                    "correlation lengths")
+            else:
+                raise
 
         # those still don't contain all the channels; fill the other
         # channels with nans again
