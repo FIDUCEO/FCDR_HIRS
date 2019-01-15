@@ -202,7 +202,7 @@ autodoc_default_options = {
 
 autosummary_generate = True
 
-napoleon_google_docstring = False
+napoleon_google_docstring = True
 napoleon_numpy_docstring = True
 napoleon_include_init_with_doc = True
 napoleon_include_private_with_doc = True

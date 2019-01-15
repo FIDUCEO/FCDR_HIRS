@@ -2,7 +2,7 @@ Command-line scripts
 ====================
 
 This is an overview of command-line utilities that are available when
-:doc:`FCDR_HIRS package` has been successfully installed.
+:doc:`FCDR_HIRS` has been successfully installed.
 This page describes a summary of the behaviour of each of the utilities,
 as well as an overview of mandatory and optional command-line flags.
 For each script, you will get the same interview by passing the

@@ -2092,14 +2092,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         - Set 1 is used to calculate two sets of radiances (brightness
           temperatures): the reference brightness temperature
-          corresponding to the nominal SRF for satellite `sat`, channel
-          `ch`; and a set of radiances when this SRF is shifted by
-          `shift`.  In the real world, this set will come from
+          corresponding to the nominal SRF for satellite ``sat``, channel
+          ``ch``; and a set of radiances when this SRF is shifted by
+          ``shift``.  In the real world, this set will come from
           collocations/matchups rather than from IASI data.
 
         - Set 2 is used to simulate many pairs of radiances.  The
           functionality for this is in
-          `:func:fhmath.calc_rmse_for_srf_shift`.  Assuming an SRF
+          :func:`FCDR_HIRS.math.calc_rmse_for_srf_shift`.  Assuming an SRF
           shift, it simulates radiances for the nominal and a shifted SRF.
           From this shift, it derives a model predicting shifted-SRF radiances
           from nominal-SRF radiances.
@@ -2126,8 +2126,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 set1.  Valid values rare 'same' (identical set), 'similar'
                 (different set, but from same region in time and space),
                 or 'different' (different set).  Default is 'different'.
-            ref [str]: Set to `'single'` if you only want to use a single
-                channel to estimate, or `'all'` if you want to use all.
+            ref [str]: Set to ``'single'`` if you only want to use a single
+                channel to estimate, or ``'all'`` if you want to use all.
             regression_type [scikit-learn regression class]: Class to use for
                 regression.  By defarult, this is
                 sklearn.linear_model.LinearRegression when ref is single,
@@ -2137,7 +2137,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 self._regression_typre.  See sklearn documentation for
                 other possibilities.
             limits [dict]: Limits applied to training/testing data.  See
-                `:func:typhon.math.array.limit_ndarray`.
+                :func:`~typhon.math.array.limit_ndarray`.
             noise_level [dict]: Noise levels applied to target and master.
                 Dictionary {"target": float, "master": float}.
             noise_quantity [str]: Add noise in "bt" or "radiance"

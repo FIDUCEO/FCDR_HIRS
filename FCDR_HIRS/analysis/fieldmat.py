@@ -251,8 +251,8 @@ class _SatPlotHelper(metaclass=abc.ABCMeta):
 
         mp : MatrixPlotter
             Instance of :class:`MatrixPlotter`.
-        ax : matplotlib.axes._subplots.AxesSubplot
-            Instance of `matplotlib.axes._subplots.AxesSubplot` in which
+        ax : matplotlib.axes.Axes
+            Instance of :class:`~matplotlib.axes.Axes` in which
             the plot will be placed
         gs : matplotlib.gridspec.GridSpec
             Instance of `matplotlib.gridspec.GridSpec`
@@ -633,13 +633,14 @@ class MatrixPlotter:
 
         This method returns nothing, but after calling this method, the
         data will be stored in the :attr:`M` attribute.
+
         Parameters
         ----------
 
         sat : str
             Name of satellite to read
         from_date : datetime.datetime
-            The `~datetime.datetime` object representing the starting time
+            The `datetime.datetime` object representing the starting time
             to read
         to_date : datetime.datetime
             Like ``from_date`` but describing the final time to read
@@ -1012,8 +1013,8 @@ class MatrixPlotter:
 
         S : ndarray
             Channel correlation matrix to be plotted.
-        a : matplotlib.axes._subplots.AxesSubplot
-            Instance of `matplotlib.axes._subplots.AxesSubplot` in which
+        a : matplotlib.axes.Axes
+            Instance of :class:`~matplotlib.axes.Axes` in which
             to plot the matrix.
         channels : array_like
             List or array of numbers representing the channels, this will
@@ -1033,7 +1034,7 @@ class MatrixPlotter:
 
         image : `~matplotlib.image.AxesImage`
             Image as returned by
-            `~matplotlib.axes._subplots.AxesSubplot.imshow`.
+            :method:`~matplotlib.axes.Axes.imshow`
         """
         im = a.imshow(S, cmap="PuOr_r", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
@@ -1066,8 +1067,8 @@ class MatrixPlotter:
 
         S : ndarray
             Channel correlation matrix to be plotted.
-        a : matplotlib.axes._subplots.AxesSubplot
-            Instance of `matplotlib.axes._subplots.AxesSubplot` in which
+        a : matplotlib.axes.Axes
+            Instance of `matplotlib.axes.Axes` in which
             to plot the matrix.
         add_x : bool, optional
             If true, add x-label and tickmarks even if the axes is not the
@@ -1081,7 +1082,7 @@ class MatrixPlotter:
 
         image : `~matplotlib.image.AxesImage`
             Image as returned by
-            `~matplotlib.axes._subplots.AxesSubplot.imshow`.
+            `~matplotlib.axes.Axes.imshow`.
         """
         im = a.imshow(S, cmap="PuOr_r", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
@@ -1620,7 +1621,7 @@ def read_and_plot_field_matrices(p):
     ----------
 
     p : argparse.ArgumentParser
-        Parsed `~argparse.ArgumentParser` instance.  The
+        Parsed :class:`~argparse.ArgumentParser` instance.  The
         commandline-arguments determine the behaviour, see
         :ref:`plot-hirs-field-matrix`.
     """

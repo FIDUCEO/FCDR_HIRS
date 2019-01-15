@@ -324,7 +324,7 @@ def estimate_srf_shift(y_master, y_target, srf0, L_spectral_db, f_spectra,
         predict_quantity.
     y_target : ndarray
         Radiances or BTs for other satellite
-    srf0 : `typhon.physics.em.units.SRF`
+    srf0 : :class:`~typhon.physics.units.SRF`
         SRF for reference satellite
     L_spectral_db : (N, p) ndarray
         Database of spectra (such as from IASI)
