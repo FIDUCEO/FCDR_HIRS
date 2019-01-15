@@ -26,7 +26,7 @@ copyright = ('2015--2019 --- This code was developed for the EC project "Fidelit
 author = 'Gerrit Holl'
 
 # The short X.Y version
-version = '0.1.15dev'
+version = '0.2'
 # The full version, including alpha/beta/rc tags
 release = ''
 

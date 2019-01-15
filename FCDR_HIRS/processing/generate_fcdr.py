@@ -254,7 +254,7 @@ class FCDRGenerator:
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
     skip_problem_step = datetime.timedelta(seconds=900)
-    data_version = "0.8pre2"
+    data_version = "0.8rc1"
     # see comment in models.Rself
     rself_temperatures = ["baseplate", "internal_warm_calibration_target",
         "scanmirror", "scanmotor", "secondary_telescope"]
