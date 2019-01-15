@@ -102,6 +102,9 @@ to recipes developed by Merchant et al (GH #212, #228).
 Use harmonisation for some channels.
 
 Use shifted SRFs, obtained from RTTOV.
+
+When no channels can be successful at all because there are no calibration
+views, do not write data, await gap filling.
 """
 
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
@@ -330,7 +333,7 @@ class FCDRGenerator:
                 orbit_filters=self.orbit_filters,
                 pseudo_fields=self.pseudo_fields)
         except typhon.datasets.dataset.DataFileError as e:
-            warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
+            logger.error("Unable to generate FCDR: {:s}".format(e.args[0]))
         while self.dd.center_time < end_time:
             try:
                 self.dd.move(self.step_size,
@@ -339,7 +342,7 @@ class FCDRGenerator:
                 self.make_and_store_piece(self.dd.center_time - self.segment_size,
                     self.dd.center_time)
             except (fcdr.FCDRError, typhon.datasets.dataset.DataFileError) as e:
-                warnings.warn("Unable to generate FCDR: {:s}".format(e.args[0]))
+                logger.error("Unable to generate FCDR: {:s}".format(e.args[0]))
             else:
                 anyok = True
         if anyok:
