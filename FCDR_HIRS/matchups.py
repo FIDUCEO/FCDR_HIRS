@@ -72,7 +72,7 @@ class HHMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
 
     The methods on this class should not be used directly, rather objects
     of this class should be passed to
-    :meth:`typhon.datasets.Dataset.read_period`.
+    :meth:`~typhon.datasets.Dataset.dataset.read_period`.
     """
     msd_field = None
     def __init__(self, prim, sec, msd_field="matchup_spherical_distance"):
@@ -150,13 +150,13 @@ class HIMatchupCountFilter(typhon.datasets.filters.OrbitFilter):
 
     The methods on this class should not be used directly, rather objects
     of this class should be passed to
-    `typhon.datasets.Dataset.read_period`.
+    :meth:`typhon.datasets.dataset.Dataset.read_period`.
     """
 
     def filter(self, ds, **extra):
         """Apply HIRS-IASI matchup filter
 
-        This method is called by `typhon` after reading every file.
+        This method is called by typhon after reading every file.
 
         Parameters
         ----------
@@ -341,8 +341,8 @@ class KrFilterDeltaLKr(KFilterFromFile):
         Returns
         -------
 
-        `typhon.physics.units.tools.UnitsAwareDataArray`
-            A `UnitsAwareDataArray` with the radiance differences
+        :class:`~typhon.physics.units.tools.UnitsAwareDataArray`
+            A :class:`~typhon.physics.units.tools.UnitsAwareDataArray` with the radiance differences
             secondary - primary.
         """
         # always in SI units
@@ -372,7 +372,7 @@ class KFilterKDeltaL(KFilterFromFile):
     """Filter on K-ΔL from file
 
     Use filter parameters derived by
-    :func:`FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`
+    :func:`~FCDR_HIRS.analysis.inspect_hirs_harm_matchups.plot_hist_with_medmad_and_fitted_normal`
     to filter out values where ``K-ΔL`` is too large.
     """
     
@@ -1164,7 +1164,7 @@ class KModelSRFIASIDB(KModel):
 
     A pint Unit describing in what unit radiances or brightness
     temperatures are predicted.  The module
-    `typhon.physics.units.common` defines a ``radiance_units`` dictionary
+    :mod:`~typhon.physics.units` defines a ``radiance_units`` dictionary
     that contains units for radiance in SI or typical IR units, or one can
     use kelvin.  It's also valid to pass a string that can be converted to
     a unit.

@@ -183,7 +183,7 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
     ----------
 
     h : HIRS
-        `~typhon.datasets.tovs.HIRS` object
+        :class:`~typhon.datasets.tovs.HIRS` object
     M : numpy.ndarray
         structured array such as returned by h.read, must contain at
         least counts and info on scantypes

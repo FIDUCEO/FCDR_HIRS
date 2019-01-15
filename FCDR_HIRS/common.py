@@ -378,9 +378,9 @@ def savetxt_3d(fname, data, *args, **kwargs):
         3-dimensional `numpy.ndarray` containing the data to be written to
         a file.
     *args
-        Remaining arguments passed to `~numpy.savetxt`.
+        Remaining arguments passed to :func:`~numpy.savetxt`
     **kwargs
-        Remaining arguments passed to `~numpy.savetxt`.
+        Remaining arguments passed to :func:`~numpy.savetxt`.
 
     Example
     -------
