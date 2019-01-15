@@ -206,6 +206,8 @@ Implemented in :mod:`FCDR_HIRS.analysis.map_single_orbit`.
     :func: get_parser
     :prog: hirs_orbit_map
 
+.. _hirs-logfile-analysis:
+
 hirs_logfile_analysis
 ^^^^^^^^^^^^^^^^^^^^^
 

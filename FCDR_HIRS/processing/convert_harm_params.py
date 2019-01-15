@@ -3,7 +3,10 @@
 Need to pass files from which to read, in order of channel.  So, for
 example, one might call it as
 
-convert_hirs_harmonisation_parameters /group_workspaces/cems2/fiduceo/Users/rquast/processing/harmonisation/3.0-3cab9f5/\*/\*19.nc
+``convert_hirs_harmonisation_parameters /group_workspaces/cems2/fiduceo/Users/rquast/processing/harmonisation/3.0-3cab9f5/\*/\*19.nc``
+
+This will write to stdout a Python module that should be written to
+``_harm_defs.py`` inside the ``FCDR_HIRS/`` package.
 """
 
 import sys
@@ -20,21 +23,27 @@ from .. import fcdr
 
 preamble='''"""Harmonisation definitions.
 
+**AUTOMATICALLY GENERATED — DO NOT EDIT!!**
+
 Definitions relating to the output of harmonisation.
 
-In particular, the ``harmonisation_parameters`` dictionary contains the
+In particular, the `harmonisation_parameters` dictionary contains the
 relevant parameters for each satellite and channel for which harmonisation
 has so far been applied in the form of:
 
 ``Dict[str, Dict[int, Dict[int, float]]]``
 
-For example, to get a₀ for noaa18:
+For example, to get a₀ for noaa18, channel 12:
 
 ``harmonisation_parameters["noaa18"][12][0]``
 
 Corresponding uncertainties are contained in
-``harmonisation_parameters_uncertainty``.  Covariance is not yet supported.
+`harmonisation_parameters_uncertainty`.  
+Covariances are contained in
+`harmonisation_parameter_covariances`
 Harmonisation parameters are derived using software developed by Ralf Quast.
+
+**AUTOMATICALLY GENERATED — DO NOT EDIT!!**
 """
 
 ###############################################
@@ -124,12 +133,15 @@ def write_harm_dict(fp, harms, write_preamble=True):
     if write_preamble:
         fp.write(preamble.format(cmdline=" ".join(sys.argv)))
 
+    print("#: harmonisation parameters")
     print("harmonisation_parameters = ", pprint.pformat(harms[0]),
             file=fp)
 
+    print("#: harmonisation uncertainties")
     print("harmonisation_parameter_uncertainties = ", pprint.pformat(harms[1]),
             file=fp)
 
+    print("#: harmonisation covariances")
     print("harmonisation_parameter_covariances = ", pprint.pformat(harms[2]),
             file=fp)
 
