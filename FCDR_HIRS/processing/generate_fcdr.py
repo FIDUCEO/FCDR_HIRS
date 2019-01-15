@@ -818,7 +818,7 @@ class FCDRGenerator:
             srf_size=piece.dims["n_frequencies"],
             lut_size=piece.dims["lut_size"],
             corr_dx=self.fcdr.n_perline,
-            corr_dy=N//2)
+            corr_dy=min(N//2, self.max_debug_corr_length))
         t_earth = piece["scanline_earth"]
         t_earth_i = piece.get_index("scanline_earth")
         mpd = self.map_dims_debug_to_easy
