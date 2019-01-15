@@ -1470,15 +1470,149 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             channel=ch)).rename({"channel": "calibrated_channel"})
 
         if n_within_context < 2:
-            logging.error("Less than two calibration lines in period "
+            raise FCDRError(
+                "Less than two calibration lines in period "
                 "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M} for channel {:d}!  Data unusable.".format(
                 *context["time"][[0,-1]].values.astype("M8[ms]").astype(datetime.datetime),
                 ch))
-            self._flags["channel"].loc[{"calibrated_channel": ch}] |= (
+
+        # Now I'm sure I have at least two calibration cycles with data
+        # in-between, so in theory I can do everything I want to.
+        
+    
+        # NB: passing `context` here means that quantities and effects are
+        # stored with dimension for entire context period, rather than
+        # just the ds period.  Should take this into account with later
+        # processing.
+        (time, offset, slope, a2) = self.calculate_offset_and_slope(
+            context, ch, srf, tuck=tuck, naive=naive)
+        
+        if not numpy.array_equal(numpy.isfinite(offset),
+                                 numpy.isfinite(slope)):
+            raise ValueError("Expecting offset and slope to have same "
+                "finite values, but I got disappointed.")
+
+        # median treats nan and inf differently, so where I have inf
+        # in slope but not in offset it goes wrongly.  In any case,
+        # for the purpose of the median, I really want to ignore infs
+        # so I'd rather set them to nans
+        for x in (slope, offset):
+            x.values[~numpy.isfinite(x.values)] = numpy.nan
+
+        if Rself_model is None:
+            warnings.warn("No self-emission defined, assuming 0!",
+                FCDRWarning)
+            has_Rself = False
+        else:
+            try:
+                Rself_model.fit(context, ch)
+            except ValueError as e:
+                if (e.args[0].startswith("Space views fail normality") or
+                    e.args[0].startswith("All space views in fitting") or
+                    e.args[0].startswith("Some offsets are infinite")):
+                    errmsg = (
+                        "Unable to train self-emission model for channel {:d} with "
+                        "training data in {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}: "
+                        "{:s} ".format(
+                            ch,
+                            context["time"].values[0].astype("M8[s]").astype(datetime.datetime),
+                            context["time"].values[-1].astype("M8[s]").astype(datetime.datetime),
+                            e.args[0]))
+                     # This should not happen anymore now that I have the
+                     # context check at the top
+#                    if offset.shape[0] == 1:
+#                        raise FCDRError(errmsg + " Moreover, I have only a "
+#                            "single valid calibration cycle in the period "
+#                            "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, which "
+#                            "means I cannot fall back to interpolation "
+#                            "either!  Sorry, I give up!")
+                    logger.error(errmsg +
+                        "Will flag data and reduce to basic interpolation!")
+#                    if not ch in self._flags["channel"]:
+#                        self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
+#                    else:
+                    self._flags["channel"].loc[{"calibrated_channel": ch}] |= _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
+                    self._flags["channel"].loc[{"calibrated_channel": ch}] |= _fcdr_defs.FlagsChannel.DO_NOT_USE
+                    has_Rself = False
+                else:
+                    raise
+            else:
+                has_Rself = True
+
+        # NOTE: taking the median may not be an optimal solution.  See,
+        # for example, plots produced by the script
+        # plot_hirs_calibcounts_per_scanpos in the FCDR_HIRS package
+        # within FIDUCEO, in particular for noaa18 channels 1--12, where
+        # the lowest scan positions are systematically offset compared to
+        # the higher ones.  See also the note at
+        # calculate_offset_and_slope. 
+        interp_offset_modes = {}
+        interp_slope_modes = {}
+        interp_bad_modes = {}
+        if offset.shape[0] > 1 or ((naive or has_context) and time.shape[0]>0):
+            for mode in ("zero",) if naive else ("zero", "linear", "cubic"):
+                moff = offset.median(dim="scanpos", keep_attrs=True)
+                mslp = slope.median(dim="scanpos", keep_attrs=True)
+                bad = (
+                    self.filter_calibcounts.filter_outliers(moff.values) |
+                    self.filter_calibcounts.filter_outliers(mslp.values))
+                (interp_offset, interp_slope, interp_bad) = self.interpolate_between_calibs(
+                    ds["time"], time,
+                    moff, mslp, bad,
+                    kind=mode)
+                naive
+                interp_offset_modes[mode] = interp_offset
+                interp_slope_modes[mode] = interp_slope
+                interp_bad_modes[mode] = interp_bad
+        else:
+            raise RuntimeError("This should never happen again")
+            # check version history to see what was here before
+        if not naive:
+            # in naive mode, interp_bad_modes["zero"] will contain
+            # nans, then .astype(numpy.bool_) will turn it into an
+            # object array, either way boolean indexing will fail
+            # but in naive mode we don't need flags so let's just skip
+            # it.
+            # NB: this may also happen if there's insufficient
+            # context?
+            self._flags["channel"].sel(
+                calibrated_channel=ch)[
+                {"scanline_earth":
+                 xarray.DataArray(
+                    interp_bad_modes["zero"].astype(numpy.bool_),
+                    dims=("time",),
+                    coords={
+                        "time":
+                         ds.coords["time"]}
+                ).sel(time=C_Earth.coords["time"]).values
+                }] |= (
+                _fcdr_defs.FlagsChannel.DO_NOT_USE |
+                _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
+        # might be attractive to do "linear" here, but no: that would
+        # complicate the uncertainty propagation, for which zero-order
+        # interpolation occurs in _make_dims_consistent.
+        # And in naive mode I certainly want to have 'zero'.
+        interp_slope = interp_slope_modes["zero"]
+        # may be overwritten but this is so I carry out the right check;
+        # should not be set to cubic here...
+        interp_offset = interp_offset_modes["zero"]
+        if not naive and (not numpy.isfinite(interp_offset).all() or
+                          not numpy.isfinite(interp_slope).all()):
+            if not numpy.array_equal(numpy.isfinite(interp_offset),
+                                     numpy.isfinite(interp_slope)):
+                raise ValueError("There's nans in slope or offset but "
+                    "they're not the same, this is a bug.")
+            if ((offset.size>0 and numpy.isfinite(offset).all()) or
+                (slope.size>0 and numpy.isfinite(slope).all())):
+                raise ValueError("There's nans in slope or offset when "
+                    "interpolated but not in original, this is a bug.")
+            logger.error("Looks like some or all slopes/offsets are "
+                 "impossible to calculate "
+                f"for channel {ch:d}.  That's not good.  Do not touch.")
+            self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
                 _fcdr_defs.FlagsChannel.DO_NOT_USE|
                 _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
             # no point in even trying to calibrate or do self-emission
-
 
             # need to set to dummy:
             #
@@ -1497,439 +1631,226 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             par = functools.partial(UADA,
                 numpy.zeros(shape=C_Earth["time"].shape),
                 coords=C_Earth["time"].coords)
+        # to be used if I have none, but also for debugging otherwise
+        Rself_0 = UADA(numpy.zeros(shape=C_Earth["time"].shape),
+                     coords=C_Earth["time"].coords,
+                     name="Rself", attrs={"units":   
+            str(rad_u["si"])})
 
-            Rself = par(attrs={"units": str(rad_u["si"])})
+        Rself_0_start = Rself_0_end = xarray.DataArray(
+            [numpy.datetime64(0, 's')], dims=["time_rself"])
 
-            # once per time_rself
-            u_Rself = UADA([0], dims="time_rself", attrs={"units": str(rad_u["si"])})
 
-            # once per calibration cycle (a.k.a. never)
-            # NB: dtype must be ns, https://github.com/pydata/xarray/issues/1494
-            par = functools.partial(UADA,
-                numpy.zeros(shape=0),
-                dims=("time",),
-                coords={"time": numpy.zeros(shape=0, dtype="M8[ns]")})
-
-            B = offset = a_0 = L_iwct = u_Rself = RselfIWCT = Rselfspace = \
-                     R_refl =  par(attrs=Rself.attrs)
-
-            slope = a_1 = par(attrs={"units":
-                              str(self._data_vars_props["slope"][2]["units"])})
-
-            T_IWCT = par(attrs={"units": "K"})
-
-            u_counts_earth = counts_space = counts_iwct = u_counts_space = u_counts_iwct = par(
-                attrs={"units": "counts"})
-
-            if naive or self.no_harm:
-                a2 = UADA(0,
-                    name="a2", coords={"calibrated_channel": ch},
-                    attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
-            else:
-                a2 = UADA(_harm_defs.harmonisation_parameters[self.satname].get(ch, [0,0,0])[2],
-                    name="a2", coords={"calibrated_channel": ch},
-                    attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
-
-            Rself_start = Rself_end = xarray.DataArray(
-                [numpy.datetime64(0, 's')], dims=["time_rself"])
-            has_Rself = False
-
-            coords = {"calibration_cycle": numpy.array([], dtype="M8[ns]")}
-
-            # those are normally done in calculate_offset_and_slope and
-            # extract_calibcounts_and_temp
-            self._tuck_effect_channel("C_space", u_counts_space, ch)
-            self._tuck_effect_channel("C_IWCT", u_counts_iwct, ch)
-            self._tuck_effect_channel("C_Earth", u_counts_earth, ch)
-            calibcycle_coords = {"calibration_cycle": counts_space["time"].values}
-            self._tuck_quantity_channel("C_s", counts_space,
-                calibrated_channel=ch, **calibcycle_coords)
-            self._tuck_quantity_channel("C_IWCT", counts_iwct,
-                calibrated_channel=ch, **calibcycle_coords)
-            self._tuck_quantity_channel("R_IWCT", L_iwct,
-                calibrated_channel=ch, **calibcycle_coords)
-            self._tuck_quantity_channel("a_0", offset,
-                calibrated_channel=ch, **calibcycle_coords)
-            self._tuck_quantity_channel("a_1", slope,
-                calibrated_channel=ch, **calibcycle_coords)
-            self._tuck_quantity_channel("a_2", a2,
-                calibrated_channel=ch)
-            self._tuck_quantity_channel("B", B,
-                calibrated_channel=ch)
-            self._quantities[me.symbols["T_IWCT"]] = self._quantity_to_xarray(
-                T_IWCT, name=me.names[me.symbols["T_IWCT"]],
-                **calibcycle_coords)
-            self._quantities[me.symbols["N"]] = self._quantity_to_xarray(
-                    numpy.array(ds.dims["prt_number_iwt"], "u1"),
-                    name=me.names[me.symbols["N"]])
-
-#            interp_slope = UADA(xarray.zeros_like(
-#                ds["counts"].sel(scanpos=1, channel=ch)),
-#                attrs={"units": str(self._data_vars_props["slope"][2]["units"])})*numpy.nan
-#            interp_offset = UADA(xarray.zeros_like(
-#                ds["counts"].sel(scanpos=1, channel=ch)),
-#                attrs={"units": str(self._data_vars_props["offset"][2]["units"])})*numpy.nan
-#            interp_slope_modes = {"zero": interp_slope, "linear": interp_slope, "cubic": interp_slope}
-#            interp_offset_modes = {"zero": interp_offset, "linear": interp_offset, "cubic": interp_offset}
-        else:
-            # this means I have at least two calibration cycles with data
-            # in-between, so in theory I can do everything I want to.
-            
-        
-            # NB: passing `context` here means that quantities and effects are
-            # stored with dimension for entire context period, rather than
-            # just the ds period.  Should take this into account with later
-            # processing.
-            (time, offset, slope, a2) = self.calculate_offset_and_slope(
-                context, ch, srf, tuck=tuck, naive=naive)
-            
-            if not numpy.array_equal(numpy.isfinite(offset),
-                                     numpy.isfinite(slope)):
-                raise ValueError("Expecting offset and slope to have same "
-                    "finite values, but I got disappointed.")
-
-            # median treats nan and inf differently, so where I have inf
-            # in slope but not in offset it goes wrongly.  In any case,
-            # for the purpose of the median, I really want to ignore infs
-            # so I'd rather set them to nans
-            for x in (slope, offset):
-                x.values[~numpy.isfinite(x.values)] = numpy.nan
-
-            if Rself_model is None:
-                warnings.warn("No self-emission defined, assuming 0!",
-                    FCDRWarning)
-                has_Rself = False
-            else:
-                try:
-                    Rself_model.fit(context, ch)
-                except ValueError as e:
-                    if (e.args[0].startswith("Space views fail normality") or
-                        e.args[0].startswith("All space views in fitting") or
-                        e.args[0].startswith("Some offsets are infinite")):
-                        errmsg = (
-                            "Unable to train self-emission model for channel {:d} with "
-                            "training data in {:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}: "
-                            "{:s} ".format(
-                                ch,
-                                context["time"].values[0].astype("M8[s]").astype(datetime.datetime),
-                                context["time"].values[-1].astype("M8[s]").astype(datetime.datetime),
-                                e.args[0]))
-                         # This should not happen anymore now that I have the
-                         # context check at the top
-    #                    if offset.shape[0] == 1:
-    #                        raise FCDRError(errmsg + " Moreover, I have only a "
-    #                            "single valid calibration cycle in the period "
-    #                            "{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}, which "
-    #                            "means I cannot fall back to interpolation "
-    #                            "either!  Sorry, I give up!")
-                        logger.error(errmsg +
-                            "Will flag data and reduce to basic interpolation!")
-    #                    if not ch in self._flags["channel"]:
-    #                        self._flags["channel"][ch] = _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
-    #                    else:
-                        self._flags["channel"].loc[{"calibrated_channel": ch}] |= _fcdr_defs.FlagsChannel.SELF_EMISSION_FAILS
-                        self._flags["channel"].loc[{"calibrated_channel": ch}] |= _fcdr_defs.FlagsChannel.DO_NOT_USE
-                        has_Rself = False
-                    else:
-                        raise
-                else:
-                    has_Rself = True
-
-            # NOTE: taking the median may not be an optimal solution.  See,
-            # for example, plots produced by the script
-            # plot_hirs_calibcounts_per_scanpos in the FCDR_HIRS package
-            # within FIDUCEO, in particular for noaa18 channels 1--12, where
-            # the lowest scan positions are systematically offset compared to
-            # the higher ones.  See also the note at
-            # calculate_offset_and_slope. 
-            interp_offset_modes = {}
-            interp_slope_modes = {}
-            interp_bad_modes = {}
-            if offset.shape[0] > 1 or ((naive or has_context) and time.shape[0]>0):
-                for mode in ("zero",) if naive else ("zero", "linear", "cubic"):
-                    moff = offset.median(dim="scanpos", keep_attrs=True)
-                    mslp = slope.median(dim="scanpos", keep_attrs=True)
-                    bad = (
-                        self.filter_calibcounts.filter_outliers(moff.values) |
-                        self.filter_calibcounts.filter_outliers(mslp.values))
-                    (interp_offset, interp_slope, interp_bad) = self.interpolate_between_calibs(
-                        ds["time"], time,
-                        moff, mslp, bad,
-                        kind=mode)
-                    naive
-                    interp_offset_modes[mode] = interp_offset
-                    interp_slope_modes[mode] = interp_slope
-                    interp_bad_modes[mode] = interp_bad
-            else:
-                raise RuntimeError("This should never happen again")
-                # check version history to see what was here before
-            if not naive:
-                # in naive mode, interp_bad_modes["zero"] will contain
-                # nans, then .astype(numpy.bool_) will turn it into an
-                # object array, either way boolean indexing will fail
-                # but in naive mode we don't need flags so let's just skip
-                # it.
-                # NB: this may also happen if there's insufficient
-                # context?
-                self._flags["channel"].sel(
-                    calibrated_channel=ch)[
-                    {"scanline_earth":
-                     xarray.DataArray(
-                        interp_bad_modes["zero"].astype(numpy.bool_),
-                        dims=("time",),
-                        coords={
-                            "time":
-                             ds.coords["time"]}
-                    ).sel(time=C_Earth.coords["time"]).values
-                    }] |= (
-                    _fcdr_defs.FlagsChannel.DO_NOT_USE |
-                    _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
-            # might be attractive to do "linear" here, but no: that would
-            # complicate the uncertainty propagation, for which zero-order
-            # interpolation occurs in _make_dims_consistent.
-            # And in naive mode I certainly want to have 'zero'.
-            interp_slope = interp_slope_modes["zero"]
-            # may be overwritten but this is so I carry out the right check;
-            # should not be set to cubic here...
+        if has_Rself:
+            # we do have a working self-emission model, probably
             interp_offset = interp_offset_modes["zero"]
-            if not naive and (not numpy.isfinite(interp_offset).all() or
-                              not numpy.isfinite(interp_slope).all()):
-                if not numpy.array_equal(numpy.isfinite(interp_offset),
-                                         numpy.isfinite(interp_slope)):
-                    raise ValueError("There's nans in slope or offset but "
-                        "they're not the same, this is a bug.")
-                if ((offset.size>0 and numpy.isfinite(offset).all()) or
-                    (slope.size>0 and numpy.isfinite(slope).all())):
-                    raise ValueError("There's nans in slope or offset when "
-                        "interpolated but not in original, this is a bug.")
-                logger.error("Looks like some or all slopes/offsets are "
-                     "impossible to calculate "
-                    f"for channel {ch:d}.  That's not good.  Do not touch.")
-                self._flags["channel"].loc[{"calibrated_channel": ch}]  |= (
-                    _fcdr_defs.FlagsChannel.DO_NOT_USE|
-                    _fcdr_defs.FlagsChannel.CALIBRATION_IMPOSSIBLE)
-            # to be used if I have none, but also for debugging otherwise
-            Rself_0 = UADA(numpy.zeros(shape=C_Earth["time"].shape),
-                         coords=C_Earth["time"].coords,
-                         name="Rself", attrs={"units":   
-                str(rad_u["si"])})
-
-            Rself_0_start = Rself_0_end = xarray.DataArray(
-                [numpy.datetime64(0, 's')], dims=["time_rself"])
-
-
-            if has_Rself:
-                # we do have a working self-emission model, probably
-                interp_offset = interp_offset_modes["zero"]
-                (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
-                (X, Y_pred) = Rself_model.evaluate(ds, ch)
-                # Y_pred is rather the offset than the self-emission
-                Rself = interp_offset.isel(time=views_Earth) - Y_pred#.sel(time=views_Earth["time"].isel(time=views_Earth))
-                #Rself = (interp_offset - Y_pred).isel(time=views_Earth)
-                Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
-                    "RselfIWCT = Rselfspace = 0.")
-                Rself.attrs["model_info"] = str(Rself_model).replace("\n", " ")
-                RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
-                        coords=offset["time"].coords,
-                        attrs={**Rself.attrs,
-                               "note": "Rself is implemented as ΔRself in pre-β",
-                               })
-                Rself_start = xarray.DataArray(
-                    [Rself_model.fit_time[0]],
+            (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
+            (X, Y_pred) = Rself_model.evaluate(ds, ch)
+            # Y_pred is rather the offset than the self-emission
+            Rself = interp_offset.isel(time=views_Earth) - Y_pred#.sel(time=views_Earth["time"].isel(time=views_Earth))
+            #Rself = (interp_offset - Y_pred).isel(time=views_Earth)
+            Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
+                "RselfIWCT = Rselfspace = 0.")
+            Rself.attrs["model_info"] = str(Rself_model).replace("\n", " ")
+            RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
+                    coords=offset["time"].coords,
+                    attrs={**Rself.attrs,
+                           "note": "Rself is implemented as ΔRself in pre-β",
+                           })
+            Rself_start = xarray.DataArray(
+                [Rself_model.fit_time[0]],
+                dims=["time_rself"])
+            Rself_end = xarray.DataArray(
+                    [Rself_model.fit_time[1]],
                     dims=["time_rself"])
-                Rself_end = xarray.DataArray(
-                        [Rself_model.fit_time[1]],
-                        dims=["time_rself"])
-                Rself = Rself.assign_coords(
-                    Rself_start=xarray.DataArray(
-                        numpy.tile(Rself_start, Rself.shape[0]),
-                        dims=("time",),
-                        coords={"time": Rself.time}),
-                    Rself_end=xarray.DataArray(
-                        numpy.tile(Rself_end, Rself.shape[0]),
-                        dims=("time",),
-                        coords={"time": Rself.time}))
-                u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
-                    keep_attrs=True, dim="time"))
-
-                T_outliers = functools.reduce(
-                        operator.or_,
-                        [self.filter_prttemps.filter_outliers(
-                            ds[k].values.mean(-1).mean(-1)
-                            if ds[k].values.ndim==3
-                            else ds[k].values)
-                        for k in X.data_vars.keys()])
-
-                T_outliers = xarray.DataArray(
-                    T_outliers,
+            Rself = Rself.assign_coords(
+                Rself_start=xarray.DataArray(
+                    numpy.tile(Rself_start, Rself.shape[0]),
                     dims=("time",),
-                    coords={"time": ds["time"]})
+                    coords={"time": Rself.time}),
+                Rself_end=xarray.DataArray(
+                    numpy.tile(Rself_end, Rself.shape[0]),
+                    dims=("time",),
+                    coords={"time": Rself.time}))
+            u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
+                keep_attrs=True, dim="time"))
 
-                self._flags["scanline"][{"scanline_earth":
-                    T_outliers.sel(time=C_Earth["time"]).values}] |= (
-                        _fcdr_defs.FlagsScanline.DO_NOT_USE |
-                        _fcdr_defs.FlagsScanline.BAD_TEMP_NO_RSELF
-                        )
-            else:
-                # we don't have a working self-emission model.  Take
-                # self-emission as an interpolation between adjecent
-                # calibration cycles, and include an uncertainty corresponding
-                # to the difference between linear and zero-order
-                # interpolation.
-                interp_offset = interp_offset_modes["zero" if naive else "cubic"]
-                Rself = Rself_0
-                RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
-                        coords=offset["time"].coords, attrs=Rself.attrs)
-    #            u_Rself = UADA([0], dims=["rself_update_time"],
-    #                           coords={"rself_update_time": [ds["time"].values[0]]})
-                # Although I could potentially omit the RMSE here and just
-                # take the difference between the modes, that yields one value
-                # for each Earth view.  Under normal circumstances, the
-                # self-emission model gives me one value for each calibration
-                # cycle.  If some channels work but others don't, I'll have
-                # different time coordinates for different channels, which
-                # means I can't concatenate them into a single DataArray.
-                # Since this is an adhoc bad format anyway I don't care that
-                # I'm losing information.
-                u_Rself = UADA(
-                    [abs(interp_offset_modes["zero"]).mean()
-                        if naive
-                        else numpy.sqrt((abs(interp_offset_modes["linear"] - interp_offset_modes["zero"])**2).mean())],
-                    dims=["time_rself"],
-                    attrs={"units": offset.attrs["units"]})
+            T_outliers = functools.reduce(
+                    operator.or_,
+                    [self.filter_prttemps.filter_outliers(
+                        ds[k].values.mean(-1).mean(-1)
+                        if ds[k].values.ndim==3
+                        else ds[k].values)
+                    for k in X.data_vars.keys()])
 
-    #            # make sure dimensions etc. are the same as when we do have a
-    #            # working model
-    #            try:
-    #                u_Rself = u_Rself.rename(dict(channel="calibrated_channel", time="time_rself")).drop(("scanpos", "scanline", "lon", "lat"))
-    #            except ValueError:
-    #                pass # not sure why this would happen
+            T_outliers = xarray.DataArray(
+                T_outliers,
+                dims=("time",),
+                coords={"time": ds["time"]})
 
-            # trick to make sure there is a time dimension…
-            # http://stackoverflow.com/a/42999562/974555
-            u_Rself = xarray.concat((u_Rself,), dim="time_rself")
+            self._flags["scanline"][{"scanline_earth":
+                T_outliers.sel(time=C_Earth["time"]).values}] |= (
+                    _fcdr_defs.FlagsScanline.DO_NOT_USE |
+                    _fcdr_defs.FlagsScanline.BAD_TEMP_NO_RSELF
+                    )
+        else:
+            # we don't have a working self-emission model.  Take
+            # self-emission as an interpolation between adjecent
+            # calibration cycles, and include an uncertainty corresponding
+            # to the difference between linear and zero-order
+            # interpolation.
+            interp_offset = interp_offset_modes["zero" if naive else "cubic"]
+            Rself = Rself_0
+            RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
+                    coords=offset["time"].coords, attrs=Rself.attrs)
+#            u_Rself = UADA([0], dims=["rself_update_time"],
+#                           coords={"rself_update_time": [ds["time"].values[0]]})
+            # Although I could potentially omit the RMSE here and just
+            # take the difference between the modes, that yields one value
+            # for each Earth view.  Under normal circumstances, the
+            # self-emission model gives me one value for each calibration
+            # cycle.  If some channels work but others don't, I'll have
+            # different time coordinates for different channels, which
+            # means I can't concatenate them into a single DataArray.
+            # Since this is an adhoc bad format anyway I don't care that
+            # I'm losing information.
+            u_Rself = UADA(
+                [abs(interp_offset_modes["zero"]).mean()
+                    if naive
+                    else numpy.sqrt((abs(interp_offset_modes["linear"] - interp_offset_modes["zero"])**2).mean())],
+                dims=["time_rself"],
+                attrs={"units": offset.attrs["units"]})
 
-            # want to do this differently… see #128
-            # and, for now, establish fake time based u_Rself to ensure
-            # there's always u_Rself info in every orbit file even though
-            # it's updated more rarely than that.  Take a range that is
-            # too large (context), another lie, so we can later
-            # interpolate to the right segment (lie will not propagate)
-            # interpolation will happen in _make_dims_consistent
-            times = pandas.date_range(
-                context["time"].values[0],
-                context["time"].values[-1],
-                freq='10min')
-            u_Rself = u_Rself[numpy.tile([0], times.size)]
-            u_Rself = u_Rself.assign_coords(
-                time_rself=times.values)# [ds["time"].values[0]])
-            u_Rself.attrs["U_RSELF_WARNING"] = (
-                "Self-emission uncertainty repeated "
-                "every ten minutes as a stop-gap measure to ensure even "
-                "short slices contain this info, this does not imply "
-                "an actual update of the information.  Check coordinates "
-                "Rself_start and Rself_end.  See #128.")
+#            # make sure dimensions etc. are the same as when we do have a
+#            # working model
+#            try:
+#                u_Rself = u_Rself.rename(dict(channel="calibrated_channel", time="time_rself")).drop(("scanpos", "scanline", "lon", "lat"))
+#            except ValueError:
+#                pass # not sure why this would happen
 
-            # according to Wang, Cao, and Ciren (2007), ε=0.98, no further
-            # source or justification given
-            if Rrefl_model is None:
-                warnings.warn("No Earthshine model defined, assuming 0!",
-                    FCDRWarning)
-                R_refl = UADA(numpy.zeros(shape=offset["time"].shape),
-                        coords=offset["time"].coords,
-                        name="R_refl",
-                        attrs={"units": str(rad_u["si"])})
-            else:
-                raise NotImplementedError("Evalutation of Earthshine "
-                    "model not implemented yet")
-            rad_wn = self.custom_calibrate(C_Earth, interp_slope,
-                interp_offset, a2, Rself, a_4)
+        # trick to make sure there is a time dimension…
+        # http://stackoverflow.com/a/42999562/974555
+        u_Rself = xarray.concat((u_Rself,), dim="time_rself")
 
-            if not has_Rself: # need to set manually
-                newcoor = dict(
-                    Rself_start=xarray.DataArray(
-                        numpy.tile(Rself_0_start, Rself.shape[0]),
-                        dims=("time",),
-                        coords={"time": Rself.time}),
-                    Rself_end=xarray.DataArray(
-                        numpy.tile(Rself_0_end, Rself.shape[0]),
-                        dims=("time",),
-                        coords={"time": Rself.time}))
-                Rself = Rself_0.assign_coords(**newcoor)
+        # want to do this differently… see #128
+        # and, for now, establish fake time based u_Rself to ensure
+        # there's always u_Rself info in every orbit file even though
+        # it's updated more rarely than that.  Take a range that is
+        # too large (context), another lie, so we can later
+        # interpolate to the right segment (lie will not propagate)
+        # interpolation will happen in _make_dims_consistent
+        times = pandas.date_range(
+            context["time"].values[0],
+            context["time"].values[-1],
+            freq='10min')
+        u_Rself = u_Rself[numpy.tile([0], times.size)]
+        u_Rself = u_Rself.assign_coords(
+            time_rself=times.values)# [ds["time"].values[0]])
+        u_Rself.attrs["U_RSELF_WARNING"] = (
+            "Self-emission uncertainty repeated "
+            "every ten minutes as a stop-gap measure to ensure even "
+            "short slices contain this info, this does not imply "
+            "an actual update of the information.  Check coordinates "
+            "Rself_start and Rself_end.  See #128.")
+
+        # according to Wang, Cao, and Ciren (2007), ε=0.98, no further
+        # source or justification given
+        if Rrefl_model is None:
+            warnings.warn("No Earthshine model defined, assuming 0!",
+                FCDRWarning)
+            R_refl = UADA(numpy.zeros(shape=offset["time"].shape),
+                    coords=offset["time"].coords,
+                    name="R_refl",
+                    attrs={"units": str(rad_u["si"])})
+        else:
+            raise NotImplementedError("Evalutation of Earthshine "
+                "model not implemented yet")
+        rad_wn = self.custom_calibrate(C_Earth, interp_slope,
+            interp_offset, a2, Rself, a_4)
+
+        if not has_Rself: # need to set manually
+            newcoor = dict(
+                Rself_start=xarray.DataArray(
+                    numpy.tile(Rself_0_start, Rself.shape[0]),
+                    dims=("time",),
+                    coords={"time": Rself.time}),
+                Rself_end=xarray.DataArray(
+                    numpy.tile(Rself_0_end, Rself.shape[0]),
+                    dims=("time",),
+                    coords={"time": Rself.time}))
+            Rself = Rself_0.assign_coords(**newcoor)
 
 
-            # for debugging purposes, calculate various other radiances
-            a2_0 = UADA(0,
-                    name="a2", coords={"calibrated_channel": ch},
-                    attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
+        # for debugging purposes, calculate various other radiances
+        a2_0 = UADA(0,
+                name="a2", coords={"calibrated_channel": ch},
+                attrs = {"units": str(rad_u["si"]/(ureg.count**2))})
 
-            # Rself_0 already set, but not with right coords
-            Rself_0 = Rself_0.assign_coords(**Rself.coords)
-            a4_0 = UADA(0,
-                    name="harmonisation bias",
-                    attrs={"units": rad_u["si"]})
+        # Rself_0 already set, but not with right coords
+        Rself_0 = Rself_0.assign_coords(**Rself.coords)
+        a4_0 = UADA(0,
+                name="harmonisation bias",
+                attrs={"units": rad_u["si"]})
 
 
-            rad_wn_dbg = {}
+        rad_wn_dbg = {}
 
-            for (skipa2, skiprself, skipa4, skipa3) in itertools.product((0,1),repeat=4):
-                lab = ("linear"*skipa2 +
-                       "norself"*skiprself+
-                       "nooffset"*skipa4+
-                       "noεcorr"*skipa3)
-                if not lab:
-                    continue
+        for (skipa2, skiprself, skipa4, skipa3) in itertools.product((0,1),repeat=4):
+            lab = ("linear"*skipa2 +
+                   "norself"*skiprself+
+                   "nooffset"*skipa4+
+                   "noεcorr"*skipa3)
+            if not lab:
+                continue
 
-                (time, offset_dbg, slope_dbg,
-                    a2_dbg) = self.calculate_offset_and_slope(
-                        context, ch, srf, tuck=False,
-                        include_nonlinearity=not skipa2,
-                        include_emissivity_correction=not skipa3)
-                (interp_offset_dbg, interp_slope_dbg,
-                    interp_bad_dbg) = self.interpolate_between_calibs(
-                        ds["time"], time,
-                        offset_dbg.median(dim="scanpos", keep_attrs=True),
-                        slope_dbg.median(dim="scanpos", keep_attrs=True),
-                        bad, kind="zero")
+            (time, offset_dbg, slope_dbg,
+                a2_dbg) = self.calculate_offset_and_slope(
+                    context, ch, srf, tuck=False,
+                    include_nonlinearity=not skipa2,
+                    include_emissivity_correction=not skipa3)
+            (interp_offset_dbg, interp_slope_dbg,
+                interp_bad_dbg) = self.interpolate_between_calibs(
+                    ds["time"], time,
+                    offset_dbg.median(dim="scanpos", keep_attrs=True),
+                    slope_dbg.median(dim="scanpos", keep_attrs=True),
+                    bad, kind="zero")
 
-                rad_wn_dbg[lab] = self.custom_calibrate(
-                    C_Earth,
-                    interp_slope_dbg,
-                    interp_offset_dbg,
-                    a2_dbg,
-                    Rself_0 if skiprself else Rself,
-                    a4_0 if skipa4 else a_4)
-
-            bad = self.filter_earthcounts.filter_outliers(C_Earth.values)
-            # I need to compare to space counts.
-            C_space = self._quantities[me.symbols["C_s"]]
-            # 2017-12-16, for the first channel there is a coordinate but
-            # not a dimension for the channel.  Should be properly fixed
-            # up where it's tucked away but I tried two fixed that both
-            # had side-effects I couldn't quite understand right away, so
-            # workaround here instead. -- 2017-12-16, GH
-            if "calibrated_channel" in C_space.dims:
-                C_space = C_space.sel(calibrated_channel=ch)
-            bad |= self.filter_coldearth.filter(
+            rad_wn_dbg[lab] = self.custom_calibrate(
                 C_Earth,
-                self.interpolate_between_calibs(
-                    C_Earth["time"],
-                    time,
-                    C_space.median("calibration_position").values,
-                    kind="zero")[0])
-            if has_Rself: # otherwise I have no use of T and no T_ouliers
-                bad |= T_outliers.isel(time=views_Earth).values[:, numpy.newaxis]
-            # NB, need to test if this takes care of most remaining
-            # bad outliers!  May need an entire rerun of the archive for
-            # that...
-            self._flags["pixel"].loc[{"calibrated_channel": ch}].values[bad.values] |= (
-                _fcdr_defs.FlagsPixel.DO_NOT_USE|_fcdr_defs.FlagsPixel.OUTLIER_NOS)
-            # 
-            coords = {"calibration_cycle": time.values}
+                interp_slope_dbg,
+                interp_offset_dbg,
+                a2_dbg,
+                Rself_0 if skiprself else Rself,
+                a4_0 if skipa4 else a_4)
 
-            T_b = rad_wn.to("K", "radiance", srf=srf)
-        # end if n_within_context == 0.  From here only code that can be
-        # executed whether I have good data or not.
+        bad = self.filter_earthcounts.filter_outliers(C_Earth.values)
+        # I need to compare to space counts.
+        C_space = self._quantities[me.symbols["C_s"]]
+        # 2017-12-16, for the first channel there is a coordinate but
+        # not a dimension for the channel.  Should be properly fixed
+        # up where it's tucked away but I tried two fixed that both
+        # had side-effects I couldn't quite understand right away, so
+        # workaround here instead. -- 2017-12-16, GH
+        if "calibrated_channel" in C_space.dims:
+            C_space = C_space.sel(calibrated_channel=ch)
+        bad |= self.filter_coldearth.filter(
+            C_Earth,
+            self.interpolate_between_calibs(
+                C_Earth["time"],
+                time,
+                C_space.median("calibration_position").values,
+                kind="zero")[0])
+        if has_Rself: # otherwise I have no use of T and no T_ouliers
+            bad |= T_outliers.isel(time=views_Earth).values[:, numpy.newaxis]
+        # NB, need to test if this takes care of most remaining
+        # bad outliers!  May need an entire rerun of the archive for
+        # that...
+        self._flags["pixel"].loc[{"calibrated_channel": ch}].values[bad.values] |= (
+            _fcdr_defs.FlagsPixel.DO_NOT_USE|_fcdr_defs.FlagsPixel.OUTLIER_NOS)
+        # 
+        coords = {"calibration_cycle": time.values}
+
+        T_b = rad_wn.to("K", "radiance", srf=srf)
 
         if not has_Rself: # need to set manually
             newcoor = dict(
