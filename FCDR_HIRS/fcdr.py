@@ -395,7 +395,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         if n==0:
             return ds
 
-        (counts_space, counts_iwct) = self.extract_calibcounts(context, ch)
+        (counts_space, counts_iwct) = self.extract_calibcounts(context,
+            ch, fail_if_none=True)
 
         if counts_space["time"].size == 0:
             # set slices that will make things empty
@@ -551,7 +552,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #              + a2 * counts**2
 #              - Rself)
 
-    def extract_calibcounts(self, ds, ch):
+    def extract_calibcounts(self, ds, ch, fail_if_none=False):
         """Extract calibration counts from data
 
         Extract space counts and IWCT counts as `xarray.DataArray`.  This
@@ -578,6 +579,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             L1B HIRS data from which to extract the calibration counts.
         ch : int
             Channel for which to extract the calibration counts.
+        fail_if_none : bool, optional
+            If there are none at all, raise an exception.  Defaults to
+            False, which simply returns an empty array.
 
         Returns
         -------
@@ -599,6 +603,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 #        views_iwct = ds["scantype"] == self.typ_iwt
         views_iwct = xarray.DataArray(ds["scantype"].values == self.typ_iwt, coords=ds["scantype"].coords)
 
+        if fail_if_none and not views_space.any():
+            raise FCDRError("No space views found, giving up")
+        elif fail_if_none and not views_iwct.any():
+            raise FCDRError("No IWCT views found, giving up")
         # select instances where I have both in succession.  Should be
         # always, unless one of the two is missing or the start or end of
         # series is in the middle of a calibration.  Take this from
@@ -609,6 +617,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                                    views_iwct[dsi:].variable)
 #        space_followed_by_iwct = (views_space[:-dsi].variable &
 #                                   views_iwct[dsi:].variable)
+        if fail_if_none and not space_followed_by_iwct.any():
+            raise FCDRError(
+                "I have space and IWCT views, but not in same cycle?!")
 
         ds_space = ds.isel(time=slice(None, -dsi)).isel(
                     time=space_followed_by_iwct)
@@ -1468,7 +1479,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # need to set to dummy:
             #
             # Rself, u_Rself, R_selfIWCT, R_selfs, R_self_start, R_self_end,
-            # C_E, R_E, T_b, R_refl, α, Δα, β, Δβ, fstar, Δλ_eff
+            # C_E, R_E, T_b, R_refl, α, Δα, β, Δβ, fstar, Δλ_eff, N, M, A
             
             # full Earth count dimensions
             par = functools.partial(UADA,
