@@ -333,7 +333,7 @@ class FCDRGenerator:
                 orbit_filters=self.orbit_filters,
                 pseudo_fields=self.pseudo_fields)
         except typhon.datasets.dataset.DataFileError as e:
-            logger.warning("Unable to generate FCDR: {:s}".format(e.args[0]))
+            logger.error("Unable to generate FCDR: {:s}".format(e.args[0]))
         while self.dd.center_time < end_time:
             try:
                 self.dd.move(self.step_size,
@@ -342,7 +342,7 @@ class FCDRGenerator:
                 self.make_and_store_piece(self.dd.center_time - self.segment_size,
                     self.dd.center_time)
             except (fcdr.FCDRError, typhon.datasets.dataset.DataFileError) as e:
-                logger.warning("Unable to generate FCDR: {:s}".format(e.args[0]))
+                logger.error("Unable to generate FCDR: {:s}".format(e.args[0]))
             else:
                 anyok = True
         if anyok:
