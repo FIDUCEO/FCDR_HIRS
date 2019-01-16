@@ -397,6 +397,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
         (counts_space, counts_iwct) = self.extract_calibcounts(context,
             ch, fail_if_none=True)
+        
+        # let's also trigger a failure if the context does but the core
+        # does not have calibration counts
+        self.extract_calibcounts(ds, ch, fail_if_none=True)
 
         if counts_space["time"].size == 0:
             # set slices that will make things empty
