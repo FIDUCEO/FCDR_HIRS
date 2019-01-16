@@ -969,9 +969,9 @@ def interpolate_Delta_x(Δ_x, cutoff):
         xref = Δ_x["Δp"].values
         # use slinear to ensure we always remain between -1 and 1
         f = scipy.interpolate.interp1d(xref, yref, kind="slinear",
-            fill_value=(-1, 0), assume_sorted=False, bounds_error=False)
+            fill_value=(-2, 0), assume_sorted=False, bounds_error=False)
         rv.loc[{"n_c":c}] = f(rv["Δp"])
-        if (rv.loc[{"n_c":c}].values==-1).any():
+        if (rv.loc[{"n_c":c}].values==-2).any():
             raise ValueError("Could not interpolate correlation lengths, "
                 "it appears I had no information on correlation length 0, "
                 "which is very weird indeed and almost certainly either a "
