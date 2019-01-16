@@ -186,6 +186,7 @@ Implemented in :mod:`FCDR_HIRS.analysis.monitor_fcdr`.
     :func: get_parser
     :prog: plot_hirs_fcdr
 
+.. _summarise-fcdr:
 summarise_hirs_fcdr
 ^^^^^^^^^^^^^^^^^^^
 
