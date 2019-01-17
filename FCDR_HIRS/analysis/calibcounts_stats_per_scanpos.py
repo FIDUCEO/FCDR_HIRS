@@ -334,7 +334,7 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
 def main():
     """Main function for module
 
-    Expect commandline input.
+    Expects commandline input.
     """
     p = parse_cmdline()
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)

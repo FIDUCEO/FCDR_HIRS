@@ -1,3 +1,4 @@
+.. _cmdline:
 Command-line scripts
 ====================
 
@@ -152,6 +153,8 @@ Implemented in :mod:`FCDR_HIRS.analysis.convert_hirs_l1b_to_nc`.
     :module: FCDR_HIRS.analysis.convert_hirs_l1b_to_nc
     :func: get_parser
     :prog: hirs_convert_l1b_to_l1c
+
+.. _srf-recovery:
 
 hirs_iasi_srf_recovery
 ^^^^^^^^^^^^^^^^^^^^^^

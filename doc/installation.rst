@@ -42,8 +42,9 @@ time, conda wants to downgrade to Python 3.6.  If you approve this
 downgrade and try to run scripts, it will probably fail with a
 `ModuleNotFoundError` for :mod:`FCDR_HIRS`.  If this happens, go back to
 Python 3.7 with ``conda install python=3.7``.  I'm not sure exactly why
-conda wants to downgrade.  Sometimes I've found the problem does not occur
-if installing fewer packages at once.
+conda wants to downgrade (see https://stackoverflow.com/q/51100987/974555).
+Sometimes I've found the problem does not occur if installing fewer packages
+at once.
 
 ``KeyError: T_PRT[n]``
 ^^^^^^^^^^^^^^^^^^^^^^
