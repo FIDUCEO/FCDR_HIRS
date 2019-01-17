@@ -3114,7 +3114,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         ok = ~bad[:, calpos, :].any(1)
 
         ΔCs = (Cs - Cs.mean("scanpos"))
-        if type == "pearson":
+        if not ok.any():
+            logger.warning("No valid values, filling channel "
+                "correlation matrix with NaN")
+            S = numpy.full((ds_context.dims["channel"],)*2, numpy.nan)
+        elif type == "pearson":
             S = numpy.corrcoef(ΔCs.isel(time=ok).sel(scanpos=calpos).T)
         elif type == "spearman":
             S = scipy.stats.spearmanr(ΔCs.isel(time=ok).sel(scanpos=calpos))[0]
