@@ -1799,7 +1799,7 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         Based on Weinreb (1981), plot T_e as a function of T.  For
         details, see
-        :func:`~pyatmlab.physics.estimate_effective_temperature:
+        :func:`~pyatmlab.physics.estimate_effective_temperature`
 
         Parameters
         ----------
