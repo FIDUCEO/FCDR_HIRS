@@ -108,7 +108,7 @@ def add_to_argparse(parser,
                  "time is assumed to be 00:00:00.  For example, "
                  "to process only 2010-01-01, one should give "
                  "as a start date 2010-01-01 and as an end "
-                 "date 2010-01-02, which means end at 2010-01-02T00:00:00 ",
+                 "date 2010-01-02, which means end at 2010-01-02T00:00:00 "
                  "such that zero data on 2010-01-02 are included.")
 
         parser.add_argument("--datefmt", action="store", type=str,
