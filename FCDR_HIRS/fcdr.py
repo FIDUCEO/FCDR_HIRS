@@ -3114,8 +3114,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         ok = ~bad[:, calpos, :].any(1)
 
         ΔCs = (Cs - Cs.mean("scanpos"))
-        if not ok.any():
-            logger.warning("No valid values, filling channel "
+        if ok.sum() < 3:
+            logger.warning("Not enough valid values, filling channel "
                 "correlation matrix with NaN")
             S = numpy.full((ds_context.dims["channel"],)*2, numpy.nan)
         elif type == "pearson":
