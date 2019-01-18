@@ -44,8 +44,7 @@ def plot(sat, start, end):
                 typhon.datasets.filters.TimeMaskFilter(h),
                 typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter()],
         reader_args={"apply_calibration": True}, # False fails
-        fields=["hrs_qualind", "hrs_linqualflgs", "hrs_chqualflg",
-                "hrs_mnfrqual", "time"])#, "lat", "lon"])
+        fields=list(h.flag_fields) + ["time"])
 
     ds = h.as_xarray_dataset(M)
 
@@ -54,7 +53,10 @@ def plot(sat, start, end):
     for fld in ("quality_flags_bitfield", "line_quality_flags_bitfield",
                 "channel_quality_flags_bitfield",
                 "minorframe_quality_flags_bitfield"):
-        da = ds[fld]
+        try:
+            da = ds[fld]
+        except KeyError: # no such field
+            continue
 #        flags = da & xarray.DataArray(da.flag_masks, dims=("flag",))
 #        perc = (100*(flags!=0)).resample("1H", dim="time", how="mean")
 #        for d in set(perc.dims) - {"time", "flag"}:
