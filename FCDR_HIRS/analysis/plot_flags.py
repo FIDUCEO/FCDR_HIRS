@@ -42,9 +42,9 @@ def plot(sat, start, end):
         orbit_filters=[f for f in h.default_orbit_filters
             if not isinstance(f,
             (typhon.datasets.filters.HIRSCalibCountFilter,
-             typhon.datasets.filters.PRTTempFilter,
+             typhon.datasets.filters.HIRSPRTTempFilter,
              typhon.datasets.filters.HIRSFlagger))],
-        reader_args={"calibrate": False},
+        reader_args={"apply_calibration": False},
         fields=["hrs_qualind", "hrs_linqualflgs", "hrs_chqualflg",
                 "hrs_mnfrqual", "time"])#, "lat", "lon"])
 
