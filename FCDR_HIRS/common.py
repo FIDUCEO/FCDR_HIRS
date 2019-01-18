@@ -256,7 +256,7 @@ def sample_flags(da, period="1H", dim="time"):
     """
 
     flags = da & xarray.DataArray(numpy.atleast_1d(da.flag_masks), dims=("flag",))
-    perc = (100*(flags!=0)).resample(period, dim=dim, how="mean")
+    perc = (100*(flags!=0)).resample(time=period).mean(dim=dim)
     # deeper dimensions
     for d in set(perc.dims) - {dim, "flag"}:
         perc = perc.mean(dim=d)
