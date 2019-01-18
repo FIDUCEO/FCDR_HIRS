@@ -119,6 +119,8 @@ class OrbitPlotter:
         self.btrange = btrange
         self.urange = urange
         self.split = split
+        self.satname = typhon.datasets.tovs.norm_tovs_name(
+            pathlib.Path(f).name[23:29])
         (fig, ax_all, cax_all) = self.prepare_figure_and_axes(channels)
         self.fig = fig
         self.ax_all = ax_all
@@ -196,7 +198,7 @@ class OrbitPlotter:
             ax_all[channels[0]][4].set_title("Quality channel bitmask")
             ax_all[channels[0]][5].set_title("Quality scanline bitmask")
             ax_all[channels[0]][6].set_title("Quality pixel bitmask")
-        f.suptitle("FIDUCEO HIRS FCDR " + self.ds.attrs["satellite"] +
+        f.suptitle("FIDUCEO HIRS FCDR " + self.satname +
             " {start:%Y-%m-%d %H:%M:%S}–{end:%H:%M:%S}".format(
                 start=self.ds.isel(y=self.start)["time"].values.astype("datetime64[ms]").item(),
                 end=self.ds.isel(y=self.end)["time"].values.astype("datetime64[ms]").item()) +
