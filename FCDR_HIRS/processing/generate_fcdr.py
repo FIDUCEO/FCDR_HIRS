@@ -401,6 +401,8 @@ class FCDRGenerator:
         (piece, sensRe) = self.get_piece(from_, to, return_more=True)
 #        self.store_piece(piece)
         for piece in self.fragmentate(piece):
+            piece = common.time_epoch_to(
+                piece, self.epoch)
             piece = self.add_orbit_info_to_piece(piece)
 
             self.store_piece(piece)
@@ -634,7 +636,6 @@ class FCDRGenerator:
             if cn in self.fcdr._data_vars_props.keys():
                 ds[cn].encoding.update(self.fcdr._data_vars_props[cn][3])
         ds = self.add_attributes(ds)
-        ds = common.time_epoch_to(ds, self.epoch)
 
         # set uncertainty flag when extended uncertainty larger than value
         ds["quality_pixel_bitmask"].values[((2*ds["u_R_Earth"]) > ds["R_e"]).transpose(*ds["quality_pixel_bitmask"].dims).values] |= _fcdr_defs.FlagsChannel.UNCERTAINTY_SUSPICIOUS
@@ -891,7 +892,9 @@ class FCDRGenerator:
                     raise
         self.debug2easy_flags(easy, piece)
         self.debug2easy_attrs(easy, piece)
-        
+        easy = common.time_epoch_to(
+            easy, self.epoch)
+
         easy = easy.assign_coords(
             x=numpy.arange(1, 57),
             #y=easy["scanline"],
