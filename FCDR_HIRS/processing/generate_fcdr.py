@@ -158,8 +158,17 @@ def get_parser():
         include_temperatures=False)
 
     parser.add_argument("modes", action="store", type=str,
-        nargs="+", choices=["easy", "debug", "none"],
-        help="What FCDR(s) to write?")
+        nargs="+", choices=["easy", "debug", "bigdebug", "none"],
+        help=("What FCDR(s) to write?  'easy' is the regular easyFCDR. "
+              "'debug' is the regular debug.  'debugdebug' is an"
+              "extra large debug including u_from_x (uncertainties when "
+              "pretending effect x was the only effect), rad_wn_* "
+              "(radiances calculated excluding/including harmonisation "
+              "paramters and/or self-emission model, and 'none', which "
+              "can be given as the sole argument to generated nothing "
+              "at all, but still run through the full processing; this "
+              "is mainly useful to quickly check that the processing "
+              "does not crash."))
 
     parser.add_argument("--days", action="store", type=int,
         default=0,
