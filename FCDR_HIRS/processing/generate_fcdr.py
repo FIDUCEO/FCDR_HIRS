@@ -703,7 +703,7 @@ class FCDRGenerator:
             creator_name="Gerrit Holl and the FIDUCEO team",
             creator_email="fiduceo-coordinator@lists.reading.ac.uk",
             title="HIRS FCDR",
-            satellite=self.satname,
+            platform=self.satname,
             url="http://www.fiduceo.eu/",
             #verbose_version_info=pr.stdout.decode("utf-8"),
             fcdr_software_version=pkg_resources.get_distribution("FCDR_HIRS").version,
