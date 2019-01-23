@@ -100,6 +100,8 @@ def plot_calibcount_stats(h, Mall, channels,
     of space counts per "scan position" as a set of percentiles, into a
     figure with one subplot per channel.
 
+    .. image:: /images/hirs-calib-scanpos.png
+
     Parameters
     ----------
 
@@ -176,8 +178,16 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
         mode="random", typ="space", anomaly=True):
     """Plot examples of calibcount anomalies
 
-    Plot calibration count anomalies, i.e. the calibration counts minus
+    Plot calibration count values or anomalies, i.e. the calibration counts minus
     the mean calibration count for that cycle.
+
+    Calibration count values example:
+
+    .. image:: space-random-calib.png
+
+    Calibration count anomaly example, with high correlation:
+
+    .. image:: space-highcorr-calib.png
 
     Parameters
     ----------

@@ -698,6 +698,8 @@ class MatrixPlotter:
         temperatures are given by the ``temperature_fields`` attribute on
         :class:`typhon.datasets.tovs.HIRS`.
 
+        .. figure:: hirs-temp-sdm.png
+
         Parameters
         ----------
 
@@ -860,6 +862,8 @@ class MatrixPlotter:
         between diferent channels, for a constant calibration position.
         The count anomalies are calculated with :meth:`_get_accnt`.
 
+        .. image:: /images/hirs-noise-by-channel-sdm.png
+
         Parameters
         ----------
 
@@ -910,6 +914,8 @@ class MatrixPlotter:
         effects.  This is calculated by taking the anomaly (from
         :meth:`_get_accnt`) and then correlating those to each other,
         while keeping the calibration position fixed.
+
+        .. image:: /images/hirs-noise-corr-chan.png
 
         Parameters
         ----------
@@ -1139,6 +1145,8 @@ class MatrixPlotter:
         :meth:`_get_accnt`) and then correlating those to each other,
         while keeping the channel fixed.
 
+        .. image:: /images/hirs-noise-corr-scanpos.png
+
         Parameters
         ----------
 
@@ -1209,6 +1217,8 @@ class MatrixPlotter:
 
         NB, this is a correlation matrix for the actual temperatures — not
         for their noises.
+
+        .. image:: /images/hirs-temp-corr.png
         
         Parameters
         ----------
@@ -1452,6 +1462,8 @@ class MatrixPlotter:
         Plots lower half for first full month, upper half for last full
         month.  Result written to file.
 
+        .. image:: /images/hirs-noise-corr-chan-allsats.png
+
         Parameters
         ----------
 
@@ -1509,6 +1521,8 @@ class MatrixPlotter:
 
         One set with all satellites as subplots, figure for each channel
         One set with all channels as subplots, figure for each satellite
+
+        .. image:: /images/hirs-noise-corr-scanpos-allsats.png
 
         Parameters
         ----------

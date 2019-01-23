@@ -121,6 +121,30 @@ Basic script without command-line arguments, implemented in
 
 .. automodule:: FCDR_HIRS.analysis.write_harm_meta
 
+Matchups analysis
+-----------------
+
+inspect_hirs_matchups
+^^^^^^^^^^^^^^^^^^^^^
+
+Implemented in :mod:`FCDR_HIRS.analysis.inspect_hirs_matchups`.
+
+.. argparse::
+    :module: FCDR_HIRS.analysis.inspect_hirs_matchups
+    :func: get_parser
+    :prog: inspect_hirs_matchups
+
+.. _hirs-inspect-harm-matchups:
+
+hirs_inspect_harm_matchups
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Implemented in :mod:`FCDR_HIRS.analysis.inspect_hirs_harm_matchups`.
+
+.. argparse::
+    :module: FCDR_HIRS.analysis.inspect_hirs_harm_matchups
+    :func: get_parser
+    :prog: hirs_inspect_harm_matchups
 
 L1B analysis
 ------------
@@ -258,30 +282,6 @@ Basic script without commandline arguments.  Implemented in
 
 .. automodule:: FCDR_HIRS.analysis.logfile_analysis
 
-Matchups analysis
------------------
-
-inspect_hirs_matchups
-^^^^^^^^^^^^^^^^^^^^^
-
-Implemented in :mod:`FCDR_HIRS.analysis.inspect_hirs_matchups`.
-
-.. argparse::
-    :module: FCDR_HIRS.analysis.inspect_hirs_matchups
-    :func: get_parser
-    :prog: inspect_hirs_matchups
-
-.. _hirs-inspect-harm-matchups:
-
-hirs_inspect_harm_matchups
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Implemented in :mod:`FCDR_HIRS.analysis.inspect_hirs_harm_matchups`.
-
-.. argparse::
-    :module: FCDR_HIRS.analysis.inspect_hirs_harm_matchups
-    :func: get_parser
-    :prog: hirs_inspect_harm_matchups
 
 Testing algorithms
 ------------------

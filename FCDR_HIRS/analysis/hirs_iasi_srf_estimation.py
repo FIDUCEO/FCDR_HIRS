@@ -638,6 +638,7 @@ class LUTAnalysis:
     def plot_lut_radiance_delta(self, radiances):
         """Plot LUT radiance delta
 
+        .. image:: /images/bt-range-lut.png
         """
         (cont, delta) = self.lut_radiance_delta(radiances)
         for i in range(12):
@@ -758,6 +759,14 @@ class LUTAnalysis:
 
     def lut_visualise_stats_unseen_data(self, sat="NOAA18"):
         """Visualise statistics on unseen data
+
+        Makes three plots:
+
+        .. image:: /images/lut-test-hists.png
+
+        .. image:: /images/lut-test-deltahist.png
+
+        .. image:: /images/lut-test-bthist.png
 
         Parameters
         ----------
@@ -907,6 +916,8 @@ class LUTAnalysis:
 
     def lut_visualise_multi(self, sat="NOAA18"):
         """Visualise LUT performance for various configurations
+
+        .. image:: /images/lut-test-perf.png
 
         Parameters
         ----------
@@ -1386,6 +1397,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
         nominal SRFs plotted on top of that.  Write result to a file
         ``iasi_with_hirs_srf...``.
 
+        .. image:: /images/iasi-with-hirs-srfs.png
+
         Parameters
         ----------
 
@@ -1712,6 +1725,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
                           selection=None):
         """Plot part of the spectrum with channel SRF for all sats
 
+        .. image:: /images/iasi-with-hirs-srf-ch.png
+
         Parameters
         ----------
 
@@ -1801,6 +1816,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
         details, see
         :func:`~pyatmlab.physics.estimate_effective_temperature`
 
+        .. image:: /images/bt-te-corrections.png
+
         Parameters
         ----------
 
@@ -1835,6 +1852,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
     def plot_channel_BT_deviation(self, sat):
         """Plot BT deviation for mono-/polychromatic Planck
+
+        .. image:: /images/bt-chan-approx.png
 
         Parameters
         ----------
@@ -1933,6 +1952,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
        
     def plot_bt_srf_shift(self, satellite, channel):
         """Plot BT changes due to SRF shifts
+
+        Produces a plot like:
+
+        .. image:: /images/bt-srf-shift.png
+
+        and one like:
+
+        .. image:: /images/dbt-srf-shift.png
 
         Parameters
         ----------
@@ -2070,6 +2097,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def map_with_hirs(self, h, satname, c, cmap="viridis"):
         """Plot map with simulated and real HIRS
 
+        .. image:: /images/map-hiasi-hirs.png
+
         Needs hirs object, locates closest granule.
 
         Parameters
@@ -2129,6 +2158,18 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         Reads HIRS granule corresponding to period in self.iasi and plots
         BTs and PCAs
+
+        Like this:
+
+        .. image:: /images/pca-weights.png
+
+        And like this:
+
+        .. image:: /images/pca-weights-hiasi.png
+
+        And the difference:
+
+        .. image:: /images/pca-weights-delta.png
 
         Parameters
         ----------
@@ -2283,6 +2324,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
                                    shift={}):
         """Plot SRFs in various subplots
 
+        .. image:: /images/iasi-with-hirs-srfs-allbt.png
+
         Parameters
         ----------
 
@@ -2388,6 +2431,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def plot_hist_expected_Tdiff(self, sat_ref, sat_targ, tb_ref, tb_targ):
         """Plot histogram of expected ΔT
 
+        .. image:: /images/expected-tdiff.png
+
         Parameters
         ----------
 
@@ -2410,6 +2455,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
     def plot_hist_pls_perf(self, sat_ref, sat_targ, tb_ref, tb_targ):
         """Plot histograms of PLS performance per channel
+
+        .. image:: /images/pls-performance-tdiff.png
 
         Parameters
         ----------
@@ -2438,6 +2485,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         Show a 12xN matrix of TB for reference and differences to target.
         Possibly with an SRF-shift.  Same shift applied to all channels.
+
+        .. image:: /images/slice-tb-diff.png
 
         Parameters
         ----------
@@ -2926,6 +2975,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
         global minimum does not always recover the correct SRF.
 
         Arguments are identical as for :meth:`calc_srf_estimate_costfunc`.
+
+        Like this:
+
+        .. image:: /images/srf-estimate-errdist-per-localmin.png
+
+        And:
+
+        .. image:: /images/srf-misestimate-bt-prop.png
         """
 
         sat2 = sat2 or sat
@@ -3062,6 +3119,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
         """Visualise cost function for SRF minimisation
 
         Arguments are identical as for :meth:`calc_srf_estimate_costfunc`.
+
+        .. image:: /images/srf-pred-cost-func.png
         """
         sat2 = sat2 or sat
         if regression_type is None:
@@ -3391,6 +3450,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def compare_hiasi_hirs(self, ch=1, start=0):
         """Plot comparison between HIASI and HIRS
 
+        .. image:: /images/hirs-hiasi-comparison.png
+
         Parameters
         ----------
 
@@ -3424,6 +3485,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
     def plot_expected_range(self, nbins=80, lab="", channels=range(1, 20)):
         """Plot expected BT range due to SRF range
+
+        .. image:: /images/hirs-radrange.png
 
         Parameters
         ----------
