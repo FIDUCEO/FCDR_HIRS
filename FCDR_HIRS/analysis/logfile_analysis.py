@@ -1,6 +1,19 @@
-"""Analyse logfiles coming out of FCDR generation
+"""Analyse logfiles coming out of FCDR generation.
 
-Make sure current working directory is in 'generate_fcdr'
+From a directory tree of logfiles coming out of a set of many
+``generate_fcdr`` runs with a structure corresponding to the
+``submit_all_generate_fcdr.sh`` script, describe:
+
+- Which jobs have crashed and due to what cause, sorting the causes in
+  descending order by the number of job failures triggered,
+- the ten most common error messages in the log tree, sorted similarly,
+- the ten most common warning messages, the same,
+- and an overview of what satellite/month those failures are the most
+  common.
+
+The script takes no input arguments, but to run it you have to be in the
+``logs/.../generate_fcdr`` directory, two levels up from where the
+logfiles are.
 """
 
 import subprocess
@@ -49,6 +62,10 @@ warning_counts = dict.fromkeys(warning_modes, 0)
 unknown = []
 
 def main():
+    """Main function, designed to be run as script
+
+    See module/script documentation.
+    """
 #    pprint.pprint(modes)
     cwd = pathlib.Path.cwd()
     if not "generate_fcdr" in cwd.parts:

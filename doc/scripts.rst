@@ -124,6 +124,7 @@ Basic script without command-line arguments, implemented in
 Matchups analysis
 -----------------
 
+.. _inspect-hirs-matchups:
 inspect_hirs_matchups
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -230,6 +231,7 @@ Implemented in :mod:`FCDR_HIRS.analysis..hirs_iasi_srf_estimation`.
 FCDR analysis
 -------------
 
+.. _map-field:
 map_hirs_field
 ^^^^^^^^^^^^^^
 

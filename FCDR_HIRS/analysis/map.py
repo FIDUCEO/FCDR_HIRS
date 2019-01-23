@@ -56,6 +56,29 @@ def parse_cmdline():
     return get_parser().parse_args()
 
 def plot_field(lon, lat, fld, filename, tit, cblabel, **kwargs):
+    """Plot a field on a world map using basemap
+
+    Plot a single field on a world map, using pcolor and basemap.  Write
+    the result to ``filename``.
+
+    Parameters
+    ----------
+
+    lon : ndarray
+        Longitude
+    lat : ndarray
+        Latitude
+    fld : ndarray
+        Field to be visualised, such as BTs
+    filename : str
+        Filename to write result to
+    tit : str
+        Figure title
+    cblabel : str
+        Colorbar label
+    **kwargs
+        Remaining arguments passed on to :func:`graphics.pcolor_on_map`, 
+    """
     (f, a) = matplotlib.pyplot.subplots(figsize=(14, 8))
     m = mpl_toolkits.basemap.Basemap(projection="moll", resolution="c",
         lon_0=0, ax=a)
@@ -71,6 +94,34 @@ def plot_field(lon, lat, fld, filename, tit, cblabel, **kwargs):
 def read_and_plot_field(satname, field, start_time, duration, channels=[],
         vmin=None, vmax=None, label="",
         **kwargs):
+    """Read field and plot on map
+
+    Read a field from HIRS and plot it on a map using :func:`plot_field`.
+
+    .. image: /images/hirs-on-map.png
+
+    Parameters
+    ----------
+
+    satname : str
+        Satellite name
+    field : str
+        Name of field to plot
+    start_time : datetime.datetime
+        Starting period to plot
+    duration : datetime.timedelta
+        Length of time to plot
+    channels : array_like
+        List of channenls to plot
+    vmin : list[float]
+        Lower range per channel
+    vmax : list[float]
+        Upper range per channel
+    label : str
+        Colorbar label, one for all
+    **kwargs
+        Remaining arguments get passed on to :func:`plot_field`.
+    """
     if duration > datetime.timedelta(days=1):
         raise ValueError("Duration must not exceed 24 hours, found "
                          "{!s}".format(duration))
@@ -104,6 +155,10 @@ def read_and_plot_field(satname, field, start_time, duration, channels=[],
                     **kwargs)
 
 def main():
+    """Main function, expects commandline input
+
+    See module documentation and :ref:`map-field`.
+    """
     p = parse_cmdline()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,

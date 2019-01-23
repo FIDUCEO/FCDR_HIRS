@@ -1,7 +1,7 @@
 """Plots to test and inspect results of CURUC
 
 Includes functionality for figures 3 and 4 from
-Merchant, Holl, ... (submitted 2018).
+Merchant, Holl, ... (2019).
 """
 
 import datetime
@@ -68,15 +68,19 @@ def _S_radsi_to_K(S, u_radK):
     This is done by first converting covariance matrices to correlation
     matrices using one set of uncertainties, then back with another.
 
-    Arguments:
+    Parameters
+    ----------
 
-        S
+    S : xarray.DataArray
+        Covariance matrix in rad_si units
+    u_radK : xarray.DataArray
+        Uncertainties in brightness temperature in K.
 
-            Covariance matrix in rad_si units
+    Returns
+    -------
 
-        u_radK
-
-            Uncertainties in brightens temperature in K.
+    ureg.Quantity
+        Covariance matrix in brightness temperature
 
     """
     S_L = ureg.Quantity(S.values, rad_u["si"]**2)
@@ -88,7 +92,57 @@ def _S_radsi_to_K(S, u_radK):
 def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
     """Plot some CURUC stats for specific pixels
 
-    Produce the plots for figures 3 and 4 from the easyFCDR paper.
+    Based on a segment of a L1B HIRS dataset, calculate the FCDR and
+    properties of CURUC.  For one or more pixels provided by the user,
+    calculate and visualise:
+
+    The cross-element error covariance matrix:
+
+    .. image:: /images/cross_element_Smetopb_ch7_20160227173937-174945x30y458.png
+
+    The cross-line error covariance matrix:
+
+    .. image:: /images/cross_line_Smetopb_ch7_20160227173937-174945_x30y458.png
+    
+    The cross-channel error covariance matrix:
+
+    .. image:: /images/cross_channel_S_correlated_noise_metopb_ch7_20160227173937-174945.png
+
+    The cross-channel error correlation matrix:
+
+    .. image:: /images/cross_channel_R_correlated_noise_metopb_ch7_20160227173937-174945.png
+
+    And for the overall segment, calculate and visualise:
+
+    The cross-line error correlation function:
+
+    .. image:: /images/cross_line_error_correlation_function_metopb_ch7_20160227173937-174945.png
+
+    And finally, the cross-element error correlation function:
+
+    .. image:: /images/cross_element_error_correlation_function_metopb_ch7_20160227173937-174945.png
+
+
+    Parameters
+    ----------
+
+    ds : xarray.Dataset
+        Dataset from which to plot CURUC
+
+    lines : [int, int]
+        Range of lines to select from ``ds``
+
+    channel : int
+        Channel for which to show CURUC
+    
+    x_all : array_like
+        Array of integers containing x-coordinates for which to show the
+        correlation and covariance matrices
+
+    y_all : array_like
+        Array of integers containing y-coordinates for which to show the
+        correlation and covariance matrices
+
     """
     start = ds["time"].isel(y=lines[0]).values.astype("M8[ms]").item()
     end = ds["time"].isel(y=lines[1]).values.astype("M8[ms]").item()
@@ -251,6 +305,12 @@ def plot_curuc_for_pixels(ds, lines, channel, x_all, y_all):
             f".")
 
 def plot_compare_correlation_scanline(ds):
+    """Do not use.
+
+    Use :func:`plot_curuc_for_pixels` instead.
+
+    Do not use.
+    """
     ds5 = ds.sel(calibrated_channel=5)
     y_real = ds5["cross_line_radiance_error_correlation_length_average"]
     x_real = y_real["delta_scanline_earth"]
@@ -270,6 +330,10 @@ def plot_compare_correlation_scanline(ds):
     graphics.print_or_show(f, False, "orbit_curuc_test.")
 
 def main():
+    """Main function, expects cmdline input.
+
+    See module and script documentation.
+    """
     p = parse_cmdline()
     set_logger(logging.DEBUG if p.verbose else logging.INFO,
         loggers={"FCDR_HIRS", "typhon"})
@@ -282,3 +346,4 @@ def main():
 
 #    sys.exit("The development of this script is still in progress.")
 #    plot_compare_correlation_scanline(xarray.open_dataset(p.path))
+

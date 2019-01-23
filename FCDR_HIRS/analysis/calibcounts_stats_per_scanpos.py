@@ -183,11 +183,11 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
 
     Calibration count values example:
 
-    .. image:: space-random-calib.png
+    .. image:: /images/space-random-calib.png
 
     Calibration count anomaly example, with high correlation:
 
-    .. image:: space-highcorr-calib.png
+    .. image:: /images/space-highcorr-calib.png
 
     Parameters
     ----------

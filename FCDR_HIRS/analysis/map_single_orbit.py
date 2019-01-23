@@ -102,6 +102,7 @@ def parse_cmdline():
     return get_parser().parse_args()
 
 class OrbitPlotter:
+    
     def __init__(self, f, channels, range=(0, 100),
                  plot_bitmasks=True,
                  mark_pixels=[],

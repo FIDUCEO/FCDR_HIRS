@@ -698,7 +698,7 @@ class MatrixPlotter:
         temperatures are given by the ``temperature_fields`` attribute on
         :class:`typhon.datasets.tovs.HIRS`.
 
-        .. figure:: hirs-temp-sdm.png
+        .. image:: /images/hirs-temp-sdm.png
 
         Parameters
         ----------

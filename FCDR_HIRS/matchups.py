@@ -417,10 +417,10 @@ class HIRSMatchupCombiner:
 
     This is a small class to add measurements from the FIDUCEO FCDR, debug
     version, to the matchups.  Most of the heavy work is being done within
-    `typhon.datasets.tovs.HIRSHIRS.combine` and its superclasses.  The
+    `~typhon.datasets.tovs.HIRSHIRS.combine` and its superclasses.  The
     functionality in
-    :class:`FCDR_HIRS.processing.combine_matchups.HIRSMatchupCombiner` and
-    :class:`FCDR_HIRS.analysis.inspect_hirs_matchups.HIRSMatchupInspector` is
+    :class:`~FCDR_HIRS.processing.combine_matchups.HIRSMatchupCombiner` and
+    :class:`~FCDR_HIRS.analysis.inspect_hirs_matchups.HIRSMatchupInspector` is
     built on top of the `HIRSMatchupCombiner` class defined here.
     """
 
