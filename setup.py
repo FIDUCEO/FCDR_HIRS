@@ -95,7 +95,7 @@ setup(
                       "scipy>=1.0",
                       "matplotlib>=2.0",
                       "numexpr>=2.6",
-                      "typhon>=0.5.0",
+                      "typhon>=0.7.0",
                       "progressbar2>=3.10",
                       "netCDF4>=1.2",
                       "pandas>=0.21",
