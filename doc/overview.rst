@@ -10,6 +10,8 @@ FIDUECO HIRS FCDR.  Some of the improvements compared to pre-FIDUCEO work:
 - Consistent measurement equation for entire FCDR
 - Consistent, modern fileformat for entire FCDR
 - Physics-based self-emission model
+- Measurement-equation based approach for better understanding of
+  instrument
 - Attempts at harmonisation
 - Fully open-source processing code
 
