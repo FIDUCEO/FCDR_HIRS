@@ -67,7 +67,7 @@ def parse_cmdline():
     return get_parser().parse_args()
 
 def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
-        write=False):
+        write=False, max_ratcorr=0.02, rge_fact=0.14, max_tries=75):
     """Plot histogram with fitted normal and stats and write filters
 
     This plots:
@@ -113,32 +113,66 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
     write : bool, optional
         If True, write the ratio to a file in the ``harmfilterparams``
         directory in the ``main`` section of configuration.
+    max_ratcorr : float
+        The maximum tolerable corrected ratio between the fitted normal
+        distribution and the q9.  If, at the beginning or
+        the end of the range, the ratio is larger than this value
+    rge_fact : float
+        Factor at which to increase range iteratively
+    max_tries : int
+        Maximum number of tries to increase range at
     """
-    (dens, bins, patches) = a.hist(
-        y,
-        histtype="step",
-        bins=100,
-        range=rge,
-        density=True)
     med = y.median()
     mad = abs(y-med).median()
-    for i in range(-9, 10, 3):
-        a.plot([med+i*mad]*2, [0, dens.max()], color="red")
-        a.text(med+i*mad, .8*dens.max(), str(i))
+    p67ad = scipy.stats.scoreatpercentile(abs(y-med), 68.3)
     # also plot fitted normal distribution
     # NB: how about outliers or non-normal dists?
     # "robust standard deviation"
-    p67ad = scipy.stats.scoreatpercentile(abs(y-med), 68.3)
-    peak = dens.max()
-    σ_fitting_peak = 1/(peak*math.sqrt(2*math.pi))
-    x = numpy.linspace(*rge, 500)
-    norm_fitting_peak = scipy.stats.norm.pdf(x, med, σ_fitting_peak)
-    #a.plot(x, scipy.stats.norm.pdf(x, med, p67ad), color="black", label="fitted 1")
+    # extend the range until we cover sufficient
+    rge = numpy.asarray(rge)
+    for i in range(max_tries):
+        (dens, bins) = numpy.histogram(
+            y,
+            bins="auto",
+            range=rge,
+            density=True)
+        peak = dens.max()
+        σ_fitting_peak = 1/(peak*math.sqrt(2*math.pi))
+        midbins = (bins[1:]+bins[:-1])/2
+        x = numpy.linspace(*rge, 500)
+        norm_fitting_peak = scipy.stats.norm.pdf(x, med, σ_fitting_peak)
+        rat = scipy.stats.norm.pdf(midbins, med, σ_fitting_peak) / dens
+        ratcorr = numpy.where(rat<=1, rat, 1)
+        # but for bins where histogram shows zero, I want ratcorr 0 not 1
+        ratcorr = numpy.where(dens==0, 0, ratcorr)
+        #if ratcorr[0] > max_ratcorr and dens[0]>0:
+        if dens[0]>0:
+            logger.debug(f"Extending lower range for {write!s} beyond "
+                f"{ratcorr[0]:10.3e} at {rge[0]:.5f}")
+            rge[0] -= rge.ptp()*rge_fact
+        #elif ratcorr[-1] > max_ratcorr and dens[-1]>0:
+        elif dens[-1]>0:
+            logger.debug(f"Extending upper range for {write!s} beyond "
+                f"{ratcorr[-1]:10.3e} at {rge[-1]:.5f}")
+            rge[-1] += rge.ptp()*rge_fact
+        else:
+            break
+    else:
+        raise ValueError("Histogram falls of faster-than-exponential, "
+            f"cannot derive acceptance ratio after {i:d} tries!")
+    for i in range(-9, 10, 3):
+        a.plot([med+i*mad]*2, [0, dens.max()], color="red")
+        a.text(med+i*mad, .8*dens.max(), str(i))
+
+    (dens, bins, patches) = a.hist(
+        y,
+        histtype="step",
+        bins="auto",
+        range=rge,
+        density=True)
+
     a.plot(x, norm_fitting_peak, color="black", label="fitted 1")
     a2 = a.twinx()
-    midbins = (bins[1:]+bins[:-1])/2
-    rat = scipy.stats.norm.pdf(midbins, med, σ_fitting_peak) / dens
-    ratcorr = numpy.where(rat<=1, rat, 1)
     a2.plot(midbins, ratcorr, 'k--')
     a2.set_ylabel("filter: P(keep)")
     a2.set_ylim([0, 1])
@@ -158,9 +192,11 @@ def plot_hist_with_medmad_and_fitted_normal(a, y, rge, xlab, ylab, tit,
             dims=("x",),
             coords={"x": midbins},
             name="y")
+        logger.info(f"Writing filter to {hfpfile!s}")
         da.to_netcdf(hfpfile)
 
-def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
+def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False,
+                          filtered=False):
     """Plot statistics for enhanced matchup harmonisation file
     
     This function plots statistics for enhanced matchup harmonisation
@@ -178,7 +214,9 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
     ----------
 
     ds : xarray.Dataset
-        Enhanced matchup harmonisation input dataset to be plotted.
+        Dataset from which to plot summaries.  This dataset must
+        correspond to the format as defined by Sam Hunt (W-matrix file)
+        and as written out by `FCDR_HIRS.processing.analysis.merge_all`.
     lab : str, optional
         Additional ``debug`` label to describe the matchup file.  This can
         be empty for a standard plot, or have a string such as
@@ -192,11 +230,15 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
         Will be passed on to
         :func:`plot_hist_with_medmad_and_fitted_normal`; if True, write
         out filter parameters.  Defaults to False.
+    filtered : bool, optional
+        filtered or not, used for labelling
+
     """
 
     if lab:
         # extra cruft added to string by combine_hirs_hirs_matchups
         lab = f"other_{lab:s}_"
+    filterlab = "filtered" if filtered else "unfiltered"
     
     (f, ax_all) = matplotlib.pyplot.subplots(3, 5, figsize=(30, 15))
 
@@ -219,16 +261,28 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2)
     yb = [y1, y2]
 
-    kxrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"], [1, 99])
-    kyrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}backward"], [1, 99])
-    kΔrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"]+ds[f"K_{lab:s}backward"], [1, 99])
-    Lxrange = scipy.stats.scoreatpercentile(y1, [1, 99])
-    Lyrange = scipy.stats.scoreatpercentile(y2, [1, 99])
-    Lmax = max(Lxrange[1], Lyrange[1])
-    Lmin = min(Lxrange[0], Lyrange[0])
-    LΔrange = scipy.stats.scoreatpercentile(
-        y2 - y1,
-        [1, 99])
+    plo, phi = 1, 99
+    while True:
+        kxrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"], [plo, phi])
+        kyrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}backward"], [plo, phi])
+        kΔrange = scipy.stats.scoreatpercentile(ds[f"K_{lab:s}forward"]+ds[f"K_{lab:s}backward"], [plo, phi])
+        Lxrange = scipy.stats.scoreatpercentile(y1, [plo, phi])
+        Lyrange = scipy.stats.scoreatpercentile(y2, [plo, phi])
+        Lmax = max(Lxrange[1], Lyrange[1])
+        Lmin = min(Lxrange[0], Lyrange[0])
+        LΔrange = scipy.stats.scoreatpercentile(
+            y2 - y1,
+            [plo, phi])
+        if all(max(abs(rng))/min(abs(rng))<100
+               for rng in (kxrange, kyrange, kΔrange,
+                           Lxrange, Lyrange, LΔrange)):
+            break
+        else:
+            plo += 4
+            phi -= 4
+        if not plo < phi:
+            raise ValueError("Can't retrieve a reasonable range, all outliers?!")
+        
 
     # radiance comparison
     a = next(g)
@@ -371,7 +425,9 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1) -
          UADA(ds["nominal_measurand1"]).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf1)))
-    Kr_K99 = scipy.stats.scoreatpercentile(Kr_K, 99)
+    Kr_K[Kr_K==0] = 1e-4 # prevent zeroes
+    Kr_K99 = min(scipy.stats.scoreatpercentile(Kr_K, 99),
+                 10*Kr_K.median().item())
     (cnts, bins, p1) = a.hist(
         Kr_K,
         histtype="step",
@@ -396,8 +452,11 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
              UADA(ds["nominal_measurand2"]).to(
             ds[f"K_{lab:s}forward"].units, "radiance", srf=srf2))
     uj = numpy.sqrt(u1_K**2+u2_K**2)
-    uj99 = scipy.stats.scoreatpercentile(uj, 99)
+    uj99 = min(scipy.stats.scoreatpercentile(uj, 99),
+               uj.median().item()*10)
     Kr_K_uj = Kr_K/uj
+    KrKuj99 = min(scipy.stats.scoreatpercentile(Kr_K/uj, 99),
+                  Kr_K_uj.median().item()*10)
     a2 = a.twiny()
     (cnts, bins, p2) = a2.hist(
         Kr_K_uj,
@@ -405,9 +464,9 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
         bins=100,
         color="orange",
         #density=True,
-        range=[0, scipy.stats.scoreatpercentile(Kr_K/uj, 99)])
+        range=[0, KrKuj99])
     a2.set_xlabel("Kr / u [1]")
-    a2.set_xlim([0, scipy.stats.scoreatpercentile(Kr_K/uj, 99)])
+    a2.set_xlim([0, KrKuj99])
     a.set_title("Histogram of Kr (normalised by joint noise level)",
                 y=1.11)
 
@@ -449,18 +508,21 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
     a.set_title("Joint distribution Kr and noise")
     # with some potential filters as lines
     x = numpy.array([0, Kr_K99])
-    a.plot(x, x/10, color="red", linewidth=2, linestyle='--',
-        label="x/10 (removes {:.1%})".format(((Kr_K_uj>10).sum()/Kr_K.size).item()))
-    a.plot(x, x/5, color="red", linewidth=2, linestyle=':',
-        label="x/5 (removes {:.1%})".format(((Kr_K_uj>5).sum()/Kr_K.size).item()))
+    for (ft, c, s) in ((5, "red", ":"),
+                      (25, "red", "--"),
+                      (150, "cyan", ":"),
+                      (750, "cyan", "--")):
+        a.plot(x, x/ft, color=c, linewidth=2, linestyle=s,
+            label="x/{:d} (removes {:.1%})".format(ft, ((Kr_K_uj>ft).sum()/Kr_K.size).item()))
     a.legend()
-    a.set_xlim([0, scipy.stats.scoreatpercentile(Kr_K, 99)])
+    a.set_xlim([0, Kr_K99])
+    a.set_ylim([0, uj99])
     cbs.append(f.colorbar(pc, ax=a))
 
     # ΔL/Kr, as suggested by Viju, see e-mail 2018-09-27
     a = next(g)
     plot_hist_with_medmad_and_fitted_normal(a, ΔL/Kr_K,
-        scipy.stats.scoreatpercentile(ΔL/Kr_K, [1, 99]),
+        scipy.stats.scoreatpercentile(ΔL/Kr_K, [plo, phi]),
         f"ΔL/Kr [1]",
         "Density",
         "ΔL/Kr",
@@ -468,24 +530,42 @@ def plot_ds_summary_stats(ds, lab="", Ldb=None, write=False):
             channel=ds["channel"].item(), lab=lab, **ds.attrs)
             if write else False)
 
+    # histogram of actually chosen K uncorrected
+    a = next(g)
+    (cnts, bins, p) = a.hist(
+        ds["K"],
+        histtype="step",
+        bins=100,
+        density=True,
+        range=scipy.stats.scoreatpercentile(ds["K"], [plo, phi]))
+    a.set_xlabel("K [native units]")
+    a.set_ylabel("density")
+    a.set_title("Histogram of chosen K")
+
     for cb in cbs:
         cb.set_label("No. matchups in bin")
 
     for a in ax_all.flat:
         a.grid(axis="both")
 
+    try:
+        chanstr = ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_prediction"]))
+    except KeyError:
+        # until commit 828bd13, I inconsistently mixed "channels_prediction"
+        # and "channels_used"
+        chanstr = ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_used"]))
+    
+    f.suptitle("K stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}".format(**ds.attrs)
+        + ", channel " + str(ds["channel"].item()) + ", " + lab
+        + "\nchannels used to predict: " + chanstr)
+    f.subplots_adjust(hspace=0.35, wspace=0.3)
     lab = lab.replace("·", "") # in LSF some nodes have ascii filesystem encoding?!
 
-    f.suptitle("K stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}".format(**ds.attrs)
-        + ", channel " + str(ds["channel"].item()) + ", " + lab + "\nchannels used to predict: " +
-        ", ".join(str(c) for c in numpy.atleast_1d(ds[f"K_{lab:s}forward"].attrs["channels_prediction"])))
-    f.subplots_adjust(hspace=0.35, wspace=0.3)
-
     graphics.print_or_show(f, False,
-        "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}.".format(
-            channel=ds["channel"].item(), lab=lab, **ds.attrs))
+        "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_K_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_{lab:s}_{filterlab:s}.".format(
+            channel=ds["channel"].item(), lab=lab, filterlab=filterlab, **ds.attrs))
     
-def plot_harm_input_stats(ds):
+def plot_harm_input_stats(ds, filtered):
     """Plot histograms and such of harmonisation inputs
 
     For all inputs to the harmonisation, plot histograms along with
@@ -502,6 +582,7 @@ def plot_harm_input_stats(ds):
     ds : xarray.dataset
         Harmonisation matchup dataset for which to generate plots.
     """
+    filterlab = "filtered" if filtered else "unfiltered"
     N = ds.dims["m1"]
     (f, ax_all) = matplotlib.pyplot.subplots(2, N, figsize=(5*N, 10))
     for i in range(N):
@@ -520,11 +601,16 @@ def plot_harm_input_stats(ds):
             a.set_title(ds.attrs[f"sensor_{j:d}_name"] + ", " + ds[dn][i].item())
             a.set_xlabel(ds[dn][i].item())
             a.set_ylabel("Count")
-    f.suptitle("harm input stats for pair {sensor_1_name:s}, {sensor_2_name:s}, {time_coverage:s}, with med+N*mad away".format(**ds.attrs)
+    f.suptitle(("harm input stats for {filterlab:s} pair "
+                "{sensor_1_name:s}, {sensor_2_name:s}, "
+                "{time_coverage:s}, with med+N*mad away").format(
+                    filterlab=filterlab, **ds.attrs)
         + ", channel " + str(ds["channel"].item()))
     graphics.print_or_show(f, False,
-        "harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/harmonisation_input_stats_{sensor_1_name:s}-{sensor_2_name:s}_ch{channel:d}_{time_coverage:s}_.".format(
-            channel=ds["channel"].item(), **ds.attrs))
+        ("harmstats/{sensor_1_name:s}_{sensor_2_name:s}/ch{channel:d}/"
+         "harmonisation_input_stats_{sensor_1_name:s}-{sensor_2_name:s}"
+         "_ch{channel:d}_{time_coverage:s}_{filterlab:s}.").format(
+            channel=ds["channel"].item(), filterlab=filterlab, **ds.attrs))
 
 def plot_file_summary_stats(path, write=False):
     """Plot various summary statistics for harmonisation file
@@ -546,6 +632,12 @@ def plot_file_summary_stats(path, write=False):
     #   - get axes labels from data-array attributes
 
     ds = xarray.open_dataset(path)
+    if "filtered" in path.parts:
+        filtered = True
+    elif "unfiltered" in path.parts:
+        filtered = False
+    else:
+        raise ValueError(f"Cannot tell if filtered from {path!s}")
 
     # one subplot needs IASI simulations, which I will obtain from kmodel
     kmodel = matchups.KModelSRFIASIDB(
@@ -559,19 +651,17 @@ def plot_file_summary_stats(path, write=False):
         sec_hirs=fcdr.which_hirs_fcdr(ds.attrs["sensor_2_name"], read="L1C"))
     kmodel.init_Ldb()
 
-    plot_harm_input_stats(ds)
+    plot_harm_input_stats(ds, filtered=filtered)
     others = [k.replace("K_other_", "").replace("_forward", "")
             for k in ds.data_vars.keys()
             if k.startswith("K_other_") and k.endswith("_forward")]
+    plot_ds_summary_stats(ds, "", kmodel.Ldb_hirs_simul, write=write,
+                          filtered=filtered)
     if others:
         for lab in others:
-            # used to have LR/ODR this in so may be in old files
             plot_ds_summary_stats(ds, lab,
-                kmodel.others[lab.replace("_LR", "").replace("_ODR",
-                    "")].Ldb_hirs_simul,
-                write=False) # only write for main
-    else:
-        plot_ds_summary_stats(ds, kmodel.Ldb_hirs_simul, write=write)
+                kmodel.others[lab].Ldb_hirs_simul,
+                write=write, filtered=filtered)
 
 def main():
     """Main function for script, expects commandline input.
