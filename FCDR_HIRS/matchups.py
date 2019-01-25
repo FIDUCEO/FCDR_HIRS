@@ -231,7 +231,7 @@ class KFilter:
     #: label/parameter associated with `KModel` or `KRModel` instance
     lab: str
 
-    def filter(self, mdim, channel):
+    def filter(self, mdim, channel, previous=None):
         """Apply filter
 
         Parameters
@@ -241,6 +241,10 @@ class KFilter:
             Name of the matchup dimension, such as "matchup_count"
         channel : int
             Channel number to consider
+        previous : ndarray or None
+            Any previous filtering already applied, if applicable.  This
+            may be relevant if the filter itself cannot be evaluated for
+            invalid data.
 
         Returns
         -------
@@ -249,7 +253,10 @@ class KFilter:
             Boolean array, true for matchups that are kept, false for
             matchups that need to be thrown out.
         """
-        return numpy.ones(self.model.ds.dims[mdim], "?")
+        if previous is None:
+            return numpy.ones(self.model.ds.dims[mdim], "?")
+        else:
+            return previous
 
 @dataclass
 class KrFilterHomogeneousScenes(KFilter):
@@ -261,8 +268,8 @@ class KrFilterHomogeneousScenes(KFilter):
 
     max_ratio = 5
 
-    def filter(self, mdim, channel):
-        ok = super().filter(mdim, channel)
+    def filter(self, mdim, channel, previous=None):
+        ok = super().filter(mdim, channel, previous=previous)
         srf1 = self.model.prim_hirs.srfs[channel-1]
         srf2 = self.model.sec_hirs.srfs[channel-1]
         ds = self.model.ds.sel(calibrated_channel=channel)
@@ -352,8 +359,8 @@ class KrFilterDeltaLKr(KFilterFromFile):
             calibrated_channel=channel)
         return y2 - y1
 
-    def filter(self, mdim, channel):
-        ok = super().filter(mdim, channel)
+    def filter(self, mdim, channel, previous=None):
+        ok = super().filter(mdim, channel, previous=previous)
         ds = xarray.open_dataset(self.get_harm_filter_path(channel, "dL_over_Kr"))
         Kr = self.model.calc_Kr(channel, ds_to_use=self.model.ds_orig)
         srf1 = self.model.prim_hirs.srfs[channel-1]
@@ -386,10 +393,20 @@ class KFilterKDeltaL(KFilterFromFile):
         return y2 - y1
     get_DeltaL.__doc__ = KrFilterDeltaLKr.get_DeltaL.__doc__
 
-    def filter(self, mdim, channel):
-        ok = super().filter(mdim, channel)
+    def filter(self, mdim, channel, previous=None):
+        ok = super().filter(mdim, channel, previous=previous)
+        for p in (self.model.prim_name, self.model.sec_name):
+            ok &= self.model.ds[f"{p:s}_R_e"].sel(
+                    calibrated_channel=self.model.chan_pairs[channel]).notnull().all(
+                    "calibrated_channel").values
+        if not ok.any():
+            return ok
         ds = xarray.open_dataset(self.get_harm_filter_path(channel, "K_min_dL"))
-        K = self.model.calc_K(channel, ds_to_use=self.model.ds, debug=False)
+        K = numpy.full(self.model.ds.dims[mdim], numpy.nan)
+        K[ok] = self.model.calc_K(
+            channel,
+            ds_to_use=self.model.ds[{mdim:ok}],
+            debug=False)
         ΔL = self.get_DeltaL(channel)
         K = UADA(K, dims=(mdim,), attrs={"units": rad_u["si"]}, coords={mdim: ΔL[mdim]})
         srf1 = self.model.prim_hirs.srfs[channel-1]
@@ -424,17 +441,17 @@ class HIRSMatchupCombiner:
     built on top of the `HIRSMatchupCombiner` class defined here.
     """
 
-    #: information on the type of FCDR that will be read
-    fcdr_info = {"data_version": "0.8pre", "fcdr_type": "debug"}
-    #: fields that will be read from each of the FCDR (primary, secondary)
+    hirs_data_version = "0.8pre2_no_harm"
+    hirs_format_version = "2.0.0"
+
     fields_from_each = [
-         'B',
+#         'B',
          'C_E',
          'C_IWCT',
          'C_s',
-         'LUT_BT',
-         'LUT_radiance',
-         'N',
+#         'LUT_BT',
+#         'LUT_radiance',
+#         'N',
          'R_IWCT',
          'R_e',
          'R_refl',
@@ -443,20 +460,20 @@ class HIRSMatchupCombiner:
          'R_selfs',
          'T_IWCT',
          'T_b',
-         'Tstar',
-         'a_0',
-         'a_1',
+#         'Tstar',
+#         'a_0',
+#         'a_1',
          'a_2',
          'a_3',
          'a_4',
-         'c',
+#         'c',
          'channel_correlation_matrix',
          #'counts',
          #'earth_location',
          #'elements',
          'fstar',
-         'h',
-         'k_b',
+#         'h',
+#         'k_b',
          'latitude',
          'longitude',
          #'original_calibration_coefficients',
@@ -541,7 +558,12 @@ class HIRSMatchupCombiner:
 
     #: attribute to hold the mode (reference or hirs)
     mode = None
-    def __init__(self, start_date, end_date, prim_name, sec_name):
+    def __init__(self, start_date, end_date, prim_name, sec_name,
+            hirs_data_version=None,
+            hirs_format_version=None,
+            extra_data_versions=None,
+            extra_format_versions=None,
+            extra_fields=None):
         """Create HIRSMatchupCombiner object
 
         Parameters
@@ -554,8 +576,10 @@ class HIRSMatchupCombiner:
         prim_name : str
             Name of primary
         sec_name : str
-        `   Name of secondary
+            Name of secondary
         """
+        if extra_data_versions is not None:
+            raise NotImplementedError("no extra data versions implemented")
         #self.ds = netCDF4.Dataset(str(sf), "r")
         # acquire original brightness temperatures here for the purposes
         # of estimating Kr.  Of course this should come from my own
@@ -563,6 +587,8 @@ class HIRSMatchupCombiner:
         # readibly available in the matchups from BC, so it would take
         # more effort to gather the necessary context information.  See
         # #117.
+        if extra_fields is None:
+            extra_fields = []
         if prim_name.lower() == "iasi":
             if sec_name.lower() not in ("metopa", "ma"):
                 raise ValueError(f"When primary is IASI, secondary "
@@ -573,7 +599,7 @@ class HIRSMatchupCombiner:
             self.prim_hirs = "iasi"
             self.hiasi = hi
         else:
-            if ("n15" in (prim_name.lower(), sec_name.lower()) or
+            if (("n15" in (prim_name.lower(), sec_name.lower()) and prim_name.lower() != "mb") or
                 prim_name.lower() == "n14" and sec_name.lower() == "n12"):
                 self.msd_field = f"hirs-{prim_name}_hirs-{sec_name}_matchup_spherical_distance"
             else:
@@ -597,42 +623,80 @@ class HIRSMatchupCombiner:
 
         self.sec_hirs = fcdr.which_hirs_fcdr(sec_name, read="L1C")
 
+        # we might want to gather fields from multiple versions of the
+        # debug FCDR.  In this case, we need multiple other_args
+        # dictionaries, in particular for the fields 'locator_args' and
+        # perhaps 'fields'.  Most arguments will be the same, therefore
+        # functools.partial first
+        comb = functools.partial(hh.combine, 
+            ds, timetol=numpy.timedelta64(4, 's'),
+            col_dim_name="scanpos")
+        prim_comb = functools.partial(comb,
+            self.prim_hirs, trans={"time_{:s}".format(prim_name): "time"},
+            col_field="hirs-{:s}_x".format(prim_name),
+            time_name="time_"+prim_name)
+        sec_comb = functools.partial(comb,
+            self.sec_hirs, trans={"time_{:s}".format(sec_name): "time"},
+            col_field="hirs-{:s}_x".format(sec_name),
+            time_name="time_"+sec_name)
+        fcdr_info = {
+            "data_version": hirs_data_version or self.hirs_data_version,
+            "format_version": hirs_format_version or self.hirs_format_version,
+            "fcdr_type": "debug"}
+        other_args_part = {"locator_args": fcdr_info,
+                           "fields": self.fields_from_each + extra_fields}
         if self.mode == "reference":
             # There is no Mcp, for the primary (reference) is IASI
             Mcp = None
-            Mcs = hi.combine(ds,
-                self.sec_hirs,
-                trans={"mon_time": "time"},
-                timetol=numpy.timedelta64(4, 's'),
-                other_args={"locator_args": self.fcdr_info,
-                            "fields": self.fields_from_each}).drop(
-                    ("lat_earth", "lon_earth"))
+            try:
+                Mcs = hi.combine(ds,
+                    self.sec_hirs,
+                    trans={"mon_time": "time"},
+                    timetol=numpy.timedelta64(4, 's'),
+                    other_args=other_args_part).drop(
+                        ("lat_earth", "lon_earth"))
+            except ValueError as e:
+                if "Primary covers" in e.args[0]:
+                    raise NoDataError("Secondary fails to cover primary, "
+                        f"cannot proceed. ({e.args[0]:s})")
+                else:
+                    raise
         elif self.mode == "hirs":
             try:
-                Mcp = hh.combine(ds, self.prim_hirs, trans={"time_{:s}".format(prim_name): "time"},
-                                 timetol=numpy.timedelta64(4, 's'),
-                                 col_field="hirs-{:s}_x".format(prim_name),
-                                 col_dim_name="scanpos",
-                                 other_args={"locator_args": self.fcdr_info,
-                                             "fields": self.fields_from_each,
-                                             "orbit_filters": [CalibrationCountDimensionReducer()],
-                                             "NO_CACHE": True},
-                                 time_name="time_"+prim_name).drop(
+                poa = other_args_part.copy()
+                poa["NO_CACHE"] = True
+                soa = other_args_part.copy()
+                for oa in (poa, soa):
+                    oa["orbit_filters"] = [CalibrationCountDimensionReducer()]
+                Mcp = prim_comb(other_args=poa).drop(
                         ("lat_earth", "lon_earth"))
-                Mcs = hh.combine(ds, self.sec_hirs, trans={"time_{:s}".format(sec_name): "time"},
-                                 timetol=numpy.timedelta64(4, 's'),
-                                 col_field="hirs-{:s}_x".format(sec_name),
-                                 col_dim_name="scanpos",
-                                 other_args={"locator_args": self.fcdr_info,
-                                             "orbit_filters": [CalibrationCountDimensionReducer()],
-                                             "fields": self.fields_from_each},
-                                 time_name="time_"+sec_name).drop(
+                Mcs = sec_comb(
+                    other_args=soa).drop(
                         ("lat_earth", "lon_earth"))
             except ValueError as e:
                 if e.args[0] == "array of sample points is empty":
                     raise NoDataError("Not enough matching data found, can't interpolate")
+                elif "Primary covers" in e.args[0]:
+                    raise NoDataError("Secondary fails to cover primary, "
+                        f"cannot proceed. ({e.args[0]:s})")
                 else:
                     raise
+            else:
+                extras = {}
+                if extra_data_versions:
+                    for (dv, fv) in (extra_data_versions, extra_format_versions):
+                        fcdr_info["data_version"] = dv
+                        fcdr_info["format_version"] = fv
+                        # shallow copy, same fcdr_info
+                        poa = poa.copy()
+                        soa = soa.copy()
+                        for oa in (poa, soa):
+                            oa["orbit_filters"] = [CalibrationCountDimensionReducer()]
+                        extras[f"v{dv:s}fv{fv:s}"] = (
+                            (prim_comb(other_args=poa).drop(
+                                ("lat_earth", "lon_earth")),
+                             sec_comb(other_args=soa).drop(
+                                ("lat_earth", "lon_earth"))))
         else:
             raise RuntimeError(f"Mode can't possibly be {self.mode:s}!")
 
@@ -643,6 +707,7 @@ class HIRSMatchupCombiner:
         self.Mcs = Mcs
         self.prim_name = prim_name
         self.sec_name = sec_name
+        self.extras = {} # not implemented
 
 
 class KModel(metaclass=abc.ABCMeta):
@@ -751,7 +816,7 @@ class KModel(metaclass=abc.ABCMeta):
         self.ds_filt_orig = self.ds_orig[{mdim:ok}]
         self.filtered = True
 
-    def filter(self, mdim, channel):
+    def filter(self, mdim, channel, previous=None):
         """Extra filtering imposed by this model
 
         Apart from the usual filtering going on, what filtering does this
@@ -765,6 +830,9 @@ class KModel(metaclass=abc.ABCMeta):
             example, "matchup_spherical_distance".
         channel : int
             Channel along which the filtering is applied.
+        previous : ndarray or None
+            Any previous filtering already applied, or None if there isn't
+            any.
 
         Returns
         -------
@@ -773,9 +841,9 @@ class KModel(metaclass=abc.ABCMeta):
             Boolean array, True for matchups to be keps, False for
             matchups to be filtered out.
         """
-        rv = numpy.ones(self.ds.dims[mdim], "?")
+        rv = previous if previous is not None else numpy.ones(self.ds.dims[mdim], "?") 
         for ef in self.extra_filters:
-            rv &= ef.filter(mdim, channel)
+            rv &= ef.filter(mdim, channel, previous=previous)
         return rv
 
     def extra(self, channel, ok):
@@ -872,10 +940,10 @@ class KrModel(metaclass=abc.ABCMeta):
         self.filtered = True
     limit.__doc__ = KModel.limit.__doc__
 
-    def filter(self, mdim, channel):
-        rv = numpy.ones(self.ds.dims[mdim], "?")
+    def filter(self, mdim, channel, previous=None):
+        rv = previous if previous is not None else numpy.ones(self.ds.dims[mdim], "?")
         for ef in self.extra_filters:
-            rv &= ef.filter(mdim, channel)
+            rv &= ef.filter(mdim, channel, previous=previous)
         return rv
     filter.__doc__ = KModel.filter.__doc__
 
@@ -1001,8 +1069,8 @@ class KrModelLSD(KrModel):
                     z=("hirs-{:s}_ny".format(which),
                        "hirs-{:s}_nx".format(which)))
         btlocal = UADA(btlocal)
-        srf = SRF.fromArtsXML(
-            typhon.datasets.tovs.norm_tovs_name(which).upper(),
+        srf = SRF.fromRTTOV(
+            typhon.datasets.tovs.norm_tovs_name(which, mode="RTTOV"),
             "hirs", channel)
         radlocal = btlocal.to(rad_u["si"], "radiance", srf=srf)
         lsd = radlocal.std("z")
@@ -1014,13 +1082,19 @@ class KrModelLSD(KrModel):
     def calc_Kr(self, channel, ds_to_use=None):
         return self.calc_Kr_for(self.prim_name)
 
-    def filter(self, mdim, channel):
-        ok = super().filter(mdim, channel)
+    def filter(self, mdim, channel, previous=None):
+        ok = super().filter(mdim, channel, previous=previous)
         ok &= functools.reduce(
             operator.and_,
             ((self.ds_orig[f"hirs-{s:s}_bt_ch{channel:02d}"].notnull()
                     .sum(f"hirs-{s:s}_nx").sum(f"hirs-{s:s}_ny")>25).values
                 for s in (self.prim_name, self.sec_name)),
+            ok)
+        ok &= functools.reduce(
+            operator.and_,
+            (((self.ds_orig[f"hirs-{s:s}_bt_ch{channel:02d}"].min(f"hirs-{s:s}_nx").min(f"hirs-{s:s}_ny") > 100) &
+              (self.ds_orig[f"hirs-{s:s}_bt_ch{channel:02d}"].max(f"hirs-{s:s}_nx").max(f"hirs-{s:s}_ny") < 400)).values
+             for s in (self.prim_name, self.sec_name)),
             ok)
         return ok
 
@@ -1053,8 +1127,8 @@ class KrModelIASIRef(KrModel):
         """
         if ds_to_use is None:
             ds_to_use = self.ds_filt
-        srf = SRF.fromArtsXML(
-            typhon.datasets.tovs.norm_tovs_name(self.sec_name).upper(),
+        srf = SRF.fromRTTOV(
+            typhon.datasets.tovs.norm_tovs_name(self.sec_name, mode="RTTOV"),
             "hirs", channel)
         return abs(
             ureg.Quantity(
@@ -1316,8 +1390,8 @@ class KModelSRFIASIDB(KModel):
         self.srfs = {}
         for sat in (self.prim_name, self.sec_name):
             self.srfs[sat] = [
-                typhon.physics.units.em.SRF.fromArtsXML(
-                    typhon.datasets.tovs.norm_tovs_name(sat).upper(),
+                typhon.physics.units.em.SRF.fromRTTOV(
+                    typhon.datasets.tovs.norm_tovs_name(sat, mode="RTTOV"),
                     "hirs", ch)
                 for ch in range(1, 20)]
         if self.debug:
@@ -1473,7 +1547,12 @@ class KModelSRFIASIDB(KModel):
             # Kr instead?
         self._y_pred = y_pred
         self.K[channel] = K
-        if self.debug and not debug:
+        # GH 2018-10-28: What the heck?  In commit 8ae7da4 I changed the
+        # following to "if self.debug and not debug" which essentially
+        # means "if x and not x".  What was I thinking?  If I change it
+        # again, I must explain myself!
+#        if self.debug and not debug:
+        if self.debug:
             for v in self.others.values():
                 v.calc_K(channel, ds_to_use=ds_to_use)
         # convert back to si units for conversion, but cannot convert K
@@ -1554,8 +1633,20 @@ class KModelSRFIASIDB(KModel):
         ds["K_backward"] = (("M",), self.K[channel][1])
         if self.debug:
             for (k, v) in self.others.items():
-                ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][0][ok])
-                ds[f"K_other_{k:s}_backward"] = (("M",), v.K[channel][1][ok])
+                if v.K[channel][0].size == ok.sum() and not ok.all():
+                    warnings.warn(
+                        "GH 2018-20-28, I no longer understand the order "
+                        "of filtering.  It seems the others HAVE been "
+                        "filtered? ")
+                    ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][0])
+                    ds[f"K_other_{k:s}_backward"] = (("M",), v.K[channel][1])
+                else:
+                    warnings.warn(
+                        "GH 2018-20-28, I no longer understand the order "
+                        "of filtering.  It seems the others HAVE NOT been "
+                        "filtered? ")
+                    ds[f"K_other_{k:s}_forward"] = (("M",), v.K[channel][0][ok])
+                    ds[f"K_other_{k:s}_backward"] = (("M",), v.K[channel][1][ok])
                 for direction in ("forward", "backward"):
                     ds[f"K_other_{k:s}_{direction:s}"].attrs.update(
                         units=f"{v.units:~}",
@@ -1571,7 +1662,7 @@ class KModelSRFIASIDB(KModel):
             ds[k].attrs["units"] = f"{self.units:~}"
             ds[k].attrs["description"] = ("Prediction of "
                     f"delta {to_sat:s} from {from_sat:s} ({self.regression:s})")
-            ds[k].attrs["channels_used"] = self.chan_pairs[channel]
+            ds[k].attrs["channels_prediction"] = self.chan_pairs[channel]
         ds.attrs.update(
             mode=self.mode,
             channels_prediction=self.chan_pairs[channel],
@@ -1579,9 +1670,9 @@ class KModelSRFIASIDB(KModel):
             )
         return ds
 
-    def filter(self, mdim, channel):
+    def filter(self, mdim, channel, previous=None):
         # go through self.ds_filt R_e values.
-        ok = super().filter(mdim, channel)
+        ok = super().filter(mdim, channel, previous=previous)
         for sat in self.prim_name, self.sec_name:
             ok &= self.ds[f"{sat:s}_R_e"].sel(calibrated_channel=self.chan_pairs[channel]).notnull().all("calibrated_channel").values
         return ok

@@ -33,9 +33,12 @@ See issue #22
         include_debug=True)
     
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--with_filters', action='store_true')
-    group.add_argument('--without_filters', action='store_false')
+    group.add_argument('--with-filters', action='store_true')
+    group.add_argument('--without-filters', action='store_false')
 
+    parser.add_argument("--src-version", action="store", type=str,
+        default="0.8pre2_no_harm",
+        help="Source version to use for matchup enhancement")
     return parser
 def parse_cmdline_hirs():
     return get_parser_hirs().parse_args()
@@ -53,6 +56,29 @@ Convert HIRS-IASI matchups for harmonisation
         include_channels=False,
         include_temperatures=False)
 
+    parser.add_argument("--extra-data-versions", action="store", type=str,
+        nargs="*", default=[],
+        help="NOT SUPPORTED")
+
+    parser.add_argument("--hirs-src-version", action="store", type=str,
+        default="0.8pre2_no_harm",
+        help="HIRS source version to use for matchup enhancement")
+
+    parser.add_argument("--hirs-extra-fields", action="store", type=str,
+        nargs="*", default=[],
+        help="Extra fields from HIRS to add to the matchups")
+
+    parser.add_argument("--extra-format-versions", action="store", type=str,
+        nargs="*", default=[],
+        help="NOT SUPPORTED")
+    parser.add_argument("--extra-fields", action="store", type=str,
+        nargs="*", default=[],
+        help="Extra fields from both sats to add to the matchups")
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--with-filters', action='store_true')
+    group.add_argument('--without-filters', action='store_false')
+
     return parser
 def parse_cmdline_iasi():
     return get_parser_iasi().parse_args()
@@ -68,6 +94,13 @@ def get_parser_merge():
             "the values of several data variables need to be "
             "recalculated upon definition."),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser = common.add_to_argparse(parser,
+        include_period=False,
+        include_sat=0,
+        include_channels=False,
+        include_temperatures=False,
+        include_debug=False)
 
     parser.add_argument("files", type=str, nargs="+",
         help="Files to concatenate")
@@ -88,6 +121,7 @@ tl = dict(C_E="C_Earth",
 
 import logging
 
+import traceback
 import itertools
 import datetime
 import warnings
@@ -100,6 +134,7 @@ from .. import matchups
 import typhon.datasets
 import typhon.datasets.dataset
 import typhon.datasets._tovs_defs
+from typhon import config
 
 from typhon.physics.units.common import ureg, radiance_units as rad_u
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
@@ -112,7 +147,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
     # the GWS.  Experiment if this is any better writing to scratch2 (and
     # can then rsync those over later).  UPDATE: Well, it's not.  First
     # write to /dev/shm, then rsync to fiduceo GWS in same script.
-    basedir = "/group_workspaces/cems2/fiduceo/Data/Harmonisation_matchups/HIRS/"
+    basedir = config.conf["main"]["harmonisation_matchups"]
     #basedir = "/work/scratch2/gholl/Harmonisation_matchups/HIRS/"
 
     # fallback for simplified only, because I don't store the
@@ -125,8 +160,18 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                  kmodel=None,
                  krmodel=None,
                  debug=False,
-                 apply_filters=True):
-        super().__init__(start_date, end_date, prim, sec)
+                 apply_filters=True,
+                 hirs_data_version=None,
+                 hirs_format_version=None,
+                 extra_data_versions=None,
+                 extra_format_versions=None,
+                 extra_fields=None):
+        super().__init__(start_date, end_date, prim, sec,
+            hirs_data_version=hirs_data_version,
+            hirs_format_version=hirs_format_version,
+            extra_data_versions=extra_data_versions,
+            extra_format_versions=extra_format_versions,
+            extra_fields=extra_fields)
         # parent has set self.mode to either "hirs" or "reference"
         if self.mode not in ("hirs", "reference"):
             raise RuntimeError("My father has been bad.")
@@ -184,6 +229,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         self.kmodel = kmodel
         self.krmodel = krmodel
         self.apply_filters = apply_filters
+        self.extra_fields = extra_fields
 
     def as_xarray_dataset(self):
         """Returns SINGLE xarray dataset for matchups
@@ -199,9 +245,21 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                 rename_dimensions={"scanline": "collocation"})
                     for (tp, src) in ((self.prim_hirs, self.Mcp),
                                       (self.sec_hirs, self.Mcs)))
+            extras_ds = {nm:
+                tuple(
+                    tp.as_xarray_dataset(
+                        src,
+                        skip_dimensions=["scanpos"],
+                        rename_dimensions={"scanline": "collocation"})
+                    for (tp, src) in ((self.prim_hirs, v[0]), (self.sec_hirs, v[1])))
+                for (nm, v) in self.extras.items()}
+
         elif is_xarray:
             p_ds = self.Mcp.copy() if self.mode=="hirs" else None
             s_ds = self.Mcs.copy()
+            extras_ds = {nm: (v[0].copy() if self.mode=="hirs" else None,
+                              v[1].copy())
+                        for (nm, v) in self.extras.items()}
         else:
             raise RuntimeError("Onmogelĳk.  Impossible.  Unmöglich.")
         #
@@ -213,11 +271,23 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     for nm in p_ds.variables.keys()
                     if nm not in keep|set(p_ds.dims)},
                 inplace=True)
+            for (enm, v) in extras_ds.items():
+                v[0].rename(
+                    {vnm: f"{self.prim_name:s}_{vnm:s}_{enm:s}"
+                        for enm in v[0].variables.keys()
+                        if enm not in keep|set(v[0].dims)},
+                    inplace=True)
         s_ds.rename(
             {nm: "{:s}_{:s}".format(self.sec_name, nm)
                 for nm in s_ds.variables.keys()
                 if nm not in keep|set(s_ds.dims)},
             inplace=True)
+        for (enm, v) in extras_ds.items():
+            v[1].rename(
+                {vnm: f"{self.prim_name:s}_{vnm:s}_{enm:s}"
+                    for enm in v[1].variables.keys()
+                    if enm not in keep|set(v[1].dims)},
+                inplace=True)
         # dimension prt_number_iwt may differ
         if (self.mode == "hirs" and
             "prt_number_iwt" in p_ds.dims and
@@ -236,7 +306,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     else numpy.zeros(self.ds.dims["line"]), 
                 dims=["matchup_count" if self.mode=="hirs" else "line"],
                 name=self.msd_field)
-            ]
+            ] + list(itertools.chain.from_iterable(extras_ds.values()))
         ds = xarray.merge(to_merge)
         return ds
 
@@ -291,13 +361,14 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         # here check only sec; prim only checked if prim not iasi
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel)).values
         logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after secondary isfinite-filtering")
-        ok &= self.kmodel.filter(mdim, channel)
+        ok &= self.kmodel.filter(mdim, channel, previous=ok)
         logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after kmodel-filtering")
-        ok &= self.krmodel.filter(mdim, channel)
+        ok &= self.krmodel.filter(mdim, channel, previous=ok)
         logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after krmodel-filtering")
         # WORKAROUND, REMOVE AFTER FIXING #281#
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
         ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_R_Earth_random"].sel(calibrated_channel=channel)).values
+        ok &= numpy.isfinite(ds[f"{self.sec_name:s}_u_C_Earth"].sel(calibrated_channel=channel)).values
         logger.debug(f"{ok.sum().item():d}/{ok.size:d} matchups left after removing non-finite uncertainties from secondary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
         #
         if self.prim_name != "iasi":
@@ -306,6 +377,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             # WORKAROUND, REMOVE AFTER FIXING #281#
             ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_R_Earth_nonrandom"].sel(calibrated_channel=channel)).values
             ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_R_Earth_random"].sel(calibrated_channel=channel)).values
+            ok &= numpy.isfinite(ds[f"{self.prim_name:s}_u_C_Earth"].sel(calibrated_channel=channel)).values
             logger.debug(f"{ok.sum():d}/{ok.size:d} matchups left after removing non-finite uncertainties from primary (FIXME: THIS FILTER MUST BE REMOVED AFTER FIXING #281!!)")
             #
             ok &= ((ds[f"{self.prim_name:s}_scantype"] == 0) &
@@ -599,6 +671,9 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))
         harm[f"nominal_measurand_original{i:d}"].attrs.update(ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel).attrs)
 
+        for f in self.extra_fields:
+            harm[f"extra_{f:s}{i:d}"] = (("M",), ds[f"{sat:s}_{f:s}"].sel(calibrated_channel=channel))
+
         if self.mode == "reference":
             sdsidx = {"line": ok}
             harm[f"row{i:d}"] = (("M",),
@@ -624,8 +699,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
         freq = ureg.Quantity(numpy.loadtxt(self.hiasi.freqfile), ureg.Hz)
         specrad_wn = UADA(self.ds.isel(line=ok)["ref_radiance"])
         specrad_f = specrad_wn.to(rad_u["si"], "radiance")
-        srf = typhon.physics.units.em.SRF.fromArtsXML(
-                "METOPA", "hirs", channel)
+        srf = typhon.physics.units.em.SRF.fromRTTOV(
+                "metop_2", "hirs", channel)
         L = srf.integrate_radiances(freq,
             ureg.Quantity(specrad_f.values, specrad_f.attrs["units"]))
         harm["X1"] = (
@@ -698,11 +773,13 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
                     ))
         pathlib.Path(out).parent.mkdir(exist_ok=True, parents=True)
         logger.info("Writing {:s}".format(out))
-        if not numpy.all(
-                [numpy.isfinite(harm[k]).all()
+        allfinite = {k: numpy.isfinite(harm[k]).all().item()
                     for k in harm.data_vars.keys()
-                    if not harm[k].dtype.kind.startswith("M")]):
-            raise ValueError("Changed my mind, found some invalid values!")
+                    if not harm[k].dtype.kind.startswith("M")}
+        if not all(allfinite.values()):
+            notfinite = [k for (k, v) in allfinite.items() if not v]
+            raise ValueError("Changed my mind, found some invalid values "
+                "in fields: " + " ".join(notfinite))
         for (k, v) in harm.data_vars.items():
             v.encoding["zlib"] = True
         #harm.to_netcdf(out, unlimited_dims=["M"])
@@ -722,6 +799,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
 def combine_hirs():
     p = parse_cmdline_hirs()
+    if p.extra_data_versions:
+        sys.exit("Extra data versions not supported, this was a mistake")
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         p.log,
@@ -734,7 +813,10 @@ def combine_hirs():
             datetime.datetime.strptime(p.from_date, p.datefmt),
             datetime.datetime.strptime(p.to_date, p.datefmt),
             p.satname1, p.satname2,
-            debug=p.debug)
+            debug=p.debug,
+            apply_filters=p.with_filters,
+            hirs_data_version=p.src_version,
+            extra_fields=p.extra_fields)
 
         ds = hmc.as_xarray_dataset()
     except (typhon.datasets.dataset.DataFileError, MatchupError) as e:
@@ -753,6 +835,7 @@ def combine_hirs():
             except FileNotFoundError as e:
                 print(f"Unable to filter for channel {channel:d}: {e.args!s}",
                         file=sys.stderr)
+                traceback.print_exc()
                 continue
             anygood = True
             hmc.write_harm(harm, ds_new, basedir=tmpdir)
@@ -784,6 +867,8 @@ def combine_hirs():
 
 def combine_iasi():
     p = parse_cmdline_iasi()
+    if p.with_filters:
+        sys.exit("IASI-HIRS filtering not implemented yet")
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         p.log,
@@ -794,7 +879,10 @@ def combine_iasi():
     hmc = HIRSMatchupCombiner(
         datetime.datetime.strptime(p.from_date, p.datefmt),
         datetime.datetime.strptime(p.to_date, p.datefmt),
-        "iasi", "metopa")
+        "iasi", "metopa",
+        hirs_data_version=p.hirs_src_version,
+        apply_filters=p.with_filters,
+        extra_fields=p.hirs_extra_fields)
 
     ds = hmc.as_xarray_dataset()
     for channel in range(1, 20):
