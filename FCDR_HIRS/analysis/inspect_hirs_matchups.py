@@ -95,18 +95,20 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
             Channel number
 
         """
-        prim = self.prim
-        sec = self.sec
+        prim = self.prim_name
+        sec = self.sec_name
         xlab = "HIRS {prim:s}".format(prim=prim.upper())
         ylab = "HIRS {sec:s}".format(sec=sec.upper())
         Δylab = "HIRS {prim:s}-{sec:s}".format(prim=prim.upper(),
             sec=sec.upper())
 
-        v_all = ("counts", "radiance", "radiance_fid", "bt", "bt_fid")
+        #v_all = ("counts", "radiance", "radiance_fid", "bt", "bt_fid")
+        v_all = ("counts", "radiance", "bt") # for fid, need to take from
+                                             # self.Mcp
 
-        (f, a) = matplotlib.pyplot.subplots(2, 5, figsize=(30, 10))
+        (f, a) = matplotlib.pyplot.subplots(2, 3, figsize=(30, 10))
         invalid = numpy.zeros(
-            shape=(self.M.shape),
+            shape=(self.ds.dims["matchup_count"]),
             dtype="?")
 
         # only plot those where data are unmasked for all three variables
@@ -118,12 +120,14 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
                 y = numpy.ma.masked_invalid(self.Mcs[v][:, ch-1])
             else:
                 x = numpy.ma.masked_invalid(
-                    self.M["hirs-{:s}_{:s}_ch{:02d}".format(prim, v, ch)][:, 3, 3])
+                    self.ds["hirs-{:s}_{:s}_ch{:02d}".format(prim, v, ch)][:, 3, 3])
                 y = numpy.ma.masked_invalid(
-                    self.M["hirs-{:s}_{:s}_ch{:02d}".format(sec, v, ch)][:, 3, 3])
+                    self.ds["hirs-{:s}_{:s}_ch{:02d}".format(sec, v, ch)][:, 3, 3])
+             # need to skip this due to #214, see
+             # https://github.com/FIDUCEO/FCDR_HIRS/issues/214
             is_measurement = (
-                (self.M["hirs-{:s}_scanline_type".format(prim)][:, 3, 3] == 0) &
-                (self.M["hirs-{:s}_scanline_type".format(sec)][:, 3, 3] == 0))
+                (self.ds["hirs-{:s}_scanline_type".format(prim)][:, 3, 3] == 0) &
+                (self.ds["hirs-{:s}_scanline_type".format(sec)][:, 3, 3] == 0))
             x.mask |= ~is_measurement
             y.mask |= ~is_measurement
             invalid |= x.mask
@@ -137,6 +141,7 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
             rng = numpy.asarray([scipy.stats.scoreatpercentile(x, [1, 99]),
                    scipy.stats.scoreatpercentile(y, [1, 99])])
             #a[0, i].plot(x, y, '.')
+            # FIXME: use hexplot
             a[0, i].hist2d(x, y, bins=40, range=rng, cmap="viridis",
                 cmin=1)
             typhon.plots.plot_distribution_as_percentiles(a[0, i], x, y,
@@ -149,6 +154,7 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
 
             rng[1] = scipy.stats.scoreatpercentile(y-x, [1, 99])
             #a[1, i].plot(x, y-x, '.')
+            # FIXME: use hexplot
             a[1, i].hist2d(x, y-x, bins=40, range=rng, cmap="viridis",
                 cmin=1)
             typhon.plots.plot_distribution_as_percentiles(a[1, i], x, y-x,
@@ -165,31 +171,31 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
         a[0, 0].set_ylabel(ylab + " counts")
         a[1, 0].set_ylabel(Δylab + " counts")
 
-        a[0, 1].set_xlabel(xlab + "NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
-        a[1, 1].set_xlabel(xlab + "NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[0, 1].set_xlabel(xlab + " NOAA radiance\n[{:~}]".format(rad_u["ir"]))
+        a[1, 1].set_xlabel(xlab + " NOAA radiance\n[{:~}]".format(rad_u["ir"]))
 
-        a[0, 1].set_ylabel(ylab + " NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
-        a[1, 1].set_ylabel(Δylab + " NOAA radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[0, 1].set_ylabel(ylab + " NOAA radiance\n[{:~}]".format(rad_u["ir"]))
+        a[1, 1].set_ylabel(Δylab + " NOAA radiance\n[{:~}]".format(rad_u["ir"]))
 
-        a[0, 2].set_xlabel(xlab + "FID radiance\n[{:~}]".format(rad_u["ir"].u))
-        a[1, 2].set_xlabel(xlab + "FID radiance\n[{:~}]".format(rad_u["ir"].u))
+#        a[0, 2].set_xlabel(xlab + "FID radiance\n[{:~}]".format(rad_u["ir"]))
+#        a[1, 2].set_xlabel(xlab + "FID radiance\n[{:~}]".format(rad_u["ir"]))
+#
+#        a[0, 2].set_ylabel(ylab + " FID radiance\n[{:~}]".format(rad_u["ir"]))
+#        a[1, 2].set_ylabel(Δylab + " FID radiance\n[{:~}]".format(rad_u["ir"]))
 
-        a[0, 2].set_ylabel(ylab + " FID radiance\n[{:~}]".format(rad_u["ir"].u))
-        a[1, 2].set_ylabel(Δylab + " FID radiance\n[{:~}]".format(rad_u["ir"].u))
+        a[0, 2].set_xlabel(xlab + " NOAA BT [K]")
+        a[1, 2].set_xlabel(xlab + " NOAA BT [K]")
 
-        a[0, 3].set_xlabel(xlab + "NOAA BT [K]")
-        a[1, 3].set_xlabel(xlab + "NOAA BT [K]")
+        a[0, 2].set_ylabel(ylab + " NOAA BT [K]")
+        a[1, 2].set_ylabel(Δylab + " NOAA BT [K]")
 
-        a[0, 3].set_ylabel(ylab + " NOAA BT [K]")
-        a[1, 3].set_ylabel(Δylab + " NOAA BT [K]")
+#        a[0, 4].set_xlabel(xlab + " FID BT [K]")
+#        a[1, 4].set_xlabel(xlab + " FID BT [K]")
+#
+#        a[0, 4].set_ylabel(ylab + " FID BT [K]")
+#        a[1, 4].set_ylabel(Δylab + " FID BT [K]")
 
-        a[0, 4].set_xlabel(xlab + " FID BT [K]")
-        a[1, 4].set_xlabel(xlab + " FID BT [K]")
-
-        a[0, 4].set_ylabel(ylab + " FID BT [K]")
-        a[1, 4].set_ylabel(Δylab + " FID BT [K]")
-
-        a[0, 4].legend(loc="upper left", bbox_to_anchor=(1, 1))
+        a[0, 2].legend(loc="upper left", bbox_to_anchor=(1, 1))
 
         for ta in a.ravel():
             ta.xaxis.set_major_locator(
@@ -205,14 +211,15 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
         f.subplots_adjust(hspace=0.2, wspace=0.4, right=0.8)
         f.suptitle("HIRS-HIRS {:s}-{:s} ch. {:d}\n{:%Y-%m-%d %H:%M}--{:%Y-%m-%d %H:%M}".format(
             prim, sec, ch,
-            self.M["time"][0].astype(datetime.datetime),
-            self.M["time"][-1].astype(datetime.datetime)))
+            self.ds["time"][0].values.astype("M8[ms]").astype(datetime.datetime),
+            self.ds["time"][-1].values.astype("M8[ms]").astype(datetime.datetime)))
 
         graphics.print_or_show(f, False,
-            "hirshirs/hirshirs_{:s}_{:s}_{:%Y%m%d%H%M}_{:%Y%m%d%H%M}_ch{:d}.png".format(
-                prim, sec,
-                self.M["time"][0].astype(datetime.datetime),
-                self.M["time"][-1].astype(datetime.datetime), ch))
+            "hirshirs/{prim:s}_{sec:s}/hirshirs_{prim:s}_{sec:s}_{start:%Y%m%d%H%M}_{end:%Y%m%d%H%M}_ch{ch:d}.png".format(
+                prim=prim, sec=sec,
+                start=self.ds["time"][0].values.astype("M8[ms]").astype(datetime.datetime),
+                end=self.ds["time"][-1].values.astype("M8[ms]").astype(datetime.datetime),
+                ch=ch))
 
 def main():
     """Main function, expects commandline input.
