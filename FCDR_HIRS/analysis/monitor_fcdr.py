@@ -1,8 +1,9 @@
 """Plot some monitoring info on FCDR
+
+This needs the debug FCDR.
 """
 
 import matplotlib
-matplotlib.use("Agg")
 from .. import common
 import argparse
 
@@ -12,7 +13,6 @@ import pathlib
 import itertools
 import datetime
 import xarray
-#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
 import matplotlib.pyplot
 import matplotlib.gridspec
 import numpy
@@ -24,9 +24,6 @@ from .. import _fcdr_defs
 from .. import common
 from .. import graphics
 
-# NB: https://github.com/pydata/xarray/issues/1661#issuecomment-339525582
-from pandas.tseries import converter
-converter.register()
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +36,8 @@ def get_parser():
         include_period=True,
         include_sat=True,
         include_channels=True,
-        include_temperatures=False)
+        include_temperatures=False,
+        include_version=("0.8rc1", "2.0.0"))
 
     return parser
 def parse_cmdline():
@@ -61,14 +59,14 @@ class FCDRMonitor:
         "quality_minorframe_bitmask", "quality_pixel_bitmask"]
 
     def __init__(self, start_date, end_date, satname,
-            version="0.8pre",):
+            version="0.8rc1", format_version="2.0.0"):
         self.hirsfcdr = fcdr.which_hirs_fcdr(satname, read="L1C")
         self.version = version
         self.ds = self.hirsfcdr.read_period(
             start_date,
             end_date,
             locator_args={"data_version": version, "fcdr_type": "debug",
-                          "format_version": "0.6"},
+                          "format_version": format_version},
             fields=self.fields)
         self.satname = satname
 
@@ -285,12 +283,16 @@ def plot(p):
     fm = FCDRMonitor(
         datetime.datetime.strptime(p.from_date, p.datefmt),
         datetime.datetime.strptime(p.to_date, p.datefmt),
-        p.satname)
+        p.satname,
+        version=p.version)
 
     for ch in p.channels:
         fm.plot_timeseries(ch)
 
 def main():
+    # NB: https://github.com/pydata/xarray/issues/1661#issuecomment-339525582
+    from pandas.tseries import converter
+    converter.register()
     p = parse_cmdline()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,

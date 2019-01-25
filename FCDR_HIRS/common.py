@@ -30,7 +30,8 @@ def add_to_argparse(parser,
         include_sat=0,
         include_channels=True,
         include_temperatures=False,
-        include_debug=False):
+        include_debug=False,
+        include_version=False):
     """Add commoners to argparse object.
 
     Helper function to add flags to :class:`argparse.ArgumentParser`
@@ -70,6 +71,10 @@ def add_to_argparse(parser,
     include_debug : bool, optional
         Include an optional ``--debug`` parameter taking a bool, that will
         default to `False`.  Defaults to `False`.
+    include_version : tuple, optional
+        Include optional ``--version`` and ``--format-version`` parameters
+        each taking a string, that will default to the pair of strings
+        passed as an argument.
 
     Returns
     -------
@@ -114,6 +119,15 @@ def add_to_argparse(parser,
         parser.add_argument("--datefmt", action="store", type=str,
             help="Date format for start/end dates",
             default="%Y-%m-%d")
+
+    if include_version:
+        parser.add_argument("--version", action="store", type=str,
+            help="FCDR version",
+            default=include_version[0])
+
+        parser.add_argument("--format-version", action="store", type=str,
+            help="FCDR format version",
+            default=include_version[1])
 
     hasboth = include_channels and include_temperatures
     if hasboth:
