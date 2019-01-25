@@ -102,7 +102,14 @@ def add_to_argparse(parser,
             help="Start date/time")
 
         parser.add_argument("to_date", action="store", type=str,
-            help="End date/time")
+            help="End date/time.  This uses the standards of "
+                 "Python date/time intervals, so the end is "
+                 "not included and when only a date is given, "
+                 "time is assumed to be 00:00:00.  For example, "
+                 "to process only 2010-01-01, one should give "
+                 "as a start date 2010-01-01 and as an end "
+                 "date 2010-01-02, which means end at 2010-01-02T00:00:00 "
+                 "such that zero data on 2010-01-02 are included.")
 
         parser.add_argument("--datefmt", action="store", type=str,
             help="Date format for start/end dates",
@@ -378,9 +385,9 @@ def savetxt_3d(fname, data, *args, **kwargs):
         3-dimensional `numpy.ndarray` containing the data to be written to
         a file.
     *args
-        Remaining arguments passed to `~numpy.savetxt`.
+        Remaining arguments passed to :func:`~numpy.savetxt`
     **kwargs
-        Remaining arguments passed to `~numpy.savetxt`.
+        Remaining arguments passed to :func:`~numpy.savetxt`.
 
     Example
     -------

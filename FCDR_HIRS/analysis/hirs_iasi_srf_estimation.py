@@ -1,3 +1,26 @@
+"""Module with routines for HIRS SRF shift estimates using IASI
+
+This module contains functionality for estimating shifting HIRS SRFs using
+IASI as a reference, as well as routines for plotting related
+characteristics.  It was originally a standalone script and has not been
+tested since its migration to the :doc:`FCDR_HIRS` package, so it may
+need some fleshing out to become functional again.  It is also the only
+part of :doc:`FCDR_HIRS` that still has a dependency on `pyatmlab`_, which
+would need to be installed before this module can be imported.
+
+Theory and results for the HIRS SRF shifts are described in PD4.4.
+
+Originally I used an approach based on a look-up table from HIRS to IASI.
+I abandoned this approach, which is implemented in the
+:class:`LUTAnalysis` class.
+
+The main class with functionality used in the later versions is
+:class:`IASI_HIRS_analyser`, which admittedly is a subclass of
+:class:`LUTAnalysis`, yes contains lots of non-LUT stuff.
+
+.. _pyatmlab: https://github.com/gerritholl/pyatmlab/
+
+"""
 import logging
 import numpy
 import argparse
@@ -287,16 +310,37 @@ def parse_cmdline():
     return get_parser().parse_args()
 
 class HIM(typhon.datasets.dataset.MultiFileDataset):
-    """For HIRS-IASI-Matchups
+    """Class representing HIRS-IASI matchups.
+
+    No functionality is defined here, this is just a thin wrapper around
+    :class:`~typhon.datasets.dataset.MultiFileDataset`.  The only
+    attribute defined here is :attr:`basedir`.
+
     """
+
+    #: Hardcoded location on CEMS where collocation data are stored.
     basedir = "/group_workspaces/cems2/fiduceo/Data/Matchup_Data/IASI_HIRS/W_XX-EUMETSAT-Darmstadt,SATCAL+COLLOC+LEOLEOIR,M02+HIRS+M02+IASI_C_EUMS_20130101005203_20130101001158.nc"
 
 class LUTAnalysis:
-    """Helper class centralising all LUT-related approaches
+    """Class for analysing a lookup table (LUT) approach to HIRS-IASI
+
+    Using a :class:`~pyatmlab.db.LargeFullLookupTable`, try to match a set
+    of HIRS channels to recovery what may be a set of possibly consistent
+    IASI spectra.
     """
                 
     def _get_next_y_for_lut(self, g, sat, channels=range(1, 13)):
         """Helper for get_lookup_table_*
+
+        Parameters
+        ----------
+
+        g : pathlib.Path
+            Granule containing IASI
+        sat : str
+            HIRS satellite name
+        channels : List[int], optional
+            Channels to use, defaults to 1–12
         """
         self.gran = self.iasi.read(g)
         y = self.get_y("specrad_freq")
@@ -310,6 +354,37 @@ class LUTAnalysis:
 
     def get_lookup_table_pca(self, sat, npc=4, x=2.0, channels=range(1,
                              13), make_new=True):
+        """Obtain a PCA-based lookup table
+
+        Get a PCA-based lookup table, either when it's already stored in a
+        directory tree, or by creating one from data.
+
+        Parameters
+        ----------
+
+        sat : str
+            HIRS satellite name
+        npc : int, optional
+            Number of principal components, defaults to 4
+        channels : List[int], optional
+            Channels to use, defaults to 1–12
+        make_new : bool, optional
+            If True, make a new LUT if none exists yet.  If False, raise
+            an exception if none exists yet.  Defaults to True.  NB: if
+            one already exists, it is read from disk even if make_new is
+            True.
+
+        Returns
+        -------
+
+        pyatmlab.db.LargeFullLookupTable
+            Lookup table for this configuration
+
+        See also
+        --------
+
+        get_lookup_table_linear
+        """
         axdata = dict(PCA=dict(
                       npc=npc,
                       scale=x,
@@ -343,6 +418,37 @@ class LUTAnalysis:
 
     def get_lookup_table_linear(self, sat, x=30, channels={2, 5, 8, 9,
                                 11}, make_new=True):
+        """Create a large lookup table in regular space
+
+        Get a lookup table to get from HIRS to IASI, in regular (BT)
+        space.  The lookup table is a
+        :class:`~pyatmlab.db.LargeFullLookupTable`.
+
+        Parameters
+        ----------
+
+        sat : str
+            Name of satellite
+
+        x : int, optional
+            Number of steps in lookup table
+
+        channels : array_like, optional
+            Channels to use in lookup table
+
+        make_new : bool, optional
+            Keep as True.  False is an unconditional NotImplementedError.
+
+        Returns:
+
+        pyatmlab.db.LargeFullLookupTable
+            Lookup table.
+
+        See also
+        --------
+
+        get_lookup_table_pca
+        """
         if not make_new:
             raise NotImplementedError("linear LUT always made new")
         db = None
@@ -366,14 +472,42 @@ class LUTAnalysis:
 
     def get_lookup_table(self, sat, pca=False, x=30, npc=2,
                          channels=range(1, 13), make_new=True):
-        """
-        :param sat: Satellite, i.e. "NOAA18"
-        :param bool pca: Use pca or not.
-        :param x: If not PCA, this is no. of steps per channel.
+        """Get lookup table, PCA or not
+
+        Get a :class:`~pyatmlab.db.LargeFullLookupTable` using either PCA
+        or linear space.
+
+        Parameters
+        ----------
+
+        sat : str
+            Satellite, i.e. "NOAA18"
+        pca : bool, optional
+            Use pca or not.
+        x : int, optional
+            If not PCA, this is no. of steps per channel.
             If PCA, this is the scale; see
-            pyatmlab.db.SmallLookupTable.fromData.
-        :param npc: Only relevant for PCA.  How many PC to use.
+            :class:`~pyatmlab.db.SmallLookupTable.fromData`.
+        npc : int, optional
+            Only relevant for PCA.  How many PC to use.
             Ignored otherwise.
+        channels : array_like, optional
+            What channels to use
+        make_new : bool, optional
+            Make new LUT even if one already exists
+
+        Returns
+        -------
+
+        pyatmlab.db.LargeFullLookupTable
+
+        See also
+        --------
+
+        get_lookup_table_linear
+            Directly get LUT for linear case
+        get_lookup_table_pca
+            Directly get LUT for PCA case
         """
         # construct single ndarray with both tb and radiances, for binning
         # purposes
@@ -409,11 +543,38 @@ class LUTAnalysis:
     lut_slice_test = (1, None, 2)
     #
     def lut_load(self, tbl):
+        """Get LUT from file
+
+        Load a LUT from a directory tree using
+        :class:`pyatmlab.db.LargeFullLookupTable.fromDir`.
+
+        Parameters
+        ----------
+
+        tbl : pathlib.Path
+            Path to directory containing LUT
+
+        Returns
+        -------
+
+        pyatmlab.db.LargeFullLookupTable
+        """
         self.lut = pyatmlab.db.LargeFullLookupTable.fromDir(tbl)
 
     _max = 1000
     def lut_get_spectra_for_channels(self, radiances):
         """For a set of 12 NOAA-18 radiances, lookup LUT spectra
+
+        Parameters
+        ----------
+
+        radiances : array_like
+            Radiances to lookup
+
+        Yields
+        ------
+
+        radiances : array_like
         """
 
         # FIXME: only use the first N until I'm sure about the method
@@ -422,6 +583,12 @@ class LUTAnalysis:
 
     def lut_simulate_all_hirs(self, radiances):
         """For a set of 12 NOAA-18 radiances, simulate other NOAAs
+
+        Parameters
+        ----------
+
+        radiances : array_like
+            Structured or regular ndarray with radiances
         """
         N = 12 # thermal channels only
         if radiances.dtype.fields is None:
@@ -469,6 +636,10 @@ class LUTAnalysis:
         return (cont, delta)
 
     def plot_lut_radiance_delta(self, radiances):
+        """Plot LUT radiance delta
+
+        .. image:: /images/bt-range-lut.png
+        """
         (cont, delta) = self.lut_radiance_delta(radiances)
         for i in range(12):
             x = cont[:, i]
@@ -519,6 +690,19 @@ class LUTAnalysis:
 
         I.e. how frequently do we find 0, 1, 2, ... entries for unseen
         data.
+
+        Parameters
+        ----------
+
+        sat : str
+            Name of satellite
+
+        Returns
+        -------
+
+        radiances : ndarray
+        count : ndarray
+        stats : dict
         """
 
         allrad = []
@@ -574,6 +758,22 @@ class LUTAnalysis:
         return (radiances, numpy.array(count), stats)
 
     def lut_visualise_stats_unseen_data(self, sat="NOAA18"):
+        """Visualise statistics on unseen data
+
+        Makes three plots:
+
+        .. image:: /images/lut-test-hists.png
+
+        .. image:: /images/lut-test-deltahist.png
+
+        .. image:: /images/lut-test-bthist.png
+
+        Parameters
+        ----------
+
+        sat : str
+            Satellite to do this for
+        """
         # Supposes that LUT is already loaded, and thus containing most of
         # the required meta-information.
 
@@ -715,6 +915,16 @@ class LUTAnalysis:
         
 
     def lut_visualise_multi(self, sat="NOAA18"):
+        """Visualise LUT performance for various configurations
+
+        .. image:: /images/lut-test-perf.png
+
+        Parameters
+        ----------
+
+        sat : str
+            Satellite of choice
+        """
 #        basedir = typhon.config.conf["main"]["lookup_table_dir"]
 #        subname = ("large_similarity_db_PCA_ch1,ch2,ch3,ch4,ch5,ch6,"
 #                   "ch7,ch8,ch9,ch10,ch11,ch12_{npc:d}_{fact:.1f}")
@@ -786,12 +996,22 @@ class LUTAnalysis:
         Investigates how sparse a PCA-based binning lookup table is.
         This first calculates PCA 
 
-        :param sat: Satellite to use
-        :param all_n: Number of PCs to use in lookup table.
+        Parameters
+        ----------
+
+        sat : str, optional
+            Satellite to use
+        all_n : list[int], optional
+            Number of PCs to use in lookup table.
             May be an array, will loop through all.
-        :param bin_scale: Scaling factor for number of bins per PC.
+        bin_scales : list[int], optional
+            Scaling factor for number of bins per PC.
             Number of bins is proportional to the fraction of variability
             explained by each PC.
+        channels : list[int], optional
+            What channels to consider
+        nbusy : int, optional
+            Busiest N bins to plot
         """
 
         pca = self.get_pca_channels(sat, channels)
@@ -839,13 +1059,19 @@ class LUTAnalysis:
     def estimate_optimal_channel_binning(self, sat="NOAA18", N=5, p=20):
         """What HIRS channel combi optimises variability?
 
-        :param sat: Satellite to use
-        :param N: Number of channels in lookup table
-        :param p: Number of bins per channel
-
         Note that as this method aims to choose an optimal combination of
         channels using rectangular binning (no channel differences), it
         does not use PCA.  For that, see estimate_pca_density.
+
+        Parameters
+        ----------
+
+        sat : str
+            Satellite to use
+        N : int, optional
+            Number of channels in lookup table
+        p : int, optional
+            Number of bins per channel
         """
         bt = self.get_tb_channels(sat)
         btflat = [bt[..., i].ravel() for i in range(bt.shape[-1])]
@@ -916,6 +1142,8 @@ class IASI_HIRS_analyser(LUTAnalysis):
     _iasi = None
     @property
     def iasi(self):
+        """typhon.datasets.tovs.IASIEPS : IASI instance
+        """
         if self._iasi is None:
             self._iasi = typhon.datasets.tovs.IASIEPS(name="iasinc")
         return self._iasi
@@ -947,6 +1175,16 @@ class IASI_HIRS_analyser(LUTAnalysis):
         self._gran = value
 
     def __init__(self, mode="Viju", usecache=True):
+        """Initialise this
+
+        Parameters
+        ----------
+
+        mode : str
+            How to read L1B.  No clue why the default is "Viju".
+        usecache : bool, optional
+            Read from cache if possible.  Defaults to True.
+        """
         #logger.info("Finding and reading IASI")
         if mode == "iasinc":
             self.iasi = typhon.datasets.tovs.IASIEPS(name="iasinc")
@@ -978,7 +1216,25 @@ class IASI_HIRS_analyser(LUTAnalysis):
         self.dobar = sys.stdout.isatty()
 
     def get_y(self, unit, return_label=False):
-        """Get measurement in desired unit
+        """Get IASI spectra in desired unit
+
+        Parameters
+        ----------
+
+        unit : str
+            Unit to use to get y.  Can be "bt", "specrad_freq", or
+            "specrad_wavenum".
+        return_label : bool, optional
+            Also return a label that may be good for plotting.
+
+        Returns
+        -------
+
+        y : ndarray
+            Spectra in desired unit
+        y_label : str, optional
+            Label for plotting y.  Only returned if ``return_label=True``.
+            
         """
         specrad_wavenum = self.gran["spectral_radiance"]
         if unit.lower() in {"tb", "bt"}:
@@ -997,6 +1253,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
     def get_tb_spectrum(self):
         """Calculate spectrum of brightness temperatures
+
+        Calculate brightness temperature spectra for IASI
+
+        Returns
+        -------
+
+        bt : ndarray
+            Brightness temperature spectra
         """
         specrad_freq = self.get_y(unit="specrad_freq")
 
@@ -1010,7 +1274,36 @@ class IASI_HIRS_analyser(LUTAnalysis):
     @typhon.utils.cache.mutable_cache(maxsize=20)
     def get_L_channels(self, sat, channels=range(1, 13), srfshift=None,
                         specrad_f=None):
-        """Get radiances for channels
+        """Get HIASI radiances for channels
+
+        Get IASI-simulated HIRS radiances for selection of channels.
+
+        Parameters
+        ----------
+
+        sat : str
+            Satellite name
+        channels : array_like, optional
+            Channels for which to get radiances
+        srfshift : Mapping[str, Quantity], optional
+            Spectral shift per channel, as pint quantity so you can pass
+            either in wavelength, frequency, or repetency (=wavenumber)
+        specrad_f : array_like, optional
+            IASI spectral radiances.  If not given, get from
+            :meth:`get_y`.
+
+        Returns
+        -------
+
+        L_chans : (n_p, n_c) ndarray
+            An array with IASI-simulated HIRS-radiances for each spectrum
+            and channel.
+
+        See also
+        --------
+
+        get_tb_channels
+            The same, but returns BTs
         """
         if srfshift is None:
             srfshift = {}
@@ -1037,6 +1330,10 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def get_tb_channels(self, sat, channels=range(1, 13), srfshift=None,
                         specrad_f=None):
         """Get brightness temperature for channels
+
+        Like :meth:`get_L_channels`, but returns BTs.
+
+        Exact same inputs as :meth:get_tb_channels.
         """
         L_chans = self.get_L_channels(sat, channels, srfshift, specrad_f)
 
@@ -1049,6 +1346,30 @@ class IASI_HIRS_analyser(LUTAnalysis):
         return Tb_chans
 
     def get_pca_channels(self, sat, channels=slice(12), ret_y=False):
+        """Get PCA for channels
+
+        Obtain BTs and calculate PCAs.
+
+        Parameters
+        ----------
+
+        sat : str
+            Satellite to use
+        channels : array_like, optional
+            What channels to consider
+        ret_y : bool, optional
+            If False, return only PCAs.  If true, also return brightness
+            temperatures used to obtain them.
+
+        Returns
+        -------
+
+        pca : array_like
+            Principle componetn scores
+        y : array_like, optional
+            Only returned if ``ret_y`` is True, the BTs used to calculate
+            the pcas.
+        """
         bt = self.get_tb_channels(sat)
         bt2d = bt.reshape(-1, bt.shape[2])
         bt2d = bt2d[:, channels]
@@ -1070,7 +1391,33 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def plot_full_spectrum_with_all_channels(self, sat,
             y_unit="Tb", x_quantity="wavelength",
             selection=None, nrows=4):
+        """Plot full IASI spectrum with all HIRS channel SRFs
 
+        Produce a plot with a selection of full IASI spectra, with the
+        nominal SRFs plotted on top of that.  Write result to a file
+        ``iasi_with_hirs_srf...``.
+
+        .. image:: /images/iasi-with-hirs-srfs.png
+
+        Parameters
+        ----------
+
+        sat : str
+            Satellite for which to take the SRFs (IASI is always MetOp-A)
+        y_unit : str, optional
+            Quantity in which to express radiance/brightness temperature.
+            Accepted values as for :meth:`get_y`.
+        x_quantity : str, optional
+            Quantity in which to express the spectrum.  Defaults to
+            "wavelength", may also be "frequency" or "wavenumber"
+            (=repetency).
+        selection : indexer, optional
+            Optionally, only plot a subset of IASI spectra, by passing an
+            indexer (such as an int, slice, or array) here.
+        nrows : int, optional
+            Number of rows over which to spread out the spectral plot.
+            Defaults to 4.
+        """
         (y, y_label) = self.get_y(y_unit, return_label=True)
         if y_unit == "specrad_wavenum":
             y = y.to(rad_u["ir"])
@@ -1140,7 +1487,9 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
     @staticmethod
     def _norm_order(x, y):
-        """Make sure both are increasing
+        """Helper function, make sure both are increasing
+
+        Sorts both by x
         """
 
         ii = numpy.argsort(x)
@@ -1149,7 +1498,37 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def _plot_srf_for_sat(self, sat, ch, srf, x_quantity,
             ax, color, linestyle="solid", shift=0.0*ureg.um,
                 linewidth=1.0, writedata=False):
-        """Plot SRF into axis.
+        """Plot single SRF into axis.
+
+        Helper muthod to plot a single SRF into an axis.
+
+        Parameters
+        ----------
+
+        sat : str
+            Satellite for which to obtain and plot SRF.
+        ch : int
+            Channel number.
+        srf : typhon.physics.units.SRF
+            SRF object to plot
+        x_quantity : str
+            Quantity on x-axis, such as "wavelength", "wavenumber", or
+            "frequency".
+        ax : matplotlib.axes.Axes
+            Instance of :class:`~matplotlib.axes.Axes` in which to plot
+            the SRF.
+        color : str
+            Color to use for spectrum plot.
+        linestyle : str, optional
+            Linestyle to use.
+        shift : quantity, optional
+            Quantity by which the SRF is shifted.  Defaults to 0 µm.
+            Should be a pint ureg quantity.
+        linewidth : float, optional
+            Width of the line.
+        writedata : bool, optional
+            Whether or not to write data to a file in `plotdatadir`.
+            Defaults to False.
         """
         x = srf.frequency.to(self.x["unit"][x_quantity], "sp")
         y = srf.W/srf.W.max()
@@ -1172,7 +1551,27 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     shift={}, linewidth=1.0, writedata=False):
         """For channel `ch` on satellites `sats`, plot SRFs.
 
-        Use axes `ax`.
+        Use axes ``ax``.
+
+        Parameters
+        ----------
+
+        ch : int
+            Channel number
+        sats : list[Str]
+            Satellite names
+        x_quantity : str, optional
+            What quantity on x-axis, can be "wavelength", "frequency", or
+            "wavenumber".
+        ax : axes, optional
+            Matplotlib axes to plot into
+        shift : dict[ch, quantity], optional
+            Shifts applied per channel
+        linewidth : float, optional
+            Linewidth for plotting SRFs
+        writedata : bool, optional
+            Additionally write data to file (for pgfplots), yes/no,
+            defaults to False
         """
 
         for (color, sat) in zip(self.colors, sats):
@@ -1197,7 +1596,20 @@ class IASI_HIRS_analyser(LUTAnalysis):
 #                "SRF_{:s}_ch{:d}_{:s}".format(sat, ch, x_quantity))
 
     def _plot_bts_for_chan(self, ch, sats, x_quantity="wavelength", ax=None):
-        """For channel `ch` on satellites `sats`, plot TBs.
+        """For channel ``ch`` on satellites ``sats``, plot BTs.
+
+        Parameters
+        ----------
+
+        ch : int
+            Channel number
+        sats : list[str]
+            Satellites for which to plot BTs
+        x_quantity : str, optional
+            Quantity to plot it as a function of, such as "wavelength",
+            "frequency", or "wavenumber"
+        ax : axes, optional
+            axes to plot in
 
         """
 
@@ -1220,6 +1632,18 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def _plot_spectra(self, spectra, x_quantity, ax,
                       lineprops={}):
         """Small helper plotting spectra into axis
+
+        Parameters
+        ----------
+
+        ch : int
+            Channel to plot for
+        sats : list[str]
+            Satellites to plot
+        x_quantity : str, optional
+            Quantity on x-axis
+        ax : axes, optional
+            Axes to plot into
         """
         for spectrum in spectra:
             (x, y) = self._norm_order(
@@ -1234,9 +1658,33 @@ class IASI_HIRS_analyser(LUTAnalysis):
                                shift={}, srf_linewidth=1.0,
                                write_srfs=False,
                                spectra_lineprops={}):
-        """For channel `ch`, on satellites `sats`, plot SRFs with spectra.
+        """For channel ``ch``, on satellites ``sats``, plot SRFs with spectra.
 
-        Use axes `ax_spectrum` and ax_srf.
+        Use axes ``ax_spectrum`` and ``ax_srf``.
+
+        Parameters
+        ----------
+
+        ch : int
+            Channel number
+        sats : list[str]
+            Satellites
+        x_quantity : str
+            Quantity on x-axis ("frequency", "wavelength", "wavenumber)
+        spectra : ndarray
+            Spectra to plot
+        ax_spectrum : axes
+            Axes to plot spectrum in
+        ax_srf : axes
+            Axes to plot SRFs in
+        shift : dict[int, quantity], optional
+            amount to shift SRFs by (default: all 0)
+        srf_linewidth : float, optional
+            Linewidth for plotting SRFs
+        write_srfs : bool, optional
+            whether to write SRFs to a file (for plotting with pgfplots)
+        spectra_lineprops : dict, optional
+            Additional line properties for plotting the spectra
         """
 
         self._plot_srfs(ch, sats, x_quantity, ax=ax_srf, shift=shift,
@@ -1249,7 +1697,15 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def _get_freq_range_for_ch(self, ch, sats):
         """In the interest of plotting, get frequency range for channel.
 
-        Considers satellites `sats`
+        Considers satellites ``sats``
+
+        Parameters
+        ----------
+
+        ch : int
+            Channel
+        sats : list[str]
+            Satellites
         """
 
         (freq_lo, freq_hi) = (100*ureg.THz, 0*ureg.Hz)
@@ -1268,6 +1724,20 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def plot_srf_all_sats(self, x_quantity="wavelength", y_unit="TB",
                           selection=None):
         """Plot part of the spectrum with channel SRF for all sats
+
+        .. image:: /images/iasi-with-hirs-srf-ch.png
+
+        Parameters
+        ----------
+
+        x_quantity : str, optional
+            What quantity to use on x-axis.  Defaults to "wavelength", can
+            also be "frequency" or "wavenumber".
+        y_unit : str, optional
+            Quantity/unit for y-axis.  Defaults to "TB" for brightness
+            temperature, can also be "specrad_wavenum" or "specrad_freq".
+        selection : indexer, optional
+            What selection to use.  Defaults to None which means all.
         """
 
         #hirs_srf = {}
@@ -1343,7 +1813,16 @@ class IASI_HIRS_analyser(LUTAnalysis):
         """Plot T_e as a function of T
 
         Based on Weinreb (1981), plot T_e as a function of T.  For
-        details, see pyatmlab.physics.estimate_effective_temperature.
+        details, see
+        :func:`~pyatmlab.physics.estimate_effective_temperature`
+
+        .. image:: /images/bt-te-corrections.png
+
+        Parameters
+        ----------
+
+        sat : str
+            Satellite
         """
         hconf = typhon.config.conf["hirs"]
         (hirs_centres, hirs_srf) = pyatmlab.io.read_arts_srf(
@@ -1373,6 +1852,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
     def plot_channel_BT_deviation(self, sat):
         """Plot BT deviation for mono-/polychromatic Planck
+
+        .. image:: /images/bt-chan-approx.png
+
+        Parameters
+        ----------
+
+        sat : str
+            Satellite
         """
 
         (fig, a) = matplotlib.pyplot.subplots(2, sharex=True)
@@ -1409,9 +1896,21 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         Expects that self.gran is already set.
 
-        :param str satellite: Satellite, i.e., NOAA18
-        :param int channel: Channel, i.e., 11
-        :param ndarray shift: Shift in appropriate unit (through ureg).
+        Parameters
+        ----------
+
+        satellite : str
+            Satellite, i.e., NOAA18
+        channel : int
+            Channel, i.e., 11
+        shift : ndarray
+            Shift in appropriate unit (through ureg)
+
+        Returns
+        -------
+
+        bt : ndarray
+            Shifted BT
         """
 
         y = self.get_y("specrad_freq")
@@ -1454,8 +1953,21 @@ class IASI_HIRS_analyser(LUTAnalysis):
     def plot_bt_srf_shift(self, satellite, channel):
         """Plot BT changes due to SRF shifts
 
-        :param str satellite: Satellite, i.e., NOAA18
-        :param int channel: Channel, i.e., 11
+        Produces a plot like:
+
+        .. image:: /images/bt-srf-shift.png
+
+        and one like:
+
+        .. image:: /images/dbt-srf-shift.png
+
+        Parameters
+        ----------
+
+        satellite : str
+            Satellite, i.e., NOAA18
+        channel : int
+            Channel, i.e., 11
         """
 
         if self.gran is None:
@@ -1505,6 +2017,21 @@ class IASI_HIRS_analyser(LUTAnalysis):
             "srf_shifted_dbt_hist_per_shift_HIRS_{:s}-{:d}.".format(satellite, channel))
 
     def _prepare_map(self):
+        """Helper to prepare a map
+
+        Set up a basemap for those things plotted on map.
+
+        Returns
+        -------
+
+        f : Figure
+            Figure object
+        a : axes
+            Axes object
+        m : map object
+            Mapping axes object within basemap
+        """
+
         f = matplotlib.pyplot.figure(figsize=(12, 8))
         a = f.add_subplot(1, 1, 1)
         m = mpl_toolkits.basemap.Basemap(projection="cea",
@@ -1521,18 +2048,71 @@ class IASI_HIRS_analyser(LUTAnalysis):
         return (f, a, m)
 
     def find_matching_hirs_granule(self, h, satname):
+        """Find matching HIRS granule for satellite
+
+        Find HIRS granule matching the IASI data stored in self.gran.
+
+        Parameters
+        ----------
+
+        h : HIRS
+            Instance of :class:`~typhon.datasets.tovs.HIRS`.
+        satname : str
+            Name of satellite
+
+        Returns
+        -------
+
+        gran : pathlib.Path
+            Path to granule
+        """
+
         dt1 = self.gran["time"].min().astype(datetime.datetime)
         dt2 = self.gran["time"].max().astype(datetime.datetime)
         return next(h.find_granules(dt1, dt2, satname=satname.lower()))
 
     def read_matching_hirs_granule(self, h, satname):
+        """Read matching HIRS granule
+
+        Read HIRS granule that matches data for IASI stored in self.iasi
+
+        Parameters
+        ----------
+
+        h : HIRS
+            :class:`~typhon.datasets.tovs.HIRS` object for which to find it
+        satname : str
+            Satellite name
+
+        Returns
+        -------
+
+        ndarray
+            Structured array as from HIRS.read.
+
+        """
         return h.read(self.find_matching_hirs_granule(h, satname.lower()))
 
     _bt_simul = None
     def map_with_hirs(self, h, satname, c, cmap="viridis"):
         """Plot map with simulated and real HIRS
 
+        .. image:: /images/map-hiasi-hirs.png
+
         Needs hirs object, locates closest granule.
+
+        Parameters
+        ----------
+
+        h : HIRS
+            HIRS object
+        satname : str
+            Satellite name
+        c : int
+            Channel number
+        cmap : str, optional
+            Colormap name, defaults to "viridis".
+
         """
 
         hg = self.read_matching_hirs_granule(h, satname)
@@ -1574,7 +2154,35 @@ class IASI_HIRS_analyser(LUTAnalysis):
             "map_BTHIRS_real_simul_ch{:d}_{:%Y%m%d%H%M%S}.".format(c,dt1))
 
     def map_with_hirs_pca(self, h, satname, cmap="viridis"):
+        """Plot map with HIRS pcas
 
+        Reads HIRS granule corresponding to period in self.iasi and plots
+        BTs and PCAs
+
+        Like this:
+
+        .. image:: /images/pca-weights.png
+
+        And like this:
+
+        .. image:: /images/pca-weights-hiasi.png
+
+        And the difference:
+
+        .. image:: /images/pca-weights-delta.png
+
+        Parameters
+        ----------
+
+        h : HIRS
+            HIRS object
+        satname : str
+            Satellite name
+        c : int
+            Channel number
+        cmap : str, optional
+            Colormap name, defaults to "viridis".
+        """
         dt1 = self.gran["time"].min().astype(datetime.datetime)
         dt2 = self.gran["time"].max().astype(datetime.datetime)
         hg = self.read_matching_hirs_granule(h, satname)
@@ -1652,28 +2260,43 @@ class IASI_HIRS_analyser(LUTAnalysis):
         Structures) to predict N channels on target satellite from N
         channels on reference satellite, using nominal SRFs.
 
-        :param str sat_ref: Reference satellite
-        :param str sat_targ: Target satellite
-        :param ndarray tb_ref:
-        :param ndarray tb_targ:
-        :returns: Differences between test and reference.
+        Parameters
+        ----------
 
-        TODO:
-            - Wold et al. (2001) propose jack-knifing to estimate
-              confidence intervals.  As I understand it, an extension of
-              cross-validation by using N subsets of the training data to
-              make N predictions.  I'm not sure if I understand it.  Needs
-              study and implementation.
-            - It appears results are much better when I disable scaling.
-              They should not be, I don't understand.  Investigate.
-            - It appears I'm not getting any overfitting no matter how
-              large I make n_components.  Odd.
-            - Cross-validation should be incorporated within the fitting
-              procedure, but I don't think sklearn implements this.
-              This would set apart some of the training data to
-              iteratively independently test convergence and stop
-              increasing the no. of components when overfitting occurs.
-            - Until that is implemented, need to choose n_components smartly
+        sat_ref : str
+            Reference satellite
+        sat_targ : str
+            Target satellite
+        tb_ref : ndarray
+            Reference satellite
+        tb_targ : ndarray
+            Target satellite
+
+        Returns
+        -------
+
+        ndarray
+            Differences between test and reference.
+
+
+        Todo
+        ----
+
+        - Wold et al. (2001) propose jack-knifing to estimate
+          confidence intervals.  As I understand it, an extension of
+          cross-validation by using N subsets of the training data to
+          make N predictions.  I'm not sure if I understand it.  Needs
+          study and implementation.
+        - It appears results are much better when I disable scaling.
+          They should not be, I don't understand.  Investigate.
+        - It appears I'm not getting any overfitting no matter how
+          large I make n_components.  Odd.
+        - Cross-validation should be incorporated within the fitting
+          procedure, but I don't think sklearn implements this.
+          This would set apart some of the training data to
+          iteratively independently test convergence and stop
+          increasing the no. of components when overfitting occurs.
+        - Until that is implemented, need to choose n_components smartly
         """
 
         # for some reason I don't understand, results are much better with
@@ -1699,6 +2322,29 @@ class IASI_HIRS_analyser(LUTAnalysis):
                                    selection=None,
                                    chans=range(1, 20),
                                    shift={}):
+        """Plot SRFs in various subplots
+
+        .. image:: /images/iasi-with-hirs-srfs-allbt.png
+
+        Parameters
+        ----------
+
+        sat_ref : str
+            Reference satellite
+        sat_targ : str
+            Target satellite
+        x_quantity : str, optional
+            Quantity x-axis, "wavelength", "frequency", or "wavenumber"
+        y_unit : str, optional
+            Quantity/unit on y-axis, defaults to "Tb", can also be
+            "specrad_wavenum" or "specrad_freq"
+        selection : indexer, optional
+            Selection for IASI data, defaults to None
+        chans : array_like, optional
+            Channels, defaults to all
+        shift : dict[int, quantity], optional
+            Shifts per channel, defaults to no shifts
+        """
         # Plot SRFs for all
         # FIXME: is there a function to choose a smart subplot arragement
         # automagically?
@@ -1761,6 +2407,18 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
     @staticmethod
     def _plot_dtb_hist(dtb, ax_all):
+        """Plot histogram of Δbt
+
+        Helper function to plot histogram of Δbt
+
+        Parameters
+        ----------
+
+        dtb : ndarray
+            delta BT to plot
+        ax_all : axes
+            Axes to plot the deltas in
+        """
         for i in range(12):
             a = ax_all[0 if i<7 else 1]
             a.hist(dtb[:, i], 100, histtype="step",
@@ -1771,6 +2429,22 @@ class IASI_HIRS_analyser(LUTAnalysis):
             a.legend(ncol=2, loc="best")
 
     def plot_hist_expected_Tdiff(self, sat_ref, sat_targ, tb_ref, tb_targ):
+        """Plot histogram of expected ΔT
+
+        .. image:: /images/expected-tdiff.png
+
+        Parameters
+        ----------
+
+        sat_ref : str
+            Reference satellite
+        sat_targ : str
+            Target satellite
+        tb_ref : str
+            Reference BT
+        tb_targ : str
+            Target BT
+        """
         (f, ax_all) = matplotlib.pyplot.subplots(2, 1, figsize=(10,5))
         dtb = tb_targ - tb_ref
         self._plot_dtb_hist(dtb, ax_all)
@@ -1781,6 +2455,20 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
     def plot_hist_pls_perf(self, sat_ref, sat_targ, tb_ref, tb_targ):
         """Plot histograms of PLS performance per channel
+
+        .. image:: /images/pls-performance-tdiff.png
+
+        Parameters
+        ----------
+
+        sat_ref : str
+            Reference satellite
+        sat_targ : str
+            Target satellite
+        tb_ref : str
+            Reference BT
+        tb_targ : str
+            Target BT
         """
         (f, ax_all) = matplotlib.pyplot.subplots(2, 1, figsize=(7,7))
         dtb = self.pls2_prediction_test_pair(sat_ref, sat_targ, tb_ref, tb_targ)
@@ -1797,6 +2485,22 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         Show a 12xN matrix of TB for reference and differences to target.
         Possibly with an SRF-shift.  Same shift applied to all channels.
+
+        .. image:: /images/slice-tb-diff.png
+
+        Parameters
+        ----------
+
+        sat_ref : str
+            Reference satellite
+        sat_targ : str
+            Target satellite
+        srfshift : quantity, optional
+            How much to shift the SRF for
+        N : int, optional
+            How many to plot
+        col : int, optional
+            what column of tb_ref
         """
 
         tb_ref = self.get_tb_channels(sat_ref)
@@ -1842,12 +2546,24 @@ class IASI_HIRS_analyser(LUTAnalysis):
         """Visualise some PLS2 diagnostics
 
         Should show:
+
             - SRFs for channels with underlying spectrum
             - Expected differences between channels for satellite pair
             - (Later) actual differences between channels for satellite
               pair
             - Statistics of PLS2 approximation between channels for
               satellite pair
+
+        Parameters
+        ----------
+
+        sat_ref : str
+            Reference satellite
+        sat_targ : str
+            Target satellite
+        x_quantity : str, optional
+            Quantity x-axis, "wavelength", "frequency", or "wavenumber"
+        y_unit : str, optional
         """
 
         # Commented out just to get to the rest more quickly…
@@ -1883,40 +2599,45 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 *, start1, end1, start2, end2):
         """Helper for calc_srf_estimate_costfunc and others
         
-        See documentation for self.calc_srf_estimate_costfunc.
+        See documentation for :meth:`calc_srf_estimate_costfunc`
 
-        Returns:
+        Returns
+        -------
 
-            y_master (BT or L)
+        y_master : ndarray
 
-                BTs [K] or radiances [rad units] for master: unshifted SRF
-                from same DB as y_target
+            BTs [K] or radiances [rad units] for master: unshifted SRF
+            from same DB as y_target
 
-            y_target (BT or L)
+        y_target : ndarray
 
-                BTs [K] or radiances [rad units] for target: shifted SRF
-                from same DB as y_master
+            BTs [K] or radiances [rad units] for target: shifted SRF
+            from same DB as y_master
 
-            srf0
+        srf0 : SRF
 
-            L_spectral_db
+        L_spectral_db : db
 
-                Full radiance spectra [W/m^2/Hz/sr] for reference
-                database.
+            Full radiance spectra [W/m^2/Hz/sr] for reference
+            database.
 
-            L_full_testing
+        L_full_testing : db
 
-                Full radiance spectra for test dataset
+            Full radiance spectra for test dataset
 
-            freq
+        freq : ndarray
 
-            y_ref (BT or L)
+            Frequencies / wavelengths
 
-                BTs [K] or radiances [rad units] for reference.  Unshifted
-                SRF from different DB.  Corresponds to radiances in
-                L_spectral_db.
+        y_ref : ndarray
 
-            L_master
+            BTs [K] or radiances [rad units] for reference.  Unshifted
+            SRF from different DB.  Corresponds to radiances in
+            L_spectral_db.
+
+        L_master : ndarray
+
+            Master radiances
         """
         sat2 = sat2 or sat
         iasi = typhon.datasets.tovs.IASISub(name="iasisub")
@@ -2062,22 +2783,27 @@ class IASI_HIRS_analyser(LUTAnalysis):
             sat2=None, 
             iasi_frac=0.5, *,
             start1, end1, start2, end2):
-        """Calculate cost function for estimating SRF
+        r"""Calculate cost function for estimating SRF
 
         Construct artificial HIRS measurements with a prescribed SRF
         shift.  Estimate how well we can recover this SRF shift using
         independent data: as a function of attempted SRF shift, calculate
         the cost function.  That is either
+
+        .. math::
         
-            C₁ = A/µ_y**2 * \sum_i^N (y_est,i - y_ref,i)**2 +
-               + N B/λ**2 + dλ**2
+            C_1 = \frac{A}{\mu}_y^2 \cdot \sum_i^N (y_{est,i} - y_{ref,i})^2 +
+               \frac{N B}{\lambda^2} + d\lambda^2
 
         or
 
-            C₂ = \sum_i^N (y_est,i - y_ref,i - <y_est,i - y_ref,i>)**2
+        .. math::
 
-        where A and B are weights, µ_y is the mean brightness temperature,
-        y_est is the BT estimated with attempted SRF shift dλ, y_ref is
+            C_2 = \sum_i^N (y_{est,i} - y_{ref,i} - <y_{est,i} - y_{ref,i}>)^2
+
+        where A and B are weights, :math:`\mu_y` is the mean brightness temperature,
+        :math:`y_{est}` is the BT estimated with attempted SRF shift dλ,
+        :math:`y_{ref}` is
         the reference brightness temperature calculated with reference
         shift, λ is the centroid wavelength for the reference SRF, and dλ
         is the attempted shift.  Returned will be (dλ, C).
@@ -2092,14 +2818,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
         - Set 1 is used to calculate two sets of radiances (brightness
           temperatures): the reference brightness temperature
-          corresponding to the nominal SRF for satellite `sat`, channel
-          `ch`; and a set of radiances when this SRF is shifted by
-          `shift`.  In the real world, this set will come from
+          corresponding to the nominal SRF for satellite ``sat``, channel
+          ``ch``; and a set of radiances when this SRF is shifted by
+          ``shift``.  In the real world, this set will come from
           collocations/matchups rather than from IASI data.
 
         - Set 2 is used to simulate many pairs of radiances.  The
           functionality for this is in
-          `:func:fhmath.calc_rmse_for_srf_shift`.  Assuming an SRF
+          :func:`~FCDR_HIRS.math.calc_rmse_for_srf_shift`.  Assuming an SRF
           shift, it simulates radiances for the nominal and a shifted SRF.
           From this shift, it derives a model predicting shifted-SRF radiances
           from nominal-SRF radiances.
@@ -2117,52 +2843,76 @@ class IASI_HIRS_analyser(LUTAnalysis):
         the correctness of the SRF estimate relies on the similarity of
         the climatology between set2 and set 1.
 
-        Arguments:
+        Parameters
+        ----------
 
-            sat [str]: Name of satellite, such as NOAA19
-            ch [int]: Channel number
-            shift [pint Quantity]: Reference shift, such as 10*ureg.nm.
-            db [str]: Indicates whether how similar set2 should be to
-                set1.  Valid values rare 'same' (identical set), 'similar'
-                (different set, but from same region in time and space),
-                or 'different' (different set).  Default is 'different'.
-            ref [str]: Set to `'single'` if you only want to use a single
-                channel to estimate, or `'all'` if you want to use all.
-            regression_type [scikit-learn regression class]: Class to use for
-                regression.  By defarult, this is
-                sklearn.linear_model.LinearRegression when ref is single,
-                and sklearn.cross_decomposition.PLSRegression, when ref is
-                all.
-            regression_args [tuple]: Default arguments are stored in
-                self._regression_typre.  See sklearn documentation for
-                other possibilities.
-            limits [dict]: Limits applied to training/testing data.  See
-                `:func:typhon.math.array.limit_ndarray`.
-            noise_level [dict]: Noise levels applied to target and master.
-                Dictionary {"target": float, "master": float}.
-            noise_quantity [str]: Add noise in "bt" or "radiance"
-                quantity.
-            noise_units [str]: Add noise in "K" (for bt), in radiance
-                units, or in "relative" units.
-            predict_quantity [str]: Do prediction in "bt" or "radiance"
-                space.
-            A [float]: Weight for cost function component due to radiance
-                differences between reference and attempted SRF.  Defaults
-                to 1 for backward compatibility.
-            B [float]: Weight for cost function component.  Defaults to 0.
+        sat : str
+            Name of satellite, such as NOAA19
+        ch : int:
+            Channel number
+        shift : pint Quantity
+            Reference shift, such as 10*ureg.nm.
+        db : str
+            Indicates whether how similar set2 should be to
+            set1.  Valid values rare 'same' (identical set), 'similar'
+            (different set, but from same region in time and space),
+            or 'different' (different set).  Default is 'different'.
+        ref :str
+            Set to ``'single'`` if you only want to use a single
+            channel to estimate, or ``'all'`` if you want to use all.
+        regression_type : scikit-learn regression class
+            Class to use for regression.  By defarult, this is
+            :class:`sklearn.linear_model.LinearRegression` when ref is single,
+            and :class:`sklearn.cross_decomposition.PLSRegression`, when ref is
+            all.
+        regression_args : tuple
+            Default arguments are stored in
+            self._regression_type. See sklearn documentation for
+            other possibilities.
+        limits : dict
+            Limits applied to training/testing data.  See
+            :func:`~typhon.math.array.limit_ndarray`.
+        noise_level : dict
+            Noise levels applied to target and master.
+            Dictionary {"target": float, "master": float}.
+        noise_quantity : str
+            Add noise in "bt" or "radiance" quantity.
+        noise_units : str
+            Add noise in "K" (for bt), in radiance units, or in "relative" units.
+        predict_quantity : str
+            Do prediction in "bt" or "radiance" space.
+        A : float
+            Weight for cost function component due to radiance
+            differences between reference and attempted SRF.  Defaults
+            to 1 for backward compatibility.
+        B : float
+            Weight for cost function component.  Defaults to 0.
             cost_mode (str): "total" or "anomalies"
-            dλ [ndarray]: values of dλ to try
-            sat2 [str]: Secondary satellite.  This is the satellite on
-                which the channel is for which we wish to estimate the
-                shift.  By default, sat2 equals sat.
-            iasi_frac [float]: Fraction of IASIsub to keep
+        dλ : ndarray
+            values of dλ to try
+        sat2 : str
+            Secondary satellite.  This is the satellite on
+            which the channel is for which we wish to estimate the
+            shift.  By default, sat2 equals sat.
+        iasi_frac : float, optional
+            Fraction of IASIsub to keep
+        start1 : datetime.datetime
+            Beginning of IASI reference data for primary
+        end1 : datetime.datetime
+            End of IASI reference data for primary
+        start2 : datetime.datetime
+            Beginning of IASI reference data for secondary
+        end2 : datetime.datetime
+            End of IASI reference data for primary
 
-        Returns:
+        Returns
+        -------
 
-            (dλ, dy) [(ndarray, ndarray)]: Cost function [no unit] as a
-                function of attempted SRF shift [nm].  Hopefully, this
-                function will have a global minimum corresponding to the
-                actual shift.
+        (dλ, dy) : (ndarray, ndarray)
+            Cost function [no unit] as a
+            function of attempted SRF shift [nm].  Hopefully, this
+            function will have a global minimum corresponding to the
+            actual shift.
         """
         sat2 = sat2 or sat
         (y_master, y_target, srf0, L_spectral_db, L_full_testing, f_spectra,
@@ -2224,7 +2974,15 @@ class IASI_HIRS_analyser(LUTAnalysis):
         visualise the error distribution.  Experience has shown that the
         global minimum does not always recover the correct SRF.
 
-        Arguments are identical as for self.calc_srf_estimate_costfunc.
+        Arguments are identical as for :meth:`calc_srf_estimate_costfunc`.
+
+        Like this:
+
+        .. image:: /images/srf-estimate-errdist-per-localmin.png
+
+        And:
+
+        .. image:: /images/srf-misestimate-bt-prop.png
         """
 
         sat2 = sat2 or sat
@@ -2359,6 +3117,10 @@ class IASI_HIRS_analyser(LUTAnalysis):
                     *,
                     start1, end1, start2, end2):
         """Visualise cost function for SRF minimisation
+
+        Arguments are identical as for :meth:`calc_srf_estimate_costfunc`.
+
+        .. image:: /images/srf-pred-cost-func.png
         """
         sat2 = sat2 or sat
         if regression_type is None:
@@ -2450,37 +3212,75 @@ class IASI_HIRS_analyser(LUTAnalysis):
             hirs_start, hirs_end, start1, start2, end1, end2):
         """Estimate error propagation under SRF recovery.
 
-        Mandatory arguments:
+        sat : str
+            Name of satellite, such as NOAA19
+        ch : int:
+            Channel number
+        shift : pint Quantity
+            Reference shift, such as 10*ureg.nm.
+        db : str
+            Indicates whether how similar set2 should be to
+            set1.  Valid values rare 'same' (identical set), 'similar'
+            (different set, but from same region in time and space),
+            or 'different' (different set).  Default is 'different'.
+        ref :str
+            Set to ``'single'`` if you only want to use a single
+            channel to estimate, or ``'all'`` if you want to use all.
+        regression_type : scikit-learn regression class
+            Class to use for regression.  By defarult, this is
+            :class:`sklearn.linear_model.LinearRegression` when ref is single,
+            and :class:`sklearn.cross_decomposition.PLSRegression`, when ref is
+            all.
+        regression_args : tuple
+            Default arguments are stored in
+            self._regression_type. See sklearn documentation for
+            other possibilities.
+        optimiser_func : func, optional
+            Optimisation function, such as :func:`scipy.optimize.minimize_scalar`.
+        optimiser_args : func, optional
+            Arguments to optimisation function.
+        limits : dict
+            Limits applied to training/testing data.  See
+            :func:`~typhon.math.array.limit_ndarray`.
+        noise_level : dict
+            Noise levels applied to target and master.
+            Dictionary {"target": float, "master": float}.
+        noise_quantity : str
+            Add noise in "bt" or "radiance" quantity.
+        noise_units : str
+            Add noise in "K" (for bt), in radiance units, or in "relative" units.
+        cost_mode : str
+            How to calculate cost function, defaults to "total"
+        N : int
+            defaults to 100
+        predict_quantity : str
+            Do prediction in "bt" or "radiance" space.
+        sat2 : str
+            Secondary satellite.  This is the satellite on
+            which the channel is for which we wish to estimate the
+            shift.  By default, sat2 equals sat.
+        iasi_frac : float, optional
+            Fraction of IASIsub to keep
+        start1 : datetime.datetime
+            Beginning of IASI reference data for primary
+        end1 : datetime.datetime
+            End of IASI reference data for primary
+        start2 : datetime.datetime
+            Beginning of IASI reference data for secondary
+        end2 : datetime.datetime
+            End of IASI reference data for primary
+        hirs_start : datetime.datetime
+            Start of HIRS data
+        hirs_end : datetime.datetime
+            End of HIRS data
 
-            sat
-            ch
-            shift_reference
+        Returns
+        -------
 
-        Optional arguments:
-
-            db
-            ref
-            regression_type
-            regression_args
-            optimiser_func
-            optimiser_args
-            limits
-            noise_level
-            noise_quantity
-            noise_units
-            cost_mode   "total" or "anomalies"
-            N
-            predict_quantity
-            sat2
-            iasi_frac
-
-        Mandatory keyword arguments:
-            start1
-            start2
-            end1
-            end2
-            hirs_start
-            hirs_end
+        bias : quantity
+            Bias in recovery
+        stderr : quantity
+            Standard deviation of difference in recovery
         """
         sat2 = sat2 or sat
         estimates = numpy.empty(shape=(N,), dtype="f4")
@@ -2608,6 +3408,14 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
     def write_channel_locations(self, outfile, channels):
         """Write a LaTeX table with locations for all channels for all satellites
+
+        Parameters
+        ----------
+
+        outfile : str
+            Output file
+        channels : list[int]
+            What channels to write
         """
         with open(outfile, "wt", encoding="ascii") as s:
             s.write(r"\begin{tabular}{r" + "l"*len(channels) + "}\n")
@@ -2640,6 +3448,18 @@ class IASI_HIRS_analyser(LUTAnalysis):
             s.write(r"\end{tabular}" + "\n")
 
     def compare_hiasi_hirs(self, ch=1, start=0):
+        """Plot comparison between HIASI and HIRS
+
+        .. image:: /images/hirs-hiasi-comparison.png
+
+        Parameters
+        ----------
+
+        ch : int
+            Channel
+        start : int
+            Start number where to start with HIRS-IASI matchup files index
+        """
         i = ch - 1
         g = hirs_iasi_matchup.glob("*.nc")
         for k in range(start+1):
@@ -2664,6 +3484,20 @@ class IASI_HIRS_analyser(LUTAnalysis):
 
 
     def plot_expected_range(self, nbins=80, lab="", channels=range(1, 20)):
+        """Plot expected BT range due to SRF range
+
+        .. image:: /images/hirs-radrange.png
+
+        Parameters
+        ----------
+
+        nbins : int, optional
+            Number of bins
+        lab : str, optional
+            Label to add
+        channels : list[int], optional
+            Channel numbers to do
+        """
         # spectral_radiance
         logger.info("Obtaining spectral radiance")
         L_specrad = self.get_y("specrad_freq")
@@ -2702,6 +3536,11 @@ class IASI_HIRS_analyser(LUTAnalysis):
                 "HIRS_{:d}_exp_radrange_{:s}.".format(ch, lab))
 
 def main():
+    """Main function.
+
+    Expect commandline.  See module documentation and :ref:`srf-recovery`.
+    """
+
     p = parse_cmdline()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,

@@ -1,8 +1,9 @@
+.. _cmdline:
 Command-line scripts
 ====================
 
 This is an overview of command-line utilities that are available when
-:doc:`FCDR_HIRS package` has been successfully installed.
+:doc:`FCDR_HIRS` has been successfully installed.
 This page describes a summary of the behaviour of each of the utilities,
 as well as an overview of mandatory and optional command-line flags.
 For each script, you will get the same interview by passing the
@@ -19,6 +20,8 @@ generate\_fcdr
 ^^^^^^^^^^^^^^
 
 Implemented in :mod:`FCDR_HIRS.processing.generate_fcdr`.
+On CEMS there is a job submission script ``submit_all_generate_fcdr.sh``
+that will submit relevant jobs for the entire FCDR.
 
 .. argparse::
     :module: FCDR_HIRS.processing.generate_fcdr
@@ -28,12 +31,37 @@ Implemented in :mod:`FCDR_HIRS.processing.generate_fcdr`.
 Matchup / harmonisation processing
 ----------------------------------
 
+The matchup / harmonisation processing consists of several steps.  
+The actual matchup files are provided by Brockmann Consult / Tom Block.
+Here are a set of scripts that enrich those matchups for the purposes of
+harmonisation:
+
+- First, :ref:`combine-hirs-hirs-matchups` generates one file of enhanced
+  matchup files per day, in the file format defined by Sam Hunt.
+- The same is done by :ref:`combine-hirs-iasi-matchups` for HIRS-IASI
+  matchups.
+- The script :ref:`merge-hirs-harmonisation` merges daily files to larger
+  files, one per pair per channel.  Those are the files that the
+  harmonisation input needs.
+- However, one more iteration is needed, because of filtering.  As
+  outlined in :ref:`how-to-generate`, first we need to generate a set of
+  unfiltered matchups using :ref:`combine-hirs-hirs-matchups`,
+  :ref:`combine-hirs-iasi-matchups`, and :ref:`merge-hirs-harmonisation`,
+  then we need to use :ref:`hirs-inspect-harm-matchups` to generate
+  filters from there, then redo the :ref:`combine-hirs-hirs-matchups` and
+  :ref:`merge-hirs-harmonisation` to create a new set of filtered matchups
+  (hirs-iasi matchups are currently unfiltered).
+
 .. _combine-hirs-hirs-matchups:
 
 combine_hirs_hirs_matchups
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Implemented in :mod:`FCDR_HIRS.processing.combine_matchups`.
+Corresponding job submission script is
+``submit_all_combine_hirs_matchups.sh``.
+This script works together with :ref:`combine-hirs-iasi-matchups` and
+:ref:`merge-hirs-harmonisation`.
 
 .. argparse::
     :module: FCDR_HIRS.processing.combine_matchups
@@ -47,25 +75,26 @@ combine_hirs_iasi_matchups
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Implemented in :mod:`FCDR_HIRS.processing.combine_matchups`.
+Corresponding job submission script is again
+``submit_all_combine_hirs_matchups.sh``.
+The script works together with :ref:`combine-hirs-hirs-matchups` and
+:ref:`merge-hirs-harmonisation`.
 
 .. argparse::
     :module: FCDR_HIRS.processing.combine_matchups
     :func: get_parser_iasi
     :prog: combine_hirs_iasi_matchups
 
-
-write_hirs_harm_meta
-^^^^^^^^^^^^^^^^^^^^
-
-Basic script without command-line arguments, implemented in
-:mod:`FCDR_HIRS.analysis.write_harm_meta`.
-
-.. automodule:: FCDR_HIRS.analysis.write_harm_meta
+.. _merge-hirs-harmonisation:
 
 merge_hirs_harmonisation
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
 Implemented in :mod:`FCDR_HIRS.processing.combine_matchups`.
+Corresponding job submission script is
+``submit_all_merge_hirs_matchups.sh``.
+The script works together with :ref:`combine-hirs-hirs-matchups` and
+:ref:`combine-hirs-iasi-matchups`.
 
 .. argparse::
     :module: FCDR_HIRS.processing.combine_matchups
@@ -83,6 +112,40 @@ Implemented in :mod:`FCDR_HIRS.processing.convert_harm_params`.
     :module: FCDR_HIRS.processing.convert_harm_params
     :func: get_parser
     :prog: convert_hirs_harmonisation_parameters
+
+write_hirs_harm_meta
+^^^^^^^^^^^^^^^^^^^^
+
+Basic script without command-line arguments, implemented in
+:mod:`FCDR_HIRS.analysis.write_harm_meta`.
+
+.. automodule:: FCDR_HIRS.analysis.write_harm_meta
+
+Matchups analysis
+-----------------
+
+.. _inspect-hirs-matchups:
+inspect_hirs_matchups
+^^^^^^^^^^^^^^^^^^^^^
+
+Implemented in :mod:`FCDR_HIRS.analysis.inspect_hirs_matchups`.
+
+.. argparse::
+    :module: FCDR_HIRS.analysis.inspect_hirs_matchups
+    :func: get_parser
+    :prog: inspect_hirs_matchups
+
+.. _hirs-inspect-harm-matchups:
+
+hirs_inspect_harm_matchups
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Implemented in :mod:`FCDR_HIRS.analysis.inspect_hirs_harm_matchups`.
+
+.. argparse::
+    :module: FCDR_HIRS.analysis.inspect_hirs_harm_matchups
+    :func: get_parser
+    :prog: hirs_inspect_harm_matchups
 
 L1B analysis
 ------------
@@ -153,6 +216,8 @@ Implemented in :mod:`FCDR_HIRS.analysis.convert_hirs_l1b_to_nc`.
     :func: get_parser
     :prog: hirs_convert_l1b_to_l1c
 
+.. _srf-recovery:
+
 hirs_iasi_srf_recovery
 ^^^^^^^^^^^^^^^^^^^^^^
 
@@ -166,6 +231,7 @@ Implemented in :mod:`FCDR_HIRS.analysis..hirs_iasi_srf_estimation`.
 FCDR analysis
 -------------
 
+.. _map-field:
 map_hirs_field
 ^^^^^^^^^^^^^^
 
@@ -176,6 +242,7 @@ Implemented in :mod:`FCDR_HIRS.analysis.map`.
     :func: get_parser
     :prog: map_hirs_field
 
+.. _plot-hirs-fcdr:
 plot_hirs_fcdr
 ^^^^^^^^^^^^^^
 
@@ -186,6 +253,7 @@ Implemented in :mod:`FCDR_HIRS.analysis.monitor_fcdr`.
     :func: get_parser
     :prog: plot_hirs_fcdr
 
+.. _summarise-fcdr:
 summarise_hirs_fcdr
 ^^^^^^^^^^^^^^^^^^^
 
@@ -206,6 +274,8 @@ Implemented in :mod:`FCDR_HIRS.analysis.map_single_orbit`.
     :func: get_parser
     :prog: hirs_orbit_map
 
+.. _hirs-logfile-analysis:
+
 hirs_logfile_analysis
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -214,28 +284,6 @@ Basic script without commandline arguments.  Implemented in
 
 .. automodule:: FCDR_HIRS.analysis.logfile_analysis
 
-Matchups analysis
------------------
-
-inspect_hirs_matchups
-^^^^^^^^^^^^^^^^^^^^^
-
-Implemented in :mod:`FCDR_HIRS.analysis.inspect_hirs_matchups`.
-
-.. argparse::
-    :module: FCDR_HIRS.analysis.inspect_hirs_matchups
-    :func: get_parser
-    :prog: inspect_hirs_matchups
-
-hirs_inspect_harm_matchups
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Implemented in :mod:`FCDR_HIRS.analysis.inspect_hirs_harm_matchups`.
-
-.. argparse::
-    :module: FCDR_HIRS.analysis.inspect_hirs_harm_matchups
-    :func: get_parser
-    :prog: hirs_inspect_harm_matchups
 
 Testing algorithms
 ------------------

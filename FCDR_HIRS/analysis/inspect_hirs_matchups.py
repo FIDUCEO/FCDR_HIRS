@@ -1,7 +1,11 @@
 #!/usr/bin/env python3.5
-"""Plot various timeseries for HIRS
+"""Inspect HIRS matchups
 
-Anomalies averaged per orbit.
+This module contains routines inspecting the raw matchups as produced by
+Brockmann Consult.  Normally, it is executed by the script
+:ref:`inspect-hirs-matchups`.  This is distinct from
+:mod:`inspect_hirs_harm_matchups`, which analyses the enhanced matchup
+files produced by :ref:`combine-hirs-hirs-matchups` and friends.
 """
 
 import argparse
@@ -38,7 +42,7 @@ hh = HIRSHIRS()
 
 def get_parser():
     parser = argparse.ArgumentParser(
-        description="Run some checks on BC matchups",
+        description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     choices=["ma", "mb", "n19", "n18", "n17", "n16", "n15", "n14",
@@ -70,7 +74,27 @@ def parse_cmdline():
     return get_parser().parse_args()
 
 class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
+    """Class to analyse sets of HIRS matchups
+
+    This is a subclass of :class:`matchups.HIRSMatchupCombiner`, adding
+    a single method :meth:`plot_channel`, for matchup analysis and visualisation.
+
+    """
     def plot_channel(self, ch):#, prim="n17", sec="n16"):
+        """Plot statistics for HIRS-HIRS matchups for channel
+
+        For a single channel, plot 10 panels of HIRS-HIRS matchup
+        statistics, the top row y vs. x, the bottom row y-x vs x:
+
+        .. image:: /images/hirshirs.png
+
+        Parameters
+        ----------
+
+        ch : int
+            Channel number
+
+        """
         prim = self.prim
         sec = self.sec
         xlab = "HIRS {prim:s}".format(prim=prim.upper())
@@ -191,6 +215,10 @@ class HIRSMatchupInspector(matchups.HIRSMatchupCombiner):
                 self.M["time"][-1].astype(datetime.datetime), ch))
 
 def main():
+    """Main function, expects commandline input.
+
+    See module docstring and :ref:`inspect-hirs-matchups`.
+    """
     p = parse_cmdline()
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,

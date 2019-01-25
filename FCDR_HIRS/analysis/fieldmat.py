@@ -251,8 +251,8 @@ class _SatPlotHelper(metaclass=abc.ABCMeta):
 
         mp : MatrixPlotter
             Instance of :class:`MatrixPlotter`.
-        ax : matplotlib.axes._subplots.AxesSubplot
-            Instance of `matplotlib.axes._subplots.AxesSubplot` in which
+        ax : matplotlib.axes.Axes
+            Instance of :class:`~matplotlib.axes.Axes` in which
             the plot will be placed
         gs : matplotlib.gridspec.GridSpec
             Instance of `matplotlib.gridspec.GridSpec`
@@ -633,13 +633,14 @@ class MatrixPlotter:
 
         This method returns nothing, but after calling this method, the
         data will be stored in the :attr:`M` attribute.
+
         Parameters
         ----------
 
         sat : str
             Name of satellite to read
         from_date : datetime.datetime
-            The `~datetime.datetime` object representing the starting time
+            The `datetime.datetime` object representing the starting time
             to read
         to_date : datetime.datetime
             Like ``from_date`` but describing the final time to read
@@ -696,6 +697,8 @@ class MatrixPlotter:
         around :func:`plot_field_matrix` using temperatures.  Valid
         temperatures are given by the ``temperature_fields`` attribute on
         :class:`typhon.datasets.tovs.HIRS`.
+
+        .. image:: /images/hirs-temp-sdm.png
 
         Parameters
         ----------
@@ -859,6 +862,8 @@ class MatrixPlotter:
         between diferent channels, for a constant calibration position.
         The count anomalies are calculated with :meth:`_get_accnt`.
 
+        .. image:: /images/hirs-noise-by-channel-sdm.png
+
         Parameters
         ----------
 
@@ -909,6 +914,8 @@ class MatrixPlotter:
         effects.  This is calculated by taking the anomaly (from
         :meth:`_get_accnt`) and then correlating those to each other,
         while keeping the calibration position fixed.
+
+        .. image:: /images/hirs-noise-corr-chan.png
 
         Parameters
         ----------
@@ -1012,8 +1019,8 @@ class MatrixPlotter:
 
         S : ndarray
             Channel correlation matrix to be plotted.
-        a : matplotlib.axes._subplots.AxesSubplot
-            Instance of `matplotlib.axes._subplots.AxesSubplot` in which
+        a : matplotlib.axes.Axes
+            Instance of :class:`~matplotlib.axes.Axes` in which
             to plot the matrix.
         channels : array_like
             List or array of numbers representing the channels, this will
@@ -1033,7 +1040,7 @@ class MatrixPlotter:
 
         image : `~matplotlib.image.AxesImage`
             Image as returned by
-            `~matplotlib.axes._subplots.AxesSubplot.imshow`.
+            :method:`~matplotlib.axes.Axes.imshow`
         """
         im = a.imshow(S, cmap="PuOr_r", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
@@ -1066,8 +1073,8 @@ class MatrixPlotter:
 
         S : ndarray
             Channel correlation matrix to be plotted.
-        a : matplotlib.axes._subplots.AxesSubplot
-            Instance of `matplotlib.axes._subplots.AxesSubplot` in which
+        a : matplotlib.axes.Axes
+            Instance of `matplotlib.axes.Axes` in which
             to plot the matrix.
         add_x : bool, optional
             If true, add x-label and tickmarks even if the axes is not the
@@ -1081,7 +1088,7 @@ class MatrixPlotter:
 
         image : `~matplotlib.image.AxesImage`
             Image as returned by
-            `~matplotlib.axes._subplots.AxesSubplot.imshow`.
+            `~matplotlib.axes.Axes.imshow`.
         """
         im = a.imshow(S, cmap="PuOr_r", interpolation="none", vmin=-1, vmax=1)
         im.set_clim([-1, 1])
@@ -1137,6 +1144,8 @@ class MatrixPlotter:
         effects.  This is calculated by taking the anomaly (from
         :meth:`_get_accnt`) and then correlating those to each other,
         while keeping the channel fixed.
+
+        .. image:: /images/hirs-noise-corr-scanpos.png
 
         Parameters
         ----------
@@ -1208,6 +1217,8 @@ class MatrixPlotter:
 
         NB, this is a correlation matrix for the actual temperatures — not
         for their noises.
+
+        .. image:: /images/hirs-temp-corr.png
         
         Parameters
         ----------
@@ -1451,6 +1462,8 @@ class MatrixPlotter:
         Plots lower half for first full month, upper half for last full
         month.  Result written to file.
 
+        .. image:: /images/hirs-noise-corr-chan-allsats.png
+
         Parameters
         ----------
 
@@ -1508,6 +1521,8 @@ class MatrixPlotter:
 
         One set with all satellites as subplots, figure for each channel
         One set with all channels as subplots, figure for each satellite
+
+        .. image:: /images/hirs-noise-corr-scanpos-allsats.png
 
         Parameters
         ----------
@@ -1620,7 +1635,7 @@ def read_and_plot_field_matrices(p):
     ----------
 
     p : argparse.ArgumentParser
-        Parsed `~argparse.ArgumentParser` instance.  The
+        Parsed :class:`~argparse.ArgumentParser` instance.  The
         commandline-arguments determine the behaviour, see
         :ref:`plot-hirs-field-matrix`.
     """

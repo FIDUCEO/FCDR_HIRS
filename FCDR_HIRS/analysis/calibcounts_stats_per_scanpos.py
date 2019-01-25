@@ -100,6 +100,8 @@ def plot_calibcount_stats(h, Mall, channels,
     of space counts per "scan position" as a set of percentiles, into a
     figure with one subplot per channel.
 
+    .. image:: /images/hirs-calib-scanpos.png
+
     Parameters
     ----------
 
@@ -176,14 +178,22 @@ def plot_calibcount_anomaly_examples(h, M, channels, N,
         mode="random", typ="space", anomaly=True):
     """Plot examples of calibcount anomalies
 
-    Plot calibration count anomalies, i.e. the calibration counts minus
+    Plot calibration count values or anomalies, i.e. the calibration counts minus
     the mean calibration count for that cycle.
+
+    Calibration count values example:
+
+    .. image:: /images/space-random-calib.png
+
+    Calibration count anomaly example, with high correlation:
+
+    .. image:: /images/space-highcorr-calib.png
 
     Parameters
     ----------
 
     h : HIRS
-        `~typhon.datasets.tovs.HIRS` object
+        :class:`~typhon.datasets.tovs.HIRS` object
     M : numpy.ndarray
         structured array such as returned by h.read, must contain at
         least counts and info on scantypes
@@ -334,7 +344,7 @@ def read_and_plot_calibcount_stats(sat, from_date, to_date, channels,
 def main():
     """Main function for module
 
-    Expect commandline input.
+    Expects commandline input.
     """
     p = parse_cmdline()
     from_date = datetime.datetime.strptime(p.from_date, p.datefmt)

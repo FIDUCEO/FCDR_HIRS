@@ -91,14 +91,14 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     
     This class contains the core functionality to produce, read, and write
     the HIRS FCDR.  A higher level class building on top of the
-    functionality is in :class:`FCDR_HIRS.processing.generate_fcdr.FCDRGenerator`.
+    functionality is in :class:`~FCDR_HIRS.processing.generate_fcdr.FCDRGenerator`.
     There are three HIRS FCDR classes for the three generations of HIRS
     covered by FIDUCEO, and the user should produce one instance per
     specific instance of HIRS (per satellite).  Each instance covers all
     channels.  To adapt how the actual radiances and uncertainties are
     calculated, adapt methods in this class.  To adapt the more overall
     processing and storage, and to actually process the FCDR, use methods
-    in `FCDR_HIRS.processing.generate_fcdr.FCDRGenerator`.
+    in :class:`~FCDR_HIRS.processing.generate_fcdr.FCDRGenerator`.
 
     The production of the HIRS FCDR works on segments that can be as short
     as one scanline and as long as memory permits.  Along with the segment
@@ -216,7 +216,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         LUTs, correlation lengths and scales, new encodings, correct
         filenames (uppercase satellite names)
     v2.0.0
-    `   jumped to 2.0.0 because I now follow the FCDRTools convention
+        jumped to 2.0.0 because I now follow the FCDRTools convention
 
     """
 
@@ -224,10 +224,10 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     realisations = 100
 
     srfs = None
-    """List of `typhon.physics.units.em.SRF` objects.
+    """List of :class:`~typhon.physics.units.SRF` objects.
 
     Set by `__init__`, after instantiation this attribute will contain a
-    list of SRFs, specifically of `typhon.physics.units.em.SRF` objects.
+    list of SRFs, specifically of :class:`typhon.physics.units.SRF` objects.
     """
 
     #: name of satellite to which this edition of the HIRS FCDR belongs
@@ -244,7 +244,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     read_returns = "xarray" # for NetCDFDataset in my inheritance tree
 
     l1b_base = None
-    """`typhon.dataset.Dataset` : Which dataset is used for reading.
+    """:class:`~typhon.datasets.Dataset` : Which dataset is used for reading.
 
     Value is set by :meth:`__init__` depending an :attr:`read_mode`.
     """
@@ -562,7 +562,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Extract space counts and IWCT counts as `xarray.DataArray`.  This
         is done by searching for lines that are space views, followed by
         lines that are IWCT views, possibly with an ICCT view in-between,
-        in case of HIRS/2 (see the attribute `dist_space_iwct`).  The
+        in case of HIRS/2 (see the attribute :attr:`~HIRS2FCDR.dist_space_iwct`).  The
         space and IWCT views are then each assigned the time coordinates
         corresponding to the space views, thus pretending they were
         calculated at the same time.  The latter ensures coordinates are
@@ -590,9 +590,9 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         Returns
         -------
 
-        `UnitsAwareDataArray`
+        :class:`~typhon.physics.units.tools.UnitsAwareDataArray`
             Space counts
-        `UnitsAwareDataArray`
+        :class:`~typhon.physics.units.tools.UnitsAwareDataArray`
             IWCT counts, but with space counts coordinates
         """
         # xarray.core.array.nputils.array_eq (and array_neq) use the
@@ -683,7 +683,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             Channel for which counts shall be returned and IWCT
             temperature shall be calculated.
 
-        srf : `typhon.physics.units.em.SRF`, optional
+        srf : :class:`typhon.physics.units.SRF`, optional
 
             SRF object used to estimate IWCT.  Optional; if not given
             or None, use the standard SRF for the channel as given by
@@ -1138,11 +1138,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
             Channel that the SRF relates to.
 
-        srf : `typhon.physics.units.em.SRF`, optional
+        srf : :class:`typhon.physics.units.SRF`, optional
 
             SRF used to estimate slope.  Needs to implement the
-            :meth:`typhon.physics.units.em.SRF.blackbody_radiance` method
-            such as :class:`typhon.physics.units.em.SRF`
+            :meth:`typhon.physics.units.SRF.blackbody_radiance` method
+            such as :class:`typhon.physics.units.SRF`
             does.  Optional: if not provided, use standard one.
 
         tuck : bool, optional
@@ -1364,7 +1364,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             calculate the radiance for all channels, use
             `HIRSFCDR.calculate_radiance_all`.
 
-        srf : `typhon.physics.units.em.SRF`, optional
+        srf : :class:`~typhon.physics.units.SRF`, optional
 
             SRF to use.  If not passed, use default, as obtained from
             RTTOV, which is a shift developed by Paul Menzel compared to
@@ -2303,7 +2303,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
             Channel to calibrate.
 
-        srf : `typhon.physics.units.em.SRF`
+        srf : :class:`typhon.physics.units.SRF`
 
             SRF to use for calibrating the channel and converting
             radiances to units of BT.  Optional; if None, use
@@ -3369,7 +3369,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
             Component of measurement equation
 
-        `UncertaintyAwareDataArray`
+        :class:`typhon.physics.units.tools.UnitsAwareDataArray`
 
             Magnitude of total uncertainty due to the aforementioned
             symbol.

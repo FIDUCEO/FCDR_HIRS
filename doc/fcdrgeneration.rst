@@ -1,3 +1,4 @@
+.. _how-to-generate:
 Generating an FCDR
 ------------------
 
@@ -23,12 +24,14 @@ the code is under active development.
    satellites and months to LOTUS.  The script is available from Gerrit,
    on CEMS, or on bitbucket.  You will need to edit it first to update
    paths and such.  It may be added to the FCDR\_HIRS distribution later.
+   For details, see :ref:`generate-fcdr`.
 
 -  (devel) Switch to correct branch, rebase on master, and install.
 
 -  Use the ``hirs_logfile_analysis`` script to study the output of the
    logfiles.  This assumes logfiles of a structure such as generated on
-   CEMS using Gerrits shell scripts.
+   CEMS using Gerrits shell scripts.  For details, see
+   :ref:`hirs-logfile-analysis`.
 
 -  (devel) Switch to correct branch, rebase on master, and install.
 
@@ -37,12 +40,14 @@ the code is under active development.
    ``--without-filters`` flag. This step needs the debug FCDR. An abridged
    debug FCDR is sufficient.  When working on CEMS, the shell script
    ``submit_all_combine_hirs_matchups.sh`` can be edited to submit jobs to
-   LOTUS.
+   LOTUS.  For details, see :ref:`combine-hirs-hirs-matchups`.
+
+-  Do the same for HIRS-IASI, see :ref:`combine-hirs-iasi-matchups`.
 
 -  Combine the small harmonisation files into single big ones per pair
    and channel, using ``merge_hirs_harmonisation``.  On CEMS, the shell
    script ``submit_all_merge_harmonisation_files.sh`` can be edited for job
-   submission.
+   submission.  See :ref:`merge-hirs-harmonisation`.
 
 -  (devel) Switch to correct branch, rebase on master, and install.
 
@@ -50,13 +55,14 @@ the code is under active development.
    by calling ``hirs_inspect_harm_matchups`` with the ``--write-filters``
    flag.  You may want to inspect the resulting plots.  On CEMS, the the
    script ``submit_all_plot_harm_matchups.sh`` can be edited for job
-   submission.
+   submission.  Only works for HIRS-HIRS, not HIRS-IASI.  See :ref:`hirs-inspect-harm-matchups`.
 
 -  (devel) Switch to correct branch, rebase on master, and install.
 
 -  Generate a new harmonisation database, now passing ``--with-filters``
    to ``combine_hirs_hirs_matchups``.  On CEMS you can again use an edited
-   version of ``submit_all_combine_hirs_matchups.sh``.
+   version of ``submit_all_combine_hirs_matchups.sh``.  Only revelant for
+   HIRS-HIRS as there is no 
 
 -  Run ``merge_hirs_harmonisation`` again to generate one file of filtered
    harmonisation input files per sensor pair.  You can again use
@@ -73,7 +79,8 @@ the code is under active development.
 
 -  Write the harmonisation parameters to the Python file ``_harm_defs.py``
    in the git source tree, using the script
-   ``convert_hirs_harmonisation_parameters``.
+   ``convert_hirs_harmonisation_parameters``.  See
+   :ref:`convert-hirs-harmonisation-parameters`.
 
 -  (devel) Switch to correct branch, rebase on master, and install
 
@@ -94,7 +101,8 @@ the code is under active development.
 
 -  Run ``summarise_hirs_fcdr --mode summarise`` and appropriate flags to
    generate summary statistics.  On CEMS, you can edit
-   ``sumbit_all_summarise_fcdr.sh`` for job submission.
+   ``sumbit_all_summarise_fcdr.sh`` for job submission.  See
+   :ref:`summarise-fcdr`.
 
 -  Run ``summarise_hirs_fcdr --mode plot`` and appropriate flags to generate 
    plots.  to generate with 'plot' mode to visualise summarising
@@ -103,7 +111,8 @@ the code is under active development.
 -  For shorter periods of plotting, you can use ``plot_hirs_fcdr`` for
    short time series and ``hirs_orbit_map`` for orbit maps.  You can edit
    the job submission scripts ``submit_all_plot_fcdr_random_orbits.sh``
-   and ``submit_all_plot_fcdr.sh`` for your needs on CEMS.
+   and ``submit_all_plot_fcdr.sh`` for your needs on CEMS.  See
+   :ref:`plot-hirs-fcdr`.
 
 -  Possibly generate yet another set of enhanced matchups, such that we
    can look at matchup-derived statistics on the resulting FCDR.

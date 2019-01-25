@@ -516,7 +516,7 @@ class Effect:
         attribute is used to calculate the inputs to CURUC.
     magnitude : typhon.physics.units.tools.UnitsAwareDataArray
         This will be set to an instance of
-        `UnitsAwareDataArray`, which will
+        :class:`~typhon.physics.units.tools.UnitsAwareDataArray`, which will
         describe the magnitude and the units of the uncertainty.
     correlation_scale : `CorrelationScale`
         This is a `CorrelationScale` namedtuple that is supposed to
@@ -676,7 +676,7 @@ class Effect:
 
         other : Effect
             The other `Effect` that we have a coviarance with.
-        da_ch : `UnitsAwareDataArray`
+        da_ch : :class:`~typhon.physics.units.tools.UnitsAwareDataArray`
             The magnitude of the covariance.
         """
 

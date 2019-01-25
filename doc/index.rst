@@ -11,6 +11,7 @@ Documentation for HIRS FCDR analysis and generation software
    :maxdepth: 6
    :caption: Contents:
 
+   overview
    installation
    scripts
    configuration

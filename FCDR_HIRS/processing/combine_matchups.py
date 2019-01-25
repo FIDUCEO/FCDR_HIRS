@@ -59,7 +59,14 @@ def parse_cmdline_iasi():
 
 def get_parser_merge():
     parser = argparse.ArgumentParser(
-        description="Merge multiple harmonisation files",
+        description=(
+            "Merge multiple harmonisation files. "
+            "Due to the nature of the W-matrix files as defined "
+            "by Sam Hunt, this is not as simple as concatenating "
+            "different NetCDF files along a dimension.  The "
+            "compact sparse matrix (CSR) definition means that "
+            "the values of several data variables need to be "
+            "recalculated upon definition."),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument("files", type=str, nargs="+",
