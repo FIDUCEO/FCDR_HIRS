@@ -37,25 +37,26 @@ def parse_cmdline():
 def plot(sat, start, end):
     h = typhon.datasets.tovs.which_hirs(sat)
     #h15 = typhon.datasets.tovs.HIRS3(satname="noaa15")
-    M15 = h.read_period(
+    M = h.read_period(
         start, end,
-        orbit_filters=[f for f in h.default_orbit_filters
-            if not isinstance(f,
-            (typhon.datasets.filters.HIRSCalibCountFilter,
-             typhon.datasets.filters.PRTTempFilter,
-             typhon.datasets.filters.HIRSFlagger))],
-        reader_args={"calibrate": False},
-        fields=["hrs_qualind", "hrs_linqualflgs", "hrs_chqualflg",
-                "hrs_mnfrqual", "time"])#, "lat", "lon"])
+            orbit_filters=[
+                typhon.datasets.filters.HIRSBestLineFilter(h),
+                typhon.datasets.filters.TimeMaskFilter(h),
+                typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter()],
+        reader_args={"apply_calibration": True}, # False fails
+        fields=list(h.flag_fields) + ["time"])
 
-    ds = h.as_xarray_dataset(M15)
+    ds = h.as_xarray_dataset(M)
 
     perc_all = []
     labels = []
     for fld in ("quality_flags_bitfield", "line_quality_flags_bitfield",
                 "channel_quality_flags_bitfield",
                 "minorframe_quality_flags_bitfield"):
-        da = ds[fld]
+        try:
+            da = ds[fld]
+        except KeyError: # no such field
+            continue
 #        flags = da & xarray.DataArray(da.flag_masks, dims=("flag",))
 #        perc = (100*(flags!=0)).resample("1H", dim="time", how="mean")
 #        for d in set(perc.dims) - {"time", "flag"}:
