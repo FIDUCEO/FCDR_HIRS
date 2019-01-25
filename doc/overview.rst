@@ -3,7 +3,15 @@ Overview of FCDR\_HIRS code
 
 The FCDR\_HIRS code processes L1B measurements from the NOAA CLASS
 archive, analyses the properties of those measurements, and derive the
-FIDUECO HIRS FCDR.  
+FIDUECO HIRS FCDR.  Some of the improvements compared to pre-FIDUCEO work:
+
+- Metrologically traceable uncertainties per datum
+- Error correlation estimates per orbit
+- Consistent measurement equation for entire FCDR
+- Consistent, modern fileformat for entire FCDR
+- Physics-based self-emission model
+- Attempts at harmonisation
+- Fully open-source processing code
 
 Limitations and problems
 ------------------------
@@ -122,3 +130,25 @@ directly in the :mod:`FCDR_HIRS` package, are rather well documented,
 whereas other modules, including all in the :mod:`FCDR_HIRS.processing`
 and some in the :mod:`FCDR_HIRS.analysis` packages, have a lower level of
 documentation with some functions and classes lacking any docstrings.
+
+Validation
+^^^^^^^^^^
+
+Neither the HIRS FCDR brightness temperatures nor its uncertainties have
+currently been validated.  A validated CDR could potentially be used
+to validate the FCDR including both brightness temperatures and
+uncertainties.  Viju John has code that can be used for stability testing.
+
+Causes of delay
+^^^^^^^^^^^^^^^
+
+The HIRS FCDR was originally meant to be delivered in January 2017, but
+remains unfinished in January 2019.  Some of the causes of the delay
+include:
+
+- Initial learning curve
+- Lack of PyGAC equivalent
+- A lot of bad L1B data
+- Difficult harmonisation
+- Difficult self-emission
+- Availability of project partners to contribute to HIRS work
