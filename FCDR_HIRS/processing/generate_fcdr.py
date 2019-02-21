@@ -110,6 +110,10 @@ views, do not write data, await gap filling.
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
 release notes for details on versions used."""
 
+#
+# Modified by J.Mittaz University of Reading
+# 21/02/2910: Fix for incorrect easy fcdr filename timing
+#
 
 import sys
 import pathlib
@@ -747,17 +751,28 @@ class FCDRGenerator:
     def store_piece(self, piece):
         # FIXME: concatenate when appropriate
         for mode in self.modes:
-            fn = self.get_filename_for_piece(piece, fcdr_type=mode)
-            fn.parent.mkdir(exist_ok=True, parents=True)
-            logger.info("Storing to {!s}".format(fn))
-            getattr(self, "store_piece_{:s}".format(mode))(piece, fn)
+# JM 21/02/2019
+# Move this into calls for debug/easy to make sure that the filename
+# matches the time array after transfering debug2easy
+#
+#            fn = self.get_filename_for_piece(piece, fcdr_type=mode)
+#            fn.parent.mkdir(exist_ok=True, parents=True)
+#            logger.info("Storing to {!s}".format(fn))
+#            getattr(self, "store_piece_{:s}".format(mode))(piece, fn)
+            getattr(self, "store_piece_{:s}".format(mode))(piece)
 
-    def store_piece_debug(self, piece, fn):
+    def store_piece_debug(self, piece):
+        fn = self.get_filename_for_piece(piece, fcdr_type='debug')
+        fn.parent.mkdir(exist_ok=True, parents=True)
+        logger.info("Storing to {!s}".format(fn))
         piece.attrs["full_info"] = self.info
         piece.to_netcdf(str(fn))
 
-    def store_piece_easy(self, piece, fn):
+    def store_piece_easy(self, piece):
         piece_easy = self.debug2easy(piece)
+        fn = self.get_filename_for_piece(piece_easy, fcdr_type='easy')
+        fn.parent.mkdir(exist_ok=True, parents=True)
+        logger.info("Storing to {!s}".format(fn))
         piece_easy.attrs["institution"] = "University of Reading"
         piece_easy.attrs["title"] = "HIRS Easy FCDR"
         # already included with add_attributes
@@ -784,7 +799,7 @@ class FCDRGenerator:
             else:
                 raise
 
-    def store_piece_none(self, piece, fn):
+    def store_piece_none(self, piece):
         """Do not store anything!"""
         logger.info("You told me to write nothing.  I will not write "
             f"anything to {fn!s} nor to anywhere else (but I have "
