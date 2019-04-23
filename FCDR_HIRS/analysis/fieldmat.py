@@ -348,7 +348,7 @@ class _SatPlotChCorrmat(_SatPlotHelper):
         self.S_hi = numpy.triu(S, k=1)
         self.lcnt = lcnt
 
-    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, solo=False):
+    def plot_both(self, mp, ax, gs, sat, r, c, ep, lp, solo=False, **extra):
         im = mp._plot_ch_corrmat(
             self.S_low +
             self.S_hi +
@@ -1490,6 +1490,11 @@ class MatrixPlotter:
             ep = period_pairs[sat][0]
             lp = period_pairs[sat][1]
 
+            # somewhere here would need to be a call to
+            # metrology.calc_S_from_CUR — but what C and U to pass if I
+            # have not bookkept them here?  Or need to work from debug
+            # FCDR?  Probably the latter; but then I won't be able to read
+            # a full month... maybe at most a day... need to think!
             self.reset(sat, *ep)
             (S, ρ, ecnt) = self._get_ch_corrmat(channels, noise_typ,
                 calibpos)
@@ -1647,8 +1652,8 @@ def read_and_plot_field_matrices(p):
 #        mp.plot_fft()
 
     if p.plot_all_corr:
-        mp.plot_crosstalk_ffts_all_sats()
-        mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
+#        mp.plot_crosstalk_ffts_all_sats()
+#        mp.plot_pos_corrmat_all_sats(p.noise_typ[0])
         mp.plot_ch_corrmat_all_sats_b(p.channels, p.noise_typ[0], p.calibpos[0])
         return
 
