@@ -110,6 +110,10 @@ views, do not write data, await gap filling.
 VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
 release notes for details on versions used."""
 
+#
+# Modified by J.Mittaz University of Reading
+# 21/02/2910: Fix for incorrect easy fcdr filename timing
+#
 
 import sys
 import pathlib
@@ -178,6 +182,11 @@ def get_parser():
               "writing u_from_x, rad_wn_*, and R_e_alt_* for each variable "
               "in the measurement equation.  This reduces the data volume by over 88%% "
               "compared to the unabridged version."))
+
+    parser.add_argument("--simple_rself", action="store_true",
+        default=False,
+        help=("Use simple linear interpolation of Rself rather than more "
+              "complex temperature based interpolation"))
 
     return parser
 def parse_cmdline():
@@ -277,7 +286,19 @@ class FCDRGenerator:
     dd = None
     # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes, no_harm=False,
-            abridged=False):
+            abridged=False,simple_rself_model=True):
+        """Main module to generate FCDR for satellite and period
+        
+This module contains the high level classes and function to
+generate the HIRS FCDR for a particular satellite and period.
+When used as a commandline function, the full list of options
+is shown by calling
+
+generate_fcdr --help
+
+This module defines a single class that is designed to be used
+externally, FCDRGenerator.
+"""
         logger.info("Preparing to generate FCDR for {sat:s} HIRS, "
             "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. "
             "Software:".format(
@@ -294,19 +315,340 @@ class FCDRGenerator:
         self.abridged = abridged
         if no_harm:
             self.data_version += "_no_harm"
-
+        #
+        # Modified JMittaz to add in calibration counts filtering
+        #
         orbit_filters=[
 #                typhon.datasets.filters.FirstlineDBFilter(
 #                    self.fcdr,
 #                    self.fcdr.granules_firstline_file),
+                typhon.datasets.filters.HIRSCountFilter(self.fcdr,\
+                                                            self.fcdr.filter_calibcounts,\
+                                                            self.fcdr.filter_earthcounts)]
+
+DATA_CHANGELOG="""
+0.1
+
+First version with seperate random and systematic uncertainty.
+
+0.2
+
+Added brightness temperatures (preliminary).
+Fixed some bugs.
+
+0.3
+
+Added Metop-B
+Changed propagation uncertainty to BT from analytical to numerical
+Higher precision in debug version
+Removed some fields we will not use (easy)
+
+0.4
+
+Fixed bug in too large uncertainty on SRFs, in particular for
+small-wavelength channels
+Renamed systematic to nonrandom
+Improved storage for coordinates and other values (debug+easy)
+Applied encodings and dtypes for easy
+
+0.5
+
+Variable attributes were missing in easy FCDR.
+Added support for HIRS/2.
+Added starting time to global attributes.
+Less verbose global attributes.
+Added LUT betwen BT and L.
+Added channel correlation matrix.
+Ensure enough significant digits for uncertainties.
+Added typical nonrandom correlation scale.
+Improved coordinates.
+Renamed angles.
+Changed filename structure to follow FIDUCEO standard.
+
+0.6
+
+Change estimate for ε=1 to ε=0.98 (or rather, a_3=0 to a_3=-0.02)
+Added bias term a_4 (debug only)
+Added handling of flags
+
+0.7
+
+Correct time axis for uncertainties per calibration cycle, preventing half
+the values being nans (debug version only)
+
+Fix bug which caused random uncertainty on Earth counts to be estimated a
+factor √48 too low.
+
+Fix bug which caused both random and nonrandom uncertainty to be
+incorrectly propagated from radiance to brightness temperature space, see
+#134
+
+Handle many more forms of problematic data, leading to a more complete
+dataset.
+
+Changed approach to self-emission:
+- use more temperatures for prediction, to be precise, use all
+  temperatures that are available for all HIRS
+- use ordinary least squares rather than partial least squares
+- detect and flag cases of gain change, and use old model in this case
+- keep track of times used to train self-emission using a 2-D (channel,
+  time) coordinate for two fields (start, end).  Has to be 2-D because
+  self-emission might fail for some channels but not others.
+
+Changed approach to flags:
+- Still copy over flags, but do not set corresponding data fields to nan
+- Copy over/consolidate mirror flag.  Since the easy FCDR does not contain
+  a flag per minor frame, the entire scanline is flagged if there is any
+  mirror flag for any minor frame anywhere on the scanline.
+- Added more flags to both easy and debug versions
+
+0.8
+
+Overlap between subsequent granules are now selected based on "best
+scanline" criterion, rather than always the oldest (GH#7).
+
+Add missing months January-February 1985 for NOAA-7 (reported by MS).
+
+Fix encoding for radiances in debug version.
+
+Added correlation length scales and channel error correlations, according
+to recipes developed by Merchant et al (GH #212, #228).
+
+Use harmonisation for some channels.
+
+Use shifted SRFs, obtained from RTTOV.
+
+When no channels can be successful at all because there are no calibration
+views, do not write data, await gap filling.
+
+0.9 JMittaz
+
+Added extra filtering on the counts and a simplified self emission model (linear
+in time between calibration lines)
+
+"""
+
+VERSION_HISTORY_EASY="""Generated from L1B data using FCDR_HIRS.  See
+release notes for details on versions used."""
+
+#
+# Modified by J.Mittaz University of Reading
+# 21/02/2910: Fix for incorrect easy fcdr filename timing
+#
+
+import sys
+import pathlib
+#pathlib.Path("/dev/shm/gerrit/cache").mkdir(parents=True, exist_ok=True)
+from .. import common
+import argparse
+import subprocess
+import warnings
+import functools
+import operator
+import enum
+import types
+import logging
+
+import pkg_resources
+import datetime
+
+import numpy
+import pandas
+import xarray
+import isodate
+import typhon.datasets.dataset
+import typhon.datasets.filters
+from typhon.physics.units.common import radiance_units as rad_u
+from typhon.physics.units.tools import UnitsAwareDataArray as UADA
+from .. import fcdr
+from .. import models
+from .. import effects
+from .. import measurement_equation as me
+from .. import _fcdr_defs
+from .. import metrology
+
+import fiduceo.fcdr.writer.fcdr_writer
+
+logger = logging.getLogger(__name__)
+
+def get_parser():
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser = common.add_to_argparse(parser,
+        include_period=True,
+        include_sat=1,
+        include_channels=False,
+        include_temperatures=False)
+
+    parser.add_argument("modes", action="store", type=str,
+        nargs="+", choices=["easy", "debug", "none"],
+        help="What FCDR(s) to write?")
+
+    parser.add_argument("--days", action="store", type=int,
+        default=0,
+        metavar="N",
+        help=("If non-zero, generate only first N days of each month. "
+            "Use this to reduce data volume for debug version but "
+            "still have data throughout lifetime."))
+
+    parser.add_argument("--no-harm", action="store_true",
+        default=False,
+        help='Run without harmonisation.  Will had "_noharm" to version.')
+
+    parser.add_argument("--abridged", action="store_true",
+        default=False,
+        help=("For debug version, write abridged version.  If true, skip "
+              "writing u_from_x, rad_wn_*, and R_e_alt_* for each variable "
+              "in the measurement equation.  This reduces the data volume by over 88%% "
+              "compared to the unabridged version."))
+
+    parser.add_argument("--simple_rself", action="store_true",
+        default=False,
+        help=("Use simple linear interpolation of Rself rather than more "
+              "complex temperature based interpolation"))
+
+    return parser
+def parse_cmdline():
+    return get_parser().parse_args()
+
+class FCDRGenerator:
+    """Main class containing high-level functionality for FCDR generation
+
+    The FCDRGenerator class contains high level methods for the generation
+    of the HIRS FCDR.  Typical use to generate the FCDR for a particular
+    period is::
+
+        fgen = FCDRGenerator("noaa15",
+            datetime.datetime(2003, 1, 1),
+            datetime.datetime(2003, 2, 1),
+            ["easy", "debug"],
+            no_harm=True)
+        fgen.process()
+
+    The first line creates an FCDRGenerator object.  The second line then
+    processes the FCDR for the indicated period.  Attributes on the
+    FCDRGenerator object and its sub-objects describe the properties of
+    where all of this ends up or how it is stored.  Some of those
+    attributes are:
+
+    Attributes
+    ----------
+
+    epoch : datetime.datetime
+        Times will be stored in seconds since this instant.  Defaults
+        to 1970-01-01, which is the Unix epoch.  Note that times are
+        stored with an add_offset corresponding to the beginning of
+        the orbit, so the actual numbers in the file are much smaller
+        and can easily fit in 32 bit (they could even fit in 16 bit).
+
+    window_size : datetime.timedelta
+        L1B data is read in chunks of this size, which defaults to 24
+        hours.  This is a sliding window "context" which slides by
+        steps corresponding to step_size.  The context may be used by
+        various models such as the self-emission model or a model that
+        determines the calibration coefficients for the first lines of
+        the processed data.
+
+    segment_size : datetime.timedelta
+        Size of segments which are processed at once.  Defaults to 6
+        hours.
+
+    step_size : datetime.timedelta
+
+    skip_problem_step : datetime.timedelta
+        Not currently in use.  Formerly used to jump when I couldn't
+        resolve a problem at some point.
+
+    data_version : str
+        Data version.
+
+    rself_temperatures : List[str]
+        Temperatures to use in self-emission model.
+
+    rself_regr : tuple
+        Arguments to be used for self-emission model.
+
+    orbit_filters : list
+
+        Do not set.  This is set in __init__, and defines what filters
+        are applied to each orbit upon reading L1B data.
+
+    pseudo_fields : list
+
+    max_debug_corr_length : int
+
+    """
+    # for now, step_size should be smaller than segment_size and I will
+    # only store whole orbits within each segment
+    epoch = datetime.datetime(1970, 1, 1, 0, 0, 0)
+    window_size = datetime.timedelta(hours=24)
+    segment_size = datetime.timedelta(hours=6)
+    step_size = datetime.timedelta(hours=4)
+    skip_problem_step = datetime.timedelta(seconds=900)
+    data_version = "0.8rc1"
+    # see comment in models.Rself
+    rself_temperatures = ["baseplate", "internal_warm_calibration_target",
+        "scanmirror", "scanmotor", "secondary_telescope"]
+    # 2017-07-14 GH: Use LR again, seems to work better than PDR although
+    # I don't know why it should.
+    rself_regr = ("LR", {"fit_intercept": True})
+    orbit_filters = None # set in __init__
+    pseudo_fields = {
+        "filename":
+            lambda M, D, H, fn: numpy.full(M.shape[0], pathlib.Path(fn).stem)}
+    abridged = False
+
+    # maximum number of correlation length to store in single FCDR debug
+    # file.  For the easy, it's N//2 where N is length of orbit.
+    max_debug_corr_length = 1000
+
+    dd = None
+    # FIXME: use filename convention through FCDRTools, 
+    def __init__(self, sat, start_date, end_date, modes, no_harm=False,
+            abridged=False,simple_rself_model=True):
+        logger.info("Preparing to generate FCDR for {sat:s} HIRS, "
+            "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. "
+            "Software:".format(
+            sat=sat, start=start_date, end_time=end_date))
+        pr = subprocess.run(["pip", "freeze"], stdout=subprocess.PIPE)
+        info = pr.stdout.decode("utf-8")
+        logger.info(info)
+        self.info = info
+        self.satname = sat
+        self.fcdr = fcdr.which_hirs_fcdr(sat, read="L1B", no_harm=no_harm)
+        self.fcdr.my_pseudo_fields.clear() # suppress pseudo fields radiance_fid, bt_fid here
+        self.start_date = start_date
+        self.end_date = end_date
+        self.abridged = abridged
+        if no_harm:
+            self.data_version += "_no_harm"
+        #
+        # Modified JMittaz to add in calibration counts filtering
+        #
+        orbit_filters=[
+#                typhon.datasets.filters.FirstlineDBFilter(
+#                    self.fcdr,
+#                    self.fcdr.granules_firstline_file),
+                typhon.datasets.filters.HIRSCountFilter(self.fcdr,\
+                                                            self.fcdr.filter_calibcounts,\
+                                                            self.fcdr.filter_earthcounts),
                 typhon.datasets.filters.HIRSBestLineFilter(self.fcdr),
                 typhon.datasets.filters.TimeMaskFilter(self.fcdr),
                 typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter()]
         self.orbit_filters = orbit_filters
 
-        self.rself = models.RSelfTemperature(self.fcdr,
-            temperatures=self.rself_temperatures,
-            regr=self.rself_regr)
+        if simple_rself_model:
+            self.rself=\
+                    models.RSelfInterpolate(self.fcdr,\
+                                                temperatures=\
+                                                self.rself_temperatures)
+        else:
+            self.rself = \
+                models.RSelfTemperature(self.fcdr,
+                                        temperatures=self.rself_temperatures,
+                                        regr=self.rself_regr)
         self.modes = modes
 
     def process(self, start=None, end_time=None):
@@ -747,17 +1089,27 @@ class FCDRGenerator:
     def store_piece(self, piece):
         # FIXME: concatenate when appropriate
         for mode in self.modes:
-            fn = self.get_filename_for_piece(piece, fcdr_type=mode)
-            fn.parent.mkdir(exist_ok=True, parents=True)
-            logger.info("Storing to {!s}".format(fn))
-            getattr(self, "store_piece_{:s}".format(mode))(piece, fn)
+# JM 21/02/2019
+# Move this into calls for debug/easy to make sure that the filename
+# matches the time array after transfering debug2easy
+#
+#            fn = self.get_filename_for_piece(piece, fcdr_type=mode)
+#            fn.parent.mkdir(exist_ok=True, parents=True)
+#            logger.info("Storing to {!s}".format(fn))
+#            getattr(self, "store_piece_{:s}".format(mode))(piece, fn)
+            getattr(self, "store_piece_{:s}".format(mode))(piece)
 
-    def store_piece_debug(self, piece, fn):
+    def store_piece_debug(self, piece):
+        fn = self.get_filename_for_piece(piece, fcdr_type='debug')
+        fn.parent.mkdir(exist_ok=True, parents=True)
+        logger.info("Storing to {!s}".format(fn))
         piece.attrs["full_info"] = self.info
         piece.to_netcdf(str(fn))
 
-    def store_piece_easy(self, piece, fn):
-        piece_easy = self.debug2easy(piece)
+    def store_piece_easy(self, piece):
+        fn = self.get_filename_for_piece(piece_easy, fcdr_type='easy')
+        fn.parent.mkdir(exist_ok=True, parents=True)
+        logger.info("Storing to {!s}".format(fn))
         piece_easy.attrs["institution"] = "University of Reading"
         piece_easy.attrs["title"] = "HIRS Easy FCDR"
         # already included with add_attributes
@@ -784,7 +1136,7 @@ class FCDRGenerator:
             else:
                 raise
 
-    def store_piece_none(self, piece, fn):
+    def store_piece_none(self, piece):
         """Do not store anything!"""
         logger.info("You told me to write nothing.  I will not write "
             f"anything to {fn!s} nor to anywhere else (but I have "
@@ -1085,7 +1437,8 @@ def main():
             datetime.datetime.strptime(p.to_date, p.datefmt),
             p.modes,
             no_harm=p.no_harm,
-            abridged=p.abridged)
+            abridged=p.abridged,
+            simple_rself_model=p.simple_rself)
         fgen.process()
     else:
         dates = pandas.date_range(p.from_date, p.to_date, freq="MS")
