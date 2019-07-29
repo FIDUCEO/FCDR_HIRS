@@ -266,16 +266,21 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
     calibfilter = filters.IQRCalibFilter()
 
     #: Filter to use for Earth counts
-    filter_earthcounts = typhon.datasets.filters.MEDMAD(5)
+    filter_earthcounts = typhon.datasets.filters.MEDMAD(5,hirs=True,\
+                                                            calibration_data=False,\
+                                                            prt=False)
 
     #: Filter to weed out unlikely cold Earth scenes (colder than space)
     filter_coldearth = filters.ImSoColdFilter()
 
     #: Filter to use for PRT counts
-    filter_prtcounts = typhon.datasets.filters.MEDMAD(5)
+    filter_prtcounts = typhon.datasets.filters.MEDMAD(5,prt=True,hirs=True,\
+                                                          calibration_data=False)
 
     #: Filter to use for calibration counts, based on MEDMAD
-    filter_calibcounts = typhon.datasets.filters.MEDMAD(5)
+    filter_calibcounts = typhon.datasets.filters.MEDMAD(5,hirs=True,\
+                                                            calibration_data=\
+                                                            True,prt=False)
 
     ε = 0.98
     """Assumed reference emissivity for the IWCT
@@ -422,7 +427,8 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         This method is designed to provide basic interpolation of the calibration
         parameters slope and offset between calibration parameters.  If
         you are using a self-emission model, you probably want to use
-        ``kind="zero"``, as to not double-count self-emission.
+        ``kind="zero"``, as to not double-count self-emission. Note that this
+        interpolates at a constant value as we need
 
         Although designed between calibration parameters, it is really
         just a wrapper around `scipy.interpolate.interp1d` so it can be
@@ -832,14 +838,24 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
         # self.estimate_noise although there is some code duplication.
         # Here, we only use real calibration lines, where both space and
         # earth views were successful.
-        counts_space_adev = typhon.math.stats.adev(counts_space, "scanpos")
+        counts_space_adev, Ndata = \
+            typhon.math.stats.adev(counts_space, "scanpos",outN=True)
+        
+        #
+        # Divide by SQRT of number of elements on the scanline as for space 
+        # (and IWCT etc.) the data are averaged
+        #
+        # Account for missing data
+        # Get names of other dimenstions to loop round
+        # Note make sure missing data are dealt with correctly via Ndata
         u_counts_space = (counts_space_adev /
-            numpy.sqrt(counts_space.shape[1]))
+            numpy.sqrt(Ndata.values))
         if tuck:
             self._tuck_effect_channel("C_space", u_counts_space, ch)
 
-        counts_iwct_adev = typhon.math.stats.adev(counts_iwct, "scanpos")
-        u_counts_iwct = (counts_iwct_adev / numpy.sqrt(counts_iwct.shape[1]))
+        counts_iwct_adev, Ndata = \
+            typhon.math.stats.adev(counts_iwct, "scanpos",outN=True)
+        u_counts_iwct = (counts_iwct_adev / numpy.sqrt(Ndata.values))
         if tuck:
             # before 'tucking', I want to make sure the time coordinate
             # corresponds to the calibration cycle, i.e. the same as for
@@ -1114,7 +1130,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             naive=False,
             include_emissivity_correction=True, 
             include_nonlinearity=True,
-            accept_nan_for_nan=False):
+            accept_nan_for_nan=True):
         """Calculate offset and slope.
 
         From a segment of L1B data, calculate the offset and the slope for
@@ -1719,54 +1735,119 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
 
 
             if has_Rself:
-                # we do have a working self-emission model, probably
-                interp_offset = interp_offset_modes["zero"]
-                (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
-                (X, Y_pred) = Rself_model.evaluate(ds, ch)
-                # Y_pred is rather the offset than the self-emission
-                Rself = interp_offset.isel(time=views_Earth) - Y_pred#.sel(time=views_Earth["time"].isel(time=views_Earth))
+                if Rself_model.name == "Gerrit_Self_Emission":
+                    # we do have a working self-emission model, probably
+                    # This is Gerrit's temperature dependent self 
+                    # emission model
+                    interp_offset = interp_offset_modes["zero"]
+                    (Xt, Y_reft, Y_predt) = Rself_model.test(context, ch)
+                    (X, Y_pred) = Rself_model.evaluate(ds, ch)
+                    # Y_pred is rather the offset than the self-emission
+                    Rself = interp_offset.isel(time=views_Earth) - Y_pred#.sel(time=views_Earth["time"].isel(time=views_Earth))
                 #Rself = (interp_offset - Y_pred).isel(time=views_Earth)
-                Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
-                    "RselfIWCT = Rselfspace = 0.")
-                Rself.attrs["model_info"] = str(Rself_model).replace("\n", " ")
-                RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
-                        coords=offset["time"].coords,
-                        attrs={**Rself.attrs,
-                               "note": "Rself is implemented as ΔRself in pre-β",
-                               })
-                Rself_start = xarray.DataArray(
-                    [Rself_model.fit_time[0]],
-                    dims=["time_rself"])
-                Rself_end = xarray.DataArray(
+                    Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
+                                           "RselfIWCT = Rselfspace = 0.")
+                    Rself.attrs["model_info"] = str(Rself_model).replace("\n", " ")
+                    RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
+                                                  coords=offset["time"].coords,
+                                                  attrs={**Rself.attrs,
+                                                           "note": "Rself is implemented as ΔRself in pre-β",
+                                                           })
+                    Rself_start = xarray.DataArray(
+                        [Rself_model.fit_time[0]],
+                        dims=["time_rself"])
+                    Rself_end = xarray.DataArray(
                         [Rself_model.fit_time[1]],
                         dims=["time_rself"])
-                Rself = Rself.assign_coords(
-                    Rself_start=xarray.DataArray(
-                        numpy.tile(Rself_start, Rself.shape[0]),
-                        dims=("time",),
-                        coords={"time": Rself.time}),
-                    Rself_end=xarray.DataArray(
-                        numpy.tile(Rself_end, Rself.shape[0]),
-                        dims=("time",),
-                        coords={"time": Rself.time}))
-                u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
-                    keep_attrs=True, dim="time"))
-
-                T_outliers = functools.reduce(
+                    Rself = Rself.assign_coords(
+                        Rself_start=xarray.DataArray(
+                            numpy.tile(Rself_start, Rself.shape[0]),
+                            dims=("time",),
+                            coords={"time": Rself.time}),
+                        Rself_end=xarray.DataArray(
+                            numpy.tile(Rself_end, Rself.shape[0]),
+                            dims=("time",),
+                            coords={"time": Rself.time}))
+                    u_Rself = numpy.sqrt(((Y_reft - Y_predt)**2).mean(
+                            keep_attrs=True, dim="time"))
+                    
+                    T_outliers = functools.reduce(
                         operator.or_,
                         [self.filter_prttemps.filter_outliers(
-                            ds[k].values.mean(-1).mean(-1)
-                            if ds[k].values.ndim==3
-                            else ds[k].values)
-                        for k in X.data_vars.keys()])
+                                ds[k].values.mean(-1).mean(-1)
+                                if ds[k].values.ndim==3
+                                else ds[k].values)
+                         for k in X.data_vars.keys()])
+                    
+                    T_outliers = xarray.DataArray(
+                        T_outliers,
+                        dims=("time",),
+                        coords={"time": ds["time"]})
+                    
+                    self._flags["scanline"][{"scanline_earth":
+                                                 T_outliers.sel(time=C_Earth["time"]).values}] |= (
+                        _fcdr_defs.FlagsScanline.DO_NOT_USE |
+                        _fcdr_defs.FlagsScanline.BAD_TEMP_NO_RSELF
+                        )
+                elif Rself_model.name == "Linear_Interpolation_by_time":
+                    # JMittaz
+                    # Note that we have to give interplated slope and offset
+                    # to self emission model as this is what the measurement
+                    # equation uses. This is not actually a correct model
+                    # of the instrument and self emission and seems 
+                    # inconsistent with the available FIDUCEO HIRS documentation
+                    # One other difference - u_Rself is now calculated 
+                    # scanline by scanline when within calibration cycles
+                    # (not necessarily constant). Note sure how this works
+                    # with code below
+                    (rself_time, X, Rself, uRself) = \
+                        Rself_model.evaluate(ds, ch)
 
-                T_outliers = xarray.DataArray(
-                    T_outliers,
-                    dims=("time",),
-                    coords={"time": ds["time"]})
-
-                self._flags["scanline"][{"scanline_earth":
-                    T_outliers.sel(time=C_Earth["time"]).values}] |= (
+                    u_Rself = UADA(numpy.array([uRself]),\
+                                       dims=["time_rself"],\
+                                       attrs={**Rself.attrs})
+                    Rself.attrs["note"] = ("Implemented as ΔRself in pre-β. "
+                                           "RselfIWCT = Rselfspace = 0.")
+                    Rself.attrs["model_info"] = str(Rself_model).replace("\n", " ")
+                    RselfIWCT = Rselfspace = UADA(numpy.zeros(shape=offset["time"].shape),
+                                                  coords=offset["time"].coords,
+                                                  attrs={**Rself.attrs,
+                                                           "note": "Rself is implemented as ΔRself in pre-β",
+                                                           })
+                    Rself_start = xarray.DataArray(
+                        [rself_time[0]],
+                        dims=["time_rself"])
+                    Rself_end = xarray.DataArray(
+                        [rself_time[1]],
+                        dims=["time_rself"])
+                    Rself = Rself.assign_coords(
+                        Rself_start=xarray.DataArray(
+                            numpy.tile(Rself_start, Rself.shape[0]),
+                            dims=("time",),
+                            coords={"time": Rself.time}),
+                        Rself_end=xarray.DataArray(
+                            numpy.tile(Rself_end, Rself.shape[0]),
+                            dims=("time",),
+                            coords={"time": Rself.time}))
+                    #
+                    # Bad uRself when some/all of Ts are bad
+                    # denote these are bad Ts 
+                    #
+                    T_outliers = functools.reduce(
+                        operator.or_,
+                        [self.filter_prttemps.filter_outliers(
+                                ds[k].values.mean(-1).mean(-1)
+                                if ds[k].values.ndim==3
+                                else ds[k].values)
+                         for k in X.data_vars.keys()])
+                    
+                    T_outliers = xarray.DataArray(
+                        T_outliers,
+                        dims=("time",),
+                        coords={"time": ds["time"]})
+                    
+                    self._flags["scanline"][{"scanline_earth":
+                                                 T_outliers.sel(time=C_Earth["time"]).values}] |= (
                         _fcdr_defs.FlagsScanline.DO_NOT_USE |
                         _fcdr_defs.FlagsScanline.BAD_TEMP_NO_RSELF
                         )
@@ -1774,7 +1855,7 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 # we don't have a working self-emission model.  Take
                 # self-emission as an interpolation between adjecent
                 # calibration cycles, and include an uncertainty corresponding
-                # to the difference between linear and zero-order
+                # to the differ18ence between linear and zero-order
                 # interpolation.
                 interp_offset = interp_offset_modes["zero" if naive else "cubic"]
                 Rself = Rself_0
@@ -1816,10 +1897,20 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
             # too large (context), another lie, so we can later
             # interpolate to the right segment (lie will not propagate)
             # interpolation will happen in _make_dims_consistent
+            # JMittaz: Note sure how this works with linear interpolation
+            # model which potentially has variable u_Rself
+            # Gerrit seems to have hardwired an assumption that the 
+            # uncertainty is a single number into susequent code so giving
+            # a variable number doesn't work. Too difficult to correct
+            # at the moment (lots of iterables etc.) so fix uncertainty
+            # to mean value of uRself for the moment
+            # Don't know if this will ever be fixed given the difficulty 
+            # of Gerrit's code...
             times = pandas.date_range(
                 context["time"].values[0],
                 context["time"].values[-1],
                 freq='10min')
+            # This repeats a single number
             u_Rself = u_Rself[numpy.tile([0], times.size)]
             u_Rself = u_Rself.assign_coords(
                 time_rself=times.values)# [ds["time"].values[0]])
@@ -1828,8 +1919,11 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                 "every ten minutes as a stop-gap measure to ensure even "
                 "short slices contain this info, this does not imply "
                 "an actual update of the information.  Check coordinates "
-                "Rself_start and Rself_end.  See #128.")
-
+                "Rself_start and Rself_end.  See #128."
+                "For Linear time interpolated model time variable uncertainty "
+                "is implemented but not possible with this version of the "
+                "code (JMittaz comment)")
+            
             # according to Wang, Cao, and Ciren (2007), ε=0.98, no further
             # source or justification given
             if Rrefl_model is None:
@@ -1856,7 +1950,6 @@ class HIRSFCDR(typhon.datasets.dataset.HomemadeDataset):
                         dims=("time",),
                         coords={"time": Rself.time}))
                 Rself = Rself_0.assign_coords(**newcoor)
-
 
             # for debugging purposes, calculate various other radiances
             a2_0 = UADA(0,
