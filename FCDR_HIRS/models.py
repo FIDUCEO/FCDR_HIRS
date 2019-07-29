@@ -71,6 +71,7 @@ import functools
 import operator
 
 import scipy.stats
+from scipy.optimize import curve_fit
 import sklearn.cross_decomposition
 import sklearn.linear_model
 import numpy
@@ -80,6 +81,8 @@ import abc
 from typhon.physics.units.common import ureg
 from typhon.physics.units.tools import UnitsAwareDataArray as UADA
 from typhon.datasets import _tovs_defs
+from typhon.datasets import tovs
+from typhon.physics.units.common import radiance_units as rad_u
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +105,473 @@ class RSelf:
     @abc.abstractmethod
     def evaluate(self, lines, ch):
         ...
+#
+# JMittaz addition
+# This attempts to generate the simple model desribed above which just
+# interpolated the self emission from one calibration cycle to the 
+# next. Note, it does use the temperatures from the more complex model
+# to try and estimate some uncertainty on the linear model (we expect
+# the self emission to be some function of temperatures which do not vary
+# linearly with time...).
+#
+def estRself_model(x,*p):
+
+    total = numpy.zeros(x.shape[1])
+    total[:] = total[:] + p[0]
+    for i in range(x.shape[0]):
+        total = total + p[i+1]*x[i,:]
+
+    return total
+
+class RSelfInterpolate(RSelf):
+    """Implementation of a self emission model that just uses time and
+    before/after calibration scanlines to estimate what the self emission
+    is. Uses the meansurement equation as currently formulated to map space
+    counts to self emssion radiance which is then interpolated between 
+    calibration views. Uses temperatures if present to estimate uncertainty
+    from the linear model."""
+
+    def __init__(self, hirs, temperatures=None):
+        """Initialise `RSelf` object
+
+        Create an `RSelf` object.  Usually, you'll just want to pass as the
+        first argument the `HIRS2FCDR`, `HIRS3FCDR`, or `HIRS4FCDR` object
+        that you are using to develop the HIRS FCDR.  For the other
+        arguments, the default values are usually fine.
+
+        Parameters
+        ----------
+
+        hirs : `fcdr.HIRSFCDR`
+            'fcdr.HIRSFCDR` object that the self-emission model relates
+            to.
+        temperatures : List[str], optional
+            List of temperatures to use.  Overrides the `temperatures`
+            attribute.
+            """
+        self.name = "Linear_Interpolation_by_time"
+        self.hirs = hirs
+        self.core_model = 'linear_time'
+        self.models = {}
+        self.slope_offset_there = False
+        if temperatures is not None:
+            self.temperatures = temperatures
+
+    def fit(self, ds, ch, force=False):
+        """Fit model for channel - for linear interpolation does nothing
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            Dataset containing segment of L1B data based on which the
+            training will occur.  I often choose 24 hour of data for this,
+            but I don't know how optimal this is.
+        ch: int
+            Channel to train.
+        force: bool, optional
+            If True, proceed with fitting even if the training data fails
+            the normality test.  Defaults to False.
+        """
+        pass
+
+    #
+    # Setup interpolated slopes and offsets in this version of measurement
+    # equation
+    #
+    def set_slope_offset(self,slope,offset):
+
+        self.slope_offset_there = True
+        self.slope = slope
+        self.offset = offset
+
+    def get_np_seconds(self,timedelta):
+        try:
+            seconds = timedelta.total_seconds()
+        except AttributeError:  # no method total_seconds
+            one_second = numpy.timedelta64(1000000000, 'ns')
+        # use nanoseconds to get highest possible precision in output
+            seconds = timedelta / one_second
+        return seconds
+
+    def find_nearest_nonzero(self,uRself,i):
+
+        pos_low=-1
+        for k in range(i,0,-1):
+            if uRself[k] != 0.:
+                pos_low = k
+                break
+
+        pos_high=-1
+        for k in range(i,len(uRself)):
+            if uRself[k] != 0.:
+                pos_high = k
+                break
+
+        if pos_high == -1 and pos_low == -1:
+            raise Exception('No good uRself value (find_nearest_nonzero')
+        if pos_high == -1 and pos_low >= 0:
+            return uRself[pos_low]
+        if pos_high >= 0 and pos_low == -1:
+            return uRself[pos_high]
+        if i-pos_low > pos_high-i:
+            return uRself[pos_high]
+        else:
+            return uRself[pos_low]
+
+    def estimate_Rself(self,Rspace,Rself_med):
+
+        #
+        # Make sure there is enough data to fit
+        #
+        if len(Rself_med) < 2*Rspace.shape[0]:
+            return None,False
+
+        p0Val = numpy.zeros(Rspace.shape[0]+1)
+
+        #
+        # Create accumulated Rself from deltas
+        # What to do with bad data?
+        # Fit delta R to delta R?
+        #
+        #
+        # Get delta Rs from Temperatures
+        #
+        Rs = Rspace[:,1:]-Rspace[:,:-1]
+
+        #
+        # Remove nans
+        #
+        good = numpy.zeros(len(Rself_med),dtype=numpy.bool)
+        good[:] = True
+        for i in range(len(Rself_med)):
+            if not numpy.isfinite(Rself_med[i]) or \
+                    numpy.any(~numpy.isfinite(Rs[:,i])) or \
+                    Rself_med[i] == 0. or \
+                    numpy.any(Rs[:,i] == 0.):
+                good[i] = False
+
+        x = Rs[:,good]
+        y = Rself_med[good]
+
+        p,cov = curve_fit(estRself_model,x,y,p0=p0Val)
+
+        #
+        # Get stdev of differences as estimate of uncertainty when
+        # no good data
+        #
+        xx=numpy.zeros((len(y),2))
+        for j in range(len(y)):
+            xx[j,0]=p[0]
+            xx[j,1] = y[j]
+            for i in range(len(p)-1):
+                xx[j,0]=xx[j,0]+p[i+1]*x[i,j]
+            
+        u_est = numpy.std(x[:,0]-x[:,1])
+        print('*** Estimated uncertainty from T based model = ',u_est)
+        
+        return p,u_est,True
+
+    def evaluate(self, ds, ch ):
+        """Apply self-emission model to data
+
+        Does a simple linear interpolation of the Rself value from 
+        surrounding calibartion lines. Rself will be zero at the first
+        calibration time and will be estimate at the second calibrated time
+        to match the observed space view signal given the gain etc. The
+        values will then be interpolated in time to generate the new
+        values of Rself. The final curves will give a sawtooth variation
+        starting near zero to a maximum just before the next calibration
+        observation.
+
+        This method:
+
+        - extracts the predictor from the source scanlines dataset (time)
+        - converts this to the right format, including masking bad lines
+        - estimate the predictand (space counts) for all lines assuming a
+          linear model
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            Dataset containing the L1B scanlines for which the
+            self-emission is to be estimated
+        ch : int
+            Channel for which to estimate self-emission.
+
+        Returns
+        -------
+
+        X : xarray.Dataset
+            Predictor that was used to evaluate
+        Y : `typhon.physics.units.tools.UnitsAwareDataArray`
+            Estimates of self-emission for all scanlines in ds
+        """
+        #
+        # Get the temperatures to estimate uncertainty
+        #
+        # Make sure temperatures are in sync with space counts etc.
+        # so ensures both space and iwct observations available
+        #
+        views_space = xarray.DataArray(ds["scantype"].values == 
+                                       self.hirs.typ_space, 
+                                       coords=ds["scantype"].coords)
+        views_iwct = xarray.DataArray(ds["scantype"].values == 
+                                       self.hirs.typ_iwt, 
+                                       coords=ds["scantype"].coords)
+        dsi = self.hirs.dist_space_iwct
+        space_followed_by_iwct = (views_space[:-dsi].variable &
+                                   views_iwct[dsi:].variable)
+
+        ds_temp = ds.isel(time=slice(None,-dsi)).isel(
+            time=space_followed_by_iwct)
+
+        start=True
+        L = []
+        for t_fld in self.temperatures:
+            t_fld = _tovs_defs.temperature_names.get(t_fld, t_fld)
+            x = ds["temperature_{:s}".format(t_fld)]
+            for dim in set(x.dims) - {"time"}:
+                x = x.mean(dim=dim, keep_attrs=True)
+            newT = x.astype("f8")
+            L.append(x.astype("f8")) # prevent X⁴ precision loss
+            #
+            # Convert Temperatures to radiance
+            #
+            Rad = self.hirs.srfs[ch-1].blackbody_radiance(ureg.Quantity(newT.values, ureg.K))
+            gd = (newT > 340.)
+            if numpy.sum(gd) > 0:
+                Rad[gd] = numpy.nan
+            if start:
+                npR = numpy.zeros((1,len(Rad)),dtype=numpy.float32)
+                npRout = numpy.zeros((1,len(Rad)),dtype=numpy.float32)
+                npR[0,:] = Rad[:]
+                start=False
+            else:
+                npRout[0,:] = Rad
+                npR = numpy.append(npR,npRout,axis=0)
+
+        # Needed as predictors for T_outlier routines
+        X = xarray.merge(L)
+        Tname = "temperature_{:s}".format(self.temperatures[0])
+        R = UADA(npR,\
+                     dims=['ntemp','time'],\
+                     coords={'time':ds[Tname].coords['time'].values,\
+                                 'ntemp':numpy.arange(len(self.temperatures))},\
+                                 attrs={"units": str(rad_u["si"])}
+)
+        start=True
+        L = []
+        for t_fld in self.temperatures:
+            t_fld = _tovs_defs.temperature_names.get(t_fld, t_fld)
+            x = ds_temp["temperature_{:s}".format(t_fld)]
+            for dim in set(x.dims) - {"time"}:
+                x = x.mean(dim=dim, keep_attrs=True)
+            newT = x.astype("f8")
+            L.append(x.astype("f8")) # prevent X⁴ precision loss
+            #
+            # Convert Temperatures to radiance
+            #
+            Radspace = self.hirs.srfs[ch-1].blackbody_radiance(ureg.Quantity(newT.values, ureg.K))
+            gd = (newT > 340.)
+            if numpy.sum(gd) > 0:
+                Radspace[gd] = numpy.nan
+            if start:
+                npRspace = numpy.zeros((1,len(Radspace)),dtype=numpy.float32)
+                npRspaceout = numpy.zeros((1,len(Radspace)),dtype=numpy.float32)
+                npRspace[0,:] = Radspace[:]
+                start=False
+            else:
+                npRspaceout[0,:] = Radspace
+                npRspace = numpy.append(npRspace,npRspaceout,axis=0)
+
+        # Needed as predictors for T_outlier routines
+        X = xarray.merge(L)
+        Tname = "temperature_{:s}".format(self.temperatures[0])
+        R_space = UADA(npRspace,\
+                     dims=['ntemp','time'],\
+                     coords={'time':ds_temp[Tname].coords['time'].values,\
+                                 'ntemp':numpy.arange(len(self.temperatures))},\
+                                 attrs={"units": str(rad_u["si"])}
+)
+        #
+        # Get where different views are
+        #
+        views_space = xarray.DataArray(ds["scantype"].values == \
+                                           tovs.HIRS.typ_space, \
+                                           coords=ds["scantype"].coords)
+#        views_iwct = xarray.DataArray(ds["scantype"].values == \
+#                                          tovs.HIRS.typ_iwt, \
+#                                          coords=ds["scantype"].coords)
+        views_Earth = xarray.DataArray(ds["scantype"].values == \
+                                           tovs.HIRS.typ_Earth, \
+                                           coords=ds["scantype"].coords)
+        #
+        # Get counts
+        #
+        (counts_space, counts_iwct) = self.hirs.extract_calibcounts(ds, ch)
+
+        #
+        # Get gain/offset/non-linear etc.
+        #
+        (time, offset, slope, a2) = self.hirs.calculate_offset_and_slope(
+            ds, ch, self.hirs.srfs[ch-1])
+        if not numpy.array_equal(numpy.isfinite(offset),
+                                 numpy.isfinite(slope)):
+            raise ValueError("Expecting offset and slope to have same "
+                             "finite values, but I got disappointed.")
+
+        # Check to see if we have a non-linear term
+        try:
+            a_2 = a2.values[0]
+        except:
+            a_2 = 0.
+
+        #
+        # Note use median here as Gerrit does - presumably for 'outlier' cases
+        # sometimes seen in calibration views
+        #
+        slope_val = slope.median('scanpos').values
+        #
+        # Get Rself at calibration points based on previous gain
+        #
+        Rself_cal = numpy.zeros((counts_space.values.shape[0]-1,\
+                                     counts_space.values.shape[1]))
+        for pos in range(counts_space.values.shape[1]):
+            Rself_cal[:,pos]=slope_val[pos]*\
+                (counts_space.values[1:,pos]-counts_space.values[0:-1,pos])+\
+                a_2*(counts_space.values[1:,pos]**2-\
+                                counts_space.values[0:-1,pos]**2)
+
+        #
+        # Gerrits code seems to use the median values so we will as well
+        #
+        Rself_med = numpy.zeros(Rself_cal.shape[0])
+        for pos in range(Rself_cal.shape[0]):
+            Rself_med[pos] = numpy.median(Rself_cal[pos,:])
+        scanpos_time = ds["time"][views_Earth]
+        Rearth = R.values[:,views_Earth]
+        Rspace = R_space.values[:,:]
+
+        #
+        # Get combination of input Ts that mimic observed self
+        # emission - used to estimate uncertainty, not Rself
+        # itself
+        # Note fit to delta radiances to radiances themselves
+        #
+        p_estRself,u_est,ok = self.estimate_Rself(Rspace,Rself_med)
+
+        #
+        # Loop round calibration cycle data to get Rself at earth view
+        # locations
+        #
+        # Also
+        # Estimate uncertainty from varition of other temperatures as 
+        # percentage from linear model and apply mean percentage to 
+        # Rself to get uncertainty
+        #
+        Rself = numpy.zeros(shape=(scanpos_time.coords["time"].size,), \
+                                dtype="f4")
+        uRself = numpy.zeros(shape=(scanpos_time.coords["time"].size,), \
+                                 dtype="f4")
+        estR = numpy.zeros(shape=(scanpos_time.coords["time"].size,), \
+                               dtype="f4")
+        Rself.fill(numpy.nan)
+        uRself.fill(numpy.nan)
+        estR.fill(numpy.nan)
+        for i in range(len(time.values)-1):
+            gd = (scanpos_time.values >= time.values[i]) & \
+                (scanpos_time.values <= time.values[i+1])
+            if numpy.sum(gd) > 0:
+                dtime = self.get_np_seconds(time.values[i+1]-time.values[i])
+                Rself_slope = Rself_med[i]/dtime
+                dtime = self.get_np_seconds(scanpos_time.values[gd]-time.values[i])
+                Rself[gd] = Rself_slope*dtime
+                if ok:
+                    T = Rearth[:,gd]
+                    Tdata = numpy.zeros(T.shape[1])
+                    Tdata[:] = p_estRself[0]
+                    for j in range(len(p_estRself)-1):
+                        Tdata = Tdata + p_estRself[j+1]*(T[j,:]-Rspace[j,i])
+                    estR[gd] = Tdata
+                    zero_point = Tdata[0]
+                    Tdata = Tdata - zero_point
+                    U_slope = (Tdata[Tdata.shape[0]-1]-Tdata[0])/Tdata.shape[0]
+                    Uval = numpy.zeros(Tdata.shape[0])
+                    Uval[:] = 0.
+                    for j in range(Tdata.shape[0]):
+                        if numpy.all(numpy.isfinite(T[:,j])):
+                            #
+                            # Uncertainty is deviation from a straight line
+                            #
+                            Uval[j] = numpy.abs((Tdata[j]-U_slope*j))
+                        else:
+                            Uval[j] == 0.
+                    uRself[gd] = Uval
+
+        #
+        # Set minimum uncertainty at that from fit of data
+        #
+        gd = (numpy.isfinite(uRself) & (uRself < u_est))
+        if numpy.sum(gd) > 0:
+            uRself[gd] = u_est
+            
+        # Fill all lines with u_est if no calculation done
+        gd = (~numpy.isfinite(Rself) | ~ numpy.isfinite(uRself))
+        if numpy.sum(gd) > 0:
+            uRself[gd] = u_est
+
+#        a = numpy.zeros((len(Rself),8))
+#        a[:,0] = Rself
+#        a[:,1] = uRself
+#        a[:,2] = Rearth[0,:]
+#        a[:,3] = Rearth[1,:]
+#        a[:,4] = Rearth[2,:]
+#        a[:,5] = Rearth[3,:]
+#        a[:,6] = Rearth[4,:]
+#        a[:,7] = estR[:]
+#        numpy.savetxt('test.dat',a)
+
+        Y_pred = UADA(Rself,\
+                          coords=scanpos_time.coords["time"].coords, \
+                          attrs={"units": str(rad_u["si"])})
+
+        #
+        # Force u_Rself to be a single value as this is what
+        # Gerrits code expects unfortunately - subsequent code
+        # seems hardwired to this assumption...
+        #
+        uRself = numpy.mean(uRself)
+
+        rself_time = [scanpos_time.values[0],\
+                          scanpos_time.values[len(scanpos_time.values)-1]]
+        return rself_time, X, Y_pred, uRself
+
+    def test(self, ds, ch):
+        """Test model for reference data. Don't have time to do this
+        properly so this is also a noop function
+
+        Parameters
+        ----------
+
+        ds : xarray.Dataset
+            Dataset containing the scanlines for which to test the model.
+        ch : int
+            Channel for which to test the model.
+
+        Returns
+        -------
+
+        X : xarray.DataArray
+            Predictors, normalised temperatures used to test the model.
+        Yref: xarray.DataArray
+            Predictand, reference values corresponding to X.
+        Ypred: xarray.DataArray
+            Actual outcome of model, evaluated for X.
+
+        """
+        pass
 
 class RSelfTemperature(RSelf):
     """Implementation of self emission model using temperatures
@@ -228,6 +698,7 @@ class RSelfTemperature(RSelf):
             argument is a dictionary that will be passed on to the class
             on construction.
         """
+        self.name = "Gerrit_Self_Emission"
         self.hirs = hirs
         self.core_model = regression_types[regr[0]](**regr[1])#sklearn.cross_decomposition.PLSRegression(
         self.models = {}
@@ -292,6 +763,7 @@ class RSelfTemperature(RSelf):
         # if times constant then std dev should be zero (except it isn't:
         # https://github.com/numpy/numpy/issues/9631), account for this
         if recalculate_norm:
+            XXX=X.isel(time=OK)
             stdoffs = (X**4).isel(time=OK).mean("time")
             stdnorm = (X**4).isel(time=OK).std("time")
             # not sure if I can skip the loop on this one...
