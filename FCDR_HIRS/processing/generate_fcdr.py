@@ -1107,6 +1107,7 @@ class FCDRGenerator:
         piece.to_netcdf(str(fn))
 
     def store_piece_easy(self, piece):
+        piece_easy = self.debug2easy(piece)
         fn = self.get_filename_for_piece(piece_easy, fcdr_type='easy')
         fn.parent.mkdir(exist_ok=True, parents=True)
         logger.info("Storing to {!s}".format(fn))
