@@ -650,7 +650,7 @@ class Effect:
             da.attrs["correlation_scale_" + k] = getattr(self.correlation_scale, k)
         da.attrs["channel_correlations"] = self.channel_correlations
         da.attrs["sensitivity_coefficient"] = str(self.sensitivity())
-        da.attrs["WARNING"] = WARNING
+#        da.attrs["WARNING"] = WARNING
 
         if not self.name.startswith("O_") or self.name in _fcdr_defs.FCDR_data_vars_props:
             da.encoding.update(_fcdr_defs.FCDR_data_vars_props[self.name][3])
