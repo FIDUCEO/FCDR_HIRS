@@ -183,10 +183,10 @@ def get_parser():
               "in the measurement equation.  This reduces the data volume by over 88%% "
               "compared to the unabridged version."))
 
-    parser.add_argument("--simple_rself", action="store_true",
+    parser.add_argument("--complex_rself", action="store_true",
         default=False,
-        help=("Use simple linear interpolation of Rself rather than more "
-              "complex temperature based interpolation"))
+        help=("Use complex interpolation of Rself rather than simple "
+              "linear interpolation"))
 
     return parser
 def parse_cmdline():
@@ -266,7 +266,7 @@ class FCDRGenerator:
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
     skip_problem_step = datetime.timedelta(seconds=900)
-    data_version = "0.8rc1"
+    data_version = "1.00"
     # see comment in models.Rself
     rself_temperatures = ["baseplate", "internal_warm_calibration_target",
         "scanmirror", "scanmotor", "secondary_telescope"]
@@ -286,7 +286,7 @@ class FCDRGenerator:
     dd = None
     # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes, no_harm=False,
-            abridged=False,simple_rself_model=True):
+            abridged=False,complex_rself_model=False):
         """Main module to generate FCDR for satellite and period
         
 This module contains the high level classes and function to
@@ -504,10 +504,10 @@ def get_parser():
               "in the measurement equation.  This reduces the data volume by over 88%% "
               "compared to the unabridged version."))
 
-    parser.add_argument("--simple_rself", action="store_true",
+    parser.add_argument("--complex_rself", action="store_true",
         default=False,
-        help=("Use simple linear interpolation of Rself rather than more "
-              "complex temperature based interpolation"))
+        help=("Use complex temperature based interpolation of Rself rather "
+              "than simple linear interpolation"))
 
     return parser
 def parse_cmdline():
@@ -587,7 +587,7 @@ class FCDRGenerator:
     segment_size = datetime.timedelta(hours=6)
     step_size = datetime.timedelta(hours=4)
     skip_problem_step = datetime.timedelta(seconds=900)
-    data_version = "0.8rc1"
+    data_version = "1.00"
     # see comment in models.Rself
     rself_temperatures = ["baseplate", "internal_warm_calibration_target",
         "scanmirror", "scanmotor", "secondary_telescope"]
@@ -607,7 +607,7 @@ class FCDRGenerator:
     dd = None
     # FIXME: use filename convention through FCDRTools, 
     def __init__(self, sat, start_date, end_date, modes, no_harm=False,
-            abridged=False,simple_rself_model=True):
+            abridged=False,complex_rself_model=False):
         logger.info("Preparing to generate FCDR for {sat:s} HIRS, "
             "{start:%Y-%m-%d %H:%M:%S} – {end_time:%Y-%m-%d %H:%M:%S}. "
             "Software:".format(
@@ -639,7 +639,10 @@ class FCDRGenerator:
                 typhon.datasets.filters.HIRSTimeSequenceDuplicateFilter()]
         self.orbit_filters = orbit_filters
 
-        if simple_rself_model:
+        if not complex_rself_model:
+            print('=======================================================')
+            print('   Using simple linear interpolation model for Rself')
+            print('=======================================================')
             self.rself=\
                     models.RSelfInterpolate(self.fcdr,\
                                                 temperatures=\
@@ -1439,7 +1442,7 @@ def main():
             p.modes,
             no_harm=p.no_harm,
             abridged=p.abridged,
-            simple_rself_model=p.simple_rself)
+            complex_rself_model=p.complex_rself)
         fgen.process()
     else:
         dates = pandas.date_range(p.from_date, p.to_date, freq="MS")
