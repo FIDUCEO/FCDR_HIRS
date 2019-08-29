@@ -112,7 +112,7 @@ def get_harm_dict(chans, files, params_included=[0, 1, 2]):
     for (ch, fn) in zip(chans, files):
         with xarray.open_dataset(fn) as ds:
             for i in range(ds.dims["n"]):
-                sat = ds["parameter_sensors"][i].item().decode("ascii").strip()
+                sat = ds["parameter_name"][i].item().decode("ascii").strip()
                 sat = typhon.datasets.tovs.norm_tovs_name(sat)
                 sats_found.add(sat)
                 if not sat in D.keys():
