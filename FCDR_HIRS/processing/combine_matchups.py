@@ -170,7 +170,7 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             hirs_data_version=hirs_data_version,
             hirs_format_version=hirs_format_version,
             extra_data_versions=extra_data_versions,
-            extra_format_versions=extra_format_versions)
+            extra_format_versions=extra_format_versions,
             extra_fields=extra_fields)
         # parent has set self.mode to either "hirs" or "reference"
         if self.mode not in ("hirs", "reference"):
