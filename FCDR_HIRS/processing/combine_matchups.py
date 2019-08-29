@@ -671,8 +671,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
             ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel))
         harm[f"nominal_measurand_original{i:d}"].attrs.update(ds[f"{sat:s}_toa_outgoing_radiance_per_unit_frequency"].sel(channel=channel).attrs)
 
-        for f in self.extra_fields:
-            harm[f"extra_{f:s}{i:d}"] = (("M",), ds[f"{sat:s}_{f:s}"].sel(calibrated_channel=channel))
+        #for f in self.extra_fields:
+        #    harm[f"extra_{f:s}{i:d}"] = (("M",), ds[f"{sat:s}_{f:s}"].sel(calibrated_channel=channel))
 
         if self.mode == "reference":
             sdsidx = {"line": ok}
@@ -799,8 +799,8 @@ class HIRSMatchupCombiner(matchups.HIRSMatchupCombiner):
 
 def combine_hirs():
     p = parse_cmdline_hirs()
-    if p.extra_data_versions:
-        sys.exit("Extra data versions not supported, this was a mistake")
+    #if p.extra_data_versions:
+    #    sys.exit("Extra data versions not supported, this was a mistake")
     common.set_logger(
         logging.DEBUG if p.verbose else logging.INFO,
         p.log,
@@ -815,8 +815,8 @@ def combine_hirs():
             p.satname1, p.satname2,
             debug=p.debug,
             apply_filters=p.with_filters,
-            hirs_data_version=p.src_version,
-            extra_fields=p.extra_fields)
+            hirs_data_version=p.src_version)
+            #extra_fields=p.extra_fields)
 
         ds = hmc.as_xarray_dataset()
     except (typhon.datasets.dataset.DataFileError, MatchupError) as e:
@@ -881,8 +881,8 @@ def combine_iasi():
         datetime.datetime.strptime(p.to_date, p.datefmt),
         "iasi", "metopa",
         hirs_data_version=p.hirs_src_version,
-        apply_filters=p.with_filters,
-        extra_fields=p.hirs_extra_fields)
+        apply_filters=p.with_filters)
+        #extra_fields=p.hirs_extra_fields)
 
     ds = hmc.as_xarray_dataset()
     for channel in range(1, 20):

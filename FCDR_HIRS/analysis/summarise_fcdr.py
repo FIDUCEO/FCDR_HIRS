@@ -142,7 +142,7 @@ def get_parser():
         help="Percentiles to plot.  Recommended to plot at least always 50.")
 
     parser.add_argument("--pstyles", action="store", type=str,
-        default=": -- - -- :",
+        default="- -- - -- -",
         help="Style for percentiles.  Should be single string argument "
             "to prevent styles misinterpreted as flag hyphens.")
     return parser
